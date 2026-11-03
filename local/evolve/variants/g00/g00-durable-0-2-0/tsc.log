@@ -1,0 +1,6 @@
+scenarios/11-halts-with-a-clock.ts(61,78): error TS2345: Argument of type '(ctx: HaltPolicyCtx<{ contractId: string; title: string; counterparty: string; category: string; amountUsd: number; region: "eu" | "us"; text: string; redlines: string[]; }>) => { ...; } | undefined' is not assignable to parameter of type '(ctx: HaltPolicyCtx<{ contractId: string; title: string; counterparty: string; category: string; amountUsd: number; region: "eu" | "us"; text: string; redlines: string[]; }>) => NoInfer<{ ...; }> | undefined'.
+  Type '{ verdict: string; notes: string; } | undefined' is not assignable to type 'NoInfer<{ verdict: "approved" | "returned" | "redlined"; notes?: string | undefined; }> | undefined'.
+    Type '{ verdict: string; notes: string; }' is not assignable to type '{ verdict: "approved" | "returned" | "redlined"; notes?: string | undefined; }'.
+      Types of property 'verdict' are incompatible.
+        Type 'string' is not assignable to type '"approved" | "returned" | "redlined"'.
+scenarios/11-halts-with-a-clock.ts(122,27): error TS2322: Type 'string' is not assignable to type '"approve" | "reject"'.

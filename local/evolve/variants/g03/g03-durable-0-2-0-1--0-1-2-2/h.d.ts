@@ -1,0 +1,816 @@
+declare module 'harness-dsl' {
+  import { z } from 'zod';
+  import {
+    Named,
+    EnvRef,
+    PortRef,
+    Verdict,
+    Position,
+    State,
+    UnitView,
+    WorkRef,
+    KindRef,
+    RoleRef,
+    ResourceRef,
+    HaltRef,
+    SeatRef,
+    JobRef,
+    Assignment,
+    Dimensions,
+    Metrics,
+    Policy,
+    AccountState,
+    Account,
+    Model,
+    BatchModel,
+    RunnerBackend,
+    Workspace,
+    Supplier,
+    Store,
+    MemoryStore,
+    Ledger,
+    Client,
+    Observer,
+    Scope,
+    MetricRef,
+    Measure,
+    Window,
+    ResolvedBy,
+    CeilingDecision,
+  } from 'harness-dsl/kernel';
+  export * from 'harness-dsl/kernel';
+
+  export type Schema<T> = z.ZodType<T>;
+  export type Empty = { readonly [K in never]: never };
+
+  export type PendingState<S extends State> = Extract<S, State<string, 'pending'>>;
+  export type WaitingState<S extends State> = Extract<S, State<string, 'waiting'>>;
+
+  export interface KindShape<A, S extends State> extends WorkRef<S> {
+    readonly entity: 'kind';
+    readonly _types?: { readonly attrs: A; readonly states: S };
+  }
+
+  export interface Kind<N extends string, A, S extends State> extends KindShape<A, S> {
+    readonly name: N;
+    attributes<A2 extends object>(schema: Schema<A2>): Kind<N, A2, S>;
+    states<S2 extends State[]>(...states: S2): Kind<N, A, S2[number]>;
+    key(identity: (attrs: A) => string): Kind<N, A, S>;
+    initial(state: PendingState<S>): Kind<N, A, S>;
+  }
+
+  export interface Signal<N extends string = string, P = unknown> extends Named {
+    readonly name: N;
+    readonly _payload?: P;
+    payload<P2>(schema: Schema<P2>): Signal<N, P2>;
+  }
+
+  export interface Halt<N extends string = string, D = unknown> extends HaltRef {
+    readonly name: N;
+    readonly _decision?: D;
+    decision<D2>(schema: Schema<D2>): Halt<N, D2>;
+  }
+
+  export interface Resource<V extends string = string> extends ResourceRef {
+    readonly value: V;
+  }
+
+  export interface ResourceFamily<V extends string> extends Named {
+    readonly entity: 'resourceFamily';
+    readonly members: readonly Resource<V>[];
+    of(value: V): Resource<V>;
+    parse(value: string): Resource<V> | undefined;
+  }
+
+  export interface Executable<I, O> extends Named {
+    readonly _io?: { readonly in: (input: I) => void; readonly out: O };
+  }
+
+  export interface Job<I, O> extends JobRef {
+    readonly _io?: { readonly in: (input: I) => void; readonly out: O };
+  }
+
+  export interface CommandResult {
+    readonly exitCode: number;
+    readonly stdout: string;
+    readonly stderr: string;
+  }
+
+  export interface Command<I, O> extends Executable<I, O> {
+    input<I2>(schema: Schema<I2>): Command<I2, O>;
+    argv(argv: readonly string[] | ((input: I) => readonly string[])): Command<I, O>;
+    output<O2>(schema: Schema<O2>): Command<I, O2>;
+    runner(runner: Runner | ((input: I) => Runner)): Command<I, O>;
+    acceptExitCodes(...exitCodes: number[]): Command<I, O>;
+  }
+
+  export interface Runner extends Named {
+    readonly backend: RunnerBackend;
+    slots(count: number): Runner;
+    preflight(check: Executable<void, unknown>): Runner;
+  }
+
+  export type Intent = 'read' | 'edit' | 'run' | 'search' | 'browse' | 'halt' | 'record';
+
+  export interface Role<O = string> extends RoleRef {
+    readonly _output?: O;
+    intents(...intents: Intent[]): Role<O>;
+    instructions(text: string): Role<O>;
+    output<O2>(schema: Schema<O2>): Role<O2>;
+  }
+
+  export interface AgentTask {
+    readonly task: string;
+    readonly resources?: readonly ResourceRef[];
+    readonly skills?: readonly string[];
+  }
+
+  export interface Seat<O, M extends Model = Model> extends Executable<AgentTask, O>, SeatRef {
+    readonly _model?: M;
+    role<O2>(role: Role<O2>): Seat<O2, M>;
+    model<M2 extends Model>(model: M2): Seat<O, M2>;
+    model<M2 extends Model>(policy: ModelPolicy<M2>): Seat<O, M2>;
+    pool(pool: Pool): Seat<O, M>;
+    halts(...halts: HaltRef[]): Seat<O, M>;
+  }
+
+  export interface PolicyCtx {
+    readonly kind: KindRef;
+    readonly seat: SeatRef;
+    readonly current?: Model;
+    readonly rivals: readonly Assignment[];
+    readonly metrics: Metrics;
+  }
+
+  export interface ModelPolicy<M extends Model = Model> extends Policy<PolicyCtx, M> {
+    readonly candidates: readonly M[];
+  }
+
+  export interface AccountPolicyCtx {
+    readonly candidates: readonly AccountState[];
+    readonly now: Date;
+  }
+
+  export type AccountPolicy = Policy<AccountPolicyCtx, AccountState | undefined>;
+
+  export interface HaltPolicyCtx<A> {
+    readonly unit: UnitView<A>;
+    readonly resources: readonly ResourceRef[];
+    readonly metrics: Metrics;
+  }
+
+  export interface HaltPolicy<A, D> extends Policy<HaltPolicyCtx<A>, D | undefined> {
+    readonly halt: HaltRef;
+  }
+
+  export interface HaltPolicyDraft<A, D> {
+    decide(decide: (ctx: HaltPolicyCtx<A>) => D | undefined): HaltPolicy<A, D>;
+  }
+
+  export interface Pool extends Named {
+    accounts(...accounts: Account[]): Pool;
+    share(account: Account, fraction: number): Pool;
+    drain(policy: AccountPolicy): Pool;
+    fallback(account: Account): Pool;
+  }
+
+  export interface MemoryKind extends Named {
+    readonly trust: 'experience' | 'taste';
+  }
+
+  export interface Journal extends Named {
+    readonly entity: 'journal';
+    store(store: MemoryStore): Journal;
+    recall(recall: { readonly by: 'specificity' | 'similarity'; readonly limit: number }): Journal;
+    readBy(...roles: RoleRef[]): Journal;
+    recordedBy(...roles: RoleRef[]): Journal;
+  }
+
+  export interface MemoryDraft {
+    readonly text: string;
+    readonly when?: Scope;
+    readonly status?: 'candidate' | 'active';
+  }
+
+  export interface Retry {
+    readonly maxAttempts: number;
+    readonly backoff?: 'fixed' | 'exponential';
+    readonly initialDelayMs?: number;
+  }
+
+  export interface Guard {
+    readonly leaseFiles?: boolean;
+    readonly beforeStop?: Executable<void, unknown>;
+  }
+
+  export interface StepOptions<I> {
+    readonly retry?: Retry;
+    readonly afterCrash?: 'rerun' | 'park' | 'askDriver';
+    readonly alreadyDone?: Executable<I, boolean>;
+    readonly workspace?: Workspace;
+    readonly guard?: Guard;
+  }
+
+  export interface FlowCtx<In, P, St> {
+    readonly unit: UnitView<In>;
+    readonly params: P;
+    readonly steps: St;
+    readonly iteration: number;
+  }
+
+  export interface ChildResult {
+    readonly unitId: string;
+    readonly state: State;
+    readonly verdict: Verdict;
+  }
+
+  export interface JobHandle {
+    readonly jobId: string;
+  }
+
+  export interface JobPoll<O> {
+    readonly state: 'running' | 'succeeded' | 'failed';
+    readonly result?: O;
+    readonly reason?: string;
+  }
+
+  export interface HaltBound<D, XL extends string> {
+    readonly counts: (decision: D) => boolean;
+    readonly maxCount: number;
+    readonly exit: XL;
+  }
+
+  export interface HaltOptions<In, P, St, D, XL extends string> {
+    readonly ask: (ctx: FlowCtx<In, P, St>) => string;
+    readonly skip?: HaltPolicy<In, D>;
+    readonly resources?: (ctx: FlowCtx<In, P, St>) => readonly ResourceRef[];
+    readonly timeout?: { readonly afterMinutes: number; readonly decide: (ctx: FlowCtx<In, P, St>) => D };
+    readonly escalate?: { readonly afterMinutes: number; readonly run: Executable<void, unknown> };
+    readonly bound?: HaltBound<D, XL>;
+  }
+
+  export interface LoopBounds<In, P, St, St2> {
+    readonly max?: number | ((ctx: FlowCtx<In, P, St>) => number);
+    readonly until?: (ctx: FlowCtx<In, P, St2>) => boolean;
+  }
+
+  export interface Flow<In, P, St, X extends string, N extends string> extends Named {
+    readonly _types?: {
+      readonly input: (attrs: In) => void;
+      readonly params: (params: P) => P;
+      readonly steps: St;
+      readonly exits: X;
+      readonly stepNames: N;
+    };
+    input<In2>(schema: Schema<In2>): Flow<In2, P, St, X, N>;
+    params<P2>(schema: Schema<P2>): Flow<In, P2, St, X, N>;
+    step<M extends string, O>(
+      name: M,
+      exec: Executable<void, O>,
+      options?: StepOptions<void>,
+    ): Flow<In, P, St & { readonly [K in M]: O }, X, N | M>;
+    step<M extends string, I, O>(
+      name: M,
+      exec: Executable<I, O>,
+      input: (ctx: FlowCtx<In, P, St>) => I,
+      options?: StepOptions<I>,
+    ): Flow<In, P, St & { readonly [K in M]: O }, X, N | M>;
+    halt<M extends string, D, XL extends string = never>(
+      name: M,
+      halt: Halt<string, D>,
+      options: HaltOptions<In, P, St, NoInfer<D>, XL> & { readonly when: (ctx: FlowCtx<In, P, St>) => boolean },
+    ): Flow<In, P, St & { readonly [K in M]: D | undefined }, X | XL, N | M>;
+    halt<M extends string, D, XL extends string = never>(
+      name: M,
+      halt: Halt<string, D>,
+      options: HaltOptions<In, P, St, NoInfer<D>, XL>,
+    ): Flow<In, P, St & { readonly [K in M]: D }, X | XL, N | M>;
+    wait<M extends string>(
+      name: M,
+      wait: { readonly ms: number },
+    ): Flow<In, P, St & { readonly [K in M]: Date }, X, N | M>;
+    job<M extends string, I, O>(
+      name: M,
+      job: Job<I, O>,
+      input: (ctx: FlowCtx<In, P, St>) => I,
+    ): Flow<In, P, St & { readonly [K in M]: O }, X, N | M>;
+    spawn<M extends string, A2>(
+      name: M,
+      lane: LaneShape<A2, State, unknown>,
+      children: (ctx: FlowCtx<In, P, St>) => readonly A2[],
+    ): Flow<In, P, St & { readonly [K in M]: readonly ChildResult[] }, X, N | M>;
+    loop<M extends string, St2, X2 extends string, N2 extends string>(
+      name: M,
+      body: (flow: Flow<In, P, St, X, N>) => Flow<In, P, St2, X2, N2>,
+      bounds: LoopBounds<In, P, St, St2>,
+    ): Flow<In, P, St2, X2, N2>;
+    loop<M extends string, C, St2, X2 extends string, N2 extends string>(
+      name: M,
+      carry: Schema<C>,
+      body: (flow: Flow<In, P, St & { readonly [K in M]: C | undefined }, X, N>) => Flow<In, P, St2, X2, N2>,
+      bounds: LoopBounds<In, P, St, St2> & { readonly carry: (ctx: FlowCtx<In, P, St2>) => C },
+    ): Flow<In, P, St2, X2, N2>;
+    exit<M extends string>(
+      name: M,
+      when?: (ctx: FlowCtx<In, P, St>) => boolean,
+    ): Flow<In, P, St, X | M, N>;
+  }
+
+  export interface LaneShape<A, S extends State, St> extends WorkRef<S> {
+    readonly entity: 'lane';
+    readonly _types?: { readonly attrs: A; readonly states: S; readonly steps: St };
+  }
+
+  export type LaneRef = LaneShape<unknown, State, unknown>;
+
+  export type InputFits<A, I> = [A] extends [I] ? unknown : { readonly flowInputDoesNotFitKind: I };
+
+  export interface Reaction<A, S extends State, N extends string, P> {
+    readonly update?: (attrs: A, payload: P) => A;
+    readonly rewind?: N;
+    readonly enter?: S;
+    readonly at?: readonly N[];
+  }
+
+  export interface Route { readonly route: 'create' | 'signal' | 'skip' }
+
+  export interface Router<A> {
+    create(attrs: A): Route;
+    signal<P>(signal: Signal<string, P>, key: string, payload: P): Route;
+    skip(): Route;
+  }
+
+  export interface OperatorSupplier extends Named { readonly operator: true }
+
+  export interface Lease {
+    readonly resource: ResourceRef;
+    readonly mode: 'exclusive' | 'shared';
+  }
+
+  export interface StoreMap<S extends State, N extends string, M extends string> {
+    readonly states: { readonly [K in S['name']]: M };
+    readonly inFlight: M;
+    readonly steps?: { readonly [K in N]?: M };
+  }
+
+  export interface Lane<A, S extends State, St, N extends string> extends LaneShape<A, S, St> {
+    readonly _types?: { readonly attrs: A; readonly states: S; readonly steps: St; readonly stepNames: N };
+    supply(supplier: OperatorSupplier): Lane<A, S, St, N>;
+    supply<E>(
+      supplier: Supplier<E>,
+      route: (event: E, to: Router<A>) => Route | readonly Route[],
+    ): Lane<A, S, St, N>;
+    handler<I, St2, X extends string, N2 extends string>(
+      flow: Flow<I, void, St2, X, N2>,
+      map: { readonly exits: { readonly [K in X]: S } } & InputFits<A, I>,
+    ): Lane<A, S, St2, N2>;
+    handler<I, P, St2, X extends string, N2 extends string>(
+      flow: Flow<I, P, St2, X, N2>,
+      map: { readonly exits: { readonly [K in X]: S }; readonly params: P } & InputFits<A, I>,
+    ): Lane<A, S, St2, N2>;
+    store(store: Store): Lane<A, S, St, N>;
+    store<M extends string>(store: Store<M>, map: StoreMap<S, N, M>): Lane<A, S, St, N>;
+    retry(retry: Retry & { readonly exhausted: S }): Lane<A, S, St, N>;
+    lease(pick: (unit: UnitView<A, S>) => Lease): Lane<A, S, St, N>;
+    after(order: {
+      readonly key: (attrs: A) => string | undefined;
+      readonly onPredecessorFailed: WaitingState<S>;
+    }): Lane<A, S, St, N>;
+    on<P>(signal: Signal<string, P>, reaction: Reaction<A, S, N, P>): Lane<A, S, St, N>;
+    ceiling(ceiling: {
+      readonly maxUsd: number;
+      readonly onExceed: 'fail' | Halt<string, CeilingDecision>;
+    }): Lane<A, S, St, N>;
+  }
+
+  export interface Tick { readonly at: Date }
+  export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+  export interface Clock extends Supplier<Tick> {
+    every(interval: { readonly minutes: number }): Clock;
+    at(time: string, options?: { readonly on?: Weekday | number; readonly tz?: string }): Clock;
+  }
+
+  export interface TransitionEvent<A, S extends State = State> {
+    readonly unit: UnitView<A, S>;
+    readonly to: S;
+    readonly attempt?: { readonly durationMs: number; readonly costUsd: number };
+    readonly at: Date;
+  }
+
+  export interface PatternEvent<A, S extends State, V extends string> extends TransitionEvent<A, S> {
+    readonly resource: Resource<V>;
+    readonly streak: number;
+  }
+
+  export interface TimerEvent<A, S extends State = State> {
+    readonly unit: UnitView<A, S>;
+    readonly at: Date;
+  }
+
+  export interface StepEvent<A, O, St> {
+    readonly unit: UnitView<A>;
+    readonly ok: boolean;
+    readonly output?: O;
+    readonly outputs: { readonly [K in keyof St]?: St[K] };
+    readonly seats: { readonly [K in keyof St]?: Assignment };
+    readonly durationMs: number;
+    readonly at: Date;
+  }
+
+  export interface DecisionEvent<A, D> {
+    readonly unit: UnitView<A>;
+    readonly halt: HaltRef;
+    readonly decision: D;
+    readonly resolvedBy: ResolvedBy;
+    readonly resolver: string;
+    readonly resources: readonly ResourceRef[];
+    readonly seats: readonly Assignment[];
+    readonly waitedMs: number;
+    readonly at: Date;
+  }
+
+  export interface InvocationEvent {
+    readonly seat?: SeatRef;
+    readonly model?: Model;
+    readonly ok: boolean;
+    readonly costUsd: number;
+  }
+
+  export type Threshold = { readonly below: number } | { readonly above: number };
+
+  export interface Band {
+    readonly window: Window;
+    readonly minSamples: number;
+    readonly enter: Threshold;
+    readonly exit: Threshold;
+  }
+
+  export interface FamilyBand<V extends string> extends Band {
+    readonly per: ResourceFamily<V>;
+  }
+
+  export interface CrossingEvent {
+    readonly rate: number;
+    readonly hits: number;
+    readonly samples: number;
+    readonly at: Date;
+  }
+
+  export interface FamilyCrossingEvent<V extends string> extends CrossingEvent {
+    readonly resource: Resource<V>;
+  }
+
+  export interface Source<E> extends Named { readonly _event?: E }
+
+  export type StateMatch<S extends State> = S | readonly S[];
+
+  export interface TriggerRef extends Named {
+    readonly entity: 'trigger';
+  }
+
+  export interface Trigger<E> extends TriggerRef {
+    on<E2>(source: Source<E2>): Trigger<E2>;
+    create<A>(lane: LaneShape<A, State, unknown>, attrs: (event: E) => A | undefined): Trigger<E>;
+    signal<P>(
+      signal: Signal<string, P>,
+      lane: LaneRef,
+      target: (event: E) => { readonly key: string; readonly payload: P } | undefined,
+    ): Trigger<E>;
+    record(journal: Journal, item: (event: E) => MemoryDraft | undefined): Trigger<E>;
+    pause(lane: LaneRef, reason: (event: E) => string): Trigger<E>;
+    resume(lane: LaneRef, reason: (event: E) => string): Trigger<E>;
+  }
+
+  export interface Sample extends Dimensions { readonly hit: boolean }
+  export interface Amount extends Dimensions { readonly amount: number }
+
+  export interface MetricDraft<E> extends Named {
+    samples(extract: (event: E) => readonly Sample[]): MetricRef<'rate'>;
+    amounts(extract: (event: E) => readonly Amount[]): MetricRef<'total'>;
+  }
+
+  export interface AdmitCtx<A> {
+    readonly unit: UnitView<A>;
+    readonly count: (lanes: LaneRef | readonly LaneRef[], ...positions: Position[]) => number;
+    readonly metrics: Metrics;
+  }
+
+  export interface Scheduler extends Named {
+    expedite(lane: LaneRef, options?: { readonly holds?: readonly LaneRef[] }): Scheduler;
+    fixedDate<A>(lane: LaneShape<A, State, unknown>, due: (unit: UnitView<A>) => Date): Scheduler;
+    standard(...lanes: LaneRef[]): Scheduler;
+    wip(lanes: LaneRef | readonly LaneRef[], maxActive: number): Scheduler;
+    aging(lane: LaneRef, aging: { readonly afterMinutes: number }): Scheduler;
+    admit<A>(lane: LaneShape<A, State, unknown>, gate: (ctx: AdmitCtx<A>) => boolean): Scheduler;
+  }
+
+  export interface Operation<I, O> extends Named {
+    readonly _io?: { readonly in: (input: I) => void; readonly out: O };
+  }
+
+  export type Grant = Operation<never, unknown>;
+
+  export interface Harness extends Named {
+    ledger(ledger: Ledger): Harness;
+    lanes(...lanes: LaneRef[]): Harness;
+    journals(...journals: Journal[]): Harness;
+    triggers(...triggers: TriggerRef[]): Harness;
+    metrics(...metrics: MetricRef<Measure>[]): Harness;
+    scheduler(scheduler: Scheduler): Harness;
+    clients(...clients: Client[]): Harness;
+    observers(...observers: Observer[]): Harness;
+    start(): Promise<void>;
+  }
+
+  export const H: {
+    env(name: string): EnvRef;
+    readonly slot: { port(slot: number): PortRef };
+    nextTime(at: string, options: { readonly after: Date; readonly tz?: string }): Date;
+
+    kind<N extends string>(name: N): Kind<N, Empty, never>;
+    state<N extends string, P extends 'pending' | 'waiting'>(name: N, position: P): State<N, P>;
+    terminal<N extends string>(name: N, verdict: Verdict): State<N, 'terminal'>;
+    signal<N extends string>(name: N): Signal<N, Empty>;
+    halt<N extends string>(name: N): Halt<N, Empty>;
+    resource<V extends string>(name: V): Resource<V>;
+    resources<V extends string>(family: string, values: readonly V[]): ResourceFamily<V>;
+    role(name: string): Role<string>;
+    memory(name: string, trust: 'experience' | 'taste'): MemoryKind;
+    readonly cancel: Signal<'cancel', { readonly reason?: string }>;
+    readonly ceilingDecision: Schema<CeilingDecision>;
+
+    command(name: string): Command<void, CommandResult>;
+    job<I, O>(
+      name: string,
+      job: {
+        readonly submit: Executable<I, JobHandle>;
+        readonly collect: Executable<JobHandle, JobPoll<O>>;
+        readonly pollEveryMinutes: number;
+      },
+    ): Job<I, O>;
+    jobPoll<O>(result: Schema<O>): Schema<JobPoll<O>>;
+    batch<O>(name: string, seat: Seat<O, BatchModel>): Job<readonly AgentTask[], readonly O[]>;
+    seat(name: string): Seat<string>;
+    pool(name: string): Pool;
+    readonly policy: {
+      model<M extends Model>(name: string, candidates: readonly M[], choose: (ctx: PolicyCtx) => NoInfer<M>): ModelPolicy<M>;
+      account(name: string, choose: (ctx: AccountPolicyCtx) => AccountState | undefined): AccountPolicy;
+      halt<A, S extends State, D>(
+        name: string,
+        kind: KindShape<A, S>,
+        halt: Halt<string, D>,
+      ): HaltPolicyDraft<A, D>;
+    };
+
+    flow(name: string): Flow<unknown, void, Empty, never, never>;
+    lane<A, S extends State>(name: string, kind: KindShape<A, S>): Lane<A, S, Empty, never>;
+    journal(name: string, of: MemoryKind): Journal;
+    clock(name: string): Clock;
+    readonly operator: OperatorSupplier;
+
+    trigger(name: string): Trigger<never>;
+    readonly when: {
+      transition<A, S extends State, St>(
+        lane: LaneShape<A, S, St>,
+        filter?: {
+          readonly to?: StateMatch<NoInfer<S>>;
+          readonly if?: (event: TransitionEvent<A, S>) => boolean;
+        },
+      ): Source<TransitionEvent<A, S>>;
+      pattern<A, S extends State, St, V extends string>(
+        lane: LaneShape<A, S, St>,
+        pattern: {
+          readonly to: StateMatch<NoInfer<S>>;
+          readonly consecutive: number;
+          readonly per: (unit: UnitView<A, S>) => Resource<V>;
+        },
+      ): Source<PatternEvent<A, S, V>>;
+      timer<A, S extends State, St>(
+        lane: LaneShape<A, S, St>,
+        timer: { readonly at: (unit: UnitView<A, S>) => Date | undefined },
+      ): Source<TimerEvent<A, S>>;
+      step<A, S extends State, St, M extends keyof St & string>(
+        lane: LaneShape<A, S, St>,
+        step: M,
+        filter?: { readonly if?: (event: StepEvent<A, St[M], St>) => boolean },
+      ): Source<StepEvent<A, St[M], St>>;
+      decision<A, S extends State, D>(kind: KindShape<A, S>, halt: Halt<string, D>): Source<DecisionEvent<A, D>>;
+      invocation(filter: { readonly lanes: readonly LaneRef[] }): Source<InvocationEvent>;
+      crossing<V extends string>(
+        metric: MetricRef<'rate'>,
+        band: FamilyBand<V>,
+        edge: 'entered' | 'exited',
+      ): Source<FamilyCrossingEvent<V>>;
+      crossing(metric: MetricRef<'rate'>, band: Band, edge: 'entered' | 'exited'): Source<CrossingEvent>;
+    };
+    metric<E>(name: string, source: Source<E>): MetricDraft<E>;
+    scheduler(name: string): Scheduler;
+
+    operation<O>(name: string, exec: Executable<void, O>): Operation<void, O>;
+    readonly ops: {
+      readonly workRead: Grant;
+      readonly workCreate: Grant;
+      readonly workUpdate: Grant;
+      readonly workCancel: Grant;
+      readonly workSignal: Grant;
+      readonly attemptsRecover: Grant;
+      readonly lanesPause: Grant;
+      readonly memoryRead: Grant;
+      readonly memoryWrite: Grant;
+      readonly memoryCurate: Grant;
+      readonly telemetryRead: Grant;
+      readonly accountsRead: Grant;
+      readonly accountsShare: Grant;
+      resolve(...halts: HaltRef[]): Grant;
+    };
+    harness(name: string): Harness;
+  };
+}
+
+declare module 'harness-dsl/sqlite' {
+  import { Ledger, Store, Supplier, Clock, QuotaPartition, KindShape, State } from 'harness-dsl';
+  export interface ScannedUnit<A> {
+    readonly key: string;
+    readonly attributes: A;
+  }
+  export const sqlite: {
+    ledger(options: { readonly path: string }): Ledger;
+    store(options: { readonly path: string }): Store;
+    quota(name: string, options: { readonly path: string }): QuotaPartition;
+    scan<A, S extends State>(
+      name: string,
+      options: {
+        readonly path: string;
+        readonly kind: KindShape<A, S>;
+        readonly states: readonly NoInfer<S>[];
+        readonly schedule: Clock;
+      },
+    ): Supplier<ScannedUnit<A>>;
+  };
+}
+
+declare module 'harness-dsl/jsonl' {
+  import { MemoryStore } from 'harness-dsl';
+  export const jsonl: {
+    memoryStore(options: { readonly path: string }): MemoryStore;
+  };
+}
+
+declare module 'harness-dsl/pgvector' {
+  import { MemoryStore, EnvRef, Embedder } from 'harness-dsl';
+  export const pgvector: {
+    memoryStore(options: { readonly url: EnvRef; readonly table: string; readonly embedder: Embedder }): MemoryStore;
+  };
+}
+
+declare module 'harness-dsl/voyage' {
+  import { Embedder, EnvRef } from 'harness-dsl';
+  export const voyage: {
+    embedder(name: string, options: { readonly id: string; readonly apiKey: EnvRef }): Embedder;
+  };
+}
+
+declare module 'harness-dsl/claude-code' {
+  import { Account, Model, Client, Grant, EnvRef, PortRef, QuotaPartition, Named } from 'harness-dsl';
+  export interface SupervisorSession extends Named {
+    readonly endpoints: readonly Client[];
+  }
+  export const claudeCode: {
+    subscription(name: string, options: { readonly token: EnvRef; readonly quota: QuotaPartition }): Account;
+    model(name: string, options: { readonly id: string }): Model;
+    supervisor(name: string, options: { readonly grants: readonly Grant[]; readonly port?: PortRef }): Client;
+    session(name: string, options: { readonly endpoints: readonly Client[] }): SupervisorSession;
+  };
+}
+
+declare module 'harness-dsl/anthropic' {
+  import { Account, BatchModel, EnvRef, QuotaPartition } from 'harness-dsl';
+  export const anthropic: {
+    account(name: string, options: { readonly apiKey: EnvRef; readonly quota: QuotaPartition }): Account;
+    model(name: string, options: { readonly id: string }): BatchModel;
+  };
+}
+
+declare module 'harness-dsl/linear' {
+  import { Supplier, Store, EnvRef } from 'harness-dsl';
+  export interface LinearIssue {
+    readonly id: string;
+    readonly identifier: string;
+    readonly title: string;
+    readonly description: string;
+    readonly labels: readonly string[];
+  }
+  export const linear: {
+    issues(options: { readonly apiKey: EnvRef; readonly team: string; readonly labels?: readonly string[] }): Supplier<LinearIssue>;
+    store<M extends string>(options: { readonly apiKey: EnvRef; readonly team: string; readonly workflow: readonly M[] }): Store<M>;
+  };
+}
+
+declare module 'harness-dsl/folder' {
+  import { Supplier, Store } from 'harness-dsl';
+  export interface FolderFile {
+    readonly path: string;
+    readonly name: string;
+    readonly body: string;
+  }
+  export const folder: {
+    files(options: { readonly path: string; readonly glob: string }): Supplier<FolderFile>;
+    frontmatter(options: { readonly path: string }): Store;
+  };
+}
+
+declare module 'harness-dsl/git' {
+  import { Workspace } from 'harness-dsl';
+  export const git: {
+    worktree(options: { readonly repo: string; readonly base: string }): Workspace;
+  };
+}
+
+declare module 'harness-dsl/local' {
+  import { Runner } from 'harness-dsl';
+  export const local: {
+    runner(name: string): Runner;
+  };
+}
+
+declare module 'harness-dsl/ssh' {
+  import { Runner, EnvRef } from 'harness-dsl';
+  export const ssh: {
+    host(name: string, options: { readonly host: string; readonly user: string; readonly key: EnvRef }): Runner;
+  };
+}
+
+declare module 'harness-dsl/http' {
+  import { Client, Grant, EnvRef, PortRef } from 'harness-dsl';
+  export const http: {
+    controlApi(name: string, options: { readonly port: PortRef; readonly token: EnvRef; readonly grants: readonly Grant[] }): Client;
+  };
+}
+
+declare module 'harness-dsl/webhook' {
+  import { Supplier, Schema, EnvRef, PortRef } from 'harness-dsl';
+  export const webhook: {
+    json<P>(name: string, options: {
+      readonly port: PortRef;
+      readonly path: string;
+      readonly secret: EnvRef;
+      readonly payload: Schema<P>;
+    }): Supplier<P>;
+  };
+}
+
+declare module 'harness-dsl/zendesk' {
+  import { Supplier, Store, EnvRef, PortRef } from 'harness-dsl';
+  export interface ZendeskEvent {
+    readonly type: 'created' | 'replied' | 'updated';
+    readonly status: 'new' | 'open' | 'pending' | 'solved' | 'closed';
+    readonly ticketId: string;
+    readonly subject: string;
+    readonly message: string;
+    readonly customerEmail: string;
+    readonly priority: 'low' | 'normal' | 'high' | 'urgent';
+    readonly createdAt: Date;
+  }
+  export const zendesk: {
+    webhook(options: { readonly port: PortRef; readonly path: string; readonly secret: EnvRef }): Supplier<ZendeskEvent>;
+    poll(options: { readonly subdomain: string; readonly token: EnvRef; readonly everyMinutes: number }): Supplier<ZendeskEvent>;
+    store(options: { readonly subdomain: string; readonly token: EnvRef }): Store;
+  };
+}
+
+declare module 'harness-dsl/contentful' {
+  import { Supplier, Store, EnvRef } from 'harness-dsl';
+  export interface ContentfulEntry {
+    readonly id: string;
+    readonly title: string;
+    readonly section: string;
+    readonly body: string;
+  }
+  export const contentful: {
+    drafts(options: { readonly space: string; readonly token: EnvRef; readonly everyMinutes: number }): Supplier<ContentfulEntry>;
+    store(options: { readonly space: string; readonly token: EnvRef }): Store;
+  };
+}
+
+declare module 'harness-dsl/ironclad' {
+  import { Store, EnvRef } from 'harness-dsl';
+  export const ironclad: {
+    store(options: { readonly workspace: string; readonly token: EnvRef }): Store;
+  };
+}
+
+declare module 'harness-dsl/markdown' {
+  import { Observer } from 'harness-dsl';
+  export const markdown: {
+    board(options: { readonly path: string }): Observer;
+    telemetry(options: { readonly path: string }): Observer;
+  };
+}
+
+declare module 'harness-dsl/slack' {
+  import { Observer, EnvRef, LaneRef } from 'harness-dsl';
+  export const slack: {
+    notifier(name: string, options: { readonly webhookUrl: EnvRef; readonly lanes: readonly LaneRef[] }): Observer;
+  };
+}

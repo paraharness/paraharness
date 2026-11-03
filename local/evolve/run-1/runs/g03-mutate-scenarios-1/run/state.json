@@ -1,0 +1,56 @@
+{
+ "key": 2,
+ "batches": [
+  {
+   "id": "msgbatch_0113xMDthCYhdKFLhJuFYK9b",
+   "key": 2,
+   "custom_ids": [
+    "g03-minimal--0-2-2-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01LxXWHK2rVU93wuc5aqPkdm",
+   "key": 2,
+   "custom_ids": [
+    "g03-minimal--0-2-2-1",
+    "g03-minimal--0-2-2-2",
+    "g03-durable--0-2-0-0",
+    "g03-durable--0-2-0-1",
+    "g03-durable--0-2-0-2",
+    "g03-minimal--0-2-0-0",
+    "g03-minimal--0-2-0-1",
+    "g03-minimal--0-2-0-2",
+    "g03-durable--1-2-1-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01VTVgg3WcuJjQXP7g4o5vqH",
+   "key": 2,
+   "custom_ids": [
+    "g03-durable--1-2-1-1"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_018xRw37n2SyW1MZCuMV7zne",
+   "key": 2,
+   "custom_ids": [
+    "g03-durable--1-2-1-2"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 2,
+   "model": "claude-opus-5-5",
+   "prefix": "1803c8fb9e7117a2a7fc703380ec83cb16fda165510bf119a6cd1631255ba886",
+   "time": 1793538918.9429078
+  }
+ ],
+ "trials": {
+  "claude-opus-5-5:1803c8fb9e7117a2a7fc703380ec83cb16fda165510bf119a6cd1631255ba886": 0.6878517000000001
+ }
+}

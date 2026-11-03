@@ -1,0 +1,183 @@
+{
+  "env": {
+    "NODE_USE_ENV_PROXY": "1",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "700000"
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "idleCompaction": false,
+  "model": "claude-opus-5-5",
+  "effortLevel": "high",
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "The agents' setup is Claude Code's own: C  LAUDE.md, the head-orchestrator and consultant skills, agents in .claude/agents, hooks in .claude/hooks, and .memory/, a checkout of the `memory` branch holding the head's note, the decisions archive, task briefs with their archives, PAPERCUTS.md and one papercut file per role in papercuts/. The head runs builders, reviewers, hotfix, scribe, Judge and verifier agents from briefs.",
+    ],
+    "allow": [
+      "$defaults",
+      "Administering `wb` and `wb2` over ssh, including as root, is allowed: their GitHub Actions runners and the runners' OS users, the hosts' setup (packages, power cap, network, isolation), and fetching commits from origin there.",
+      "Reading this app's production configuration and health is allowed: Cloudflare API reads, wrangler read commands, health checks, and read-only D1 queries to investigate a bug the owner reported. Never write to production data.",
+      "Writing to this team's Linear workspace is allowed through the Linear connector and, for what the connector cannot do (archiving, unarchiving, bulk moves), the Linear GraphQL API at api.linear.app: issues, comments, labels, projects, documents. Never delete issues or projects.",
+      "Deploying this repository is allowed only as CLAUDE.md's deploy rule says: the comment `@mergifyio queue` on release-please's `release: v5.N.0` pull request when the owner asked for that release, and the re-run of that merge's failed `production` job that the rule names. No other deploy is allowed: no push to a deploy branch, no edge-deploy.sh run or deploy.yml dispatch, no Cloudflare Pages or Workers API write. Reading those runs, its jobs and logs, and recording the result (the memory note, reminders, Linear) afterwards is part of it.",
+      "Reading Cloudflare Access configuration (applications, their policies, and service tokens' names, ids, expiry and last-seen times, never their secret values) through the Cloudflare API to diagnose an Access refusal is allowed without asking the owner.",
+      "Sending messages between this project's own Claude sessions (the head and the builder sessions it started) is allowed: briefs, sign-offs, answers and approvals of changes an owner decision or a standing owner rule covers. Relaying such an approval is not itself a production change.",
+      "Pushing to this project's ticket branches on origin (claude/cd-*), by merge and never by force or rebase, is allowed for builders; main changes only through the Mergify queue.",
+      "Temporary break-once edits to product files in an agent's own worktree, made to show a test fails and then restored, are allowed; they are never committed or pushed."
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "LSP",
+      "TodoWrite",
+      "Agent",
+      "Bash(pnpm *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git fetch*)",
+      "Bash(git checkout -b *)",
+      "Bash(git switch -c *)",
+      "Bash(git merge*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(wc*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(mkdir*)",
+      "Bash(cp*)",
+      "Bash(mv*)",
+      "Bash(git push origin --delete *)",
+      "Bash(git branch -d *)",
+      "Bash(git branch -D *)",
+      "Bash(git rm *)",
+      "Edit(.github/workflows/**)",
+      "Write(.github/workflows/**)",
+      "mcp__Linear__get_issue",
+      "mcp__Linear__list_comments",
+      "mcp__Linear__list_issues",
+      "mcp__Linear__get_project",
+      "mcp__Linear__list_projects",
+      "mcp__Linear__get_document",
+      "mcp__Linear__list_documents",
+      "Bash(npx wrangler *)",
+      "Bash(node_modules/.bin/wrangler *)",
+      "Bash(curl * https://api.cloudflare.com/client/v4/*)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(sed -n *)",
+      "Bash(python3 *)",
+      "Bash(node *)",
+      "Bash(bash infra/scripts/*)",
+      "Edit(/CLAUDE.md)",
+      "Bash(git rm:*)",
+      "mcp__claude-code-remote__add_repo",
+      "mcp__claude-code-remote__send_message",
+      "Bash(bash .claude/scripts/*)",
+      "Bash(.claude/scripts/*)",
+      "Bash(git -C * fetch*)",
+      "Bash(git -C * merge*)",
+      "Bash(git -C * push origin HEAD:*)",
+      "Bash(git -C * status*)",
+      "Bash(git -C * log*)",
+      "Bash(git -C * diff*)",
+      "Bash(git -C * add*)",
+      "Bash(git -C * commit*)",
+      "Bash(git worktree add *)",
+      "Bash(git -C * worktree add *)",
+      "Bash(git push -q origin *)",
+      "mcp__Linear__save_issue",
+      "mcp__Linear__save_comment",
+      "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__save_issue",
+      "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__save_comment",
+      "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__get_issue",
+      "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__list_issues",
+      "mcp__4b5ce853-053c-4394-8e27-b11c336c3388__list_comments",
+      "Bash(rtk ls *)", "Bash(rtk wc *)", "Bash(cargo *)", "Bash(cd *)", "Bash(echo *)", "Bash(date*)",
+      "Bash(find *)", "Bash(awk *)", "Bash(sort*)", "Bash(uniq*)", "Bash(cut *)", "Bash(tr *)", "Bash(file *)",
+      "Bash(du *)", "Bash(ps *)", "Bash(lsof *)", "Bash(tar *)", "Bash(cmp *)", "Bash(diff *)", "Bash(xargs *)",
+      "Bash(rm -rf /private/tmp/claude-501/*)", "Bash(rm -f /private/tmp/claude-501/*)",
+      "Bash(git -C * worktree remove *)", "Bash(git -C * worktree list*)", "Bash(git -C * branch -d *)",
+      "Bash(git -C * archive *)", "Bash(git -C * show*)", "Bash(git -C * rev-parse*)", "Bash(git -C * check-ignore*)",
+      "Bash(git -C * ls-files*)", "Bash(git show*)", "Bash(git check-ignore*)",
+      "Bash(.venv/bin/python *)", "Bash(*/.venv/bin/python *)", "Bash(/private/tmp/claude-501/*)",
+      "mcp__terminal__run_in_terminal", "mcp__terminal__stop_terminal_tab", "mcp__terminal__read_terminal",
+      "mcp__terminal__list_terminal_tabs", "mcp__terminal__open_terminal_tab"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Bash(npx wrangler delete*)",
+      "Bash(npx wrangler d1 delete*)",
+      "Bash(npx wrangler r2 bucket delete*)",
+      "Bash(npx wrangler queues delete*)",
+      "Bash(node_modules/.bin/wrangler delete*)",
+      "Bash(node_modules/.bin/wrangler d1 delete*)",
+      "Bash(node_modules/.bin/wrangler r2 bucket delete*)",
+      "Bash(node_modules/.bin/wrangler queues delete*)",
+      "Bash(git push * --force*)",
+      "Bash(git push origin HEAD:main)",
+      "Read(**/.env*)",
+      "Bash(git -C * push*--force*)",
+      "Bash(git -C * push* -f*)",
+      "Bash(git -C * push origin main)",
+      "Bash(git -C * push origin HEAD:main)",
+      "Bash(git -C * reset --hard*)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/usage-status.mjs"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/last-messages.mjs"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context-watch.mjs"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/context-watch.mjs"
+          }
+        ]
+      }
+    ]
+  }
+}

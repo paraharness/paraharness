@@ -1,0 +1,5 @@
+scenarios/02-support-triage.ts(109,5): error TS2322: Type '(ctx: FlowCtx<{ ticketId: string; subject: string; message: string; customerEmail: string; slaDueAt: string; }, void, Empty & { readonly classify: { category: "shipping" | "other" | "billing" | "refund" | "account"; summary: string; }; } & { ...; }>) => { ...; } | undefined' is not assignable to type '(ctx: FlowCtx<{ ticketId: string; subject: string; message: string; customerEmail: string; slaDueAt: string; }, void, Empty & { readonly classify: { category: "shipping" | "other" | "billing" | "refund" | "account"; summary: string; }; } & { ...; }>) => NoInfer<{ ...; }> | undefined'.
+  Type '{ action: string; reply: string; } | undefined' is not assignable to type 'NoInfer<{ action: "send" | "reject"; reply: string; notes?: string | undefined; }> | undefined'.
+    Type '{ action: string; reply: string; }' is not assignable to type '{ action: "send" | "reject"; reply: string; notes?: string | undefined; }'.
+      Types of property 'action' are incompatible.
+        Type 'string' is not assignable to type '"send" | "reject"'.

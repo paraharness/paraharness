@@ -1,0 +1,5 @@
+scenarios/11-halts-with-a-clock.ts(63,80): error TS2345: Argument of type '(choice: DecisionChoice<{ contractId: string; category: string; draftUrl: string; summary: string; }>) => { action: string; notes: string; } | undefined' is not assignable to parameter of type '(choice: DecisionChoice<{ contractId: string; category: string; draftUrl: string; summary: string; }>) => { action: "return" | "approve"; notes: string; } | undefined'.
+  Type '{ action: string; notes: string; } | undefined' is not assignable to type '{ action: "return" | "approve"; notes: string; } | undefined'.
+    Type '{ action: string; notes: string; }' is not assignable to type '{ action: "return" | "approve"; notes: string; }'.
+      Types of property 'action' are incompatible.
+        Type 'string' is not assignable to type '"return" | "approve"'.

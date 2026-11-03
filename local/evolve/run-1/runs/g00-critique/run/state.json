@@ -1,0 +1,38 @@
+{
+ "key": 1,
+ "batches": [
+  {
+   "id": "msgbatch_0186NPT4C2KzXTmX57KQQDbu",
+   "key": 1,
+   "custom_ids": [
+    "crit-g00-durable-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01HicxJwZDhnXV17fV3y6nk5",
+   "key": 1,
+   "custom_ids": [
+    "crit-g00-durable-1",
+    "crit-g00-minimal-0",
+    "crit-g00-minimal-1",
+    "crit-g00-otp-0",
+    "crit-g00-otp-1",
+    "crit-g00-ours-0",
+    "crit-g00-ours-1"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 1,
+   "model": "claude-opus-5-5",
+   "prefix": "e517542942cbd1dd3bf94353a69a7fb4092f802d56e2f677d0d22b1dc618e417",
+   "time": 1793514313.4826381
+  }
+ ],
+ "trials": {
+  "claude-opus-5-5:e517542942cbd1dd3bf94353a69a7fb4092f802d56e2f677d0d22b1dc618e417": 0.15677395714285716
+ }
+}

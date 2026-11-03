@@ -1,0 +1,122 @@
+{
+ "key": 2,
+ "batches": [
+  {
+   "id": "msgbatch_01GHKWSCy3xigkVVM3RY5xob",
+   "key": 2,
+   "custom_ids": [
+    "judge-01-0000-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01CYHRAJsfzsKoq6NDmxQJVo",
+   "key": 2,
+   "custom_ids": [
+    "judge-01-0000-1",
+    "judge-01-0001-0",
+    "judge-01-0001-1",
+    "judge-01-0002-0",
+    "judge-01-0002-1",
+    "judge-01-0003-0",
+    "judge-01-0003-1",
+    "judge-01-0004-0",
+    "judge-01-0004-1",
+    "judge-01-0005-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01WWh255Qy6asBDSvthsGhop",
+   "key": 2,
+   "custom_ids": [
+    "judge-01-0005-1",
+    "judge-01-0006-0",
+    "judge-01-0006-1",
+    "judge-01-0007-0",
+    "judge-01-0007-1",
+    "judge-01-0008-0",
+    "judge-01-0008-1",
+    "judge-01-0009-0",
+    "judge-01-0009-1",
+    "judge-01-0010-0",
+    "judge-01-0010-1",
+    "judge-01-0011-0",
+    "judge-01-0011-1",
+    "judge-01-0012-0",
+    "judge-01-0012-1",
+    "judge-01-0013-0",
+    "judge-01-0013-1",
+    "judge-01-0014-0",
+    "judge-01-0014-1",
+    "judge-01-0015-0",
+    "judge-01-0015-1",
+    "judge-01-0016-0",
+    "judge-01-0016-1",
+    "judge-01-0017-0",
+    "judge-01-0017-1",
+    "judge-01-0018-0",
+    "judge-01-0018-1",
+    "judge-01-0019-0",
+    "judge-01-0019-1",
+    "judge-01-0020-0",
+    "judge-01-0020-1",
+    "judge-01-0021-0",
+    "judge-01-0021-1",
+    "judge-01-0022-0",
+    "judge-01-0022-1",
+    "judge-01-0023-0",
+    "judge-01-0023-1",
+    "judge-01-0024-0",
+    "judge-01-0024-1",
+    "judge-01-0025-0",
+    "judge-01-0025-1",
+    "judge-01-0026-0",
+    "judge-01-0026-1",
+    "judge-01-0027-0",
+    "judge-01-0027-1"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_012SCMcboKjoMTwETphe2koU",
+   "key": 2,
+   "custom_ids": [
+    "judge-01-0028-0",
+    "judge-01-0028-1",
+    "judge-01-0029-0",
+    "judge-01-0029-1",
+    "judge-01-0030-0",
+    "judge-01-0030-1",
+    "judge-01-0031-0",
+    "judge-01-0031-1",
+    "judge-01-0032-0",
+    "judge-01-0032-1",
+    "judge-01-0033-0",
+    "judge-01-0033-1",
+    "judge-01-0034-0",
+    "judge-01-0034-1",
+    "judge-01-0035-0",
+    "judge-01-0035-1",
+    "judge-01-0036-0",
+    "judge-01-0036-1",
+    "judge-01-0037-0",
+    "judge-01-0037-1",
+    "judge-01-0038-0",
+    "judge-01-0038-1"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 2,
+   "model": "claude-opus-5-5",
+   "prefix": "5db6dd7e3e4859db7e29fce1abffbd43bf0060b31544bcdd877ba635314984e5",
+   "time": 1793566206.725143
+  }
+ ],
+ "trials": {
+  "claude-opus-5-5:5db6dd7e3e4859db7e29fce1abffbd43bf0060b31544bcdd877ba635314984e5": 0.13152809999999998
+ }
+}

@@ -1,0 +1,35 @@
+{
+ "key": 2,
+ "batches": [
+  {
+   "id": "msgbatch_01SV223KLvHViAWPVR3LfgTn",
+   "key": 2,
+   "custom_ids": [
+    "repair-g00-ours-2-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01MUv1t2PcM9qMCFUBRd2ywf",
+   "key": 2,
+   "custom_ids": [
+    "repair-g00-ours-2-1",
+    "repair-g00-durable-0-2-0",
+    "repair-g00-durable-0-2-0-1",
+    "repair-g00-durable-1-2-1-1"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 2,
+   "model": "claude-opus-5-5",
+   "prefix": "49b7bcb0ff4ce7c8058356b4e0e1c980e01cefb420a9f3f00498a08604f9a79a",
+   "time": 1793557425.8851352
+  }
+ ],
+ "trials": {
+  "claude-opus-5-5:49b7bcb0ff4ce7c8058356b4e0e1c980e01cefb420a9f3f00498a08604f9a79a": 0.2859579
+ }
+}

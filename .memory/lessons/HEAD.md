@@ -1,0 +1,12 @@
+Read by every HEAD as its first step and again after a compaction; read again by whoever adds a line. One sentence per lesson, "Do X, because Y", Y the mechanism that bites; present tense; no date, ticket, PR, person or quote. A lesson that needs a second sentence is two lessons or not yet general. Ids are never reused. (Every TIC- id in this file is a placeholder for a real issue id.)
+Good: - H3: Read Standing before acting at the wake, because a READY the subscription dropped shows there and nowhere else.
+Good: - H4: Open the shot the verdict names before trusting the line, because a verdict written from labels passes what the image contradicts.
+Bad:  - "After the TIC-037 PR sat two days and conflicted, check Mergify's reply." (an incident with an id)
+Bad:  - "Be careful with merges, since conflicts arise in several ways." (no X, no mechanism)
+
+- H3: Merge origin/main into a ticket's worktree before starting a successor builder there when a setup change has merged since its branch was cut, because `claude --agent builder` loads the role file from the branch it runs on.
+- H10: Brief a hotfix for a test broken by its own fixture or path without asking the owner first, because a hotfix is already the head's call and a question only adds the owner's round trip to the red.
+- H16: Carry a Judge finding on a screen a later decided ticket rebuilds to that ticket as a disclosed carry of the criterion it fails, never a FIX LIST item and never a silent pass, because the rebuild replaces the code the fix would touch and sign-off still needs every shot judged.
+- H17: Check every Judge finding against the design doc's kit rows and `running.md`'s proof rules before it goes into a FIX LIST, because a Judge holds a designed behaviour (a phone row that scrolls sideways, a dark-only admin's light shot) to the bar as a defect and the builder's dispute costs a round trip.
+- H18: Decide a case the design is silent on as a head line when the design section, the area's doc and the code's existing rule, each read in its source, leave one consistent answer, cite all three in the line, and send the owner only a case where two answers stay consistent or the call is on the owner's list, because a question the sources already answer costs the owner a round trip for nothing.
+- H20: At every wake, read what each idle builder's background shells are running and treat a builder with no commit or tool activity for longer than its slowest check as stalled, because a builder waiting on a shell that never ends shows a live window and nothing else wakes it.

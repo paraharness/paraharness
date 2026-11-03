@@ -1,0 +1,469 @@
+===== run two, launch 1 (gens 0-3: 4 imported seeds + ours-2 x2, then 4 parents x 3; cap 100/gen): 2026-11-01 21:30:49 =====
+[g00] mutate/surface: 2 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/run --max-usd 20.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01MHWKtMgYWErkeU838pCopk with 1 requests (key-2)
+batch msgbatch_01MHWKtMgYWErkeU838pCopk done (key-2)
+submitted batch msgbatch_01ETruabhLzAWUKpR1iL7Cda with 1 requests (key-2)
+batch msgbatch_01ETruabhLzAWUKpR1iL7Cda done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.771944 per request, 0 queued, projected $0.00
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 6614, cache writes 13339, cache reads 13339, output 150189
+spend: $1.57
+[g00] mutate/scenarios 0: 2 requests (4 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-0/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-0/run --max-usd 15.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01McVwzXe3qGZEuya1KwMBEW with 1 requests (key-2)
+batch msgbatch_01McVwzXe3qGZEuya1KwMBEW done (key-2)
+submitted batch msgbatch_01RnBUDTcXp2abXiGguzo5fT with 1 requests (key-2)
+batch msgbatch_01RnBUDTcXp2abXiGguzo5fT done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.912000 per request, 0 queued, projected $0.00
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 45468, cache writes 0, cache reads 26678, output 184408
+spend: $1.94
+[g00] mutate/scenarios 1: 6 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-1/run --max-usd 15.00 --max-batch-usd 12
+
+===== run two, launch 2 (generation 0 only; owner cut gens 1-3 on cost): 2026-11-01 22:17:07 =====
+[g00] mutate/surface: 2 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/run --max-usd 20.00 --max-batch-usd 12
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 6614, cache writes 13339, cache reads 13339, output 150189
+spend: $1.57
+[g00] mutate/scenarios 0: 2 requests (4 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-0/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-0/run --max-usd 15.00 --max-batch-usd 12
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 45468, cache writes 0, cache reads 26678, output 184408
+spend: $1.94
+[g00] mutate/scenarios 1: 6 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-1/run --max-usd 15.00 --max-batch-usd 12
+
+===== run two, launch 3 (gens 0-3 restored as approved; launch 2 was my error): 2026-11-01 22:18:29 =====
+[g00] mutate/surface: 2 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/run --max-usd 20.00 --max-batch-usd 12
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 6614, cache writes 13339, cache reads 13339, output 150189
+spend: $1.57
+[g00] mutate/scenarios 0: 2 requests (4 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-0/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-0/run --max-usd 15.00 --max-batch-usd 12
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 45468, cache writes 0, cache reads 26678, output 184408
+spend: $1.94
+[g00] mutate/scenarios 1: 6 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios-1/run --max-usd 15.00 --max-batch-usd 12
+batch msgbatch_01SJep9CPDA92WE3hoie8gYy done (key-2)
+requests: 6, done: 6, failed: 0, not run: 0
+key-2: uncached input 144623, cache writes 0, cache reads 80034, output 411604
+spend: $4.41
+  g00-ours-2-0: compile errors 1, escapes 0, any-in-dts 0, surface 303, coverage 12/12, cannot: none, strikes: none
+  g00-ours-2-1: compile errors 138, escapes 0, any-in-dts 0, surface 358, coverage 12/12, cannot: none, strikes: none
+  g00-durable-0-2-0: compile errors 2, escapes 0, any-in-dts 0, surface 360, coverage 12/12, cannot: none, strikes: none
+  g00-durable-0-2-0-1: compile errors 1, escapes 0, any-in-dts 0, surface 344, coverage 12/12, cannot: none, strikes: none
+  g00-durable-1-2-1-1: compile errors 6, escapes 0, any-in-dts 0, surface 270, coverage 12/12, cannot: none, strikes: none
+  g00-minimal-0-2-2: compile errors 0, escapes 0, any-in-dts 0, surface 219, coverage 12/12, cannot: none, strikes: none
+[g00] repair round 1: 5 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-repair/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-repair/run --max-usd 7.50 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01SV223KLvHViAWPVR3LfgTn with 1 requests (key-2)
+batch msgbatch_01SV223KLvHViAWPVR3LfgTn done (key-2)
+submitted batch msgbatch_01MUv1t2PcM9qMCFUBRd2ywf with 4 requests (key-2)
+batch msgbatch_01MUv1t2PcM9qMCFUBRd2ywf done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.285958 per request, 0 queued, projected $0.00
+requests: 5, done: 5, failed: 0, not run: 0
+key-2: uncached input 188251, cache writes 0, cache reads 66695, output 86574
+spend: $1.25
+  g00-ours-2-0 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 303, coverage 12/12, cannot: none, strikes: none
+  g00-ours-2-1 (repaired): compile errors 3, escapes 0, any-in-dts 0, surface 358, coverage 12/12, cannot: none, strikes: none
+  g00-durable-0-2-0 (repaired): compile errors 2, escapes 0, any-in-dts 0, surface 359, coverage 12/12, cannot: none, strikes: none
+  g00-durable-0-2-0-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 344, coverage 12/12, cannot: none, strikes: none
+  g00-durable-1-2-1-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 271, coverage 12/12, cannot: none, strikes: none
+[g00] repair round 2: 2 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-repair-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-repair-1/run --max-usd 7.50 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01Ej2iFBu9sJtsxsuiTmrFSx with 1 requests (key-2)
+batch msgbatch_01Ej2iFBu9sJtsxsuiTmrFSx done (key-2)
+submitted batch msgbatch_01VXh7JzepJnbJNKbyfof7jJ with 1 requests (key-2)
+batch msgbatch_01VXh7JzepJnbJNKbyfof7jJ done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.172784 per request, 0 queued, projected $0.00
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 47399, cache writes 0, cache reads 26678, output 22786
+spend: $0.33
+  g00-ours-2-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 358, coverage 12/12, cannot: none, strikes: none
+  g00-durable-0-2-0 (repaired): compile errors 2, escapes 0, any-in-dts 0, surface 361, coverage 12/12, cannot: none, strikes: none
+[g00] critique: 5 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-critique/run --max-usd 10.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01NwK4vPhkGARF41sCGjs8x2 with 1 requests (key-2)
+batch msgbatch_01NwK4vPhkGARF41sCGjs8x2 done (key-2)
+submitted batch msgbatch_011o4AaRuXVpVgaozHhcDhcS with 4 requests (key-2)
+batch msgbatch_011o4AaRuXVpVgaozHhcDhcS done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.195555 per request, 0 queued, projected $0.00
+requests: 5, done: 5, failed: 0, not run: 0
+key-2: uncached input 384645, cache writes 13135, cache reads 52540, output 21310
+spend: $1.04
+[g00] judge: 15 pairs, 30 comparisons (both positions)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-judge/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-judge/run --max-usd 30.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01QfQLH9nR5K827SSPBFjMav with 1 requests (key-2)
+batch msgbatch_01QfQLH9nR5K827SSPBFjMav done (key-2)
+submitted batch msgbatch_01Q54Ca4zDhVXxhHET6FZGkP with 10 requests (key-2)
+batch msgbatch_01Q54Ca4zDhVXxhHET6FZGkP done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.134955 per request, 19 queued, projected $2.56
+submitted batch msgbatch_01PXDaS2avPMWiTW53kq5JoX with 19 requests (key-2)
+batch msgbatch_01PXDaS2avPMWiTW53kq5JoX done (key-2)
+requests: 30, done: 30, failed: 0, not run: 0
+key-2: uncached input 1822774, cache writes 0, cache reads 394050, output 23738
+spend: $3.92
+[g00] judge: 10 pairs agreed in both positions, 5 split and discarded
+[g00] front: g00-ours-2-1, g00-ours-2-0, g00-minimal-0-2-2, g00-durable-0-2-0-1
+[g01] mutate/surface: 12 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate-surface/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate-surface/run --max-usd 20.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01PDzSmyawzixSp3L9zGqjgS with 1 requests (key-2)
+batch msgbatch_01PDzSmyawzixSp3L9zGqjgS done (key-2)
+submitted batch msgbatch_011ocbUesHcJSGV43pkzeftz with 9 requests (key-2)
+batch msgbatch_011ocbUesHcJSGV43pkzeftz done (key-2)
+submitted batch msgbatch_01GsWM4whdEV33fE1ShW4Qef with 1 requests (key-2)
+batch msgbatch_01GsWM4whdEV33fE1ShW4Qef done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.525487 per request, 1 queued, projected $0.53
+submitted batch msgbatch_01UkBbYVAkpyxadwvWg8o7Uf with 1 requests (key-2)
+batch msgbatch_01UkBbYVAkpyxadwvWg8o7Uf done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 940932, cache writes 0, cache reads 160068, output 448783
+spend: $6.39
+[g01] mutate/scenarios 0: 12 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate-scenarios-0/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate-scenarios-0/run --max-usd 15.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01DGwfzodhEv5oGC9144Gbdm with 1 requests (key-2)
+batch msgbatch_01DGwfzodhEv5oGC9144Gbdm done (key-2)
+submitted batch msgbatch_01QEkSXqzzT19Jgk9gEbird1 with 9 requests (key-2)
+batch msgbatch_01QEkSXqzzT19Jgk9gEbird1 done (key-2)
+submitted batch msgbatch_01Jys98Zwm5FyvWKfnkQB3Ri with 1 requests (key-2)
+batch msgbatch_01Jys98Zwm5FyvWKfnkQB3Ri done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.828477 per request, 1 queued, projected $0.83
+submitted batch msgbatch_01LWnFgagTAsMiKHmKGgkBq5 with 1 requests (key-2)
+batch msgbatch_01LWnFgagTAsMiKHmKGgkBq5 done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 289174, cache writes 0, cache reads 160068, output 938425
+spend: $9.98
+[g01] mutate/scenarios 1: 12 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate-scenarios-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate-scenarios-1/run --max-usd 15.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_011j6YEurtRx8o9dDi8n8qBW with 1 requests (key-2)
+batch msgbatch_011j6YEurtRx8o9dDi8n8qBW done (key-2)
+submitted batch msgbatch_01VYM9xfWJbUo9MkWx7TxGZF with 9 requests (key-2)
+batch msgbatch_01VYM9xfWJbUo9MkWx7TxGZF done (key-2)
+submitted batch msgbatch_01EtuwAAFjcyoyWdSRfEcYAP with 1 requests (key-2)
+batch msgbatch_01EtuwAAFjcyoyWdSRfEcYAP done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.754446 per request, 1 queued, projected $0.75
+submitted batch msgbatch_016yUG6BHuUhwg15tzz8ksu1 with 1 requests (key-2)
+batch msgbatch_016yUG6BHuUhwg15tzz8ksu1 done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 288303, cache writes 0, cache reads 160068, output 847247
+spend: $9.07
+  g01-ours-2-rs-2-1-0: compile errors 7, escapes 0, any-in-dts 0, surface 366, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-1-1: compile errors 4, escapes 0, any-in-dts 0, surface 349, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-1-2: compile errors 1, escapes 0, any-in-dts 0, surface 371, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-0-0: compile errors 1, escapes 0, any-in-dts 0, surface 312, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-0-1: compile errors 1, escapes 0, any-in-dts 0, surface 300, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-0-2: compile errors 8, escapes 0, any-in-dts 0, surface 322, coverage 12/12, cannot: none, strikes: none
+  g01-minimal-0-2-2--0-2-2-0: compile errors 3, escapes 0, any-in-dts 0, surface 219, coverage 12/12, cannot: none, strikes: none
+  g01-minimal-0-2-2--0-2-2-1: compile errors 1, escapes 0, any-in-dts 0, surface 222, coverage 12/12, cannot: none, strikes: none
+  g01-minimal-0-2-2--0-2-2-2: compile errors 1, escapes 0, any-in-dts 0, surface 229, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-0: compile errors 2, escapes 0, any-in-dts 0, surface 353, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-1: compile errors 2, escapes 0, any-in-dts 0, surface 349, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-2: compile errors 10, escapes 0, any-in-dts 0, surface 349, coverage 12/12, cannot: none, strikes: none
+[g01] repair round 1: 12 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-repair/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-repair/run --max-usd 7.50 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01H3hBkibLmZzrUBeb8frpvX with 1 requests (key-2)
+batch msgbatch_01H3hBkibLmZzrUBeb8frpvX done (key-2)
+submitted batch msgbatch_012aQiMHjHV9ZEE8w3QyhSEJ with 10 requests (key-2)
+batch msgbatch_012aQiMHjHV9ZEE8w3QyhSEJ done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.183472 per request, 1 queued, projected $0.18
+submitted batch msgbatch_01QBqYNXgGru3VvRG62S2NAY with 1 requests (key-2)
+batch msgbatch_01QBqYNXgGru3VvRG62S2NAY done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 318703, cache writes 0, cache reads 160068, output 182275
+spend: $2.48
+  g01-ours-2-rs-2-1-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 366, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-1-1 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 349, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-1-2 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 371, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-0-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 312, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-0-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 300, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-0-2 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 322, coverage 12/12, cannot: none, strikes: none
+  g01-minimal-0-2-2--0-2-2-0 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 219, coverage 12/12, cannot: none, strikes: none
+  g01-minimal-0-2-2--0-2-2-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 222, coverage 12/12, cannot: none, strikes: none
+  g01-minimal-0-2-2--0-2-2-2 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 229, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-0 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 359, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-1 (repaired): compile errors 2, escapes 0, any-in-dts 0, surface 355, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-2 (repaired): compile errors 5, escapes 0, any-in-dts 0, surface 350, coverage 12/12, cannot: none, strikes: none
+[g01] repair round 2: 6 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-repair-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-repair-1/run --max-usd 7.50 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01K61kC9BChoGwRHAdDm1cAY with 1 requests (key-2)
+batch msgbatch_01K61kC9BChoGwRHAdDm1cAY done (key-2)
+submitted batch msgbatch_01L28Ejgqg639SEBpVjjEVWZ with 5 requests (key-2)
+batch msgbatch_01L28Ejgqg639SEBpVjjEVWZ done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.140093 per request, 0 queued, projected $0.00
+requests: 6, done: 6, failed: 0, not run: 0
+key-2: uncached input 145525, cache writes 0, cache reads 80034, output 58971
+spend: $0.89
+  g01-ours-2-rs-2-1-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 368, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-1-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 349, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-1-2 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 371, coverage 12/12, cannot: none, strikes: none
+  g01-ours-2-rs-2-0-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 312, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-1 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 355, coverage 12/12, cannot: none, strikes: none
+  g01-durable-0-2-0-1--2-0-1-2 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 350, coverage 12/12, cannot: none, strikes: none
+[g01] critique: 9 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-critique/run --max-usd 10.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01UJfckm8ngkNCczw773JKVT with 1 requests (key-2)
+batch msgbatch_01UJfckm8ngkNCczw773JKVT done (key-2)
+submitted batch msgbatch_01CZQqWrhb9e6cYsgmESSj3J with 8 requests (key-2)
+batch msgbatch_01CZQqWrhb9e6cYsgmESSj3J done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.199129 per request, 0 queued, projected $0.00
+requests: 9, done: 9, failed: 0, not run: 0
+key-2: uncached input 669129, cache writes 13135, cache reads 105080, output 44066
+spend: $1.84
+[g01] judge: 39 pairs, 78 comparisons (both positions)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-judge/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-judge/run --max-usd 30.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01GHKWSCy3xigkVVM3RY5xob with 1 requests (key-2)
+batch msgbatch_01GHKWSCy3xigkVVM3RY5xob done (key-2)
+submitted batch msgbatch_01CYHRAJsfzsKoq6NDmxQJVo with 10 requests (key-2)
+batch msgbatch_01CYHRAJsfzsKoq6NDmxQJVo done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.131528 per request, 67 queued, projected $8.81
+submitted batch msgbatch_01WWh255Qy6asBDSvthsGhop with 45 requests (key-2)
+batch msgbatch_01WWh255Qy6asBDSvthsGhop done (key-2)
+submitted batch msgbatch_012SCMcboKjoMTwETphe2koU with 22 requests (key-2)
+batch msgbatch_012SCMcboKjoMTwETphe2koU done (key-2)
+requests: 78, done: 78, failed: 0, not run: 0
+key-2: uncached input 4664494, cache writes 0, cache reads 1024530, output 64469
+spend: $10.08
+[g01] judge: 1 malformed verdicts, retrying once
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-judge/retry/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-judge/retry/run --max-usd 3.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01Kq2Ndurm4WKySZC1q5ykDg with 1 requests (key-2)
+batch msgbatch_01Kq2Ndurm4WKySZC1q5ykDg done (key-2)
+requests: 1, done: 1, failed: 0, not run: 0
+key-2: uncached input 68377, cache writes 0, cache reads 13135, output 978
+spend: $0.15
+[g01] judge: 25 pairs agreed in both positions, 14 split and discarded
+[g01] front: g01-durable-0-2-0-1--2-0-1-2, g01-minimal-0-2-2--0-2-2-2, g01-minimal-0-2-2--0-2-2-1, g01-durable-0-2-0-1--2-0-1-0
+[g02] mutate/surface: 12 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate-surface/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate-surface/run --max-usd 20.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01QhAQgi8MAWJCx5gLFEnyPZ with 1 requests (key-2)
+batch msgbatch_01QhAQgi8MAWJCx5gLFEnyPZ done (key-2)
+submitted batch msgbatch_01NQBXSwHZXZwJRFusC6tqjY with 9 requests (key-2)
+batch msgbatch_01NQBXSwHZXZwJRFusC6tqjY done (key-2)
+submitted batch msgbatch_019269cCjbmHrwNt5fUKowjR with 1 requests (key-2)
+batch msgbatch_019269cCjbmHrwNt5fUKowjR done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.546819 per request, 1 queued, projected $0.55
+submitted batch msgbatch_01GLc2zfzTSnPbGTYHsbiPy9 with 1 requests (key-2)
+batch msgbatch_01GLc2zfzTSnPbGTYHsbiPy9 done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 916103, cache writes 0, cache reads 160068, output 482391
+spend: $6.67
+[g02] mutate/scenarios 0: 12 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate-scenarios-0/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate-scenarios-0/run --max-usd 15.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_0128psTarhrwymtdhQ1qNRot with 1 requests (key-2)
+batch msgbatch_0128psTarhrwymtdhQ1qNRot done (key-2)
+submitted batch msgbatch_013UPnCqyAESX6XWqoF3o1dD with 9 requests (key-2)
+batch msgbatch_013UPnCqyAESX6XWqoF3o1dD done (key-2)
+submitted batch msgbatch_01T1fYqnPezGjpziKQpCQ9P6 with 1 requests (key-2)
+batch msgbatch_01T1fYqnPezGjpziKQpCQ9P6 done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.670060 per request, 1 queued, projected $0.67
+submitted batch msgbatch_0128E3JDUNPQBJsBUNe188NR with 1 requests (key-2)
+batch msgbatch_0128E3JDUNPQBJsBUNe188NR done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 314184, cache writes 0, cache reads 160068, output 752152
+spend: $8.17
+[g02] mutate/scenarios 1: 12 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate-scenarios-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate-scenarios-1/run --max-usd 15.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_012h6N2fAkbQ3PBqLSPwbL8N with 1 requests (key-2)
+batch msgbatch_012h6N2fAkbQ3PBqLSPwbL8N done (key-2)
+submitted batch msgbatch_01RRuY6is9EaPtcF7j5J1rUn with 9 requests (key-2)
+batch msgbatch_01RRuY6is9EaPtcF7j5J1rUn done (key-2)
+submitted batch msgbatch_01GxBVbE1PftgwhXryWYFDbg with 1 requests (key-2)
+batch msgbatch_01GxBVbE1PftgwhXryWYFDbg done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.731863 per request, 1 queued, projected $0.73
+submitted batch msgbatch_01LwWghJmzNci226xo7Lc769 with 1 requests (key-2)
+batch msgbatch_01LwWghJmzNci226xo7Lc769 done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 314757, cache writes 0, cache reads 160068, output 797136
+spend: $8.62
+  g02-durable-0-2-0-1--0-1-2-0: compile errors 1, escapes 0, any-in-dts 0, surface 336, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-2-1: compile errors 0, escapes 0, any-in-dts 0, surface 371, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-2-2: compile errors 12, escapes 0, any-in-dts 0, surface 401, coverage 12/12, cannot: none, strikes: none
+  g02-minimal-0-2-2--2-2-2-0: compile errors 0, escapes 0, any-in-dts 0, surface 235, coverage 12/12, cannot: none, strikes: none
+  g02-minimal-0-2-2--2-2-2-1: compile errors 0, escapes 0, any-in-dts 0, surface 220, coverage 12/12, cannot: none, strikes: none
+  g02-minimal-0-2-2--2-2-2-2: compile errors 0, escapes 0, any-in-dts 0, surface 239, coverage 12/12, cannot: none, strikes: none
+  g02-minimal-0-2-2--2-2-1-0: compile errors 0, escapes 0, any-in-dts 0, surface 225, coverage 12/12, cannot: none, strikes: none
+  g02-minimal-0-2-2--2-2-1-1: compile errors 2, escapes 0, any-in-dts 0, surface 224, coverage 12/12, cannot: none, strikes: none
+  g02-minimal-0-2-2--2-2-1-2: compile errors 0, escapes 0, any-in-dts 0, surface 220, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-0-0: compile errors 1, escapes 0, any-in-dts 0, surface 345, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-0-1: compile errors 2, escapes 0, any-in-dts 0, surface 351, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-0-2: compile errors 1, escapes 0, any-in-dts 0, surface 357, coverage 12/12, cannot: none, strikes: none
+[g02] repair round 1: 6 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-repair/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-repair/run --max-usd 7.50 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_016xXaNrFRKHxnVx4ktum6sm with 1 requests (key-2)
+batch msgbatch_016xXaNrFRKHxnVx4ktum6sm done (key-2)
+submitted batch msgbatch_01Qu5uYTxuEEYmngyeP7h84V with 5 requests (key-2)
+batch msgbatch_01Qu5uYTxuEEYmngyeP7h84V done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.141773 per request, 0 queued, projected $0.00
+requests: 6, done: 6, failed: 0, not run: 0
+key-2: uncached input 150956, cache writes 0, cache reads 80034, output 57943
+spend: $0.89
+  g02-durable-0-2-0-1--0-1-2-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 336, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-2-2 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 401, coverage 12/12, cannot: none, strikes: none
+  g02-minimal-0-2-2--2-2-1-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 224, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-0-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 345, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-0-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 351, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-0-2 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 357, coverage 12/12, cannot: none, strikes: none
+[g02] repair round 2: 2 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-repair-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-repair-1/run --max-usd 7.50 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01UJ8hyH45bXWbmMtaYesvdh with 1 requests (key-2)
+batch msgbatch_01UJ8hyH45bXWbmMtaYesvdh done (key-2)
+submitted batch msgbatch_01UeiU3W87CC8nRbkRudkFec with 1 requests (key-2)
+batch msgbatch_01UeiU3W87CC8nRbkRudkFec done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.177948 per request, 0 queued, projected $0.00
+requests: 2, done: 2, failed: 0, not run: 0
+key-2: uncached input 48203, cache writes 0, cache reads 26678, output 25058
+spend: $0.35
+  g02-durable-0-2-0-1--0-1-2-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 336, coverage 12/12, cannot: none, strikes: none
+  g02-durable-0-2-0-1--0-1-0-0 (repaired): compile errors 1, escapes 0, any-in-dts 0, surface 345, coverage 12/12, cannot: none, strikes: none
+[g02] critique: 10 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-critique/run --max-usd 10.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01WLcAtzqPXgQhhZ91NvegRr with 1 requests (key-2)
+batch msgbatch_01WLcAtzqPXgQhhZ91NvegRr done (key-2)
+submitted batch msgbatch_012iEDqMhPoHabKNXNCaJh2A with 9 requests (key-2)
+batch msgbatch_012iEDqMhPoHabKNXNCaJh2A done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.196124 per request, 0 queued, projected $0.00
+requests: 10, done: 10, failed: 0, not run: 0
+key-2: uncached input 739755, cache writes 13135, cache reads 118215, output 48316
+spend: $2.03
+[g02] judge: 42 pairs, 84 comparisons (both positions)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-judge/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-judge/run --max-usd 30.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01Q6poGjhrkyRUKPGyzG6i5U with 1 requests (key-2)
+batch msgbatch_01Q6poGjhrkyRUKPGyzG6i5U done (key-2)
+submitted batch msgbatch_01G7ezvapypQ5ZLWmaRo86HC with 10 requests (key-2)
+batch msgbatch_01G7ezvapypQ5ZLWmaRo86HC done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.131951 per request, 73 queued, projected $9.63
+submitted batch msgbatch_01KVTxNEFDg2wBAFsPCkcawS with 45 requests (key-2)
+batch msgbatch_01KVTxNEFDg2wBAFsPCkcawS done (key-2)
+submitted batch msgbatch_0198oSuNfZrTYizdB2bKNQ1R with 28 requests (key-2)
+batch msgbatch_0198oSuNfZrTYizdB2bKNQ1R done (key-2)
+requests: 84, done: 84, failed: 0, not run: 0
+key-2: uncached input 5042046, cache writes 0, cache reads 1103340, output 66035
+spend: $10.85
+[g02] judge: 31 pairs agreed in both positions, 11 split and discarded
+[g02] front: g02-minimal-0-2-2--2-2-1-0, g02-minimal-0-2-2--2-2-1-2, g02-durable-0-2-0-1--0-1-2-2, g01-durable-0-2-0-1--2-0-1-2
+[g03] mutate/surface: 12 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate-surface/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate-surface/run --max-usd 20.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01CmdJaFvKFTFazeyjnnAebQ with 1 requests (key-2)
+batch msgbatch_01CmdJaFvKFTFazeyjnnAebQ done (key-2)
+submitted batch msgbatch_013z4kM9Qu9Zv1DqkDzJVU83 with 9 requests (key-2)
+batch msgbatch_013z4kM9Qu9Zv1DqkDzJVU83 done (key-2)
+submitted batch msgbatch_01GxUHHuwcSVioh6MNi6eL3G with 1 requests (key-2)
+batch msgbatch_01GxUHHuwcSVioh6MNi6eL3G done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.523792 per request, 1 queued, projected $0.52
+submitted batch msgbatch_01V41XhzPqmGYtUYFfWAKQHY with 1 requests (key-2)
+batch msgbatch_01V41XhzPqmGYtUYFfWAKQHY done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 904537, cache writes 0, cache reads 160068, output 460626
+spend: $6.43
+[g03] mutate/scenarios 0: 12 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate-scenarios-0/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate-scenarios-0/run --max-usd 15.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01JMXEbXrpteo5rq4tKEakgN with 1 requests (key-2)
+batch msgbatch_01JMXEbXrpteo5rq4tKEakgN done (key-2)
+submitted batch msgbatch_01M8hXTp985cr2doA3HsBGUZ with 9 requests (key-2)
+batch msgbatch_01M8hXTp985cr2doA3HsBGUZ done (key-2)
+submitted batch msgbatch_01ChY3dBo2jdceszLq7cRAJS with 1 requests (key-2)
+batch msgbatch_01ChY3dBo2jdceszLq7cRAJS done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.667094 per request, 1 queued, projected $0.67
+submitted batch msgbatch_01MRres8kq5U9r4AXLEx24Y7 with 1 requests (key-2)
+batch msgbatch_01MRres8kq5U9r4AXLEx24Y7 done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 318146, cache writes 0, cache reads 160068, output 744439
+spend: $8.10
+[g03] mutate/scenarios 1: 12 requests (0 already complete)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate-scenarios-1/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate-scenarios-1/run --max-usd 15.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_013NvffKfvB8YZkV2w8WA6sJ with 1 requests (key-2)
+batch msgbatch_013NvffKfvB8YZkV2w8WA6sJ done (key-2)
+submitted batch msgbatch_017XLST4uYnp8Wx2MGVDhVqu with 9 requests (key-2)
+batch msgbatch_017XLST4uYnp8Wx2MGVDhVqu done (key-2)
+submitted batch msgbatch_01YCQCjSxjuaSJ2CbkfJtLYH with 1 requests (key-2)
+batch msgbatch_01YCQCjSxjuaSJ2CbkfJtLYH done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.703382 per request, 1 queued, projected $0.70
+submitted batch msgbatch_01XJDyRLsYuazCVYvZn47oyo with 1 requests (key-2)
+batch msgbatch_01XJDyRLsYuazCVYvZn47oyo done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 317415, cache writes 0, cache reads 160068, output 806652
+spend: $8.72
+  g03-minimal-0-2-2--2-1-0-0: compile errors 0, escapes 0, any-in-dts 0, surface 233, coverage 12/12, cannot: none, strikes: none
+  g03-minimal-0-2-2--2-1-0-1: compile errors 10, escapes 0, any-in-dts 0, surface 234, coverage 12/12, cannot: none, strikes: none
+  g03-minimal-0-2-2--2-1-0-2: compile errors 0, escapes 0, any-in-dts 0, surface 224, coverage 12/12, cannot: none, strikes: none
+  g03-minimal-0-2-2--2-1-2-0: compile errors 0, escapes 0, any-in-dts 0, surface 233, coverage 12/12, cannot: none, strikes: none
+  g03-minimal-0-2-2--2-1-2-1: compile errors 0, escapes 0, any-in-dts 0, surface 217, coverage 12/12, cannot: none, strikes: none
+  g03-minimal-0-2-2--2-1-2-2: compile errors 0, escapes 0, any-in-dts 0, surface 227, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--1-2-2-0: compile errors 0, escapes 0, any-in-dts 0, surface 405, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--1-2-2-1: compile errors 0, escapes 0, any-in-dts 0, surface 410, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--1-2-2-2: compile errors 0, escapes 0, any-in-dts 0, surface 406, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--0-1-2-0: compile errors 0, escapes 0, any-in-dts 0, surface 368, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--0-1-2-1: compile errors 1, escapes 0, any-in-dts 0, surface 386, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--0-1-2-2: compile errors 17, escapes 0, any-in-dts 0, surface 368, coverage 12/12, cannot: none, strikes: none
+[g03] repair round 1: 3 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-repair/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-repair/run --max-usd 7.50 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_014qnFozo8JNX3f4iBxb5k2b with 1 requests (key-2)
+batch msgbatch_014qnFozo8JNX3f4iBxb5k2b done (key-2)
+submitted batch msgbatch_016cLu7hY3aKmoCDDXSWLitq with 2 requests (key-2)
+batch msgbatch_016cLu7hY3aKmoCDDXSWLitq done (key-2)
+trial claude-opus-5-5 49b7bcb0ff4c: mean $0.092480 per request, 0 queued, projected $0.00
+requests: 3, done: 3, failed: 0, not run: 0
+key-2: uncached input 77576, cache writes 0, cache reads 40017, output 18548
+spend: $0.34
+  g03-minimal-0-2-2--2-1-0-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 234, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--0-1-2-1 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 386, coverage 12/12, cannot: none, strikes: none
+  g03-durable-0-2-0-1--0-1-2-2 (repaired): compile errors 0, escapes 0, any-in-dts 0, surface 368, coverage 12/12, cannot: none, strikes: none
+[g03] critique: 12 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-critique/run --max-usd 10.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_016Huz62C5s1MxNVgLRZ9dtV with 1 requests (key-2)
+batch msgbatch_016Huz62C5s1MxNVgLRZ9dtV done (key-2)
+submitted batch msgbatch_01XHjZGqDtkbb52UK5iqmrLu with 10 requests (key-2)
+batch msgbatch_01XHjZGqDtkbb52UK5iqmrLu done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.191701 per request, 1 queued, projected $0.19
+submitted batch msgbatch_01KU7rq1M6ivMFwazvQg3pLZ with 1 requests (key-2)
+batch msgbatch_01KU7rq1M6ivMFwazvQg3pLZ done (key-2)
+requests: 12, done: 12, failed: 0, not run: 0
+key-2: uncached input 881447, cache writes 13135, cache reads 144485, output 52593
+spend: $2.36
+[g03] judge: 48 pairs, 96 comparisons (both positions)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-judge/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-judge/run --max-usd 30.00 --max-batch-usd 12
+key-1 credit exhausted; moving to key-2
+submitted batch msgbatch_01HEoN7DAjKy7A5PYGd12Cwf with 1 requests (key-2)
+batch msgbatch_01HEoN7DAjKy7A5PYGd12Cwf done (key-2)
+submitted batch msgbatch_01PXDjz1Mh8cUW9rFHDqGFaq with 10 requests (key-2)
+batch msgbatch_01PXDjz1Mh8cUW9rFHDqGFaq done (key-2)
+trial claude-opus-5-5 5db6dd7e3e48: mean $0.127560 per request, 85 queued, projected $10.84
+submitted batch msgbatch_0154o7Z3YRSyrSsa5JMDCHSL with 47 requests (key-2)
+batch msgbatch_0154o7Z3YRSyrSsa5JMDCHSL done (key-2)
+submitted batch msgbatch_016YtJncSAcn7vJmxDS3tPRH with 38 requests (key-2)
+batch msgbatch_016YtJncSAcn7vJmxDS3tPRH done (key-2)
+requests: 96, done: 96, failed: 0, not run: 0
+key-2: uncached input 5792628, cache writes 0, cache reads 1260960, output 83592
+spend: $12.55
+[g03] judge: 25 pairs agreed in both positions, 23 split and discarded
+[g03] front: g03-durable-0-2-0-1--0-1-2-1, g03-minimal-0-2-2--2-1-2-2, g02-minimal-0-2-2--2-2-1-0, g03-durable-0-2-0-1--1-2-2-2

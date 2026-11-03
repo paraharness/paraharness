@@ -1,0 +1,22 @@
+{
+ "key": 1,
+ "batches": [
+  {
+   "id": "msgbatch_01DAnTitc9tJy6JF6TccYjLE",
+   "key": 1,
+   "custom_ids": [
+    "judge-01-0041"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 1,
+   "model": "claude-opus-5-5",
+   "prefix": "bc1602e7a5713d1d40e668f13ed119b05572cd66121f852516b0ef76995ad532",
+   "time": 1793523991.660827
+  }
+ ],
+ "trials": {}
+}

@@ -1,0 +1,38 @@
+{
+ "key": 1,
+ "batches": [
+  {
+   "id": "msgbatch_01KfQLGpHyTKDrPjKMfNX5oS",
+   "key": 1,
+   "custom_ids": [
+    "repair-g01-durable-able-0-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01GCDHh54MndumQc15XPKShe",
+   "key": 1,
+   "custom_ids": [
+    "repair-g01-durable-able-0-2",
+    "repair-g01-durable-able-0-3",
+    "repair-g01-durable-able-1-1",
+    "repair-g01-durable-able-1-2",
+    "repair-g01-durable-able-1-3",
+    "repair-g01-minimal-imal-0-0",
+    "repair-g01-minimal-imal-0-1"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 1,
+   "model": "claude-opus-5-5",
+   "prefix": "aa8f12823e40bcde0096ab25b010a61dad9f1017cb1a7a0ac274d7a85037f4aa",
+   "time": 1793522611.506083
+  }
+ ],
+ "trials": {
+  "claude-opus-5-5:aa8f12823e40bcde0096ab25b010a61dad9f1017cb1a7a0ac274d7a85037f4aa": 0.17192639999999998
+ }
+}

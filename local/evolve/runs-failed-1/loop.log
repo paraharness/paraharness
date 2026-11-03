@@ -1,0 +1,57 @@
+[g00] mutate: 8 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate/run --max-usd 3.00 --max-batch-usd 4
+submitted batch msgbatch_01SXPYri8y52g6UuxujZ9mBW with 1 requests (key-1)
+batch msgbatch_01SXPYri8y52g6UuxujZ9mBW done (key-1)
+submitted batch msgbatch_01L3dxzEvfoCQbcQnzp8MASs with 7 requests (key-1)
+batch msgbatch_01L3dxzEvfoCQbcQnzp8MASs done (key-1)
+trial claude-opus-5-5 024d711557f8: mean $0.243216 per request, 0 queued, projected $0.00
+requests: 8, done: 8, failed: 0, not run: 0
+key-1: uncached input 8840, cache writes 8993, cache reads 62951, output 192000
+spend: $1.98
+[g00] critique: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-critique/run --max-usd 1.12 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g00] judge: fewer than two compiling variants, skipped
+[g00] front: 
+[g01] mutate: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-mutate/run --max-usd 3.00 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g01] critique: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-critique/run --max-usd 1.12 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g01] judge: fewer than two compiling variants, skipped
+[g01] front: 
+[g02] mutate: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-mutate/run --max-usd 3.00 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g02] critique: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g02-critique/run --max-usd 1.12 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g02] judge: fewer than two compiling variants, skipped
+[g02] front: 
+[g03] mutate: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-mutate/run --max-usd 3.00 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g03] critique: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g03-critique/run --max-usd 1.12 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g03] judge: fewer than two compiling variants, skipped
+[g03] front: 
+[g04] mutate: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g04-mutate/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g04-mutate/run --max-usd 3.00 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g04] critique: 0 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g04-critique/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g04-critique/run --max-usd 1.12 --max-batch-usd 4
+requests: 0, done: 0, failed: 0, not run: 0
+spend: $0.00
+[g04] judge: fewer than two compiling variants, skipped
+[g04] front: 
+checkpoint after generation 4: review runs/g04-front.md before continuing

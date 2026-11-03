@@ -1,0 +1,22 @@
+{
+ "key": 2,
+ "batches": [
+  {
+   "id": "msgbatch_01BKQtKHX31NhLdTuBVaCy4u",
+   "key": 2,
+   "custom_ids": [
+    "repair-g02-durable-le-0-2-2"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 2,
+   "model": "claude-opus-5-5",
+   "prefix": "1803c8fb9e7117a2a7fc703380ec83cb16fda165510bf119a6cd1631255ba886",
+   "time": 1793534604.218761
+  }
+ ],
+ "trials": {}
+}

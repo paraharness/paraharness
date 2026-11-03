@@ -1,0 +1,18 @@
+pool: ['g00-durable-0', 'g00-durable-1', 'g00-minimal-0', 'g01-durable-able-0-0', 'g01-durable-able-0-1', 'g01-durable-able-0-2', 'g01-durable-able-0-3', 'g01-durable-able-1-0', 'g01-durable-able-1-1', 'g01-durable-able-1-2', 'g01-minimal-imal-0-0', 'g01-minimal-imal-0-1', 'g01-minimal-imal-0-2', 'g01-minimal-imal-0-3']
+[g01] judge: 42 pairs, 84 comparisons (both positions)
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-judge/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g01-judge/run --max-usd 30.00 --max-batch-usd 12
+submitted batch msgbatch_01FMuhkx5XVjTYovNLfs3Tbx with 1 requests (key-1)
+batch msgbatch_01FMuhkx5XVjTYovNLfs3Tbx done (key-1)
+submitted batch msgbatch_01L4TXEyfmtwLah87JKB1rBN with 10 requests (key-1)
+batch msgbatch_01L4TXEyfmtwLah87JKB1rBN done (key-1)
+trial claude-opus-5-5 bc1602e7a571: mean $0.118048 per request, 73 queued, projected $8.62
+submitted batch msgbatch_01EFebxfYef8sJbhQz7MMbRt with 50 requests (key-1)
+batch msgbatch_01EFebxfYef8sJbhQz7MMbRt done (key-1)
+submitted batch msgbatch_01SCW34Na5CbAcj6qajMg9Aw with 23 requests (key-1)
+batch msgbatch_01SCW34Na5CbAcj6qajMg9Aw done (key-1)
+requests: 84, done: 84, failed: 0, not run: 0
+key-1: uncached input 4725246, cache writes 0, cache reads 905520, output 67323
+spend: $10.21
+[g01] judge: 38 pairs agreed in both positions, 4 split and discarded
+[g01] front: g01-durable-able-0-2, g01-durable-able-1-2, g01-minimal-imal-0-2, g00-minimal-0
+done

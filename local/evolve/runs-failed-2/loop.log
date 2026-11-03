@@ -1,0 +1,32 @@
+[g00] mutate/surface: 8 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-surface/run --max-usd 2.40 --max-batch-usd 4
+submitted batch msgbatch_013MXtdaFvwm5B8ozHRyU3cH with 1 requests (key-1)
+batch msgbatch_013MXtdaFvwm5B8ozHRyU3cH done (key-1)
+spend cap $2.4: holding back 4 of 6 requests
+submitted batch msgbatch_015VMx5TmBcYiuLZ6QkUEo7r with 2 requests (key-1)
+batch msgbatch_015VMx5TmBcYiuLZ6QkUEo7r done (key-1)
+trial claude-opus-5-5 024d711557f8: mean $0.633368 per request, 0 queued, projected $0.00
+requests: 8, done: 3, failed: 0, not run: 5
+key-1: uncached input 2155, cache writes 0, cache reads 26979, output 190205
+spend: $1.91
+[g00] mutate/scenarios: 2 requests
+  /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios/requests.jsonl /Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios/run --max-usd 3.60 --max-batch-usd 4
+submitted batch msgbatch_01N1QaTYrAt6oF7o9JRWivTD with 1 requests (key-1)
+Traceback (most recent call last):
+  File "/Users/torniketsomaia/projects/@tsomaia.tech/ductuslang/scripts/batch-runner/run.py", line 449, in <module>
+    main()
+  File "/Users/torniketsomaia/projects/@tsomaia.tech/ductuslang/scripts/batch-runner/run.py", line 444, in main
+    runner.run(requests)
+  File "/Users/torniketsomaia/projects/@tsomaia.tech/ductuslang/scripts/batch-runner/run.py", line 398, in run
+    if not self.run_group(group):
+  File "/Users/torniketsomaia/projects/@tsomaia.tech/ductuslang/scripts/batch-runner/run.py", line 368, in run_group
+    if not self.send(warming, self.estimate, record):
+  File "/Users/torniketsomaia/projects/@tsomaia.tech/ductuslang/scripts/batch-runner/run.py", line 326, in send
+    self.collect(batch)
+  File "/Users/torniketsomaia/projects/@tsomaia.tech/ductuslang/scripts/batch-runner/run.py", line 216, in collect
+    with self.results_path.open("a") as out:
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1242, in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1110, in _opener
+    return self._accessor.open(self, flags, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/torniketsomaia/projects/harness-dsl/local/evolve/runs/g00-mutate-scenarios/run/results.jsonl'

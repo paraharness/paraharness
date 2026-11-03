@@ -1,0 +1,32 @@
+{
+ "key": 2,
+ "batches": [
+  {
+   "id": "msgbatch_01McVwzXe3qGZEuya1KwMBEW",
+   "key": 2,
+   "custom_ids": [
+    "g00-ours-2-0"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01RnBUDTcXp2abXiGguzo5fT",
+   "key": 2,
+   "custom_ids": [
+    "g00-ours-2-1"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 2,
+   "model": "claude-opus-5-5",
+   "prefix": "49b7bcb0ff4ce7c8058356b4e0e1c980e01cefb420a9f3f00498a08604f9a79a",
+   "time": 1793555343.1897972
+  }
+ ],
+ "trials": {
+  "claude-opus-5-5:49b7bcb0ff4ce7c8058356b4e0e1c980e01cefb420a9f3f00498a08604f9a79a": 0.9119999
+ }
+}

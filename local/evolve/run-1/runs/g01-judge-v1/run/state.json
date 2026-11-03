@@ -1,0 +1,114 @@
+{
+ "key": 1,
+ "batches": [
+  {
+   "id": "msgbatch_01W8zAxsy66RdmaCuXQdtH3T",
+   "key": 1,
+   "custom_ids": [
+    "judge-01-0000"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01JojWm3kJuqBLEYMzmuJwX1",
+   "key": 1,
+   "custom_ids": [
+    "judge-01-0001",
+    "judge-01-0002",
+    "judge-01-0003",
+    "judge-01-0004",
+    "judge-01-0005",
+    "judge-01-0006",
+    "judge-01-0007",
+    "judge-01-0008",
+    "judge-01-0009",
+    "judge-01-0010"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01Njr3dC9epkqGVNHygaZgqT",
+   "key": 1,
+   "custom_ids": [
+    "judge-01-0011",
+    "judge-01-0012",
+    "judge-01-0013",
+    "judge-01-0014",
+    "judge-01-0015",
+    "judge-01-0016",
+    "judge-01-0017",
+    "judge-01-0018",
+    "judge-01-0019",
+    "judge-01-0020",
+    "judge-01-0021",
+    "judge-01-0022",
+    "judge-01-0023",
+    "judge-01-0024",
+    "judge-01-0025",
+    "judge-01-0026",
+    "judge-01-0027",
+    "judge-01-0028",
+    "judge-01-0029",
+    "judge-01-0030",
+    "judge-01-0031",
+    "judge-01-0032",
+    "judge-01-0033",
+    "judge-01-0034",
+    "judge-01-0035",
+    "judge-01-0036",
+    "judge-01-0037",
+    "judge-01-0038",
+    "judge-01-0039",
+    "judge-01-0040",
+    "judge-01-0041",
+    "judge-01-0042",
+    "judge-01-0043",
+    "judge-01-0044",
+    "judge-01-0045",
+    "judge-01-0046",
+    "judge-01-0047",
+    "judge-01-0048",
+    "judge-01-0049",
+    "judge-01-0050",
+    "judge-01-0051",
+    "judge-01-0052",
+    "judge-01-0053",
+    "judge-01-0054",
+    "judge-01-0055",
+    "judge-01-0056"
+   ],
+   "done": true
+  },
+  {
+   "id": "msgbatch_01R8FZoPCibCdEVANtz3qgDk",
+   "key": 1,
+   "custom_ids": [
+    "judge-01-0057",
+    "judge-01-0058",
+    "judge-01-0059",
+    "judge-01-0060",
+    "judge-01-0061",
+    "judge-01-0062",
+    "judge-01-0063",
+    "judge-01-0064",
+    "judge-01-0065",
+    "judge-01-0066",
+    "judge-01-0067",
+    "judge-01-0068",
+    "judge-01-0069"
+   ],
+   "done": true
+  }
+ ],
+ "warmings": [
+  {
+   "key": 1,
+   "model": "claude-opus-5-5",
+   "prefix": "bc1602e7a5713d1d40e668f13ed119b05572cd66121f852516b0ef76995ad532",
+   "time": 1793523366.670358
+  }
+ ],
+ "trials": {
+  "claude-opus-5-5:bc1602e7a5713d1d40e668f13ed119b05572cd66121f852516b0ef76995ad532": 0.1297248
+ }
+}

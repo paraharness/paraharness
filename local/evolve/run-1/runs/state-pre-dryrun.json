@@ -1,0 +1,671 @@
+{
+  "gen": 0,
+  "variants": {
+    "g00-durable-0": {
+      "id": "g00-durable-0",
+      "gen": 0,
+      "parent": null,
+      "lineage": "durable",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-durable-0",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 292,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": 1.0659,
+      "critique": "## 1. Worst scenario: 8 (lifecycles that do not fit)\n\nThe variant claims to pass Scenario 8. It gets there by mapping states onto outcomes they do not mean, which is what the scenario forbids.\n\n- **Failure is hidden.** Tenancy declares `failure: Customer`. A crashed usage review leaves the unit in the healthy `Customer` state, so a failure records nothing a metric can count.\n- **Suspended counts as running work.** `Suspended = H.state('Suspended', 'active')` gives a suspended tenancy the same outcome as a running one. The monthly clock then signals it, because its route only checks `unit.outcome === 'active' && unit.attempt === undefined`. Suspended tenants get upsell reviews.\n- **\"Waiting\" is also labelled active.** `AwaitingVendor` is `'active'`, while rule 8 says waiting units hold nothing. The outcome named \"active\" now means \"waiting on the outside world\", so active-unit counts on the board are lies.\n- **No `initial` mapping.** Onboarding (`pending`) is picked up by the scheduler at once. The first attempt is a usage review, run before the tenancy has any usage.\n- **Negotiation misnames the send step.** `send: Drafting` labels the send step as drafting, because `during` has no idle state to map it to.\n- **Inconclusive is queried by a raw string.** `history.byState['Inconclusive']` is untyped, so a misspelling compiles and returns `undefined`. The division then yields `NaN`.\n\n## 2. New scenario: drift guard\n\n**Scenario 9: drift guard.** The support harness from Scenario 2 watches itself.\n\n### Must express\n\n- When a category's 7-day approval rate drops below 0.9 with at least 50 samples, the harness creates one `Audit` unit for that category. It does not create another while one is open.\n- It also records a candidate experience item: \"when drafting for {category}, recall stricter phrasing, because approvals fell to {rate}\".\n- When the rate recovers above 0.95, the open Audit is cancelled.\n- Each conversation's SLA can be extended by the reviewer, and the breach timer must move with it.\n\n### Hostile aspects\n\n- **A metric-threshold source.** `H.when` offers `transition | pattern | timer | step` and nothing else. The only workaround is a lie: an `H.clock` supplier polling metrics inside a route. Routes receive no `Metrics`, and the firing would not come from a recorded ledger event, which breaks principle 13.\n- **A timer that must re-arm.** `H.when.timer(... at: unit => ...)` is evaluated once into a `timerSet` event. Nothing declares that `attributesUpdated` re-sets the timer. Either the deadline extension is silently ignored, or the semantics are unspecified.\n- **Dedup by group.** Avoiding a second open Audit per category needs a per-group key on `create`. Only `pattern.per` has one.\n\n## 3. Three sharpest critiques\n\n**(a) `ended` is a junk drawer that inflates success rates.**\n\nThese states all map to `ended`:\n\n- `Rejected` (approver refused the load)\n- `Returned` (the editor sent the draft back)\n- `Escalated` (helpdesk gave up)\n- `ClosedByCustomer`\n- `Parked`, `Churned`, `Inconclusive`\n\n`successRate = succeeded / (succeeded + failed)` excludes every one of them. A reviewer whose drafts are always returned never lowers any success rate. Principle 18 (\"honest metrics\") is broken. The design notes justify adding the outcome, but they never justify excluding negative human verdicts from the denominator.\n\n**(b) Lanes, triggers and metrics are coupled to flow step names by raw strings.**\n\nThe design claims \"flows know no states\" fixes known weakness 1. It only moves the coupling into raw strings:\n\n- `restart: 'classify'`\n- `H.when.step(conversationLane, 'approval')`\n- `e.models['draft']`\n- `e.models['critiqueA']`\n- `during: { nextHour: Measuring }`\n\nRename a step and the policy-relevant metric `editor-acted-on` silently returns empty groups, because `models` is typed `Record<string,string>`. The same pattern appears in `of: { name: ctx.unit.lane }` in Scenario 1, where an object literal stands in for a lane entity. That is an escape hatch typed as `Named`, and `Named` is so loose that `budget.lanes(...lanes: Named[])` accepts anything.\n\n**(c) Instances carry relationships, violating principles 8 and 10.**\n\n- **Model carries a pool.** `claudeCode.model('sonnet', { id, pool })` binds a model instance to a pool. Scenario 7 therefore has to fabricate `docs-sonnet`, a second model with the same id, purely to change share caps. Agent is supposed to be the pivot of role \u00d7 model, and pool should be chosen there or at the harness level, not baked into the model.\n- **Account carries a ledger.** `subscription(..., { ledger: sharedAccounts })` puts a storage relationship on the account. Two harnesses that import the same account must agree on its ledger in code.\n- **Roles stand in for owner and humans.** `editorRole` and `reviewerRole` are human roles appearing in `writtenBy`, while the owner, who writes taste in Scenario 1, has no role at all. \"Who may write\" is therefore split between `writtenBy` roles and the `H.ops.memoryWrite` grant: two mechanisms for one permission, contradicting principle 22.",
+      "alive": true
+    },
+    "g00-durable-1": {
+      "id": "g00-durable-1",
+      "gen": 0,
+      "parent": null,
+      "lineage": "durable",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-durable-1",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 238,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": 0.7174,
+      "critique": "## 1. Worst-handled scenario: 02 support triage\n\nThe rules hold up in the other scenarios. Here three of them collide.\n\n- **The new message never reaches the redraft.** `customerReplied: H.move(New).from([...AwaitingApproval...])` cancels the attempt and requeues the unit. But `conversationFlow` reads `c.input.latestMessage`, and that comes from store fields. It never reads `c.signals`. The design says signals \"only move states\", so nothing writes the payload into `latestMessage`. The scenario's \"returns to classifying *with the new message*\" holds only if Zendesk's store happens to reload. That is a backend accident, not a kernel guarantee.\n- **The gate feeds itself.** `skip: { when: safeCategory, decision: { approved: true } }` records a synthetic decision as the `approval` step output. `replyApproval` is defined as `.step(conversationFlow, 'approval').hit(d => d.approved)` and never checks `status: 'skipped'`. So once a category is marked safe, every auto-approval counts as another human approval, and \"zero rejections over 200\" can never be broken again. A deterministic policy that reads its own output is self-modification by another route (principle 4), and the metric is dishonest (principle 18).\n- **Rejection loops forever.** `rejected: New` maps a rejected draft to a pending state. The unit is requeued, re-drafted with no reviewer notes, and rejected again, with no bound.\n- **The escalation trigger depends on unstated ordering.** `slaBreachEscalates.where(e => unansweredStates.includes(e.unit.state))` races the lane's own `slaBreach: H.move(Escalated)`. If the move is applied first, `state === 'escalated'` and no Escalation is ever created. The design does not say which runs first.\n- **Escalated is excluded from the rate.** `Escalated` is `'concluded'`, so conversation success rate silently drops every escalation.\n\n## 2. New scenario: canary deploy\n\n> **Scenario 9: canary deploy**\n>\n> Kind Release, supplied by a CI webhook. The handler deploys a canary (command), then samples the error rate for 30 minutes. If the rate exceeds 1%, it runs `rollback` (command), records an experience item, and then halts for a human. Otherwise it runs `promote`, then `verify`.\n>\n> A Release spawns one Smoke unit per region. The parent proceeds as soon as **any two of three** succeed, and cancels the third.\n>\n> A trigger whose source is a **metric threshold**: when the Release success rate over 7 days (n \u2265 20) drops below 0.9, a Freeze unit is created. Freeze blocks all new Release starts until it is resolved.\n>\n> **Hostile aspects:** a branch that runs different steps on each side; a quorum join; a metric as a trigger source.\n\nWhy this variant cannot express it:\n\n- **Branching.** The flow has only `.exit(label, when)`, which ends the attempt. A branch where each side runs further steps needs a command that pretends to be the branch, or a second lane reached through a label round-trip.\n- **Quorum join.** `spawn` \"suspends until all children are terminal\". Two-of-three is not possible.\n- **Metric trigger.** `H.on` has `transition | streak | step | signal` and nothing metric-based, although principle 13 names metric thresholds explicitly. A schedule-policy hack can block starts, but it cannot *create* the Freeze unit.\n\n## 3. Sharpest critiques\n\n1. **`concluded` is a junk drawer, and outcomes are chosen inconsistently.**\n   - *Different meanings, one outcome.* `Escalated`, `Returned` (drafts), `Rejected` (loads), `Parked`, `Churned`, `AWins` and `WeWalkedAway` all map to `'concluded'`. A returned draft is effectively a failed review. An escalation is a support failure. Both drop out of `success()`.\n   - *Same meaning, different outcomes.* NightlyLoad `Expired` is `'cancelled'` while Negotiation `Expired` is `'concluded'`.\n   - *Terminal states that are not terminal.* `Returned` is terminal and there is no `reopen` reaction. A resubmitted draft is deduped by `key(postId)` and never reviewed again.\n2. **One word for four things: `signals`.**\n   - `WorkKind.signals()` declares events.\n   - `Lane.signals()` declares reactions.\n   - `Trigger.signals()` is a consequence.\n   - Timers \"fire as a signal\", and cancellation \"is a signal like any other\".\n   - Then `c.signals` arrives as `readonly SignalRecord[]` with `payload: unknown`. Scenario 8 has to re-validate with `vendorOfferPayload.safeParse`, which throws away the kind's typed declaration. That is an escape hatch in spirit (principle 20).\n   - The reaction pivot is `H.move(...)`, a verb, which breaks principle 9.\n3. **Hidden coupling through string keys and the ledger.**\n   - Metrics and triggers address `'approval'`, `'factCheck'` and `'citations'` by step key on a flow or lane. Rename a step and policies in other files change meaning.\n   - `.sets({ category })` makes the flow write into the kind's attribute schema. The flow is supposedly \"blind to kinds\", yet the lane must type-check the kind against the flow's writes.\n   - Quota hangs off the ledger interface (`Ledger.quota: Quota`, with `harnessUtilization` on it). The kernel's \"only state\" thereby owns a second store, which an `Account` instance can redirect. Scenario 7 works only because each account carries `quota: sharedAccountState`. The ownership question is not answered; the answer depends on which object you happen to read.",
+      "alive": true
+    },
+    "g00-minimal-0": {
+      "id": "g00-minimal-0",
+      "gen": 0,
+      "parent": null,
+      "lineage": "minimal",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-minimal-0",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 175,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": -0.4142,
+      "critique": "## 1. Worst-handled scenario: 8 (lifecycles that do not fit)\n\nScenario 8 forbids lies. This variant tells several.\n\n**Negotiation maps failure onto a state that means something else.**\n- `if (!proposal.ok) return 'vendor-replied';` and `if (!sent.ok) return 'vendor-replied';`\n- A model or mail failure is recorded as \"the vendor replied.\" This is a `pending`-mapped state, so the unit loops forever with no failure counted.\n- The ledger transition says `cause: 'flow'`, `to: 'vendor-replied'`. Metrics on rounds-per-negotiation are now wrong.\n\n**Tenancy suspension races the wake condition.**\n- `ctx.until('current', { at: +30d, then: 'review-due' })` arms a wake.\n- The billing webhook then moves the unit to `suspended`. Rule 5 and Rule 7 never say whether a supplier move clears `wakeAt`.\n- A suspended tenancy may wake into `review-due` on day 30 and be reviewed while suspended.\n\n**Experiment silently swallows measurement failures.**\n- `sample.ok ? [...] : ctx.unit.data.observations` drops a failed hourly sample with no record.\n- The experiment can end `inconclusive` from missing data, and nothing distinguishes that from a genuine tie.\n\n**The same pattern recurs in scenario 2.**\n- `if (!classified.ok) return 'escalated';` reaches an `ended` state named \"escalated\", but no Escalation unit is created.\n- `escalated` therefore has two meanings: a real SLA escalation, and \"the classifier crashed.\"\n\n## 2. New scenario: canary rollout\n\n*Scenario 9: canary rollout*\n\nA `Deploy` kind is supplied by a webhook from CI and handled by deterministic commands only.\n\n**Must express**\n- Rollout runs as 5% \u2192 25% \u2192 100%. Each stage waits 20 minutes, then reads the error rate from a probe command.\n- If the error rate of `Deploy` invocations tagged `stage=canary` exceeds 0.02 over the last hour, with at least 30 samples, a trigger:\n  - creates a `Rollback` unit in another lane;\n  - pauses all pending `Deploy` units.\n- The probe command hangs in practice. Any invocation exceeding 10 minutes is killed, counted as failed, and the runner slot is freed.\n- A deploy for service X must not start while a `Rollback` for X is active, keyed by service, not by kind.\n\n**Hostile aspects**\n- **A trigger whose source is a metric threshold.** `H.on` offers only `enters | streak | deadline | clock`.\n  - The only workaround is a schedule policy that filters `start`. That policy cannot create the `Rollback` unit, because policies return orderings and not effects.\n  - Faking it with `clock` plus a flow that polls metrics means a flow reading `Metrics`, which `FlowContext` does not expose. Metrics are only reachable through `ctx.decide`, a misuse of the rule policy.\n- **A per-invocation timeout.** The design notes list \"`timeout`: removed.\" A hung probe therefore holds its runner slot indefinitely, and nothing in `RunOptions` can bound it.\n- **Exclusion keyed by a resource, not a kind.** There is no resource entity (\"strings in scopes and leases\"). The policy must compare `unit.data.service` strings across kinds by hand.\n\n## 3. Three sharpest critiques\n\n**a. \"schedule\" names three different things, breaking principle 22.**\n- `H.schedule(...)` is a supplier.\n- `H.policy.schedule(...)` is the scheduler.\n- `.scheduler(policy)` is the harness setting.\n- `H.on.clock(..., { daily })` and `TimeSpec` are a fourth time-based mechanism.\n\nA newcomer reading `H.schedule('two-am', ...)` and `H.policy.schedule('daily-budget', ...)` side by side cannot tell which one decides what runs next. Separately, `ctx.halt` and `ModelResponse { status: 'asked' }` with `Intent 'ask'` are two mechanisms for one concept. Scenario 1's builder works around this with an output field `question`.\n\n**b. Kind data carries runner identity, breaking principles 8 and 10.**\n- In scenario 4, `databases = [{ database: 'orders', host: hostA.name }]` puts the backup's host into the kind's data.\n- `hostFor = input => input.host === hostA.name ? hostA : hostB` then resolves runners by string comparison.\n- The kind `Backup` (vocabulary) now knows an instance's name. A typo silently routes to `hostB`, and startup validation (Rule 15) cannot catch it.\n- The same raw-string-for-entity pattern appears in `resources: ['section:sports']` and `'payments'`. This is exactly the seed's W4, left unfixed and listed as \"cut.\"\n\n**c. `Ledger extends QuotaBook` conflates two owners of state, bending principle 15.**\n- Rule 11 says quota lives \"by default\" in the ledger and otherwise in `sqlite.quota(path)`. So the ledger is both the kernel's only state and, sometimes, not the home of quota.\n- Accounts select their book through a vendor-subpath option: `claudeCode.subscription(..., { quota })`.\n- Nothing stops one account from being declared with a shared book in harness A and the default ledger book in harness B. That silently reintroduces scenario 7's double-counting.\n- Because `QuotaBook` is an interface the ledger implements rather than a named pivot, principle 9 is also strained. The design never says what account state is part of.",
+      "alive": true
+    },
+    "g00-minimal-1": {
+      "id": "g00-minimal-1",
+      "gen": 0,
+      "parent": null,
+      "lineage": "minimal",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-minimal-1",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 283,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": -2.3267,
+      "critique": "## 1. Worst-handled scenario: 8 (Tenancy)\n\nThe lane mapping hides attempt outcomes inside unit states:\n\n```ts\n.states({ churned: 'churned', suspended: 'suspended', reviewing: 'reviewing', current: 'current', failed: 'current', cancelled: 'current' })\n```\n\n- **An operator cancel becomes `current`.** That is a lie: the tenancy was not reviewed.\n- **A failed attempt also becomes `current`, which maps to `pending`, with no `resumeAt`.** Rule 2 makes that unit schedulable again at once. A failing `usage-review` therefore loops hot, burning model calls, and re-runs the human `upsell` halt each time.\n- **The same pattern breaks Experiment** (`failed: 'resting'`) and **Negotiation** (`failed: 'opening'`).\n- **Suspension is not a state change.** It only takes effect when an attempt runs the leading `.end(...)`.\n- **Reinstatement triggers a mid-month review.** A webhook upsert that reinstates the tenancy wakes `resumeOnUpdate`. That runs the full monthly review mid-month: command, model summary and a human halt. The flow has no way to tell \"reinstated\" from \"monthly review due\".\n- **A churn webhook during the upsell halt has no effect.** No `cancel` trigger is declared. While blocked, the unit keeps state `reviewing` (mapped to `active`) and still counts toward WIP (rule 3). The unit \"must not hold capacity\", yet it holds it for as long as the human takes to decide.\n\n## 2. New scenario: release train\n\n**Must express:**\n- Kind `Deploy` is supplied by a CI webhook.\n- **Handler:**\n  - Canary to three regions **in parallel**.\n  - A halt for a release manager. If the manager has not answered within 30 minutes, **that halt** escalates to a second approver.\n  - Promote.\n- **Metric trigger:** when the 1-hour success rate of `Deploy` falls below 0.9 with at least 20 samples, a `Freeze` unit is created.\n- **Freeze effects:**\n  - Every *other* active `Deploy` attempt is cancelled.\n  - All pending `Deploy`s are cancelled.\n\n**Why the variant cannot express it:**\n- **No parallel step.** `Flow` has no parallel combinator; even scenario 6 runs `critiqueA` then `critiqueB` in sequence.\n- **No metric source.** `H.when` offers `enters | repeats | overdue | updated | transition`. A metric threshold is not a source, and `Tick` exposes no `metrics`, so polling with `H.every` cannot do it either.\n- **Cancellation is limited to the firing unit.** `Then.cancel(to)` acts only on the unit that fired the trigger. Cancelling sibling units is impossible.\n- **Halts have no timeout.** `halt` has none, and `overdue` is keyed to kind states, not to halts. The escalation would need an extra mark plus a second halt, and would leave the first halt dangling.\n\n## 3. Sharpest critiques\n\n1. **Metrics and policies couple to flow internals through raw strings.**\n   - Examples:\n     - `select: z.object({ step: z.literal('approval'), cast: z.object({ drafter: z.string() }) })`\n     - `successRate({ seat: 'builder', model: sonnet })`\n     - `ctx.seat === 'reviewerB'`\n     - `hostOfUnit`, which matches unit tags against `c.value.name === 'db-host-1'`\n   - The flow's typed seat and step names do not flow into `H.metric` or `PickContext`. A rename passes the compiler and silently zeroes the metric that drives model choice.\n   - This is hidden coupling, and raw strings standing in for entities.\n\n2. **The pool is cut, and its relationship is scattered with no noun (principles 8, 9, 10).**\n   - Accounts \u00d7 policy \u00d7 share cap is split across three places:\n     - `H.policy.pick('claude-pool', \u2026)`\n     - the instance `claudeCode.model({ accounts: claudePool })`, so the model carries its account relationship\n     - `harness.share(max1, 0.6)`, a verb-named pivot with no product\n   - Scenario 7's cross-harness quota is a SQLite adapter option, `sqlite.ledger({ quotaPath })`. A Postgres ledger has no story for it.\n   - The `Ledger` interface keeps growing: `quota`, `shares`, `lease`. The second store the design \"declined\" is inside the ledger, unnamed.\n\n3. **`concluded` is a junk drawer, and the builtin `failed`/`cancelled` marks conflate attempt with unit.**\n   - All of these map to `concluded`:\n     - `rejected` (scenario 5)\n     - `returned` (scenario 6)\n     - `aWins`, `inconclusive`, `walkedAwayByThem`, `churned` (scenario 8)\n   - An approver's rejection and an experiment win therefore share one outcome. Both are excluded from `succeeded / (succeeded + failed)`, so the success rate cannot see rejections.\n   - Meanwhile `escalated: 'failed'` (scenario 2) counts an SLA breach the same way as a crash.\n   - `lane.states` requires the builtins `failed` and `cancelled` to land on kind states. Authors are forced to map them onto non-terminal states, which is the source of the scenario 8 hot loops above.\n   - Principle 22 is strained: \"failed\" names both an attempt state (`AttemptState`) and a unit outcome. Scenario 3 even declares a kind state literally named `failed: 'failed'`.",
+      "alive": true
+    },
+    "g00-otp-0": {
+      "id": "g00-otp-0",
+      "gen": 0,
+      "parent": null,
+      "lineage": "otp",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-otp-0",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 315,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": 0.5275,
+      "critique": "## 1. Worst scenario: 6 (content review)\n\nThe A/B metric that drives the scenario returns a silently biased answer.\n\n- `const Returned = H.state('returned', 'waiting')` makes a returned draft non-terminal. The design defines rates \"over units that reached a terminal state\", so returned drafts never become `Sample`s.\n- As a result, `actedOnBy(...)` reads `sample.decision('editor', editorDecision)` only for accepted drafts.\n- The editor's notes on returned drafts are the richest \"acted on\" signal, and they are exactly what gets excluded. The \"swap after 50 samples\" policy therefore ranks models on a survivor-biased population.\n- No sample count reveals this. Principle 18 says metrics must be honest, and this one is not.\n\nFurther problems in the same file:\n\n- **Replay hazard.** `await Promise.all([ctx.run('review-a', \u2026), ctx.run('review-b', \u2026)])` runs two concurrent steps under \"flows are replayed, deterministic between steps\". Step recording order is unspecified, and nothing in `FlowContext` declares parallelism.\n- **Swap logic.** `rankedModels(context)[0]` and `[1]` choose from a list of three candidates. That is a re-ranking, not \"swap the weaker model after 50 samples\".\n- **Hidden coupling.** `modelOf(sample, reviewer)` matches `invocation.executable === 'reviewer-a'` by raw string.\n- **Resubmission.** The CMS poll emits both `unit.create(...)` and `unit.send(post.id, 'resubmitted', \u2026)` on every tick. It relies on \"duplicate create recorded and dropped\" and a content-diff `guard`, so every poll writes ledger noise.\n\n## 2. New scenario: drift watch\n\nA pricing harness has kind Quote, handled by a drafter agent, with a human approving every quote. Two rules:\n\n1. **Metric-threshold trigger.** When the approval rate for any region falls below 0.9 over the last 50 samples, create an Audit unit in an `audits` lane. Create it once per crossing, not once per sample.\n2. **Failure capture.** Every attempt that *crashes* (driver error, not a flow exit) proposes a candidate experience item scoped to the drafter role, carrying the error text.\n\nThe variant cannot express either rule:\n\n- **Rule 1.** `H.when` offers only `entered`, `event`, `streak` and `decided`. There is no `H.when.metric`. A scheduled supplier polling `metrics.read` would need hand-rolled crossing state, which the harness forbids outside the ledger.\n- **Rule 2.** `attempt.ended { end: 'crashed' }` exists in the ledger but is not a trigger source. Under `crash: { retries, then }`, the unit may never enter a state that `entered` could observe. The only workaround is to lie by routing crashes into a fake `crashed` state.\n\n## 3. Sharpest critiques\n\n**1. `share` means two things.**\n- In scenario 1, `.accounts([{ account: subscriptionA, share: 0.5 }, \u2026])` splits quota across accounts within a pool.\n- In scenario 7, `cappedPool(name, accounts, 0.6)` passes the same `share` field as the per-harness project cap that `Meter.reserve({ shareCap })` enforces.\n- `AccountView.share` and `H.ops.writeShares` do not say which meaning they carry. This violates principle 22.\n- Scenario 7 also quietly drops scenario 1's heartbeats, epics and API fallback, even though Harness A is supposed to be \"the coding team of scenario 1\".\n\n**2. Two outcome vocabularies for one skeleton.**\n- `Outcome = 'runnable' | 'waiting' | \u2026` sits on states.\n- `Skeleton = 'pending' | 'active' | 'waiting' | \u2026` sits on units.\n- \"runnable\" vs \"pending/active\" are two words for one concept.\n- On top of that, blocked attempts keep lane WIP. `AwaitingApproval = H.state('awaiting-approval', 'runnable')` in scenario 2 means every unapproved draft occupies one of the `wip: 20` slots for hours.\n- Tenancy reviews and negotiation rounds that halt for humans hold WIP the same way, which is exactly the \"must not hold capacity\" failure scenario 8 forbids. The design moves the problem from units to attempts.\n\n**3. Relationships and flow internals leak onto kinds (principles 10 and 21).**\n- `Kind.on(event, { attempt: 'cancel' | 'keep' })` puts attempt-execution policy on pure vocabulary.\n- `.timeout(Active, H.time.monthly(1, '09:00'), 'monthlyReview')` puts a schedule on Tenancy, while heartbeat schedules live in suppliers. There are two homes for \"when work recurs\".\n- Triggers and metrics couple to flow internals through unchecked step-name strings:\n  - `H.when.decided(Conversation, 'approve', approval)`\n  - `sample.decision('approve', \u2026)`\n  - `invocation.step === 'cite'`\n  - `invocation.executable === 'drafter'`\n- Renaming a step silently empties a metric. That is a hidden coupling the startup validation list does not cover.",
+      "alive": true
+    },
+    "g00-otp-1": {
+      "id": "g00-otp-1",
+      "gen": 0,
+      "parent": null,
+      "lineage": "otp",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-otp-1",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 322,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": -1.1691,
+      "critique": "## 1. Worst scenario: 8, lifecycles that do not fit\n\nThe variant adds a sixth outcome, `concluded`, and then lies about the cases around it.\n\n- **Experiment counts attempts, not time or samples.**\n  - The line `.exitWhen(ctx => (ctx.attempt < ctx.unit.data.samplesPlanned ? 'sampled' : undefined))` uses the attempt number as the sample counter.\n  - The lane maps `crashed: Running`, so every crashed attempt also counts as a \"sample\".\n  - \"Runs for two weeks\" appears nowhere. The duration is a guess hidden in `samplesPlanned`.\n- **Crash is filed as normal business state.**\n  - `crashed: Running` (Experiment), `crashed: Customer` (Tenancy) and `crashed: Opening` (Negotiation) all record a crash as an ordinary state.\n  - A crashed monthly review therefore reads in the ledger as \"reviewed, still a customer\". This is the lie scenario 8 forbids.\n- **Suspension throws away work.**\n  - Tenancy `.receive(suspended, () => ({ cancel: true, to: Suspended }))` cancels a review that may be blocked on `decide`.\n  - `reinstated` returns `{ to: Customer }` with no `start`, so that month's review is silently lost.\n- **The vendor's acceptance never passes through the flow.**\n  - `reply.verdict === 'accepted' ? { cancel: true, to: Agreed }` sets the terminal success state from a mailbox reaction.\n  - No step confirms it, and `successRate` will credit `Agreed` to whichever attempt last touched the unit.\n\n## 2. New scenario: deploy canary with a circuit breaker\n\nKind `Deploy` is supplied by a CI webhook, one unit per commit. Each deploy carries two clocks:\n\n- a **start-by** time of 15 minutes, after which it is stale and is cancelled;\n- a **finish-by** time of 1 hour, after which it is rolled back.\n\nThe scheduler orders deploys by commit time, not by either clock.\n\nA circuit-breaker trigger watches the failure rate of `Deploy` over the last 30 units, with at least 10 samples.\n\n- When the rate rises above 0.2, the breaker pauses the Deploy lane. No new deploy may start, and running ones finish.\n- When the rate falls back below 0.1, the breaker resumes the lane.\n\nThe pause is a recorded transition of the lane, visible on the board.\n\n**Why this variant cannot express it:**\n\n- **One clock per lane.** `.deadline(unit => Date)` is the only time source, and it also feeds `Candidate.deadline`. Two clocks per unit are impossible, and declaring one changes scheduling order.\n- **No metric-threshold source.** `H.on` has only `enter`, `streak` and `deadline`. The breaker would have to be faked by polling `metrics` inside the scheduler's `order` policy.\n- **The pause is not recorded.** Faking it that way returns `[]` from the order policy. That is unrecorded, contradicting \"triggers fire only from recorded ledger events\".\n- **No lane-level consequence.** `H.do` cannot pause or resume a lane.\n\n## 3. Three sharpest critiques\n\n**1. `.deadline()` hides a coupling between scheduling and timers.**\n- One lane setting is both the scheduler's priority input and the only time-trigger source.\n- In scenario 5, `.deadline(unit => new Date(`${unit.data.night}T09:00:00`))` exists only to cancel stale approvals. It also reorders the scheduler queue.\n- That string parses in the process time zone, ignoring `.timeZone('Europe/Berlin')`.\n- `H.on.deadline(lane, ...)` takes a lane, not a named timer. The timer is not a noun, so principle 9 is half-honoured.\n\n**2. Raw strings stand in for entities the kernel already has.**\n- **Metric selectors:**\n  - `{ step: 'cite-check' }` and `{ decision: 'approve' }` are not checked against any flow's step names `N`, although `Handler` carries them.\n  - `{ decision: 'editor', where: { followedA: true } }` is an untyped bag.\n- **Agents:** `Slice.agent: string` is named `'reviewer-a'`. The design notes admit this was a workaround for circular initialisers.\n- **States and lanes:** `unit.state === 'awaiting-approval'` and `candidate.lane === featureLane.name` compare strings, while `State` and `Lane` are entities.\n- **Effect:** principle 19 says names should predict effects, but a typo here compiles and silently yields `samples: 0`.\n\n**3. `concluded` and the mandatory `crashed` key make metrics dishonest (principles 12, 18).**\n- **`concluded` covers too much.** It holds:\n  - `Parked`;\n  - `Returned`, a draft the editor rejected;\n  - `ClosedByCustomer`;\n  - `Escalated`;\n  - `WeWalkedAway`;\n  - `Churned`.\n\n  These are all excluded from `successRate`, so a reviewer pair whose drafts are always returned keeps a perfect success rate.\n- **Rejections are relabelled.** Scenario 2 maps the human's `rejected` to `Escalated` (concluded). Rejected replies vanish from failure counts and spawn Escalation units nobody asked for.\n- **Crashes are filed as domain states.** `.exits(Record<E | 'crashed', S>)` forces every crash into one, for example `crashed: EscalationOpen`. That puts a crashed human-only flow back to pending, an infinite re-page loop.\n- **Lost truth.** \"Failure\" stops meaning the kind's terminal state and starts meaning whatever the author dumped crashes into.\n\n**Also noted.** `Account.quotaIn(store)` puts a backend on an instance's quota while a second kernel store, `AccountState`, also exists. That is principle 15 broken twice: once by the account, once by the default ledger implementing it.",
+      "alive": true
+    },
+    "g00-ours-0": {
+      "id": "g00-ours-0",
+      "gen": 0,
+      "parent": null,
+      "lineage": "ours",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-ours-0",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 284,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": -2.3398,
+      "critique": "## 1. Worst-handled scenario: 6 (content review driven by taste)\n\n- **Hidden coupling in the A/B policy.** Two same-role agents get different models only because the choose policy branches on an agent name: `return ctx.agent === reviewerB.name ? [...ranked.slice(1, 2), ...ranked.slice(0, 1), ...]`. The policy secretly knows the flow's agents, and the pool decides which agent is \"B\" by array slicing. The \"swap after 50\" requirement is not modelled: nothing swaps. The policy only reorders, and the order is implicit.\n- **Raw strings stand in for entities in the metric.** `EditorDecision.resolution` carries `actedOn: z.array(z.string())`, so the editor types agent names. `critiqueActedOn` then reads `decided.resolution.actedOn.includes(agent)`. A typo in `actedOn` silently becomes a miss.\n- **The section scope abuses the lease mechanism.** `Draft.resources(post => [post.section])` makes the section a resource. Resources also feed `fileLeaseGuard`/`PluginContext.resources`, so two `sports` drafts now contend for one lease.\n- **No unscoped taste exists.** The trigger stamps every candidate with `resources: [returned.unit.data.section]`. The scenario wants broadly scoped taste plus a smaller section-scoped set; here every captured item is section-scoped.\n- **The return round-trip is a workaround.** `Returned` is `.active()` with no attempt, and a second trigger (`revised-draft-returns-to-review`) diffs `html` to re-enter. The scenario never says the CMS revision re-enters review.\n\n## 2. New scenario: canary deploy with metric rollback\n\nA **Deploy** unit is supplied by a CI webhook and promotes a build through canary to full rollout.\n\n- **Metric source.** While a Deploy is in `canary`, an owner metric computed from a probe command must trigger when the canary's error rate exceeds 2% over 10 minutes with at least 500 samples.\n- **Consequences of that trigger.**\n  - Cancel the running attempt.\n  - Run a `rollback` command on the same SSH runner.\n  - Stop the scheduler from starting any new Deploy in that environment until a human clears it.\n- **Environments as entities.** `staging` and `prod` are environments that leases and memory scope must name.\n\n**Why this variant cannot express it:**\n\n- **No metric-threshold source.** Trigger sources are only `enters/updated/overdue/resolved`; there is no source over a `Metric`.\n- **No executable consequence.** The design dropped running an executable as a consequence (\"no scenario needs it\"), so `rollback` must be smuggled into a flow branch reached by a fake transition.\n- **No lane hold or environment entity.** The hold must be a hand-coded filter in the schedule policy over a raw environment string in unit data. That filter is an escape hatch.\n\n## 3. Sharpest critiques\n\n1. **`H.pool` is one word for two entities, and models are bound to pools.**\n   - The `pool` overload returns `AccountPool` or `ModelPool`, which have different methods (`maxShare`/`fallback` exist only on one).\n   - `H.model(name, accountOrPool, modelId)` makes a model an account-bound instance. Scenario 7 therefore needs `coding-sonnet` and `docs-sonnet` for the same `claude-sonnet-4-5`.\n   - Metrics key on `model: sonnet.name`, the entity name, not the model. So track record does not transfer between pools or harnesses, and the \"cheaper model's success rate\" depends on how you named a pivot.\n\n2. **Flows remain coupled to kind states (seed weakness 1, unfixed), and stores map states through unchecked strings.**\n   - `buildAndAudit` names `Working`, `Done` and `Abandoned`, so Bug and Feature must share those exact state entities. Its `.for(Bug, Feature)` couples the flow to the kinds it serves, against principle 10's spirit.\n   - Every store takes `states: Readonly<Record<string, string>>` (`'awaiting-features': 'In Progress'`). The keys are state names as strings, so a missing or misspelt state compiles and fails at runtime. Startup validation (rule 19) does not cover it.\n\n3. **`ended` is a catch-all that erases the distinction the battery demands.**\n   - Parked, inconclusive, churn, walk-away-by-us, walk-away-by-them, expiry, `Rejected` (s5) and `Escalated` (s2) all share one outcome.\n   - The scheduler-facing and rate-facing semantics treat a deliberate decision (`walked-away-by-us`) like an external loss. Policies must fall back to `byState[Inconclusive.name]`, a string-keyed map.\n   - Scenario 2 shows the lie. A rejected draft goes to `Escalated` (`ended`) *without* creating an Escalation unit, while the SLA path creates one. So \"escalated\" means two different things.\n   - Related: the kernel's `cost-ceiling` blocker is a string, not an `H.blocker`. That gives two forms for one concept.",
+      "alive": true
+    },
+    "g00-ours-1": {
+      "id": "g00-ours-1",
+      "gen": 0,
+      "parent": null,
+      "lineage": "ours",
+      "operator": "materialize",
+      "path": "/Users/torniketsomaia/projects/harness-dsl/local/evolve/variants/g00/g00-ours-1",
+      "compile_errors": 0,
+      "escapes": 0,
+      "dts_any": 0,
+      "surface": 436,
+      "coverage": 8,
+      "cannot": [],
+      "principle_strikes": 0,
+      "strikes": [],
+      "bt": -1.6747,
+      "critique": "## (1) Worst scenario: 8, lifecycles that do not fit\n\nThe design notes force every kind with failable steps to carry a terminal failed state: \"A kind with no failed-mapped state whose flow has steps that can fail\" fails `start()`. They also state that \"An uncaught step failure moves the unit to the kind's first failed-mapped state.\" Scenario 8 therefore declares this:\n\n```ts\n.states(ReviewDue, Reviewing, Current, Suspended, Churned, Failed)   // Tenancy\n.states(SampleDue, Measuring, BetweenSamples, AWins, BWins, Inconclusive, Failed, Cancelled) // Experiment\n```\n\nThe consequences break the scenario:\n\n- **Tenancy.** If one `usage-report` exec times out, a years-long customer becomes terminal `Failed`. The scenario says a tenancy \"ends only on churn\". The kernel cannot express \"this attempt failed, but the unit lives on\". `retry` only re-invokes a step; it does not leave the unit in place.\n- **Experiment.** One failed hourly `collect-experiment-sample` ends a two-week experiment as a terminal failure. That is the lie scenario 8 forbids.\n- **Raw strings stand in for state entities.** Examples are `e.unit.state === 'Suspended'` and `e.unit.state === 'AwaitingVendor'`.\n- **The verdict duplicates the `.update` patch.** `experimentVerdict(...)` rebuilds the sample array that `.update` already wrote, because a later step cannot see the patched data.\n\n## (2) New scenario: release train\n\n> **Scenario 9: release train.** Kind Release (operator-supplied, harness store) spawns one Build unit per platform (linux, mac, windows, android) into a `builds` lane with its own handler. Each Build produces an artifact URL and checksum, stored on the Build unit. When the children settle, the Release re-enters. It publishes if at least 3 of 4 builds succeeded, listing the **artifact URLs and checksums of the succeeded builds** in the release notes. It names the missing platforms. A release whose child failed on `windows` three releases in a row opens an Incident.\n>\n> **Hostile aspects:** a parent reads its children's data, not just counts. A streak is grouped by child attribute across parents.\n\nThe variant cannot express this without an escape hatch:\n\n- **Children's data is unreachable.** `Scope.children` is a `ChildSummary` of counts (`total/pending/succeeded/failed/ended/cancelled`). No `children` view exposes child `UnitView<D2>`, and `spawn` erases `D2` from the parent's scope.\n- **The workarounds are escape hatches.** The author would need either a command that queries the store out-of-band, or a `Metrics.transitions(Build, \u2026)` scan filtered by `parentKey` string. That scan returns current data, not the child's terminal output.\n- **The streak cannot be grouped.** `streak(state, n, { by })` groups by the child's own data. It cannot express \"three consecutive *Releases*\", because `streak` counts the failed Build units of one lane, not parent occurrences.\n\n## (3) Sharpest critiques\n\n1. **`ended` makes success rate dishonest (principle 18).**\n   - The bucket holds outcomes that are failures to the owner: `Rejected` (scenario 5), `Returned` (scenario 6) and `Escalated` (scenario 2, reached after three rejected drafts). It also holds neutral ones: `AWins` and `Parked`.\n   - Success rate = succeeded / (succeeded + failed), so a drafter that gets every reply rejected and escalated never lowers its success rate.\n   - The kind has no way to declare which `ended` states count against it, so \"success is defined by the kind's terminal states\" is not true.\n\n2. **Hidden coupling through raw strings.**\n   - Policies reach into flow internals by step name: `step: 'citations'`, `i.step === 'draft'`, the `critiqueSteps` constant, and `e.from === 'AwaitingApproval'`.\n   - Rename a step and the model-choice policy silently returns `samples: 0`.\n   - Worse, `hostOfUnit` filters on `ctx.unit.key.startsWith(`${r.name}/`)`. This couples a runner descriptor's name to a work kind's key format, so the pool decides placement by string-parsing identity.\n   - Step names should be typed handles the flow exports, not strings.\n\n3. **`webhook.update({ kind: Tenancy, \u2026 })` puts the relationship on both sides (principles 10 and 11, known weakness 11 returns).**\n   - The supplier names the kind while also being passed to `H.lane('tenancies').of(Tenancy).from(...)`, so it repeats the lane's kind and can mismatch it.\n   - Meanwhile `Pool` is one noun stretched over three pivots: accounts \u00d7 quota, models \u00d7 A/B, and runners \u00d7 placement. `maxShare(this: Pool<Account>, \u2026)` and `fallback` are meaningful only for some of them.\n   - Principle 9 asks what each pivot produces. \"A choice\" is not a noun the reader can predict from: `reviewer-a-models` is an A/B arm, `backup-hosts` is a placement rule, and `subscriptions` is a quota budget.",
+      "alive": true
+    }
+  },
+  "front": [
+    "g00-durable-0",
+    "g00-durable-1",
+    "g00-minimal-0"
+  ],
+  "judgments": [
+    {
+      "gen": 0,
+      "winner": "g00-durable-0",
+      "loser": "g00-ours-1",
+      "criterion": "fidelity",
+      "framing": "laravel",
+      "confidence": 0.75,
+      "reasons": [
+        "Principle 10 (dividing line, double strike): B places relationships on a kind, as in `H.role('builder')...recall(Experience, Taste)` and `.record(Experience)`. A keeps that relationship on the journal pivot with `.readBy(builderRole, auditorRole).writtenBy(auditorRole)`, so roles stay pure vocabulary.",
+        "B couples flows to kinds and their states: `H.flow('ticket').of(Bug, Feature)` followed by `.transition(Done)`. A's flows end at named exits, and the lane maps them through `handler(flow, { exits: { clean: Done, exhausted: Failed } })`. A decides the line in the right place: kinds own states and pivots connect them.",
+        "Both bend principle 12, but B bends it further, adding two outcomes (`dormant` and `ended`) against A's one (`ended`). B's scenario 05 also uses `as const satisfies` for `backoff`, which breaks principle 20's no-`as` rule. A expresses the same policy as `H.retry({...})` with no cast."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-ours-0",
+      "criterion": "economy",
+      "framing": "durable",
+      "confidence": 0.68,
+      "reasons": [
+        "Variant A has the smaller surface (238 vs 284) and still covers 8/8. B adds entities with thin use: `H.skill` wraps every agent call (`build.by(builder)`), `H.blocker`, `H.scheduler`, `H.supervisor`, two pool overloads (AccountPool and ModelPool), and plugin/policy/observer subpaths. A expresses the same with `halt(key, {decision})`, `.schedule(policy)` and `H.access`.",
+        "A's durable execution model reuses one mechanism. Timers are signals, cancellation is a signal, and `H.move(state).from([...])` covers the SLA breach, expiry, monthly review and churn. B spreads these across `updated()`, `overdue()`, `resolved()`, `lane.deadline`, supplier `patch` and `trigger.transition`.",
+        "In scenario 4, A's commands are one line each (`H.command('dump-database', ['ops/backup'])`). B needs a `.run(async ({exec}) => ...)` body per command, plus separate `H.runner` entities and `H.blocker` declarations for each halt. That is more surface for the same deterministic work."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-0",
+      "loser": "g00-durable-1",
+      "criterion": "expressiveness",
+      "framing": "laravel",
+      "confidence": 0.7,
+      "reasons": [
+        "Scenario 1 scheduling: A states it declaratively with `.priority(heartbeatLane, bugLane, featureLane, epicLane).wip(bugLane, 2).boost(featureLane, { afterMinutes: 240 })`. B hand-writes `teamOrder`, which sorts on raw lane-name strings and uses a magic `0.5` rank for feature starvation. That is a workaround for a core requirement.",
+        "Signal payloads: A keeps them typed through `Lane.on(vendorOffered, { update: (attrs, payload) => ... , restart: 'draft' })`. B's negotiation flow digs through untyped `c.signals` with `vendorOfferPayload.safeParse(signal.payload)`, and its builder-model policy falls back with `c.unit ? c.unit.kind : Bug.name`.",
+        "Where B is better: it reads `outcomes(...).share(Inconclusive)` from a state entity, while A uses the string index `byState['Inconclusive']`. B also has a timer-driven ReviewDue state. These gains are smaller than A's typed reactions, its declarative `ceiling`/`Budget`, and its cleaner trigger-to-signal expiry, which together leave A with fewer workarounds across the battery."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-0",
+      "loser": "g00-durable-1",
+      "criterion": "fidelity",
+      "framing": "durable",
+      "confidence": 0.62,
+      "reasons": [
+        "B puts relationships on kinds: `H.work('Tenancy')...timers(() => ({ monthlyReview: H.time.monthly(...) }))` and `.signals({...})` make the work kind own its schedule and its external events. That is a dividing-line strike on principle 10, so it counts double. A keeps kinds as vocabulary (`.attributes/.states/.key`) and attaches signal reactions and timers to the lane and triggers (`Lane.on(...)`, `H.when.timer(loadLane, ...)`).",
+        "B also ties backends to kinds (`sqlite.store(NightlyLoad, 'loads.db')`, `linear.issues(Bug, ...)`). This duplicates the lane pivot and couples instances to kinds. A's `sqlite.store({ path })` stays kind-agnostic, which fits principles 5 and 8 better.",
+        "A's own strike is lighter: `epicFlow.spawn('features', featureLane, ...)` names another lane inside a flow, breaking principle 13's 'flows stay blind'. B avoids this with outlets mapped by `H.child`. Both remain durable on scenario 5: blocked halts survive restart via replay, and the 09:00 cancel is a recorded timer."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-otp-0",
+      "criterion": "ergonomics",
+      "framing": "durable",
+      "confidence": 0.64,
+      "reasons": [
+        "Scenario 5 in A reads as a declared durable graph. `.step('extract', extract, ..., { retry: transientRetry, runner: warehouseHosts })` and `.step('validate', validate, ..., { onFailure: 'halt' })` state retry and halt-on-failure as step policy. B hand-codes the same behaviour with `ctx.try` plus an `if (validation.ok === false) { await ctx.halt(...) }` branch.",
+        "Restart survival in A is structural: recorded step outputs replay over a builder graph. B's `async (ctx) => {...}` flows depend on an authoring rule, 'Flows must therefore be deterministic between steps', which its own design admits the kernel 'cannot prevent'. A durable engineer would rather hand a newcomer A.",
+        "The 09:00 cutoff in A is `.signals({ approvalCutoff: H.move(Expired).from([AwaitingApproval]) })`, which is predictable from the names. B needs `.timeout(Running, H.time.daily('09:00'), ...)` with `guard: (unit) => unit.blocked` on a single `Running` state that hides the approval wait. A's weak spot is the `approvalCutoffAt` epoch arithmetic, which is noise but explicit."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-0",
+      "loser": "g00-minimal-0",
+      "criterion": "connectedness",
+      "framing": "laravel",
+      "confidence": 0.72,
+      "reasons": [
+        "A keeps flows blind to kinds. `ticketFlow` ends at exits `clean` and `exhausted`, and each lane maps them through `handler(ticketFlow, { exits: { clean: Done, exhausted: Failed }, during: {...} })`. B's `H.flow('build-and-audit').for(Bug, Feature)` returns the kind's state strings such as `'abandoned'` and `'done'`, which couples the flow to the kinds' lifecycles.",
+        "A draws every connection through a named pivot. A model names its pool (`claudeCode.model('sonnet', { id, pool: claudePool })`), and a journal names its readers and writers (`readBy(builderRole, auditorRole).writtenBy(auditorRole)`). In B, `.pools(claudePool)` is registered on the harness with no explicit link to `claudeCode.model('claude-opus')`, so the agent-to-pool match is hidden and only checked at startup.",
+        "B's scheduler reaches lanes through string comparison (`unit.lane === heartbeatLane.name`), and its triggers address kinds rather than lanes (`H.on.enters(Heartbeat, 'down')`). A's `H.scheduler().priority(heartbeatLane, bugLane, ...)` and `H.when.transition(heartbeatLane, { to: Unhealthy })` connect entity to entity."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-0",
+      "loser": "g00-durable-1",
+      "criterion": "expressiveness",
+      "framing": "durable",
+      "confidence": 0.62,
+      "reasons": [
+        "In scenario 2, A's customer-reply path is `{ update: event.conversationId, patch: { message: event.message }, state: 'classifying' }`. One supplier update cancels the live attempt (rule 7), carries the new message into unit data and re-queues the unit. B's `customerReplied: H.move(New)` cancels and requeues, but `conversationFlow` keeps reading `c.input.latestMessage` and never reads `c.signals`, so the new message is silently dropped.",
+        "A's SLA trigger `H.on.deadline(...)` produces `[act.create(escalationLane, ...), act.move('escalated')]` in one recorded firing. B splits this into a lane reaction `slaBreach: H.move(Escalated)` and a trigger `.where(event => unansweredStates.includes(event.unit.state))`, and their ordering is unspecified: if the move lands first, the filter fails and no Escalation is created. That is a durable-execution race.",
+        "B is richer in some places: typed signals and timers, declared `H.retry`, and suspension that releases slots. Its gate still falls back to raw string indexing, `String(c.unit.attributes['category'])`, while A's `ctx.decide(safeCategory, { category })` and tagged halt-entry rates express 'approval rate by category and model, with samples' with fewer workarounds."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-minimal-0",
+      "criterion": "fidelity",
+      "framing": "newcomer",
+      "confidence": 0.62,
+      "reasons": [
+        "A's `epicFlow` calls `ctx.spawn(featureLane, ...)`, so the flow names another kind's lane. That breaks principle 13 (\"flows stay blind to other kinds\"). B routes children through `spawn({ outlet: 'feature' })`, which the lane maps with `H.child(featureLane, ...)`, so its flows stay blind.",
+        "A cuts states as entities (\"A lifecycle is a plain map\"), against principle 12's \"named states (entities, shareable)\". A also couples flows to state names (`ctx.move('building')`). B keeps `H.state(name, outcome)` and has flows emit labels that the lane maps, so kinds stay reusable (principle 10's spirit).",
+        "On scenario 7 both share quota the same way: an account carries a quota backend (`sqlite.quota` / `quota: sharedAccountState`), with per-harness pool shares. B's one strike, dropping skills from memory scope, is lighter than A's two."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-ours-0",
+      "loser": "g00-durable-0",
+      "criterion": "economy",
+      "framing": "laravel",
+      "confidence": 0.7,
+      "reasons": [
+        "A covers the battery with a smaller surface (284 vs 292). It reuses one `Policy` entity for schedule, choose and recall, and one `Source` with `.where`/`.streak` for every trigger and metric. B adds separate nouns for the same ground: `H.signal`, `H.budget`, `H.clock`, `H.recall`, `H.guard`, `Workspace` and `AccountLedger`, plus the helpers `H.retry` and `H.nextTime`, and the built-ins `H.cancel` and `H.operator`.",
+        "B's scheduler spreads one decision over five methods (`priority`, `wip`, `boost`, `rank`, `admit`) next to lane-level `ceiling`, and its handler map adds `exits`/`during`/`failure`. A expresses the same coverage with a single `.policy(H.policy.schedule(...))` and `lane.wip`.",
+        "In scenario 6, B duplicates near-identical `chooseSlotA`/`chooseSlotB` policies and spells out twelve flat `H.ops.*` grants. A's `reviewerModelOrder` is a single function shared by both reviewers through one `reviewer-models` pool, and its grouped `H.ops.memory.{read,write,curate}` keeps the operation set compact."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-ours-1",
+      "criterion": "connectedness",
+      "framing": "durable",
+      "confidence": 0.72,
+      "reasons": [
+        "B's flows are blind to kinds and states: `nightlyLoadFlow` emits labels (`.mark('awaitingApproval')`, `.exit('rejected', ...)`, `.ends(['loaded','loadedWithWarnings'])`), and the lane pivot maps them in `handler(flow, { states: {...} })`. A's `H.flow('nightly-load').of(NightlyLoad)` calls `.transition(AwaitingApproval)` and `.transition(Rejected)` directly, so the flow is coupled to the kind's state entities (known weakness 1 remains).",
+        "B unifies external events and time under one connected mechanism. `.timers(t => ({ approvalCutoff: t.attribute('approvalCutoffAt') }))` fires as a signal, the lane handles it with `.signals({ approvalCutoff: H.move(Expired).from([AwaitingApproval]) })`, and attempts suspend and resume with replayed step outputs. A spreads the same concerns across `deadline` triggers, `updated()` triggers, `.move` consequences and a separate cursor-resume rule.",
+        "B removes 'run' as an execution word and defines unit, attempt (with suspension), step and invocation once each. A keeps 'Run' as the process lifetime alongside attempts, an extra execution word that matters only to recovery bookkeeping (`run-lost`)."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-0",
+      "loser": "g00-otp-0",
+      "criterion": "ergonomics",
+      "framing": "laravel",
+      "confidence": 0.64,
+      "reasons": [
+        "B's builder chains read consistently and predictably: `H.scheduler('time-to-breach').priority(escalationLane, conversationLane).rank(conversationLane, unit => unit.attributes.slaDueAtMs)` and `.ceiling({ maxUsd: 0.4, onExceed: 'halt' })` state intent directly. A buries priority in a hand-sorted comparator (`timeToBreach` returning 0 for Escalation) and puts the cost ceiling inside `.limit({ wip, queue, maxUsdPerUnit })`.",
+        "A's scenario 2 needs explaining. `AwaitingApproval = H.state('awaiting-approval', 'runnable')` holds a halt rather than a runnable step. `Sent` is 'waiting'. `classify` is handled twice (`.handle(New, ...)` and `.handle(Classifying, ...)`). `const draft = ctx.input.draft ?? ''` is a null workaround because the flow reads state through nullable kind data. B's `during: { classify: Classifying, draft: Drafting, approval: AwaitingApproval }` makes each state's meaning visible at the lane.",
+        "B's `halt('approval', { ..., skip: ctx => isSafeCategory(...) })` and `.on(customerReplied, { update, restart: 'classify' })` read in one pass. A spreads the same behaviour across kind rules (`attempt: 'cancel'`), a separate `ctx.decide` policy, and an `H.when.decided` source keyed by a step-name string. B has its own costs (raw `'draft'` key in `e.models['draft']`, the `e.output === undefined` checks), but overall a newcomer predicts B's lines more readily."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-1",
+      "loser": "g00-ours-0",
+      "criterion": "fidelity",
+      "framing": "laravel",
+      "confidence": 0.66,
+      "reasons": [
+        "A's `builderRole ... .use(gitWorktreeIsolation(...), fileLeaseGuard(), stopCommandHook('npm run check'))` puts backend-bearing plugins on a role, which is a kind. That is a strike on principles 8 and 10, both dividing-line principles, so it counts double. B puts the same concerns on the agent pivot (`.guards(H.guard.lease(sourceTree), H.guard.stopCheck(projectChecks))`) and makes the worktree a runner, so the kind stays pure vocabulary.",
+        "A's flows name kind states directly (`.transition(Working)`, `.transition(... ? Done : Abandoned)`), so the shared flow is coupled to the state entities of every kind it serves. B's flows end in `.exits('clean', 'exhausted')`, and each lane maps them through `.exits({ clean: Done, exhausted: Stuck, crashed: Stuck })`. That keeps kinds and flows reusable, in line with principle 10's intent.",
+        "Both variants declare a break of principle 12 with a sixth outcome and define success rate afterwards. B also declares a partial break of principle 15 (`AccountState` via `.quotaIn()`) and justifies it with scenario 7. That honest accounting costs B less than A's undeclared dividing-line strike."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-ours-1",
+      "loser": "g00-minimal-1",
+      "criterion": "connectedness",
+      "framing": "owner",
+      "confidence": 0.68,
+      "reasons": [
+        "A keeps every pivot from principle 8 as a named noun with a clear product: `H.pool` (a choice), `H.agent` (role \u00d7 model, with `perform(skill)`), `lane`, `journal` and `supervisor`. Its design table states what each one connects and produces. B removes pool and agent, folding them into `H.policy.pick` and a lane-level `cast`/seat, but never declares principle 8 as broken.",
+        "B adds overlapping connective words: seat, cast and mark sit beside states, and `lane.states({...})` maps marks onto states. These mappings hide meaning, e.g. Tenancy maps `failed: 'current', cancelled: 'current'` and Experiment maps `failed: 'resting'`. A's `H.state(...).dormant()/ended()` entities are shared directly by flows, lanes and triggers (`.move(Suspended)`).",
+        "A's triggers hang off typed lane sources (`tenancies.updated()`, `negotiations.deadline(...)`, `heartbeats.enters(Unhealthy)`) with one consequence each, so no relationship lives on a kind. B also routes projections through a catch-all `H.when.transition()` trigger and makes the supervisor a vendor adapter (`claudeCode.supervisor`), which blurs the supervisor-as-pivot connection."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-0",
+      "loser": "g00-minimal-1",
+      "criterion": "expressiveness",
+      "framing": "owner",
+      "confidence": 0.7,
+      "reasons": [
+        "Scenario 8: A adds an honest `idle` outcome (`current: 'idle'`, `suspended: 'idle'`, `'awaiting-vendor': 'idle'`), so a resting unit holds no capacity. B maps `current`, `suspended` and `awaitingVendor` to `'pending'` and relies on `resumeAt` and `resumeOnUpdate` to keep them out of scheduling. That labels non-schedulable units as pending, and B even maps the tenancy's `cancelled: 'current'`.",
+        "B's mark-to-state indirection forces a workaround in every lane: a `lane.states({ extracting: 'extracting', validating: 'validating', ... })` map that restates each name one-to-one. Tenancy suspension and churn are read from a `data.status` field through a leading conditional `.end(...)`, not expressed as state. A's supplier simply sets `state: 'suspended' | 'churned'` on update.",
+        "Scenario 5: A's `H.on.clock(NightlyLoad, { daily: '09:00' }, ['awaiting-approval'])` plus `act.move('expired')` states the cutoff directly. A's retry is a named `H.policy.retry` attached to the step's `ctx.run`. B's equivalent builds a raw date string with a hard-coded `+01:00` offset, and its validation and approval branches need `end(ctx => ... ? undefined : 'rejected')` continuation tricks."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-0",
+      "loser": "g00-durable-0",
+      "criterion": "ergonomics",
+      "framing": "adversary",
+      "confidence": 0.68,
+      "reasons": [
+        "Scenario 8, Tenancy: B reads as a state table a newcomer can predict. `.timeout(Active, H.time.monthly(1, '09:00'), 'monthlyReview')` and `.on('monthlyReview', { from: [Active], to: Evaluating })` say exactly what happens. A needs a clock supplier that signals by predicate (`unit.outcome === 'active' && unit.attempt === undefined`), states `Customer`/`Suspended` marked `'active'` even though they hold no attempt, and `failure: Customer`. A reader cannot predict any of these.",
+        "Experiment: B's hourly cycle is two named states (`Measuring` runnable, `Collecting` waiting) driven by `hourElapsed` and `periodEnded` timeouts, so the behaviour is visible from names. A hides it in a `loop` with a magic `max: 400` and a `wait('nextHour', { ms: 3600000 })`. It also maps the `send` step to `Drafting` in `during`, which misleads.",
+        "Each variant's worst case is in its scenario 8 file. B's explicit `waiting` outcome and typed `unit.send(key, 'vendorReplied', ...)` make the negotiation's long-lived identity legible. A's routing (`to.signal(vendorOffered, event.negotiationId, ...)` plus `.on(..., { update, restart: 'draft' })`) needs more explanation, so A's worst case is worse."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-0",
+      "loser": "g00-ours-0",
+      "criterion": "ergonomics",
+      "framing": "newcomer",
+      "confidence": 0.66,
+      "reasons": [
+        "B's `reviewFlow` reads top to bottom as plain async code: `ctx.run(reviewerA, \u2026)`, `ctx.halt({ name: 'editor', decision: z.object({ accept, notes, actedOnA, actedOnB }) })`, then `return 'returned'`. A newcomer can predict each line. A's chain of `.parallel('critiques', { a: branch => branch.step(\u2026) })`, `.halt(EditorDecision, \u2026)` and `.patch(decided => \u2026)` needs the Flow value-threading model explained before it can be read.",
+        "A's model policy `reviewerModelOrder` is hard to follow. It re-sorts candidates and then reorders them for reviewer B with `ranked.slice(1, 2), ...ranked.slice(0, 1)`, and it reads `critiqueActedOn`, which is declared later. That works only through the hoisting pattern that design.md has to explain. B's `reviewerModel('A', opus, sonnet, haiku)` with incumbent, rival and challenger names the swap directly.",
+        "B has its own costs. Its `actedOnRate` filter is stringly-typed (`{ entry: 'halt' as const, halt: 'editor', status: 'resolved', tags: \u2026 }`), and its single-account `H.pool` is boilerplate. Even so, B needs fewer concepts to read scenario 6 correctly once: no separate blocker, metric or second trigger entity."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-1",
+      "loser": "g00-ours-0",
+      "criterion": "economy",
+      "framing": "owner",
+      "confidence": 0.74,
+      "reasons": [
+        "A cuts agent, pool, scheduler, supervisor, observer and state entities. Pools become `H.policy.pick`, the scheduler is `H.policy.order`, projections are `then.run(markdown.board(...))` and the supervisor is a client with grants. B keeps `H.agent`, `H.pool` (split into AccountPool and ModelPool), `H.scheduler`, `H.supervisor`, `H.state`, `H.skill` and `H.blocker` for the same coverage.",
+        "In 07-multi-tenant, B has to redefine models per harness (`codingSonnet`, `docsSonnet`, `docsSubscriptions`) because share caps live on the pool. A reuses one `sonnet`/`opus` and `claudePool`, sets per-harness `.share(max1, 0.6)`, and shares quota with `quotaPath: sharedQuotaPath`. That needs no extra entity.",
+        "B layers role \u00d7 agent \u00d7 skill (`build.by(builder)`) where A's `H.ask(role, ...)` plus `lane.cast({...})` covers the same ground with fewer nouns. B's `H.scheduler(...).concurrency(...).policy(...)` is a wrapper around one policy, close to a one-use entity."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-otp-0",
+      "criterion": "fidelity",
+      "framing": "adversary",
+      "confidence": 0.6,
+      "reasons": [
+        "A declares two principle breaks: 12 (seven outcomes, adding `waiting` and `ended`) and 15 (account windows live in a Meter outside the ledger). B breaks only 12, adding `concluded`, and keeps quota inside the ledger as `Ledger.quota`, which an account may relocate.",
+        "On principle 10, B keeps reactions off the kind: `draftLane.signals(...)` uses `H.move(...).from(...)` on the lane. A puts attempt-level behaviour on the kind itself, for example `Draft.on('cancel', { ..., attempt: 'cancel' })` and `.on('resubmitted', { guard, update })`, which pushes execution relationships into vocabulary.",
+        "Adversary worst cases: B silently drops `skills` from the memory scope (a principle 14 strike) and maps a returned Draft to `concluded`. A's scenario 6 is sound, but its strikes recur in every scenario, while B's are local. B's worst case is the milder one."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-0",
+      "loser": "g00-minimal-0",
+      "criterion": "connectedness",
+      "framing": "newcomer",
+      "confidence": 0.72,
+      "reasons": [
+        "In scenario 6, B's owner-defined metric is a named entity: `H.metric('editor-acted-on-\u2026', { kind: Draft, sample: s => s.decision('editor', editorDecision) \u2026 })`. A couples its flow and policy through raw tag strings instead: the flow calls `ctx.tag({ modelA: \u2026, modelB: \u2026 })`, and the policy reads `tags: { [`model${seat}`]: model.name }` and `decision: { [`actedOn${seat}`]: true }`. That is hidden coupling a newcomer must reverse-engineer.",
+        "B makes the connections explicit. `.pool(newsroomPool)` sits on the agent, `factCheck.record(factJournal, \u2026)` sits on the command, and section scope is an entity (`Section.key(draft.section)`). A leaves pool-to-agent matching implicit and uses a raw string `resources: [`section:${section}`]` in both the flow and the trigger.",
+        "B's flow returns exits, and the lane maps them to the kind's states (`exits: { accepted: Accepted, returned: Returned }`), so the flow does not secretly know Draft's states. A's `reviewFlow` moves to `'reviewing'` and `'with-editor'` directly, which binds the flow to one kind's lifecycle."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-0",
+      "loser": "g00-minimal-1",
+      "criterion": "expressiveness",
+      "framing": "adversary",
+      "confidence": 0.64,
+      "reasons": [
+        "Scenario 5 reads directly in A. `ctx.halt('validation-failed', { report: validation.stdout, ... })` carries the validation report as a typed field. B has to fold the report into a `question` string. B also needs two conditional `.end(ctx => ... ? 'rejected' : undefined)` calls just to branch after its halts.",
+        "Approval expiry: A declares it on the kind as `.timeout(Running, H.time.daily('09:00'), 'approvalWindowClosed')` guarded by `unit.blocked`, a persisted timer message that survives restart. B's `H.when.overdue(... new Date(`${unit.data.night}T09:00:00+01:00`))` hard-codes a UTC offset in a raw string, which breaks at the DST change.",
+        "Worst case elsewhere: B's scenario 8 Tenancy maps `cancelled: 'current'` and `failed: 'current'`, and models suspension as a data `status` field re-read via `resumeOnUpdate`. A uses typed `suspended`/`reinstated` messages with `waiting` states. A's own lies (expired and walked-away-by-them mapped to `failed`) are milder than B's workaround."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-1",
+      "loser": "g00-ours-1",
+      "criterion": "ergonomics",
+      "framing": "laravel",
+      "confidence": 0.66,
+      "reasons": [
+        "In scenario 1, A's lines read the way they behave: `H.lane(Bug).supply(...).store(linearBugs).handler(deliver, { maxRounds: 3 }).exits({ clean: Done, exhausted: Stuck, crashed: Stuck })`. B needs a separate `H.skill` per call plus `builder.perform(build)`, a `carry: { schema, from }` with `s.steps.rounds?.deficits`, and the type probe `'acceptance' in s.unit.data` inside a shared flow. A newcomer has to have each of those explained.",
+        "A keeps builder chains consistent and keeps everything an author needs in `H.*` plus obvious adapters. B scatters core supply and policy pieces across subpaths (`schedule`/`manual` from `harness-dsl/supply`, `drainSoonestExpiring` from `harness-dsl/policies`). It also mixes a positional constructor, `H.pool('subscriptions', [max1, max2, max3])`, with fluent setters elsewhere, and writes the heartbeat cadence as a cron string ('*/5 * * * *') where A has `{ every: { minutes: 5 } }`.",
+        "B's scheduler policy in scenario 1 is hard to predict: it filters starving features out, then splices them back after heartbeats. A's `rank` function reads directly. A's `.receive(H.down, exit => exit.remaining === 0 ? ...)` also states Epic completion more plainly than B's `.when(s => s.children === null, ...)` re-entry plus `{ wait, resume }` park states."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-0",
+      "loser": "g00-ours-1",
+      "criterion": "expressiveness",
+      "framing": "newcomer",
+      "confidence": 0.62,
+      "reasons": [
+        "In scenario 04, A's flows state every outcome explicitly (`return result.ok ? 'done' : 'failed'`). B's `backupFlow` and `heartbeatFlow` end with `.transition(BackedUp)` / `.transition(Up)` and leave failure to the unstated rule that an uncaught error moves the unit to the 'first failed-mapped state'. A newcomer cannot see from B's code how `BackupFailed` or `Down`, both trigger sources, are ever reached.",
+        "A picks the SSH host per unit directly with `.on(hostFor)`. B needs a runner pool plus a pick policy matching on a key prefix (`ctx.unit.key.startsWith(`${r.name}/`)`), which works only because the key format happens to embed the host name.",
+        "B has real strengths: preflight is a typed command (`.preflight(diskSpace)`), the human is paged explicitly with a `page-on-call` step, and Slack is a `trigger(...).run(notify)`. A uses a raw shell string for preflight and an observer that filters ledger entries. Even so, A's imperative `incidentFlow` (halt, runbook, halt) reads as the scenario is written, with fewer hidden mechanisms."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-0",
+      "loser": "g00-minimal-1",
+      "criterion": "fidelity",
+      "framing": "owner",
+      "confidence": 0.66,
+      "reasons": [
+        "Principle 8 is a dividing-line principle and names `pool = accounts \u00d7 policy` and `agent = role \u00d7 model` as pivots. A keeps both (`H.pool`, `H.agent(...).model(...).pool(...)`). B cuts both, replacing them with `H.policy.pick` and lane `.cast({...})`, and binds the pool onto the model instance (`claudeCode.model({ accounts: claudePool })`). That is a double strike.",
+        "A's departures (seven outcomes, which break 12; account state behind a `Meter`, which breaks 15) are named in its design notes with reasons, and success rate is redefined. B also breaks 12, but its scenario 8 maps outcomes onto states they do not mean: Tenancy `cancelled: 'current'` and `failed: 'current'`, and Experiment `failed: 'resting'`. Rest is encoded as `pending`, which the skeleton defines as awaiting an attempt.",
+        "A keeps relationships off kinds and roles: roles declare intents, and lanes map flow exits to states via `.handle(Todo, buildAndAudit, { exits: {...} })`. B's journals carry who reads and writes them (`.recalledBy(builder, auditor)`), and its suppliers are built per kind and double as stores (`linear.issues(Bug, {...})`). That blurs the instance/pivot line more than A's `feed(...).to(kind, map)`."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-minimal-1",
+      "criterion": "ergonomics",
+      "framing": "owner",
+      "confidence": 0.64,
+      "reasons": [
+        "Principle 19 (predict a line from its name) favours B. A's `.end((ctx) => (ctx.out.review.satisfied ? undefined : 'escalated'))` followed by `.step('send', \u2026)` is an 'end' that does not end, and only design rule 9 explains it. B's `.exit('rejected', c => !c.out.approval.approved)` and `.ends(['sent'], \u2026)` say what they do.",
+        "In scenario 2, B's lane reactions read as plain sentences: `customerReplied: H.move(New).from([Classifying, Drafting, AwaitingApproval, Sent])` and `slaBreach: H.move(Escalated).from([...])`. A gets the same effect with `then.cancel('classifying')`, whose requeue behaviour is spelled out only in rule 4.",
+        "B's names carry their units and intent (`.budget({ maxUsdPerUnit: 0.4, onExceed: 'halt' })`, `.projections([markdown.board(...)])`, `skip: { when: safeCategory, ... }`). A hides projections inside `H.when.transition()` triggers and hides the gate inside an inline `unless` closure. B's reuse of the word `signals` on kind, lane and trigger is a smaller cost than these."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-0",
+      "loser": "g00-minimal-1",
+      "criterion": "economy",
+      "framing": "newcomer",
+      "confidence": 0.72,
+      "reasons": [
+        "B covers the same 8/8 with a much smaller surface: 175 against A's 283. B's flow is one `.does(async ctx => state)` body. A instead needs a typed step-chain vocabulary (`step`, `mark`, `end`, `loop`, `halt`, `spawn`) plus a per-lane `.states({...})` mark map, which in scenario 4 is repeated for every lane (e.g. `.states({ probing: 'probing', up: 'up', failed: 'down', cancelled: 'skipped' })`).",
+        "In scenario 4, B's observers (`slack.notify`, `markdown.board`) are one small adapter interface. A routes projections and Slack through triggers (`H.when.transition()`, `then.run(...)`), which needs extra machinery. A also needs a `H.policy.pick('host-of-unit', ...)` entity just to map a unit to its host, where B uses a plain `.on(hostFor)` function.",
+        "B does carry some entities A cut (agent, pool, observer) and some odd extras such as `H.lifecycle` and `ctx.tag`. Still, A's `marks`/`seats`/`cast`/`args` type-tracking and its six-entry `H.when` source set add more learnable surface for a newcomer on scenario 4, where most of it goes unused."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-0",
+      "loser": "g00-ours-1",
+      "criterion": "economy",
+      "framing": "adversary",
+      "confidence": 0.66,
+      "reasons": [
+        "B covers the battery with a smaller measured surface (315 vs 436). In scenario 8 the lifecycle reactions sit in the kind's own table, e.g. `.on('suspended', { from: [Active, Evaluating], to: Suspended, attempt: 'cancel' })` and `.timeout(Active, H.time.monthly(1, '09:00'), 'monthlyReview')`. A needs eight separate trigger descriptors for the same job (`tenancySuspended`, `tenancyReinstated`, `tenancyChurned`, `vendorReplied`, `vendorWalkedAway`, `negotiationExpires`, `hourlySample`, `monthlyReview`), each wired through `lane.updated()`/`lane.deadline()` and `.move()`.",
+        "A's worst case is scenario 8 itself. Supplier updates must be re-interpreted by `.where(e => e.unit.data.billingStatus === 'suspended' && e.previous.billingStatus !== 'suspended')`, which duplicates the state in the data schema (`billingStatus`, `vendorStatus`). B instead uses one `unit.send(key, event, payload)` path into typed messages, with no extra fields.",
+        "B's worst economy cost is several small one-purpose entry points: `H.choose` beside `H.pool` and `H.policy`, plus `restart`. These are lighter than A's duplicated trigger plumbing and its `Unparsed` and `webhook.update`, which needs `kind` repeated alongside the lane."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-0",
+      "loser": "g00-ours-1",
+      "criterion": "economy",
+      "framing": "newcomer",
+      "confidence": 0.75,
+      "reasons": [
+        "Surface 175 vs 436 with the same coverage of 8/8. B cuts `state`, `scheduler` and `supervisor` as entities (a lifecycle is a plain map; `.scheduler(policy)`; `claudeCode.supervisor({grants})`). A keeps `H.state`, `H.scheduler(name).concurrency().policy()` and `H.supervisor().endpoint().grant()` as separate builders.",
+        "In scenario 6, B's `async ctx =>` flow expresses the parallel reviewers, the fact-check recording via `ctx.remember` and the editor halt without A's extra flow combinators. A needs `parallel`, `halt`, `update`, `transition` and `step`, plus the `critiqueSteps` constant and nested `s.steps.a[critiqueSteps.a]` lookups to reach the same result.",
+        "B's owner-defined metric is one `metrics.rate({among, count})` over tagged halt entries. A hand-rolls `actedOnStats` by iterating `metrics.transitions` and matching invocation steps. A newcomer handed B writes less and learns fewer methods."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-ours-1",
+      "criterion": "fidelity",
+      "framing": "newcomer",
+      "confidence": 0.77,
+      "reasons": [
+        "B puts relationships on a kind, breaking principle 10, which counts double: `H.role('auditor')...recall(Experience).record(Experience)` makes the role vocabulary know its memory. A keeps this on the pivot: `H.agent(...).recalls([...]).records(journal)`.",
+        "B's `epicFlow` names another kind's lane inside the flow (`.spawn('features', features, ...)`), so the flow is not blind to other kinds (principle 13). A's flow names only an `outlet: 'feature'`, and the lane maps it with `H.child(featureLane, ...)`.",
+        "Both break principle 12 and declare it, but B adds two outcomes (`dormant`, `ended`). B also keeps instances in `H.*` (`H.account`, `H.model(name, pool, 'claude-sonnet-4-5')`). A's instances all come from subpaths, and its ops scenario reads cleanly as zero-model commands with `http.server` and `slack.notify` behind adapters."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-ours-1",
+      "loser": "g00-otp-1",
+      "criterion": "ergonomics",
+      "framing": "newcomer",
+      "confidence": 0.62,
+      "reasons": [
+        "Scenario 3, A reads straight through: `.batch('extract', searcher.perform(searchExtract), \u2026, { deferred: true })`, `.when(..., w => w.transition(Parked))` and `.transition(Delivered)` name their states directly. B needs `.exits('delivered','parked','uncited')` plus the lane's `.exits({...crashed: Unsourced})` and `.phases({plan: Searching, extract: Searching, ...})` mapping keyed by step-name strings, which is extra indirection a newcomer must decode.",
+        "A's weekly reopen is one trigger: `topics.deadline(...).move(Open)` over the same unit. B writes an async `H.supply.schedule(...).create(async tick => tick.units.list(...))` that hand-rolls edition keys and a 'latest by slug' map to create fresh units. That is more code and harder to predict from its names.",
+        "A's batch is declared on the step with typed skill input and output (`H.skill('search-extract').input(...).output(...)`), and the owner metric is just `outcomes({ step: 'citations', model })`. B puts batch on the model (`anthropic.model(..., { batch: true })`), feeds agents raw prompt strings, and needs a separate `H.metric` keyed by the step string `'cite-check'`. B is terser overall, but these spots are where a newcomer would trip."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-minimal-1",
+      "loser": "g00-ours-0",
+      "criterion": "expressiveness",
+      "framing": "durable",
+      "confidence": 0.6,
+      "reasons": [
+        "B separates attempt failure from unit failure through lane mark mapping. In scenario 8, `failed: 'resting'` lets an Experiment survive a failed hourly measurement. A's `.onError(MeasurementFailed)` ends a two-week experiment on one failed command, which is a brittle execution model under real failures.",
+        "B expresses units at rest inside the flow with `end('resting', { resumeAt })` and `end('awaitingVendor', { resumeOnUpdate: true })`, and spawn yields and re-enters with `ctx.out.features`. A needs a schedule supplier that patches units back to `MeasurementDue` and a `when(ctx.children.length > 0)` re-entry branch at the top of the epic flow, both workarounds for re-entry.",
+        "B's `.mark()` plus `lane.states({...})` lets `ticketFlow` serve Bug and Feature without naming kind states (seed weakness 1), and type-checks every mark and seat. A's weaker spot is offset only partly by B's workaround of projections as `then.run` on `H.when.transition()`."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-ours-0",
+      "criterion": "economy",
+      "framing": "durable",
+      "confidence": 0.7,
+      "reasons": [
+        "Surface is 238 for A against 284 for B at equal coverage. B adds entities with few uses. `H.skill` sits between role and agent on every model step (`critique.by(reviewerA)`). B splits pools into AccountPool and ModelPool, and adds `H.blocker`, `H.scheduler` and `H.supervisor`. A covers the same ground with `step(key, agent, ...)`, `halt(key, {decision})`, `harness.schedule(policy)` and `access`.",
+        "A has one reaction mechanism for external and time events. Timers are signals, and `lane.signals({x: H.move(S).from([...])})` covers cancellation, the SLA, expiry and the monthly review. B needs several sources (`updated()`, `overdue()`, `resolved()`, `deadline()`) plus `trigger.transition`, and its supply envelopes carry both `patch` and `state`. That is more surface for the same durable semantics.",
+        "B registers things twice. It requires `.journals(...)` and `.metrics(...)` on the harness on top of the references already held by the entities that use them. It also has paired `when`/`haltIf`/`parallel`/`map`/`patch` combinators. A's flow surface is smaller, with only `exit`, `sets` and `mark`."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-0",
+      "loser": "g00-ours-1",
+      "criterion": "expressiveness",
+      "framing": "newcomer",
+      "confidence": 0.72,
+      "reasons": [
+        "Scenario 6's owner-defined metric is a first-class entity in A: `H.metric('editor-acted-on').from(H.when.step(draftLane, 'editor')).samples(...)` builds the rate directly from the recorded halt decision. B has no such entity. Its `actedOnStats` hand-loops over `metrics.transitions(Draft, ...)` and invocations, and only works because the editor's action is copied into domain data (`.update(s => ({ editorNotes, actedOn }))`), which is a workaround.",
+        "A's capture loop reads the typed halt output: `H.when.step(draftLane, 'editor', { if: ... action === 'return' })` \u2192 `.record(tasteJournal, ..., status: 'candidate')`. B's returned\u2192taste trigger can only see the notes because they were first stashed into unit attributes stored in the CMS.",
+        "B does express some parts more literally: parallel reviewers and the fact-check command recording through `ctx.record`. Across the battery, though, B needs more ad-hoc plumbing: string step-name maps `critiqueSteps`, `as const`, and eight `.updated().where(...)` triggers in scenario 8 against A's `.on(signal, { restart | enter })`. A newcomer gets fewer workarounds from A."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-ours-0",
+      "loser": "g00-minimal-0",
+      "criterion": "connectedness",
+      "framing": "durable",
+      "confidence": 0.7,
+      "reasons": [
+        "A's entities connect through named, typed pivots end to end. `H.model('sonnet', subscriptions, ...)` ties a model to its pool or account. B's `claudeCode.model('claude-sonnet')` has no account; the link to `.pools(claudePool)` exists only implicitly at harness level.",
+        "In scenario 3, A's owner metric is an entity: `H.metric('citation-pass').over(topics.enters(Delivered, CitationsBroken))`, referenced by the choose policy and registered with `.metrics(citationPass)`. B joins the pieces with raw string tags instead: `ctx.tag({ synthModel: ... })` read back as `tags: { synthModel: model.name }`. That is hidden coupling between the flow and the policy.",
+        "Under the durable framing, A's attempt and step vocabulary connects to explicit checkpoints, spawn ending the attempt (`waitIn`/`resumeIn`), and trigger sources on lanes. B removes 'step', relies on replay of opaque async bodies, and addresses states as `(kind, stateName)` strings. There are fewer named connections to validate."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-1",
+      "loser": "g00-otp-1",
+      "criterion": "economy",
+      "framing": "laravel",
+      "confidence": 0.68,
+      "reasons": [
+        "Surface is 238 for B against 322 for A at equal 8/8 coverage. B folds cancellation, timers, the SLA source and external replies into one mechanism (`.signals({...: H.move(X).from([...])})`). A needs `H.message`, `H.deliver`, `.receive` reactions with `{cancel,to,update,start}`, `H.on.deadline`, lane `.deadline()` and `H.do.react` to cover the same ground.",
+        "B's kind `.timers(t => ({ expiry: t.attribute('expiresAt') }))` and `monthlyReview: H.time.monthly(...)` replace A's separate machinery. In A, scheduling messages to existing units needs a schedule supplier whose `.send(sampleDue, ...)` lists active units, plus a `.receive(sampleDue, ... { start: true })` per lane, all to re-run an attempt.",
+        "A carries extra one-use or optional entities: `H.do.run`/`H.do.send`, `.phases()`, `.restart()`, `.timeZone()`, `H.on.streak`, `H.down`. Its `.exits({...crashed})` doubles as a second label map next to `.phases`, whereas B's single `handler(flow, { states })` maps both progress `mark`s and end labels."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-0",
+      "loser": "g00-ours-1",
+      "criterion": "connectedness",
+      "framing": "newcomer",
+      "confidence": 0.66,
+      "reasons": [
+        "Connectedness in scenario 6: A's flow returns exits (`exits: ['accepted', 'returned']`), and the lane maps them to states (`.handle(InReview, reviewDraft, { exits: { accepted: Accepted, returned: Returned } })`). B's `reviewFlow` names `Reviewing`, `AwaitingEditor`, `Accepted` and `Returned` directly, so the flow stays coupled to the kind's states.",
+        "A's owner-defined metric reads the editor's recorded decision: `sample.decision('editor', editorDecision)` grouped by `modelOf(sample, reviewer)`. B adds a hidden coupling instead: `actedOnStats` matches step names (`critiqueSteps`) against invocations and stores `actedOn` in unit data via `.update`, so the metric depends on flow internals and a domain field.",
+        "B has more connective words for a newcomer to learn. Recall and record live on the role (`.recall(Taste, FactLesson)`) while the journal holds store and recall policy. Models come through a 'pool' that also holds runners, and agents are built with `perform(skill)`. A's `agent.recall(tasteJournal, factJournal)`, `H.choose`, and `H.when.entered(Draft, Returned).note(tasteJournal, ...)` give each relationship one named pivot."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-1",
+      "loser": "g00-minimal-1",
+      "criterion": "expressiveness",
+      "framing": "laravel",
+      "confidence": 0.6,
+      "reasons": [
+        "B models external events as entities rather than ad-hoc data. `H.message('vendor-replied', ...)` with `H.deliver` and lane `.receive(...)` turns 'cancel', 'update' and 'start' into explicit reactions. A instead folds the vendor's reply into unit data (`patch: { vendorStance }`) and re-derives the outcome in a leading `.end(...)`, which is a workaround.",
+        "B uses fewer raw strings standing in for entities. States are `H.state('parked', 'concluded')` objects and resources are `H.resource('source-tree')`. A uses string-keyed lifecycle maps, path-string `resources: [ctx.unit.data.area]`, and `seat: 'builder'` strings inside its metric queries.",
+        "On scenario 3 both are honest: `parked` maps to `concluded` in both. A is stronger in places: `batchFactor: 0.5` prices the batch discount explicitly, and its budget loop is more precise than B's `return []`. B is stronger elsewhere: reopening a topic as a new edition keyed `${slug}@${edition}` avoids pretending a terminal unit becomes non-terminal, and recording findings with `.record(priorFindings, ...)` inside the flow is a cleaner learning capture."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-otp-0",
+      "loser": "g00-ours-0",
+      "criterion": "ergonomics",
+      "framing": "durable",
+      "confidence": 0.7,
+      "reasons": [
+        "In A's scenario 5, the flow reads as plain durable steps. `ctx.run('extract', extract, unit, { retry: backoff })`, `ctx.try('validate', ...)` and `ctx.halt('approve-load', ...)` are each named, checkpointed points, and `return ctx.exit('rejected')` visibly ends the attempt. A newcomer can see exactly where replay resumes after a restart.",
+        "In B's chain, control flow is implicit. `.when(decision => !decision.resolution.approved, rejected => rejected.transition(Rejected))` only stops the flow because of a hidden rule ('a transition to a terminal state ends the current attempt'). `.haltIf(...)` followed by a `.when` with `reviewed.resolution !== null && !reviewed.resolution.proceed` is hard to predict under failure and re-entry.",
+        "A declares approval expiry on the kind's timer table: `.timeout(Running, H.time.daily('09:00'), 'approvalWindowClosed').on(..., { attempt: 'cancel', guard: (unit) => unit.blocked })`. It names the attempt effect, and the design says timers are persisted. B's `.deadline(unit => { nineAm.setHours(9,...) })` plus `overdue().where(state === AwaitingApproval)` relies on hand-written `.transition(AwaitingApproval)` markers and a local-time date computation."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-ours-1",
+      "loser": "g00-ours-0",
+      "criterion": "fidelity",
+      "framing": "durable",
+      "confidence": 0.64,
+      "reasons": [
+        "A attaches execution backends to a kind: `H.role('builder')...use(gitWorktreeIsolation(...), fileLeaseGuard(), stopCommandHook(...))`. That puts a relationship on vocabulary and strikes dividing-line principles 8 and 10. B moves plugins to the pivot (`H.agent('builder')...use(worktree(...), fileLeaseGuard(), stopCheck(projectChecks))`), so roles stay pure vocabulary.",
+        "A files states that hold no capacity under the `active` outcome (`Suspended = H.state('suspended').active()`, `AwaitingVendor ... .active()`) and needs Rule 3 to explain the gap. B's `dormant()` outcome makes capacity and queue semantics explicit for long-lived units. Both break principle 12, and both state the new success rate.",
+        "For durable execution, B records `deadline.passed` and `unit.updated` ledger events and fails a dead run's running attempts as `run-lost` unless the step's `retry` allows re-invocation. Its retry is declared per step. A resumes running attempts from a checkpoint without saying whether side effects are idempotent."
+      ]
+    },
+    {
+      "gen": 0,
+      "winner": "g00-durable-0",
+      "loser": "g00-otp-1",
+      "criterion": "connectedness",
+      "framing": "laravel",
+      "confidence": 0.72,
+      "reasons": [
+        "A connects metrics and triggers to steps through typed lane references. `H.when.step(conversationLane, 'approval')` is constrained to `keyof St`. B's `H.metric('reply-approval', { count: { decision: 'approve', ... } })` names the step with an untyped raw string, and its `Slice.agent` is a string name too.",
+        "B mixes its anchors: `H.on.enter(Conversation, Escalated)` targets a kind, `H.on.deadline(conversationLane)` a lane, and `spawn('features', Feature, ...)` a kind resolved through a hidden one-lane-per-kind registry. Its schedulers key on `candidate.lane === featureLane.name` strings. A consistently goes through the Lane pivot, e.g. `spawn('features', featureLane, ...)` and `.priority(heartbeatLane, bugLane, ...)`.",
+        "A's Journal pivot names who reads and writes (`.readBy(drafterRole).writtenBy(reviewerRole)`), so the reviewer role in scenario 2 is a connected entity. B has no reviewer role at all: taste capture is an anonymous flow `.record(tone, ...)`, and journals are only discovered transitively through agents."
+      ]
+    }
+  ]
+}

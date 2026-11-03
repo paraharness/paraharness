@@ -1,0 +1,5 @@
+scenarios/11-halts-with-a-clock.ts(190,83): error TS2345: Argument of type '(input: HaltPolicyInput<{ title: string; counterparty: string; category: string; draft: string; }>) => { action: string; notes: string; } | undefined' is not assignable to parameter of type '(input: HaltPolicyInput<{ title: string; counterparty: string; category: string; draft: string; }>) => NoInfer<{ action: "approve" | "return"; notes: string; }> | undefined'.
+  Type '{ action: string; notes: string; } | undefined' is not assignable to type 'NoInfer<{ action: "approve" | "return"; notes: string; }> | undefined'.
+    Type '{ action: string; notes: string; }' is not assignable to type '{ action: "approve" | "return"; notes: string; }'.
+      Types of property 'action' are incompatible.
+        Type 'string' is not assignable to type '"approve" | "return"'.

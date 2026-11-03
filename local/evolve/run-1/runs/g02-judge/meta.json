@@ -1,0 +1,632 @@
+{
+  "judge-02-0000-0": {
+    "pair": 0,
+    "a": "g02-durable-le-0-2-0",
+    "b": "g01-minimal-imal-0-2",
+    "criterion": "fidelity",
+    "framing": "laravel"
+  },
+  "judge-02-0000-1": {
+    "pair": 0,
+    "a": "g01-minimal-imal-0-2",
+    "b": "g02-durable-le-0-2-0",
+    "criterion": "fidelity",
+    "framing": "laravel"
+  },
+  "judge-02-0001-0": {
+    "pair": 1,
+    "a": "g02-durable-le-0-2-0",
+    "b": "g01-durable-able-0-2",
+    "criterion": "ergonomics",
+    "framing": "laravel"
+  },
+  "judge-02-0001-1": {
+    "pair": 1,
+    "a": "g01-durable-able-0-2",
+    "b": "g02-durable-le-0-2-0",
+    "criterion": "ergonomics",
+    "framing": "laravel"
+  },
+  "judge-02-0002-0": {
+    "pair": 2,
+    "a": "g02-durable-le-0-2-0",
+    "b": "g00-minimal-0",
+    "criterion": "expressiveness",
+    "framing": "laravel"
+  },
+  "judge-02-0002-1": {
+    "pair": 2,
+    "a": "g00-minimal-0",
+    "b": "g02-durable-le-0-2-0",
+    "criterion": "expressiveness",
+    "framing": "laravel"
+  },
+  "judge-02-0003-0": {
+    "pair": 3,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g02-minimal-al-0-2-0",
+    "criterion": "economy",
+    "framing": "laravel"
+  },
+  "judge-02-0003-1": {
+    "pair": 3,
+    "a": "g02-minimal-al-0-2-0",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "economy",
+    "framing": "laravel"
+  },
+  "judge-02-0004-0": {
+    "pair": 4,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g02-durable-le-1-2-0",
+    "criterion": "connectedness",
+    "framing": "laravel"
+  },
+  "judge-02-0004-1": {
+    "pair": 4,
+    "a": "g02-durable-le-1-2-0",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "connectedness",
+    "framing": "laravel"
+  },
+  "judge-02-0005-0": {
+    "pair": 5,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g02-minimal-imal-0-1",
+    "criterion": "fidelity",
+    "framing": "durable"
+  },
+  "judge-02-0005-1": {
+    "pair": 5,
+    "a": "g02-minimal-imal-0-1",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "fidelity",
+    "framing": "durable"
+  },
+  "judge-02-0006-0": {
+    "pair": 6,
+    "a": "g02-durable-le-1-2-0",
+    "b": "g02-minimal-imal-0-2",
+    "criterion": "ergonomics",
+    "framing": "durable"
+  },
+  "judge-02-0006-1": {
+    "pair": 6,
+    "a": "g02-minimal-imal-0-2",
+    "b": "g02-durable-le-1-2-0",
+    "criterion": "ergonomics",
+    "framing": "durable"
+  },
+  "judge-02-0007-0": {
+    "pair": 7,
+    "a": "g02-durable-le-1-2-0",
+    "b": "g01-durable-able-0-2",
+    "criterion": "expressiveness",
+    "framing": "durable"
+  },
+  "judge-02-0007-1": {
+    "pair": 7,
+    "a": "g01-durable-able-0-2",
+    "b": "g02-durable-le-1-2-0",
+    "criterion": "expressiveness",
+    "framing": "durable"
+  },
+  "judge-02-0008-0": {
+    "pair": 8,
+    "a": "g02-durable-le-1-2-0",
+    "b": "g01-durable-able-1-2",
+    "criterion": "economy",
+    "framing": "durable"
+  },
+  "judge-02-0008-1": {
+    "pair": 8,
+    "a": "g01-durable-able-1-2",
+    "b": "g02-durable-le-1-2-0",
+    "criterion": "economy",
+    "framing": "durable"
+  },
+  "judge-02-0009-0": {
+    "pair": 9,
+    "a": "g02-durable-le-1-2-1",
+    "b": "g02-minimal-imal-0-0",
+    "criterion": "connectedness",
+    "framing": "durable"
+  },
+  "judge-02-0009-1": {
+    "pair": 9,
+    "a": "g02-minimal-imal-0-0",
+    "b": "g02-durable-le-1-2-1",
+    "criterion": "connectedness",
+    "framing": "durable"
+  },
+  "judge-02-0010-0": {
+    "pair": 10,
+    "a": "g02-durable-le-1-2-1",
+    "b": "g02-minimal-imal-0-2",
+    "criterion": "fidelity",
+    "framing": "newcomer"
+  },
+  "judge-02-0010-1": {
+    "pair": 10,
+    "a": "g02-minimal-imal-0-2",
+    "b": "g02-durable-le-1-2-1",
+    "criterion": "fidelity",
+    "framing": "newcomer"
+  },
+  "judge-02-0011-0": {
+    "pair": 11,
+    "a": "g02-durable-le-1-2-1",
+    "b": "g02-minimal-al-0-2-0",
+    "criterion": "ergonomics",
+    "framing": "newcomer"
+  },
+  "judge-02-0011-1": {
+    "pair": 11,
+    "a": "g02-minimal-al-0-2-0",
+    "b": "g02-durable-le-1-2-1",
+    "criterion": "ergonomics",
+    "framing": "newcomer"
+  },
+  "judge-02-0012-0": {
+    "pair": 12,
+    "a": "g02-durable-le-1-2-2",
+    "b": "g01-durable-able-1-2",
+    "criterion": "expressiveness",
+    "framing": "newcomer"
+  },
+  "judge-02-0012-1": {
+    "pair": 12,
+    "a": "g01-durable-able-1-2",
+    "b": "g02-durable-le-1-2-2",
+    "criterion": "expressiveness",
+    "framing": "newcomer"
+  },
+  "judge-02-0013-0": {
+    "pair": 13,
+    "a": "g02-durable-le-1-2-2",
+    "b": "g01-minimal-imal-0-2",
+    "criterion": "economy",
+    "framing": "newcomer"
+  },
+  "judge-02-0013-1": {
+    "pair": 13,
+    "a": "g01-minimal-imal-0-2",
+    "b": "g02-durable-le-1-2-2",
+    "criterion": "economy",
+    "framing": "newcomer"
+  },
+  "judge-02-0014-0": {
+    "pair": 14,
+    "a": "g02-durable-le-1-2-2",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "connectedness",
+    "framing": "newcomer"
+  },
+  "judge-02-0014-1": {
+    "pair": 14,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g02-durable-le-1-2-2",
+    "criterion": "connectedness",
+    "framing": "newcomer"
+  },
+  "judge-02-0015-0": {
+    "pair": 15,
+    "a": "g02-minimal-al-0-2-0",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "fidelity",
+    "framing": "owner"
+  },
+  "judge-02-0015-1": {
+    "pair": 15,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g02-minimal-al-0-2-0",
+    "criterion": "fidelity",
+    "framing": "owner"
+  },
+  "judge-02-0016-0": {
+    "pair": 16,
+    "a": "g02-minimal-al-0-2-0",
+    "b": "g02-minimal-al-0-2-2",
+    "criterion": "ergonomics",
+    "framing": "owner"
+  },
+  "judge-02-0016-1": {
+    "pair": 16,
+    "a": "g02-minimal-al-0-2-2",
+    "b": "g02-minimal-al-0-2-0",
+    "criterion": "ergonomics",
+    "framing": "owner"
+  },
+  "judge-02-0017-0": {
+    "pair": 17,
+    "a": "g02-minimal-al-0-2-0",
+    "b": "g01-durable-able-1-2",
+    "criterion": "expressiveness",
+    "framing": "owner"
+  },
+  "judge-02-0017-1": {
+    "pair": 17,
+    "a": "g01-durable-able-1-2",
+    "b": "g02-minimal-al-0-2-0",
+    "criterion": "expressiveness",
+    "framing": "owner"
+  },
+  "judge-02-0018-0": {
+    "pair": 18,
+    "a": "g02-minimal-al-0-2-1",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "economy",
+    "framing": "owner"
+  },
+  "judge-02-0018-1": {
+    "pair": 18,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g02-minimal-al-0-2-1",
+    "criterion": "economy",
+    "framing": "owner"
+  },
+  "judge-02-0019-0": {
+    "pair": 19,
+    "a": "g02-minimal-al-0-2-1",
+    "b": "g01-durable-able-0-2",
+    "criterion": "connectedness",
+    "framing": "owner"
+  },
+  "judge-02-0019-1": {
+    "pair": 19,
+    "a": "g01-durable-able-0-2",
+    "b": "g02-minimal-al-0-2-1",
+    "criterion": "connectedness",
+    "framing": "owner"
+  },
+  "judge-02-0020-0": {
+    "pair": 20,
+    "a": "g02-minimal-al-0-2-1",
+    "b": "g00-minimal-0",
+    "criterion": "fidelity",
+    "framing": "adversary"
+  },
+  "judge-02-0020-1": {
+    "pair": 20,
+    "a": "g00-minimal-0",
+    "b": "g02-minimal-al-0-2-1",
+    "criterion": "fidelity",
+    "framing": "adversary"
+  },
+  "judge-02-0021-0": {
+    "pair": 21,
+    "a": "g02-minimal-al-0-2-2",
+    "b": "g02-minimal-al-0-2-1",
+    "criterion": "ergonomics",
+    "framing": "adversary"
+  },
+  "judge-02-0021-1": {
+    "pair": 21,
+    "a": "g02-minimal-al-0-2-1",
+    "b": "g02-minimal-al-0-2-2",
+    "criterion": "ergonomics",
+    "framing": "adversary"
+  },
+  "judge-02-0022-0": {
+    "pair": 22,
+    "a": "g02-minimal-al-0-2-2",
+    "b": "g02-minimal-al-0-2-0",
+    "criterion": "expressiveness",
+    "framing": "adversary"
+  },
+  "judge-02-0022-1": {
+    "pair": 22,
+    "a": "g02-minimal-al-0-2-0",
+    "b": "g02-minimal-al-0-2-2",
+    "criterion": "expressiveness",
+    "framing": "adversary"
+  },
+  "judge-02-0023-0": {
+    "pair": 23,
+    "a": "g02-minimal-al-0-2-2",
+    "b": "g02-minimal-imal-0-2",
+    "criterion": "economy",
+    "framing": "adversary"
+  },
+  "judge-02-0023-1": {
+    "pair": 23,
+    "a": "g02-minimal-imal-0-2",
+    "b": "g02-minimal-al-0-2-2",
+    "criterion": "economy",
+    "framing": "adversary"
+  },
+  "judge-02-0024-0": {
+    "pair": 24,
+    "a": "g02-minimal-imal-0-0",
+    "b": "g02-durable-le-1-2-0",
+    "criterion": "connectedness",
+    "framing": "adversary"
+  },
+  "judge-02-0024-1": {
+    "pair": 24,
+    "a": "g02-durable-le-1-2-0",
+    "b": "g02-minimal-imal-0-0",
+    "criterion": "connectedness",
+    "framing": "adversary"
+  },
+  "judge-02-0025-0": {
+    "pair": 25,
+    "a": "g02-minimal-imal-0-0",
+    "b": "g02-minimal-imal-0-2",
+    "criterion": "fidelity",
+    "framing": "laravel"
+  },
+  "judge-02-0025-1": {
+    "pair": 25,
+    "a": "g02-minimal-imal-0-2",
+    "b": "g02-minimal-imal-0-0",
+    "criterion": "fidelity",
+    "framing": "laravel"
+  },
+  "judge-02-0026-0": {
+    "pair": 26,
+    "a": "g02-minimal-imal-0-0",
+    "b": "g02-minimal-al-0-2-1",
+    "criterion": "ergonomics",
+    "framing": "laravel"
+  },
+  "judge-02-0026-1": {
+    "pair": 26,
+    "a": "g02-minimal-al-0-2-1",
+    "b": "g02-minimal-imal-0-0",
+    "criterion": "ergonomics",
+    "framing": "laravel"
+  },
+  "judge-02-0027-0": {
+    "pair": 27,
+    "a": "g02-minimal-imal-0-1",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "expressiveness",
+    "framing": "laravel"
+  },
+  "judge-02-0027-1": {
+    "pair": 27,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g02-minimal-imal-0-1",
+    "criterion": "expressiveness",
+    "framing": "laravel"
+  },
+  "judge-02-0028-0": {
+    "pair": 28,
+    "a": "g02-minimal-imal-0-1",
+    "b": "g02-minimal-al-0-2-2",
+    "criterion": "economy",
+    "framing": "laravel"
+  },
+  "judge-02-0028-1": {
+    "pair": 28,
+    "a": "g02-minimal-al-0-2-2",
+    "b": "g02-minimal-imal-0-1",
+    "criterion": "economy",
+    "framing": "laravel"
+  },
+  "judge-02-0029-0": {
+    "pair": 29,
+    "a": "g02-minimal-imal-0-1",
+    "b": "g00-minimal-0",
+    "criterion": "connectedness",
+    "framing": "laravel"
+  },
+  "judge-02-0029-1": {
+    "pair": 29,
+    "a": "g00-minimal-0",
+    "b": "g02-minimal-imal-0-1",
+    "criterion": "connectedness",
+    "framing": "laravel"
+  },
+  "judge-02-0030-0": {
+    "pair": 30,
+    "a": "g02-minimal-imal-0-2",
+    "b": "g02-minimal-imal-0-0",
+    "criterion": "fidelity",
+    "framing": "durable"
+  },
+  "judge-02-0030-1": {
+    "pair": 30,
+    "a": "g02-minimal-imal-0-0",
+    "b": "g02-minimal-imal-0-2",
+    "criterion": "fidelity",
+    "framing": "durable"
+  },
+  "judge-02-0031-0": {
+    "pair": 31,
+    "a": "g02-minimal-imal-0-2",
+    "b": "g01-minimal-imal-0-2",
+    "criterion": "ergonomics",
+    "framing": "durable"
+  },
+  "judge-02-0031-1": {
+    "pair": 31,
+    "a": "g01-minimal-imal-0-2",
+    "b": "g02-minimal-imal-0-2",
+    "criterion": "ergonomics",
+    "framing": "durable"
+  },
+  "judge-02-0032-0": {
+    "pair": 32,
+    "a": "g02-minimal-imal-0-2",
+    "b": "g00-minimal-0",
+    "criterion": "expressiveness",
+    "framing": "durable"
+  },
+  "judge-02-0032-1": {
+    "pair": 32,
+    "a": "g00-minimal-0",
+    "b": "g02-minimal-imal-0-2",
+    "criterion": "expressiveness",
+    "framing": "durable"
+  },
+  "judge-02-0033-0": {
+    "pair": 33,
+    "a": "g01-durable-able-0-2",
+    "b": "g02-durable-le-1-2-0",
+    "criterion": "economy",
+    "framing": "durable"
+  },
+  "judge-02-0033-1": {
+    "pair": 33,
+    "a": "g02-durable-le-1-2-0",
+    "b": "g01-durable-able-0-2",
+    "criterion": "economy",
+    "framing": "durable"
+  },
+  "judge-02-0034-0": {
+    "pair": 34,
+    "a": "g01-durable-able-0-2",
+    "b": "g01-minimal-imal-0-2",
+    "criterion": "connectedness",
+    "framing": "durable"
+  },
+  "judge-02-0034-1": {
+    "pair": 34,
+    "a": "g01-minimal-imal-0-2",
+    "b": "g01-durable-able-0-2",
+    "criterion": "connectedness",
+    "framing": "durable"
+  },
+  "judge-02-0035-0": {
+    "pair": 35,
+    "a": "g01-durable-able-0-2",
+    "b": "g02-durable-le-0-2-0",
+    "criterion": "fidelity",
+    "framing": "newcomer"
+  },
+  "judge-02-0035-1": {
+    "pair": 35,
+    "a": "g02-durable-le-0-2-0",
+    "b": "g01-durable-able-0-2",
+    "criterion": "fidelity",
+    "framing": "newcomer"
+  },
+  "judge-02-0036-0": {
+    "pair": 36,
+    "a": "g01-durable-able-1-2",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "ergonomics",
+    "framing": "newcomer"
+  },
+  "judge-02-0036-1": {
+    "pair": 36,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g01-durable-able-1-2",
+    "criterion": "ergonomics",
+    "framing": "newcomer"
+  },
+  "judge-02-0037-0": {
+    "pair": 37,
+    "a": "g01-durable-able-1-2",
+    "b": "g00-minimal-0",
+    "criterion": "expressiveness",
+    "framing": "newcomer"
+  },
+  "judge-02-0037-1": {
+    "pair": 37,
+    "a": "g00-minimal-0",
+    "b": "g01-durable-able-1-2",
+    "criterion": "expressiveness",
+    "framing": "newcomer"
+  },
+  "judge-02-0038-0": {
+    "pair": 38,
+    "a": "g01-durable-able-1-2",
+    "b": "g02-minimal-al-0-2-1",
+    "criterion": "economy",
+    "framing": "newcomer"
+  },
+  "judge-02-0038-1": {
+    "pair": 38,
+    "a": "g02-minimal-al-0-2-1",
+    "b": "g01-durable-able-1-2",
+    "criterion": "economy",
+    "framing": "newcomer"
+  },
+  "judge-02-0039-0": {
+    "pair": 39,
+    "a": "g01-minimal-imal-0-2",
+    "b": "g02-durable-le-0-2-1",
+    "criterion": "connectedness",
+    "framing": "newcomer"
+  },
+  "judge-02-0039-1": {
+    "pair": 39,
+    "a": "g02-durable-le-0-2-1",
+    "b": "g01-minimal-imal-0-2",
+    "criterion": "connectedness",
+    "framing": "newcomer"
+  },
+  "judge-02-0040-0": {
+    "pair": 40,
+    "a": "g01-minimal-imal-0-2",
+    "b": "g02-minimal-al-0-2-2",
+    "criterion": "fidelity",
+    "framing": "owner"
+  },
+  "judge-02-0040-1": {
+    "pair": 40,
+    "a": "g02-minimal-al-0-2-2",
+    "b": "g01-minimal-imal-0-2",
+    "criterion": "fidelity",
+    "framing": "owner"
+  },
+  "judge-02-0041-0": {
+    "pair": 41,
+    "a": "g01-minimal-imal-0-2",
+    "b": "g02-durable-le-0-2-0",
+    "criterion": "ergonomics",
+    "framing": "owner"
+  },
+  "judge-02-0041-1": {
+    "pair": 41,
+    "a": "g02-durable-le-0-2-0",
+    "b": "g01-minimal-imal-0-2",
+    "criterion": "ergonomics",
+    "framing": "owner"
+  },
+  "judge-02-0042-0": {
+    "pair": 42,
+    "a": "g00-minimal-0",
+    "b": "g02-minimal-al-0-2-2",
+    "criterion": "expressiveness",
+    "framing": "owner"
+  },
+  "judge-02-0042-1": {
+    "pair": 42,
+    "a": "g02-minimal-al-0-2-2",
+    "b": "g00-minimal-0",
+    "criterion": "expressiveness",
+    "framing": "owner"
+  },
+  "judge-02-0043-0": {
+    "pair": 43,
+    "a": "g00-minimal-0",
+    "b": "g02-durable-le-1-2-2",
+    "criterion": "economy",
+    "framing": "owner"
+  },
+  "judge-02-0043-1": {
+    "pair": 43,
+    "a": "g02-durable-le-1-2-2",
+    "b": "g00-minimal-0",
+    "criterion": "economy",
+    "framing": "owner"
+  },
+  "judge-02-0044-0": {
+    "pair": 44,
+    "a": "g00-minimal-0",
+    "b": "g02-durable-le-0-2-0",
+    "criterion": "connectedness",
+    "framing": "owner"
+  },
+  "judge-02-0044-1": {
+    "pair": 44,
+    "a": "g02-durable-le-0-2-0",
+    "b": "g00-minimal-0",
+    "criterion": "connectedness",
+    "framing": "owner"
+  }
+}
