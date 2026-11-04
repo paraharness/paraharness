@@ -9,12 +9,12 @@ All OS subprocess management (`local.command`, `local.streamCheck`, `local.daemo
 The harness enforces five operational invariants across software engineering tasks:
 
 1. **Evaluated Fast-Path for Small Tasks:** Untriaged tasks (`routingTier: 'auto'`) start in `verifiedWorkerLoop.withPolicy(fastPathPolicy)` governed by quantitative tripwires (`fs.maxFilesMutated(4)`, `maxTurns(8)`, `maxCostUsd(1.0)`). Small bug fixes complete in a single loop iteration, pass both `verifySuite` and adversarial `evaluator` review, and open a pull request without `coordinator` overhead.
-2. **Lossless Reconnaissance Promotion for Secretly Large Tasks:** When an untriaged task breaches a fast-path tripwire or voluntarily raises `contractViolation`, the harness guarantees scope cleanup via `git.snapshotAndReset()` (bound on both `workerBasePolicy.onAbort()` and `.replaceWith()` edges) to save the dirty worktree to `refs/harness/aborted/<run-id>` and reset the worktree to clean `HEAD`, then promotes execution to the long-horizon `coordinator` seeded with the fast-path file-access trace (`telemetry.custom.filesRead`), the aborted git ref (`telemetry.abortMeta.abortedSnapshotRef`), and `git.refReaderTools(runner)` so the coordinator can directly inspect and diff the aborted attempt.
-3. **Single-Mind Coherence with Role-Scoped KV-Cached Downward Forking & Reboot-Safe Continuation Stacks:** `coordinator`, `worker`/`guardedWorker`, and `evaluator` share a compiled `H.prefixGroup` (`engineeringPrefix`) configured with `.toolsMode('role-scoped')` and containing only run-immutable sources (`PRODUCT_SPEC.md`, `TECH_DESIGN.md`, `base-posture.md`, global rules). Each role transmits its own role-scoped wire `tools` array alongside the shared `system` prompt—so `sonnet` workers achieve a 100% prefix cache hit across all `sonnet` worker invocations without prefilling or seeing `coordinator`-only orchestration tools (`delegate-partition`, `explore-candidates`, `spawnTasks`, `resumeFork`). Live partition contracts and epochs (`repoTopology`), role-specific instructions (`worker.md`), and partition-scoped rules are injected into the Turn-0 `[ROLE_AND_SCOPE_CONTEXT]` user frame so in-run topology epoch updates never bust byte 0 of the wire system prompt. Downward forks (`delegate-partition`) default to `historyMode: 'shared-prefix-only'`, starting a clean child transcript right after the cached prefix while persisting full `ContinuationFrame[]` stacks (including loop-scoped `grantedLoopLeases` and deduplicated `accumulatedLessonOutcomes`) across `H.loop` (`guardedWorker` + `evaluator`) and reconciling via conflict-bouncing `commitChild`.
-4. **Separation-of-Duties Test & Boundary Ratchet with Post-Flight Verified Test Runs & Suspended Tool Replay:** Workers mount `verifySuite.asTool()` so they can run tests and typechecks mid-session before attempting completion (preventing blind first-attempt `beforeStop` failures from poisoning `repoLessons` with false `gate_rejected` outcomes). Because `verifySuite.asTool()` executes arbitrary test code, it omits static `describeEffects`, forcing `git.cowWorktree.diffEffects()` to deterministically verify via `git status --porcelain=v2 -z` and SHA-256 file hashes that the test run did not mutate any protected boundary (`packages/*/src/index.ts`), existing test (`**/*.test.ts`), or spec file (`PRODUCT_SPEC.md`, `TECH_DESIGN.md`, `openapi.yaml`). Legitimate requests to modify existing tests raise `leaseRequest` to a read-only `leaseAdjudicator` agent; when approved, the granted `LeaseDelta` is recorded on both the active `agent-frame` and the enclosing `loop-frame` (`grantedLoopLeases`, persisting across loop iterations and cross-model escalations), and Core replays the suspended pre-flight `edit_file` call immediately without burning an extra LLM generation turn.
+2. **Lossless Reconnaissance Promotion for Secretly Large Tasks:** When an untriaged task breaches a fast-path tripwire or voluntarily raises `contractViolation`, the harness guarantees scope cleanup via `git.snapshotAndReset()` (bound on both `workerBasePolicy.onAbort()` and `.replaceWith()` edges) to save the dirty worktree over `handle.baseRef` to `refs/harness/aborted/<run-id>` and reset the worktree to clean `handle.baseRef`, then promotes execution to the long-horizon `coordinator` seeded with the fast-path file-access trace (`telemetry.custom.filesRead`), the aborted git ref (`telemetry.abortMeta.abortedSnapshotRef`), and `git.refReaderTools(runner)` so the coordinator can directly inspect and diff the aborted attempt.
+3. **Single-Mind Coherence with Role-Scoped KV-Cached Downward Forking & Reboot-Safe Continuation Stacks:** `coordinator`, `worker`/`guardedWorker`, and `evaluator` share a compiled `H.prefixGroup` (`engineeringPrefix`) configured with `.toolsMode('role-scoped')` and pinned in AST declaration order at run start (`PRODUCT_SPEC.md`, `TECH_DESIGN.md`, `base-posture.md`, global rules). Each role transmits its own role-scoped wire `tools` array alongside the shared `system` prompt—so `sonnet` workers achieve a 100% prefix cache hit across all `sonnet` worker invocations without prefilling or seeing `coordinator`-only orchestration tools (`delegate-partition`, `explore-candidates`, `spawnTasks`, `resumeFork`). Run-scoped CoW partition contracts and epochs (`repoTopology`), in-run grounding diffs (e.g., if `coordinator` edits `TECH_DESIGN.md`), role-specific instructions (`worker.md`), and partition-scoped rules are injected into the Turn-0 `[ROLE_AND_SCOPE_CONTEXT]` user frame so in-run topology or grounding updates never bust byte 0 of the wire system prompt or leak across concurrent unmerged runs. Downward forks (`delegate-partition`) default to `historyMode: 'shared-prefix-only'`, starting a clean child transcript right after the cached prefix while persisting tree-structured `ContinuationFrame[]` stacks (serialized through a per-step async queue, including `'fork-batch-frame'`, `'speculate-frame'`, loop-scoped `grantedLoopLeases`, `observedEffects`, `injectedScopedRuleIds`, and deduplicated 4-state `accumulatedLessonOutcomes`) across `H.loop` (`guardedWorker` + `evaluator`) and reconciling via idempotent conflict-bouncing `commitChild`.
+4. **Separation-of-Duties Test & Boundary Ratchet with Post-Flight Verified Test Runs & Turn-Batched Suspended Tool Replay:** Workers mount `verifySuite.asTool()` so they can run tests and typechecks mid-session before attempting completion (preventing blind first-attempt `beforeStop` failures from poisoning `repoLessons` with false `gate_rejected_recovered` outcomes). Because `verifySuite.asTool()` executes arbitrary test code, it omits static `describeEffects`, forcing `git.cowWorktree.diffEffects()` to deterministically verify `headSha` integrity and compute the symmetric difference of `git status --porcelain=v2 -z` and SHA-256 file hashes (plus `(size, mtimeNs)` for oversized untracked files) so that any test run attempting to mutate a protected boundary (`packages/*/src/index.ts`), existing test (`**/*.test.ts`), or spec file (`PRODUCT_SPEC.md`, `TECH_DESIGN.md`, `openapi.yaml`) is rolled back via `restoreCheckpoint` before recording effects. Legitimate requests to modify existing tests raise a turn-batched `leaseRequest` to a read-only `leaseAdjudicator` agent; when approved, the granted `LeaseDelta` is recorded on both the active `agent-frame` and the enclosing `loop-frame` (`grantedLoopLeases`, persisting across loop iterations and cross-model escalations), and Core replays the suspended pre-flight `edit_file` batch (`PendingToolBatch`) and drains any `unstartedCalls` immediately without burning an extra LLM generation turn.
 5. **Single-Timeline Endogenous vs. Exogenous Truth Maintenance & Non-Destructive Contested Speculative Escalation Arbitration:**
-    * **Endogenous Contract Violations (`contractViolation`):** When a forked child worker raises `contractViolation`, `.onChildInterrupt(contractViolation)` suspends the raising fork (preserving its enclosing `verifiedWorkerLoop` frame on `continuationStack`), pauses any concurrent sibling forks in `repoTopology.affectedBy(v.partition)` across all sibling execution states (`TOOL_BOUNDARY` or `BEFORE_STOP_GATE`), and returns `{ status: 'SUSPENDED_ON_INTERRUPT', suspendedForkId, ... }` as a normal `tool_result` to the coordinator's single continuous timeline. The coordinator updates the contract epoch, edits boundary files, delegates any upstream implementation, and calls its native `resumeFork` tool to dirty-safely rebase (`syncChild`), resume the worker, and run the enclosing `verifiedWorkerLoop`'s `evaluator` step before committing.
-    * **Exogenous Spec Updates & Non-Destructive Contested Speculative Escalation Arbitration (`normativeEscalation`):** Normative product trade-offs and mutations to `PRODUCT_SPEC.md` or `openapi.yaml` escalate via structured Decision Briefs (`normativeEscalation`) to the human `owner`. Inside speculative tournaments (`.speculate()`), any branch that triggers an exogenous `H.human` escalation is **parked** until all sibling branches finish. If a sibling branch completes without escalation while another branch is parked on `normativeEscalation`, the tournament **never short-circuits arbitration**—it invokes `candidateArbiter` with both the completed branch and the parked escalation brief. If `candidateArbiter` returns `decision: 'unpark-escalation'`, the tournament **retains all already-`COMPLETED` sibling branch handles alive**, pages the human owner, resumes the unparked branch to completion, and re-runs arbitration over the updated candidate set (including `humanRulingsHistory`) before selecting the final winner.
+    * **Endogenous Contract Violations (`contractViolation`):** When a forked child worker raises `contractViolation`, `.onChildInterrupt(contractViolation)` waits at the parent turn-batch barrier for all in-flight sibling turns to settle, quiesces active `ServiceSession` daemons, suspends the raising fork (preserving its enclosing `verifiedWorkerLoop` frame on `continuationStack` with monotonic `suspendedForkId`), pauses any concurrent sibling forks in `repoTopology.affectedBy(v.partition)` across all sibling execution states (`TOOL_BOUNDARY` or neutral `BEFORE_STOP_GATE`), and returns `{ status: 'SUSPENDED_ON_INTERRUPT', suspendedForkId, ... }` as a normal `tool_result` to the coordinator's single continuous timeline. The coordinator updates the run-scoped contract epoch, edits boundary files, delegates any upstream implementation, and calls its native `resumeFork` tool to dirty-safely rebase (`syncChild`), resume the worker, and run the enclosing `verifiedWorkerLoop`'s `evaluator` step before committing.
+    * **Exogenous Spec Updates & Non-Destructive Contested Speculative Escalation Arbitration (`normativeEscalation`):** Normative product trade-offs and mutations to `PRODUCT_SPEC.md` or `openapi.yaml` escalate via structured Decision Briefs (`normativeEscalation`) to the human `owner`. Inside speculative tournaments (`.speculate()`), any branch that triggers an exogenous `H.human` escalation or unhandled upward interrupt (`contractViolation`) is **parked** (`status: 'PARKED_ON_ESCALATION'`, quiescing its daemons and synthesizing its candidate commit ref via a non-mutating temporary git index) until all sibling branches finish. If a sibling branch completes without escalation while another branch is parked (or after a prior human ruling in `humanRulingsHistory`), the tournament **never short-circuits arbitration**—it invokes `candidateArbiter` with both the completed branch and the parked escalation brief. If `candidateArbiter` returns `decision: 'unpark-escalation'`, the tournament **retains all already-`COMPLETED` sibling branch handles alive**, pages the human owner (or bubbles `contractViolation`), resumes the unparked branch to completion, and re-runs arbitration over the updated candidate set (including `humanRulingsHistory` and `failedBranches`) to either select the final winner (`'select-winner'`, keeping losing worktrees alive until after `refineWinnerWhen` completes) or reject all candidates (`'reject-all'`).
 
 ---
 
@@ -117,13 +117,13 @@ Logical partition relationships and contract epochs are tracked in `@harness-dsl
 
 `git.cowWorktree` implements `BranchableScope` and `CheckpointableScope` to manage a tree of CoW worktrees sharing the host repository's git object store:
 
-1. **Task Root Worktree (`acquireRoot` / `reattachRoot`) with Portable CoW Fallback & Path-Cache Exclusion:** Cloned from `main` via OS-level CoW (`cp -c` on APFS / `cp --reflink=always` on Btrfs/XFS) or automatic fallback to `git worktree add` + `cp -al node_modules` (hardlinked `node_modules` tree on standard Linux `ext4`). `.excludeFromCloneGlobs(['dist/**', '.next/**', 'coverage/**', '**/*.tsbuildinfo'])` ensures path-embedded incremental compiler caches are never copied across worktree paths, while `.lockfileGate('pnpm-lock.yaml')` skips `pnpm install --frozen-lockfile` whenever the lockfile hash matches the warm `node_modules` tree. On process restart, `reattachRoot` and `reattachChild` rebind existing worktrees from disk or host-pinned checkpoint tree refs.
-2. **Deterministic Git-Index Dirty Checkpoints (`serializeCheckpoint` / `restoreCheckpoint` / `diffEffects`):** Configured via `.checkpointPolicy({ partitionMap: repoPartitions, excludeGlobs: ['dist/**', '.next/**', 'coverage/**'], maxUntrackedFileSizeBytes: 1_048_576 })`. Before executing any tool that omits static `describeEffects` (such as `verifySuite.asTool()` or `drizzleGenerate.asTool()`), `git.cowWorktree` queries `git status --porcelain=v2 -z --untracked-files=all`, hashes dirty/untracked files under 1 MiB across all repository paths, and snapshots the working state into a temporary git tree object. Post-flight `diffEffects()` re-runs the status query and compares file hashes with zero kernel file-watcher races (`FSEvents`/`inotify`). If a newly created test file attempts to mutate a protected boundary (`packages/*/src/index.ts`), existing test, or spec file during `verifySuite.asTool()`, post-flight `diffEffects()` catches the unauthorized write, rolls back the working tree delta via `restoreCheckpoint`, and raises `leaseRequest`.
-3. **Zero-Pollution Conflict-Bouncing Child Commits & Host-Pinned Refs (`forkChild` / `commitChild` / `syncChild`):** Downward forks (`delegate-partition`) and speculative branches (`explore-candidates`) CoW-clone the Coordinator's Task Root Worktree under `ScopeLockManager` protection. If parent advances while a child is running and `commitChild` encounters a conflict, `commitChild` rebases child onto parent *inside `childHandle`* (never polluting `parentHandle`) and bounces the conflict back to the child session for repair. When `syncChild` rebases a suspended child onto an updated parent contract epoch during `resumeFork`, it stashes and reapplies the child's dirty working tree edits, arming `conflictCleanCheck` if any conflict markers arise. Before any ephemeral child or root worktree is removed by `release()`, its terminal commit is pinned in the host repository (`refs/harness/completed/<run-id>` or `refs/harness/candidates/<run-id>/<branch-index>`) and temporary checkpoint objects are pruned.
+1. **Task Root Worktree (`acquireRoot` / `reattachRoot`) with Immutable `baseRef`, Portable CoW Fallback & Path-Cache Exclusion:** Cloned from `main` (recording an immutable `baseRef` SHA on the handle) via OS-level CoW (`cp -c` on APFS / `cp --reflink=always` on Btrfs/XFS) or automatic fallback to `git worktree add` + recursive monorepo-safe `**/node_modules` clone (preserving workspace symlinks via `cp -P` while hardlinking package files via `cp -al` on standard Linux `ext4`), with `GIT_CEILING_DIRECTORIES` set to the worktree root. `.excludeFromCloneGlobs(['dist/**', '.next/**', 'coverage/**', '**/*.tsbuildinfo', '.harness-ephemeral/**', '**/node_modules/.cache/**', '**/node_modules/.vite/**', '**/node_modules/.vitest/**'])` ensures path-embedded incremental compiler/test caches and ephemeral daemon volumes are never copied across worktree paths, while `.lockfileGate('pnpm-lock.yaml')` skips `pnpm install --frozen-lockfile` whenever the lockfile hash matches the warm `node_modules` tree. On process restart, `reattachRoot` and `reattachChild` rebind existing worktrees from disk or host-pinned checkpoint tree refs.
+2. **`headSha`-Verified Symmetric Git-Index Dirty Checkpoints (`serializeCheckpoint` / `restoreCheckpoint` / `diffEffects`):** Configured via `.checkpointPolicy({ partitionMap: repoPartitions, excludeGlobs: ['dist/**', '.next/**', 'coverage/**', '.harness-ephemeral/**', '**/node_modules/.cache/**', '**/node_modules/.vite/**', '**/node_modules/.vitest/**'], maxUntrackedFileSizeBytes: 1_048_576 })`. Before executing any tool that omits static `describeEffects` (such as `verifySuite.asTool()` or `drizzleGenerate.asTool()`), `git.cowWorktree` records `headSha` (`git rev-parse HEAD`), queries `git status --porcelain=v2 -z --untracked-files=all`, hashes dirty/untracked files under 1 MiB (and records `(size, mtimeNs)` for oversized untracked files) across all repository paths, and snapshots the working state into a temporary git tree object via a temporary `GIT_INDEX_FILE`. Post-flight `diffEffects()` verifies `currentHeadSha === fromCheckpoint.headSha` and computes the symmetric difference of the status/hash maps with zero kernel file-watcher races (`FSEvents`/`inotify`). If a newly created test file attempts to mutate a protected boundary (`packages/*/src/index.ts`), existing test, or spec file during `verifySuite.asTool()`, post-flight `diffEffects()` catches the unauthorized write before recording effects, rolls back the working tree delta via `restoreCheckpoint`, and raises `leaseRequest`.
+3. **Side-Effect-Free Temporary-Index `inspect()`, Zero-Pollution Conflict-Bouncing Child Commits & Host-Pinned Refs (`forkChild` / `commitChild` / `syncChild`):** Downward forks (`delegate-partition`) and speculative branches (`explore-candidates`) CoW-clone the Coordinator's Task Root Worktree under shared read-lock (`ScopeLockManager`) protection. Whenever `inspect()` is called (prior to `evaluator`, `.crossVerifyWith()`, `.arbiter()`, or `commitChild()`), it uses a temporary `GIT_INDEX_FILE` (`git write-tree` + `git commit-tree -p <handle.baseRef>`) to write a deterministic commit object into the host object store (pinning `refs/harness/candidates/<run-id>/<branch-index>` for speculative branches) and compute `diffStat`/`mutatedFiles` against `handle.baseRef` without mutating the worktree's live `HEAD` or `.git/index`. At `commitChild` time, `git.cowWorktree` synthesizes the child commit over `child.baseRef` and fast-forwards or rebases onto `parent` *inside `childHandle`* (never polluting `parentHandle`), bouncing any conflict back to the child session for repair. When `syncChild` rebases a suspended child onto an updated parent contract epoch during `resumeFork`, it advances `child.baseRef`, stashes and reapplies the child's dirty working tree edits, and arms `conflictCleanCheck` if any conflict markers arise. Before any ephemeral child or root worktree is removed by `release()`, its terminal commit is pinned in the host repository (`refs/harness/completed/<run-id>`) and temporary checkpoint objects are pruned.
 4. **In-Run Delegation vs. Priority-Boosted Stacked-PR Queue Mutation (`syncRoot`):**
     * Sub-components belonging to the *same* deliverable/PR are delegated in-run via `.fork('delegate-partition', ...)`, sharing the Coordinator's Task Root Worktree and opening a single PR at the end of the flow.
-    * Independent prerequisite tickets that warrant their own separate PR are enqueued into `engineeringLane` via `.mutatePlan().canSpawnTasks(...)` with `onPrerequisiteSpawned: 'suspend-and-yield-slot'`, `priorityStrategy: 'inherit-parent-with-boost'`, and `resumeWhen: 'prerequisite-exit'`. The spawned prerequisite inherits the parent's aged priority plus a head-of-line boost so it schedules ahead of newly polled GitHub issues while the Coordinator checkpoints to SQLite and yields its concurrency slot. When the prerequisite exits the lane and opens its PR (e.g., `fix/#102`), `workspace.syncRoot()` rebases the Coordinator's Task Root Worktree onto the prerequisite's host-pinned `headRef`, sets `scopeReceipt.baseBranch = 'fix/#102'` (if `fix/#102` is not yet merged into `origin/main`), and injects `[PREREQUISITE_SYNC]` before resuming. When the parent ticket finishes, `publishPr` opens a clean stacked PR targeting `--base ${scopeReceipt.baseBranch}`.
-5. **Isolated PR-Branch Reconciliation (`rebase-onto-base`):** Because `engineeringFlow` pushes individual feature branches (`fix/<ref>`) and opens pull requests for review, `workspace` is configured with `.reconcileStrategy('rebase-onto-base', { verifyWith: verifySuite })` so each completed Task Root Worktree rebases cleanly onto the latest head of its own `scopeReceipt.baseBranch` without mixing commits across sibling unmerged PRs. (For post-review auto-merge landing lanes that merge approved PRs directly into `origin/main`, `git.cowWorktree` supports `.reconcileStrategy('batch-merge-train', ...)` to verify cumulative batches in a single test window.)
+    * Independent prerequisite tickets that warrant their own separate PR are enqueued into `engineeringLane` via `.mutatePlan().canSpawnTasks(...)` with `onPrerequisiteSpawned: 'suspend-and-yield-slot'`, `priorityStrategy: 'inherit-parent-with-boost'`, and `resumeWhen: 'prerequisite-exit'`. The spawned prerequisite inherits the parent's aged priority plus a head-of-line boost so it schedules ahead of newly polled GitHub issues while the Coordinator quiesces active services, checkpoints to SQLite, and yields its concurrency slot. When the prerequisite exits the lane and opens its PR (e.g., `fix/#102`), `workspace.syncRoot()` merges the prerequisite's `SEALED_UNMERGED` topology overlay (`syncRunOverlays`), rebases the Coordinator's Task Root Worktree onto the prerequisite's host-pinned `headRef`, sets `scopeReceipt.baseBranch = 'fix/#102'` (if `fix/#102` is not yet merged into `origin/main`), and injects `[PREREQUISITE_SYNC]` via `ModelDriver.appendToolResultNotes` before resuming (or `[PREREQUISITE_FAILED]` if the prerequisite exited in a failure state). When the parent ticket finishes, `publishPr` opens a clean stacked PR targeting `--base ${scopeReceipt.baseBranch}`.
+5. **Isolated PR-Branch Reconciliation (`rebase-onto-base`):** Because `engineeringFlow` pushes individual feature branches (`fix/<ref>`) and opens pull requests for review, `workspace` is configured with `.reconcileStrategy('rebase-onto-base', { verifyWith: verifySuite })` (executed by `git.commitAndPush` right before pushing) so each completed Task Root Worktree squashes its changes since `baseRef`, checks if `scopeReceipt.baseBranch` has already merged into `origin/main` (falling back to `'main'` if deleted), and rebases cleanly onto the latest head of `origin/${scopeReceipt.baseBranch}` without mixing commits across sibling unmerged PRs. (For post-review auto-merge landing lanes that merge approved PRs directly into `origin/main`, `git.cowWorktree` supports `.reconcileStrategy('batch-merge-train', ...)` to verify cumulative batches in a single test window.)
 
 ---
 
@@ -133,24 +133,24 @@ All five actors are instances of `H.agent` configured with distinct `H.policy` m
 
 | Actor ID | Prefix Group | Model / Pool | Write Policy & Capability Lease Mask | Mounted Tools & Skills | Primary Responsibility |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`worker` / `guardedWorker`** | `engineeringPrefix` (`role-scoped`) | `workerModels` (`sonnet` -> `opus` escalation) | **`workerBasePolicy`** (or **`fastPathPolicy`**): Can write implementation files and create *new* test files; blocked by `fs.boundaryGuard` and `fs.writeGuard` from editing existing `**/*.test.ts`, `packages/*/src/index.ts`, `TECH_DESIGN.md`, `PRODUCT_SPEC.md`, `openapi.yaml`. Binds `.onAbort(git.snapshotAndReset())` and actor-level `.onInterrupt(leaseRequest)` adjudication with loop-scoped lease inheritance & suspended tool replay. | `fs.codingTools`, `verifySuite.asTool()` (post-flight diffed via `diffEffects`), `dbMigrationSkill`, `uiVerificationSkill`, `sharedProceduralSkills` (plus `git.candidateComparisonTools` during speculative cross-pollination). | Implements code changes inside a partition; runs `verifySuite.asTool()` mid-session and must pass `verifySuite`, `conflictCleanCheck`, and scoped `H.check` gates in `beforeStop`. |
-| **`evaluator`** | `engineeringPrefix` (`role-scoped`) | `opus` | **`readOnlyPolicy`**: Denied write on `**/*`. | `fs.readOnlyTools`, `uiVerificationSkill` (mounts `browserSandbox` daemon for headless Chromium verification). | Adversarial code auditor, runtime UI verifier, and active lesson violation reporter (`violatedLessonIds`) inside `verifiedWorkerLoop`. |
-| **`leaseAdjudicator`** | Standalone | `opus` | **`readOnlyPolicy`**: Denied write on `**/*` (zero conflict of interest with implementation code). | `fs.readOnlyTools`. | Adjudicates `leaseRequest` interrupts from `guardedWorker`; grants `fs.allowWriteGlobs` lease (persisted on `loop-frame.grantedLoopLeases` and triggering immediate replay of the blocked write call) or raises `normativeEscalation` to `owner`. |
-| **`candidateArbiter`** | Standalone | `opus` | **`readOnlyPolicy`**: Denied write on `**/*`. | `fs.readOnlyTools`, `git.candidateComparisonTools` (`evalInCandidates`, `diffCandidates`, `readCandidateFile`). | Judges $\ge 2$ surviving speculative worktrees—or contested `COMPLETED` vs `PARKED_ON_EXOGENOUS_ESCALATION` branches—using AST cross-test reports and live benchmarks; returns `select-winner` or non-destructive `unpark-escalation`. |
-| **`coordinator`** | `engineeringPrefix` (`role-scoped`) | `opus` | **`coordinatorPolicy`**: Allowed to write `TECH_DESIGN.md` and partition boundary files (`packages/*/src/index.ts`); denied write on leaf implementation files and exogenous specs (`PRODUCT_SPEC.md`, `openapi.yaml`) unless granted a `LeaseDelta` by `owner`. | `fs.codingTools`, `git.refReaderTools` (`readRefFile`, `diffRefs`, `listRefFiles`), `.fork()`, `.speculate()`, `.mutatePlan()`, `.escalate()`, and native `resumeFork` (from `.onChildInterrupt()`). | Owns long-horizon architectural coherence, partition contracts, downward forks, speculative tournaments, fast-path aborted ref inspection, and single-timeline `contractViolation` resolution via `suspendAndReturnToParent` + `resumeFork`. |
+| **`worker` / `guardedWorker`** | `engineeringPrefix` (`role-scoped`) | `workerModels` (`sonnet` -> `opus` escalation) | **`workerBasePolicy`** (or **`fastPathPolicy`**): Can write implementation files and create *new* test files; blocked by `fs.boundaryGuard` and `fs.writeGuard` from editing existing `**/*.test.ts`, `packages/*/src/index.ts`, `TECH_DESIGN.md`, `PRODUCT_SPEC.md`, `openapi.yaml`. Binds `.onAbort(git.snapshotAndReset())` and actor-level `.onInterrupt(leaseRequest)` adjudication with loop-scoped lease inheritance & turn-batched suspended tool replay (`PendingToolBatch`). | `fs.codingTools`, `verifySuite.asTool()` (post-flight diffed via `diffEffects`), `dbMigrationSkill`, `uiVerificationSkill`, `sharedProceduralSkills` (plus `git.candidateComparisonTools` during speculative cross-pollination). | Implements code changes inside a partition; runs `verifySuite.asTool()` mid-session and must pass `verifySuite`, `conflictCleanCheck`, and scoped `H.check` gates in `beforeStop`. |
+| **`evaluator`** | `engineeringPrefix` (`role-scoped`) | `opus` | **`readOnlyPolicy`**: Denied write on `**/*`. | `fs.readOnlyTools`, `uiVerificationSkill` (mounts `browserSandbox` daemon for headless Chromium verification). | Adversarial code auditor, runtime UI verifier, and active lesson violation reporter (`violatedLessonIds`, receiving the worker's recalled lessons via `verifiedWorkerLoop.distillLessonsInto(repoLessons)`). |
+| **`leaseAdjudicator`** | Standalone | `opus` | **`readOnlyPolicy`**: Denied write on `**/*` (zero conflict of interest with implementation code). | `fs.readOnlyTools`. | Adjudicates `leaseRequest` interrupts from `guardedWorker`; grants `fs.allowWriteGlobs` lease (persisted on `loop-frame.grantedLoopLeases` and triggering immediate replay of the blocked write batch) or raises `normativeEscalation` to `owner`. |
+| **`candidateArbiter`** | Standalone | `opus` | **`readOnlyPolicy`**: Denied write on `**/*`. | `fs.readOnlyTools`, `git.candidateComparisonTools` (`evalInCandidates`, `diffCandidates`, `readCandidateFile`). | Judges $\ge 2$ surviving speculative worktrees—or contested `COMPLETED` vs `PARKED_ON_ESCALATION` branches—using AST cross-test reports and live benchmarks; returns `select-winner`, non-destructive `unpark-escalation`, or `reject-all`. |
+| **`coordinator`** | `engineeringPrefix` (`role-scoped`) | `opus` | **`coordinatorPolicy`**: Allowed to write `TECH_DESIGN.md` and partition boundary files (`packages/*/src/index.ts`); denied write (`.onViolation('deny-with-error')`) on leaf implementation files and exogenous specs (`PRODUCT_SPEC.md`, `openapi.yaml`) unless granted a `LeaseDelta` by `owner` via `.escalate(normativeEscalation)`. | `fs.codingTools`, `git.refReaderTools` (`readRefFile`, `diffRefs`, `listRefFiles`), `.fork()`, `.speculate()`, `.mutatePlan()`, `.escalate()`, and native `resumeFork` (from `.onChildInterrupt()`). | Owns long-horizon architectural coherence, partition contracts, downward forks, speculative tournaments, fast-path aborted ref inspection, and single-timeline `contractViolation` resolution via `suspendAndReturnToParent` + `resumeFork`. |
 
 ---
 
 # 5. Interrupt & Truth-Maintenance Protocols
 
-## 5.1 Protocol 1: The Test Ratchet with Post-Flight Verified Test Runs, Loop-Scoped Leases & Suspended Tool Replay (`leaseRequest -> leaseAdjudicator`)
+## 5.1 Protocol 1: The Test Ratchet with Post-Flight Verified Test Runs, Loop-Scoped Leases & Turn-Batched Tool Replay (`leaseRequest -> leaseAdjudicator`)
 
-1. `guardedWorker` modifies an internal function signature or fixes a bug and invokes `verifySuite.asTool()` mid-session to run tests before attempting completion. (Because `verifySuite.asTool()` omits static `describeEffects`, `git.cowWorktree.diffEffects()` verifies post-flight that the test execution did not write to any protected boundary, spec, or existing test file.)
-2. Observing a failure in `packages/api/test/auth.test.ts`, `guardedWorker` invokes `edit_file` on `packages/api/test/auth.test.ts`. `workerBasePolicy` intercepts the pre-flight `FsToolEffect (mode: 'write')`, records the blocked call as `pendingPreFlightCall`, and raises `leaseRequest({ requestedPaths: ['packages/api/test/auth.test.ts'], justification: '...' })`.
+1. `guardedWorker` modifies an internal function signature or fixes a bug and invokes `verifySuite.asTool()` mid-session to run tests before attempting completion. (Because `verifySuite.asTool()` omits static `describeEffects`, `git.cowWorktree.diffEffects()` verifies post-flight that `headSha` is unchanged and that the test execution did not write to any protected boundary, spec, or existing test file.)
+2. Observing a failure in `packages/api/test/auth.test.ts`, `guardedWorker` invokes `edit_file` on `packages/api/test/auth.test.ts`. `workerBasePolicy` intercepts the pre-flight `FsToolEffect (mutatesScope: true, mode: 'write')` in declaration order across the assistant turn, records the turn batch in `pendingToolBatch`, and raises `leaseRequest({ requestedPaths: ['packages/api/test/auth.test.ts'], justification: '...' })` via its synchronous violation mapper.
 3. The actor-level `.onInterrupt(leaseRequest)` handler bound to `guardedWorker` receives `(actorInput, req)` and invokes `leaseAdjudicator` (read-only):
-    * **Case A (Mechanical Entailment):** The test failed only because an internal mock or parameter list changed in accordance with the ticket. `leaseAdjudicator` returns `approved: true, unlockedGlobs: ['packages/api/test/auth.test.ts']`. `.elevateLeaseWhen()` grants `fs.allowWriteGlobs(verdict.unlockedGlobs)` on both the active `agent-frame` and the enclosing `verifiedWorkerLoop`'s `loop-frame.grantedLoopLeases` (so the lease survives subsequent loop iterations and model escalations), and Core **immediately replays the suspended `edit_file` tool call** before resuming `guardedWorker` with `[Lease Elevated: ...]\n\n<edit_file result>`.
-    * **Case B (Buggy Implementation):** The existing test caught a real regression introduced by `guardedWorker`. `leaseAdjudicator` returns `approved: false` with diagnostic feedback; Core discards `pendingPreFlightCall`, returns `[Lease Denied: ...]` (`isError: true`), and `guardedWorker` fixes its implementation code.
-    * **Case C (Normative Contradiction & Speculative Parking):** The existing test asserts legacy product behavior $Y$ that contradicts `PRODUCT_SPEC.md` $X$. `leaseAdjudicator` raises `normativeEscalation` to human `owner`. If `guardedWorker` is currently executing inside a `.speculate()` tournament branch, the tournament supervisor **parks** the branch at the `.ask(owner)` boundary until all sibling speculative branches finish.
+    * **Case A (Mechanical Entailment):** The test failed only because an internal mock or parameter list changed in accordance with the ticket. `leaseAdjudicator` returns `approved: true, unlockedGlobs: ['packages/api/test/auth.test.ts']`. `.elevateLeaseWhen()` grants `fs.allowWriteGlobs(verdict.unlockedGlobs)` on both the active `agent-frame` and the enclosing `verifiedWorkerLoop`'s `loop-frame.grantedLoopLeases` (so the lease survives subsequent loop iterations and model escalations), and Core **immediately replays the suspended `edit_file` tool call batch and drains any `unstartedCalls`** before resuming `guardedWorker` with `[Lease Elevated: ...]\n\n<edit_file result>`.
+    * **Case B (Buggy Implementation):** The existing test caught a real regression introduced by `guardedWorker`. `leaseAdjudicator` returns `approved: false` with diagnostic feedback; Core records `[Lease Denied: ...]` (`isError: true`) for the blocked calls, drains any remaining `unstartedCalls` in `pendingToolBatch`, and `guardedWorker` fixes its implementation code.
+    * **Case C (Normative Contradiction & Speculative Parking):** The existing test asserts legacy product behavior $Y$ that contradicts `PRODUCT_SPEC.md` $X$. `leaseAdjudicator` raises `normativeEscalation` to human `owner`. If `guardedWorker` is currently executing inside a `.speculate()` tournament branch, the tournament supervisor **parks** the branch (`status: 'PARKED_ON_ESCALATION'`) at the `.ask(owner)` boundary until all sibling speculative branches finish.
 
 ## 5.2 Protocol 2: Single-Timeline Endogenous Contract Violation (`contractViolation -> coordinator` via `suspendAndReturnToParent` & `resumeFork`)
 
@@ -158,18 +158,18 @@ All five actors are instances of `H.agent` configured with distinct `H.policy` m
 2. The forked `guardedWorker` in `api` discovers that `packages/db/src/index.ts` lacks a transaction handle required to implement the ticket cleanly.
 3. Blocked by `fs.boundaryGuard(repoPartitions)` from editing `packages/db/src/index.ts`, the `api` worker raises `contractViolation({ partition: 'db', brokenInvariant: '...', proof: '...', proposedPatch: '...' })`.
 4. `coordinator.onChildInterrupt(contractViolation)` executes `.pauseSiblingForksInPartitions((v) => repoTopology.affectedBy(v.partition)).suspendAndReturnToParent()`:
-    * Serializes the raising `api` fork's full `ContinuationFrame[]` stack (`[loop-frame(verified-worker-loop), agent-frame(guardedWorker)]`) at its interrupt tool call (`suspendedForkId: 'fork_api_01'`).
-    * Because `repoTopology.affectedBy('db')` returns `['db', 'api', 'web']`, any concurrent sibling fork running in `'db'` itself (as well as `'api'` or `'web'`) is paused cleanly—either at its next tool boundary (`pausedAtPhase: 'TOOL_BOUNDARY'`) or, if already inside `beforeStop` or `evaluator`, by aborting the gate/evaluator and rolling the `loop-frame` back to `'act'` (`pausedAtPhase: 'BEFORE_STOP_GATE'`).
-    * Resolves the open `delegate-partition` tool call(s) in `coordinator` as normal wire `tool_result` frames (`status: 'SUSPENDED_ON_INTERRUPT'` for `fork_api_01` and `status: 'PAUSED_BY_SIBLING_INTERRUPT'` for `fork_db_01`).
-5. Continuing on its **single uninterrupted timeline**, `coordinator` updates the `db` contract in `repoTopology` (incrementing `db` from Epoch $E$ to $E+1$ without invalidating `engineeringPrefix`'s wire `system` prompt), edits `packages/db/src/index.ts`, delegates or resumes `fork_db_01` to implement the underlying `db` support and commit it into the Task Root Worktree, and then invokes `resumeFork({ suspendedForkIds: ['fork_api_01'], action: 'resume', resolutionSummary: '...' })`.
-6. `resumeFork` invokes `git.cowWorktree.syncChild()` to dirty-safely stash, rebase, and reapply uncommitted edits in `fork_api_01` onto the updated Task Root Worktree `HEAD`, injects `{ resolution, updatedTopologyContracts, sync }` as the `tool_result` of `fork_api_01`'s suspended `contractViolation` call, runs `guardedWorker` through `beforeStop`, pops up `continuationStack` to run `verifiedWorkerLoop`'s `evaluator`, commits the verified result via `commitChild`, and returns the completed receipt to `coordinator`.
+    * Stops any active `ServiceSession` daemons and serializes the raising `api` fork's full `ContinuationFrame[]` stack (`[loop-frame(verified-worker-loop), agent-frame(guardedWorker)]`) at its interrupt tool call (`suspendedForkId: 'fork_api_01#1'`).
+    * Because `repoTopology.affectedBy('db')` returns `['db', 'api', 'web']`, any concurrent sibling fork running in `'db'` itself (as well as `'api'` or `'web'`) is paused cleanly at the parent turn-batch barrier—either at its current tool boundary (`pausedAtPhase: 'TOOL_BOUNDARY'`) or, if its turn ended with a final completion output or was inside `beforeStop`/`evaluator`, by aborting the gate/evaluator and rolling the `loop-frame` back to `'act'` at `preservedActLeafMessageId` (`pausedAtPhase: 'BEFORE_STOP_GATE'`).
+    * Resolves the open `delegate-partition` tool call(s) in `coordinator` as normal wire `tool_result` frames (`status: 'SUSPENDED_ON_INTERRUPT'` for `fork_api_01#1` and `status: 'PAUSED_BY_SIBLING_INTERRUPT'` for `fork_db_01#1`).
+5. Continuing on its **single uninterrupted timeline**, `coordinator` updates the `db` contract in `repoTopology`'s per-run CoW overlay (incrementing `db` from Epoch $E$ to $E+1$ without invalidating `engineeringPrefix`'s wire `system` prompt or polluting concurrent runs), edits `packages/db/src/index.ts`, delegates or resumes `fork_db_01#1` to implement the underlying `db` support and commit it into the Task Root Worktree, and then invokes `resumeFork({ suspendedForkIds: ['fork_api_01#1'], action: 'resume', resolutionSummary: '...' })`.
+6. `resumeFork` invokes `git.cowWorktree.syncChild()` to dirty-safely stash, rebase, and reapply uncommitted edits in `fork_api_01#1` onto the updated Task Root Worktree `HEAD` (recording `syncedToParentCheckpoint`), re-acquires any quiesced services (appending `[SERVICE_REACQUIRED]` if restarted), injects `{ resolution, updatedTopologyContracts, sync }` as the `tool_result` of `fork_api_01#1`'s suspended `contractViolation` call, runs `guardedWorker` through `beforeStop`, pops up `continuationStack` to run `verifiedWorkerLoop`'s `evaluator`, commits the verified result via `commitChild`, and returns the completed receipt to `coordinator`.
 
 ## 5.3 Protocol 3: Exogenous Specification Update & Non-Destructive Contested Speculative Arbitration (`normativeEscalation -> candidateArbiter -> owner`)
 
-1. Inside `.speculate('explore-candidates', ...)`, Branch 0 hits a spec/test contradiction and parks on `normativeEscalation` (`status: 'PARKED_ON_EXOGENOUS_ESCALATION'`), while Branch 1 completes without escalating (`status: 'COMPLETED'`).
-2. Because $\ge 1$ branch is parked on an exogenous escalation, `.speculate()` **refuses to short-circuit arbitration** and invokes `candidateArbiter` with both Branch 0's parked escalation payload and Branch 1's completed receipt and cross-test report.
+1. Inside `.speculate('explore-candidates', ...)`, Branch 0 hits a spec/test contradiction and parks on `normativeEscalation` (`status: 'PARKED_ON_ESCALATION'`), while Branch 1 completes without escalating (`status: 'COMPLETED'`).
+2. Because $\ge 1$ branch is parked on an escalation, `.speculate()` **refuses to short-circuit arbitration** and invokes `candidateArbiter` with both Branch 0's parked escalation payload and Branch 1's completed receipt and cross-test report.
 3. If `candidateArbiter` determines Branch 1 solved the problem cleanly without violating the spec, it returns `{ decision: 'select-winner', winnerBranchIndex: 1, ... }`, discarding Branch 0 without paging `owner`.
-4. If `candidateArbiter` determines Branch 0 flagged a real normative contradiction that Branch 1 hacked around, it returns `{ decision: 'unpark-escalation', parkedBranchIndex: 0, rationale: '...' }`. The runtime **retains Branch 1's completed worktree handle alive**, pages `owner` on Slack for Branch 0, resumes Branch 0 with the human's ruling until it finishes `verifiedWorkerLoop`, and re-runs `candidateArbiter` (with `humanRulingsHistory`) to select the final winning worktree.
+4. If `candidateArbiter` determines Branch 0 flagged a real normative contradiction that Branch 1 hacked around, it returns `{ decision: 'unpark-escalation', parkedBranchIndex: 0, rationale: '...' }`. The runtime **retains Branch 1's completed worktree handle alive**, pages `owner` on Slack for Branch 0, resumes Branch 0 with the human's ruling until it finishes `verifiedWorkerLoop`, and re-runs `candidateArbiter` (with `humanRulingsHistory` and `failedBranches`) to either select the final winning worktree (`'select-winner'`) or reject all candidates (`'reject-all'`) if neither candidate satisfies the owner's ruling.
 
 ---
 
@@ -236,6 +236,10 @@ const arbiterVerdictSchema = z.discriminatedUnion('decision', [
   z.object({
     decision: z.literal('unpark-escalation'),
     parkedBranchIndex: z.union([z.literal(0), z.literal(1)]),
+    rationale: z.string(),
+  }),
+  z.object({
+    decision: z.literal('reject-all'),
     rationale: z.string(),
   }),
 ]);
@@ -311,7 +315,7 @@ export const normativeEscalation = H.interrupt('normative-tradeoff').payload(
 // 2. Capacity Pools, Models & Correlated Two-Temperature Ledger
 // ============================================================================
 
-const runner = local.runner({ slots: 8 });
+const runner = local.runner({ slots: 8, maxDaemons: 8 });
 
 const claudeAccounts = H.pool('claude-accounts')
   .with(
@@ -376,10 +380,14 @@ const localPostgres = local
   .runner(runner)
   .lifecycle('skill')
   .port('pgPort')
-  .start(({ ports }) => [
-    'docker', 'run', '--rm', '-p', `${ports.pgPort}:5432`,
+  .start(({ ports, scopeKey, worktreePath }) => [
+    'docker', 'run', '--rm',
+    '--name', `harness-pg-${scopeKey}`,
+    '-p', `${ports.pgPort}:5432`,
+    '-v', `${worktreePath}/.harness-ephemeral/pgdata:/var/lib/postgresql/data`,
     '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', 'postgres:16-alpine',
   ])
+  .stopCommand(({ scopeKey }) => ['docker', 'stop', '-t', '2', `harness-pg-${scopeKey}`])
   .readyWhenStdout(/database system is ready to accept connections/)
   .interact('psql', {
     command: ({ ports }) => ['psql', `postgres://postgres@localhost:${ports.pgPort}/postgres`],
@@ -431,6 +439,12 @@ const repoTopology = H.topology('app-topology')
     db: {},
     api: { dependsOn: ['db'] },
     web: { dependsOn: ['api'] },
+  })
+  .commitOverlayWhen({
+    onSignal: {
+      signal: changeShippedSignal,
+      correlateBy: (sig) => sig.ref,
+    },
   });
 
 const repoPartitions = fs.partitionMap(repoTopology, {
@@ -450,7 +464,16 @@ const repoPartitions = fs.partitionMap(repoTopology, {
 
 const workspace = git
   .cowWorktree({ repo: '.', dir: '.harness/workspaces' })
-  .excludeFromCloneGlobs(['dist/**', '.next/**', 'coverage/**', '**/*.tsbuildinfo'])
+  .excludeFromCloneGlobs([
+    'dist/**',
+    '.next/**',
+    'coverage/**',
+    '**/*.tsbuildinfo',
+    '.harness-ephemeral/**',
+    '**/node_modules/.cache/**',
+    '**/node_modules/.vite/**',
+    '**/node_modules/.vitest/**',
+  ])
   .setup(
     local
       .command('install')
@@ -462,7 +485,15 @@ const workspace = git
   .lockfileGate('pnpm-lock.yaml')
   .checkpointPolicy({
     partitionMap: repoPartitions,
-    excludeGlobs: ['dist/**', '.next/**', 'coverage/**'],
+    excludeGlobs: [
+      'dist/**',
+      '.next/**',
+      'coverage/**',
+      '.harness-ephemeral/**',
+      '**/node_modules/.cache/**',
+      '**/node_modules/.vite/**',
+      '**/node_modules/.vitest/**',
+    ],
     maxUntrackedFileSizeBytes: 1_048_576,
   })
   .reconcileStrategy('rebase-onto-base', {
@@ -534,8 +565,16 @@ export const repoLessons = H.lessons('repo-lessons')
       .maxViolations(3)
       .orMinCleanPassRate(0.35, { afterInjections: 12 }),
   )
-  .emitSignalWhen(highLeverageLessonSignal, ($t) =>
-    $t.minCleanPasses(10).maxViolations(0).cooldownHours(72),
+  .emitSignalWhen(
+    highLeverageLessonSignal,
+    ($t) => $t.minCleanPasses(10).maxViolations(0).cooldownHours(72),
+    (lesson) => ({
+      lessonId: lesson.id,
+      directive: lesson.directive,
+      partition: lesson.partition as z.infer<typeof partitionEnum> | undefined,
+      cleanPassCount: lesson.totalCleanPasses,
+      violatedCount: lesson.totalViolated,
+    }),
   );
 
 export const dbMigrationSkill = H.skill(md.skill('.harness/skills/db-migrations/SKILL.md'))
@@ -571,9 +610,9 @@ export const engineeringPrefix = H.prefixGroup('engineering-prefix')
 // 6. Capability Policies (Worker, Fast-Path, Read-Only & Coordinator Masks)
 // ============================================================================
 
-const readOnlyPolicy = H.policy('read-only').guard(
-  fs.writeGuard({ denyGlobs: ['**/*'] }),
-);
+const readOnlyPolicy = H.policy('read-only')
+  .guard(fs.writeGuard({ denyGlobs: ['**/*'] }))
+  .onViolation('deny-with-error');
 
 // Workers can write implementation code & new tests, but cannot mutate existing tests,
 // partition boundary files (`packages/*/src/index.ts`), architecture docs, or product specs.
@@ -591,7 +630,12 @@ const workerBasePolicy = H.policy('worker-base')
       ],
     }),
   )
-  .onViolation('raise-interrupt', leaseRequest)
+  .onViolation('raise-interrupt', leaseRequest, (violation) => ({
+    requestedPaths: violation.violatedEffects.flatMap(
+      (eff) => (eff.attributes?.paths as string[] | undefined) ?? [],
+    ),
+    justification: violation.violationSummary,
+  }))
   .onAbort(git.snapshotAndReset());
 
 // Fast-path tripwires: tight bounds on optimistic single-agent attempts
@@ -608,7 +652,7 @@ const fastPathPolicy = workerBasePolicy
 
 // Coordinator owns endogenous architecture (`TECH_DESIGN.md` & `packages/*/src/index.ts`),
 // delegates leaf implementation code to forked workers, and requires owner lease elevation
-// to mutate exogenous specifications (`PRODUCT_SPEC.md`, `openapi.yaml`).
+// via its voluntary .escalate(normativeEscalation) capability tool to mutate exogenous specs (`PRODUCT_SPEC.md`, `openapi.yaml`).
 const coordinatorPolicy = H.policy('coordinator-policy')
   .guard(
     fs.writeGuard({
@@ -616,7 +660,11 @@ const coordinatorPolicy = H.policy('coordinator-policy')
       allowGlobs: ['TECH_DESIGN.md', 'packages/*/src/index.ts'],
     }),
   )
-  .onViolation('raise-interrupt', normativeEscalation);
+  .onViolation(
+    'deny-with-error',
+    (violation) =>
+      `${violation.violationSummary}. Delegate leaf implementation edits via 'delegate-partition' or invoke the 'normative-tradeoff' escalation tool to request an owner spec lease.`,
+  );
 
 // ============================================================================
 // 7. Universal H.agent Actors & Iterative Refinement Loop (H.loop)
@@ -648,7 +696,6 @@ export const evaluator = H.agent('evaluator')
   .model(opus)
   .topology(repoTopology)
   .rules(repoRules)
-  .lessons(repoLessons)
   .skills(uiVerificationSkill)
   .policy(readOnlyPolicy)
   .tools(fs.readOnlyTools(runner))
@@ -699,8 +746,7 @@ export const candidateArbiter = H.agent('candidate-arbiter')
       normativeEscalation.schema,
     ),
   )
-  .output(arbiterVerdictSchema)
-  .canRaise(normativeEscalation);
+  .output(arbiterVerdictSchema);
 
 // Actor-level interrupt handler bound once on guardedWorker (receiving actorInput: workItem)
 // and preserved automatically across .withPolicy() and .withTools() clones.
@@ -715,7 +761,7 @@ export const guardedWorker = worker
           .ask(owner, ownerDecisionSchema)
           .resumeWith(
             (decision) =>
-              `Owner selected option '${decision.selectedOptionId}'. Note: ${decision.note ?? 'None'}`,
+              `Owner selected option '${decision.selectedOptionId}' (approveSpecMutation: ${decision.approveSpecMutation}, unlockedSpecFiles: [${decision.unlockedSpecFiles.join(', ')}]). Note: ${decision.note ?? 'None'}`,
           ),
       )
       .elevateLeaseWhen(
@@ -780,7 +826,7 @@ export const coordinator = H.agent('coordinator')
           ),
       )
 
-      // 2. Speculative tournament: parallel CoW worktrees + deferred exogenous escalation parking +
+      // 2. Speculative tournament: parallel CoW worktrees + deferred escalation parking +
       // non-destructive contested escalation arbitration + AST cross-testing + cross-pollination
       .speculate('explore-candidates', ($s) =>
         $s
@@ -812,27 +858,25 @@ export const coordinator = H.agent('coordinator')
                 verdict.decision === 'select-winner' ? verdict.winnerBranchIndex : 0;
               const followUpDeficits =
                 verdict.decision === 'select-winner' ? verdict.followUpDeficits : [];
-              const loser =
-                candidates.find((c) => c.branchIndex !== selectedWinnerIndex) ?? candidates[0];
+              const completedLoser = candidates.find(
+                (c): c is Extract<(typeof candidates)[number], { status: 'COMPLETED' }> =>
+                  c.status === 'COMPLETED' && c.branchIndex !== selectedWinnerIndex,
+              );
               return {
                 ...parentItem,
                 routingTier: 'leaf-only' as const,
                 description: [
                   `Apply cross-pollination deficits from speculative arbitration:`,
                   ...followUpDeficits.map((d) => `- ${d}`),
-                  `Losing branch git ref for inspection via candidateComparisonTools: ${loser.scopeReceipt.headRef}`,
-                  `Losing branch diff stat:\n${loser.scopeReceipt.diffStat}`,
+                  ...(completedLoser
+                    ? [
+                        `Losing branch git ref for inspection via candidateComparisonTools: ${completedLoser.scopeReceipt.headRef}`,
+                        `Losing branch diff stat:\n${completedLoser.scopeReceipt.diffStat}`,
+                      ]
+                    : []),
                 ].join('\n'),
               };
             },
-          )
-          .onInterrupt(normativeEscalation, ($esc) =>
-            $esc
-              .ask(owner, ownerDecisionSchema)
-              .resumeWith(
-                (decision) =>
-                  `Owner selected option '${decision.selectedOptionId}'. Note: ${decision.note ?? 'None'}`,
-              ),
           ),
       )
 
@@ -843,6 +887,7 @@ export const coordinator = H.agent('coordinator')
         $m
           .canSpawnTasks(workItem, {
             maxSpawnedPerRun: 6,
+            maxPrerequisiteDepth: 3,
             enforcePatch: { routingTier: 'leaf-only' },
             onPrerequisiteSpawned: 'suspend-and-yield-slot',
             priorityStrategy: 'inherit-parent-with-boost',
@@ -889,6 +934,7 @@ const landChanges = git
     branch: ({ item }: z.infer<typeof deliveryInputSchema>) => `fix/${item.ref}`,
     message: ({ item }) => `${item.ref}: ${item.title}`,
   })
+  .input(deliveryInputSchema)
   .runner(runner)
   .env({ GH_TOKEN: H.env('GITHUB_TOKEN') });
 
@@ -1057,7 +1103,7 @@ export const engineeringLane = H.lane('engineering')
     20,
     owner
       .withName('budget-approver')
-      .output(z.object({ approved: z.boolean(), increaseLimitToUsd: z.number().optional() })),
+      .output(H.BudgetApprovalSchema),
   )
   .retry(($) => $.tries(2).exponential(5_000).orFail('exhausted'))
   .onSignal(steerSignal, ($) =>
