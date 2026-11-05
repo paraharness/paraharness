@@ -88,7 +88,7 @@ packages:
 
 ## 3. `(b) -> (c)` Builder Execution Topology & Dependency DAG
 
-Execution follows a four-stage `(b) -> (c) -> (b)` wave schedule (`Wave 1a -> Wave 1b -> Wave 2 -> Wave 3`) designed for zero interface drift and zero file contention across parallel builders:
+Execution follows a four-stage `(b) -> (c) -> (b)` wave schedule (`Wave 1a -> Wave 1b -> Wave 2 -> Wave 3`) designed for zero interface drift and zero file contention across parallel builders. Each milestone unit `U` in a wave is built, reviewed, verified, and converged using [`docs/IMPL_LOOP.md`](file:///Users/torniketsomaia/projects/metaharness/docs/IMPL_LOOP.md); Wave `W + 1` starts only after every unit `U` in Wave `W` reaches `TERMINATION` (`count($verified_findings) == 0` and verification gate exit `0`):
 
 1. **Wave 1a — Sequential Core Spine (`b` — Contracts, Schemas, AST & Builders):**
    - **`M1` (`docs/plan/M1-core-contracts.md`):** Bootstraps the monorepo workspace configuration (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, and all 14 `packages/*/package.json` + `packages/*/tsconfig.json` manifests with `pnpm install --prefer-offline`), and implements 100% of `@harness-dsl/core` port interfaces, data contracts, Zod schema factories, AST node definitions, JSON-Schema compilation helpers, fluent builder APIs (`H.*`), `registerStepExecutors`, and the initial `packages/core/src/runtime/index.ts` stub.
