@@ -5,7 +5,7 @@
 - **Milestone Wave:** Sequential Core Spine (`b`) — Wave 1a (Contracts, Schemas, AST & Builders)
 - **Owned Files & Directories:**
   - Root workspace configuration: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`
-  - Package manifests and TypeScript configs pre-created for all 14 workspace packages so Wave 1b (`M2`), Wave 2 (`M3a..M3f`), and Wave 3 (`M4`) builders never mutate `pnpm-lock.yaml` or root configs:
+  - Package manifests and TypeScript configs pre-created for all 13 workspace packages so Wave 1b (`M2`), Wave 2 (`M3a..M3f`), and Wave 3 (`M4`) builders never mutate `pnpm-lock.yaml` or root configs:
     - `packages/core/package.json`, `packages/core/tsconfig.json`
     - `packages/sqlite/package.json`, `packages/sqlite/tsconfig.json`
     - `packages/postgres/package.json`, `packages/postgres/tsconfig.json`
@@ -15,10 +15,9 @@
     - `packages/git/package.json`, `packages/git/tsconfig.json`
     - `packages/claude/package.json`, `packages/claude/tsconfig.json`
     - `packages/openai/package.json`, `packages/openai/tsconfig.json`
+    - `packages/gemini/package.json`, `packages/gemini/tsconfig.json`
     - `packages/github/package.json`, `packages/github/tsconfig.json`
     - `packages/slack/package.json`, `packages/slack/tsconfig.json`
-    - `packages/stripe/package.json`, `packages/stripe/tsconfig.json`
-    - `packages/netsuite/package.json`, `packages/netsuite/tsconfig.json`
     - `packages/integration/package.json`, `packages/integration/tsconfig.json`
   - `@harness-dsl/core` contract, schema, AST, and builder source files:
     - `packages/core/src/ports.ts`
@@ -32,7 +31,7 @@
     - `packages/core/test/builders.test.ts`
 - **Forbidden Directories:**
   - Do not modify `infra/**`, `.claude/**`, `.agents/**`, `scripts/**`, or `docs/**`.
-  - Do not create `src/` or `test/` files inside `packages/sqlite`, `packages/postgres`, `packages/fs`, `packages/markdown`, `packages/node`, `packages/git`, `packages/claude`, `packages/openai`, `packages/github`, `packages/slack`, `packages/stripe`, `packages/netsuite`, or `packages/integration`.
+  - Do not create `src/` or `test/` files inside `packages/sqlite`, `packages/postgres`, `packages/fs`, `packages/markdown`, `packages/node`, `packages/git`, `packages/claude`, `packages/openai`, `packages/gemini`, `packages/github`, `packages/slack`, or `packages/integration`.
 
 ---
 
@@ -42,10 +41,10 @@ Read the following sections in full before authoring any file in `M1`:
 
 | Document | Section | Line Range | Key Contracts Covered |
 | :--- | :--- | :--- | :--- |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1. Scope, Design Principles & Package Topology | `1–34` | Domain-purity of `@harness-dsl/core`, 6 declarative compilation & serialization invariants |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.1–§2.7 Port Interfaces & Data Contracts | `36–869` | All port interfaces (`EnvRef`, `ResolutionContext`, `Source`, `ToolEffect`, `EffectMatcher`, `LeaseDelta`, `PolicyGuard`, `QuotaTripwire`, `TelemetryCollector`, `AbortHook`, `ScopeRewindHook`, `ExecutionContext`, `StepExecutable`, `Check`, `ToolDefinition`, `ServiceSession`, `Service`, `IsolationScope`, `CheckpointableScope`, `BranchableScope`, `CrossVerifier`, `ModelDriver`, `ContinuationFrame`, `SuspendedForkRecord`, `LedgerStore`, `TopologyStore`, `LessonStore`, `TrackerAdapter`, `StreamSource`, `HumanAdapter`, `ControlPlaneAdapter`) |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.1–§3.10 `@harness-dsl/core` Primitives | `873–1361` | Builder signatures and static AST compilation rules for `H.signal`, `H.interrupt`, `H.stream`, `H.pool`, `H.prefixGroup`, `H.topology`, `H.rules`, `H.scopedRule`, `H.skill`, `H.lessons`, `H.policy`, `H.human`, `H.agent`, `H.loop`, `H.flow`, `H.lane`, `H.harness` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5. Non-Coding Financial Harness Example | `1474–1583` | End-to-end builder chain usage for `H.policy`, `H.agent`, `H.flow` over Tier-1 `IsolationScope` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1. Scope, Design Principles & Package Topology | `1–35` | Domain-purity of `@harness-dsl/core`, 6 declarative compilation & serialization invariants |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.1–§2.7 Port Interfaces & Data Contracts | `37–872` | All port interfaces (`EnvRef`, `ResolutionContext`, `Source`, `ToolEffect`, `EffectMatcher`, `LeaseDelta`, `PolicyGuard`, `QuotaTripwire`, `TelemetryCollector`, `AbortHook`, `ScopeRewindHook`, `ExecutionContext`, `StepExecutable`, `Check`, `ToolDefinition`, `ServiceSession`, `Service`, `IsolationScope`, `CheckpointableScope`, `BranchableScope`, `CrossVerifier`, `ModelDriver`, `ContinuationFrame`, `SuspendedForkRecord`, `LedgerStore`, `TopologyStore`, `LessonStore`, `TrackerAdapter`, `StreamSource`, `HumanAdapter`, `ControlPlaneAdapter`) |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.1–§3.10 `@harness-dsl/core` Primitives | `876–1364` | Builder signatures and static AST compilation rules for `H.signal`, `H.interrupt`, `H.stream`, `H.pool`, `H.prefixGroup`, `H.topology`, `H.rules`, `H.scopedRule`, `H.skill`, `H.lessons`, `H.policy`, `H.human`, `H.agent`, `H.loop`, `H.flow`, `H.lane`, `H.harness` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5. Non-Coding Financial Harness Example | `1484–1593` | End-to-end builder chain usage for `H.policy`, `H.agent`, `H.flow` over Tier-1 `IsolationScope` |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6. Complete Production Implementation (`engineering-harness.ts`) | `176–1208` | Full builder surface exercised by `acme-engineering` across all 17 `H.*` primitives and schema factories |
 
 ---
@@ -133,20 +132,19 @@ packages:
       "@harness-dsl/git": ["packages/git/src/index.ts"],
       "@harness-dsl/claude": ["packages/claude/src/index.ts"],
       "@harness-dsl/openai": ["packages/openai/src/index.ts"],
+      "@harness-dsl/gemini": ["packages/gemini/src/index.ts"],
       "@harness-dsl/github": ["packages/github/src/index.ts"],
-      "@harness-dsl/slack": ["packages/slack/src/index.ts"],
-      "@harness-dsl/stripe": ["packages/stripe/src/index.ts"],
-      "@harness-dsl/netsuite": ["packages/netsuite/src/index.ts"]
+      "@harness-dsl/slack": ["packages/slack/src/index.ts"]
     }
   }
 }
 ```
 
-4. **Each `packages/<pkg>/package.json` (14 packages total):**
+4. **Each `packages/<pkg>/package.json` (13 packages total):**
    - `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`.
    - `"exports": { ".": "./src/index.ts" }`, `"main": "./src/index.ts"`, `"types": "./src/index.ts"`.
    - `"scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" }`.
-   - Complete per-package `"dependencies"` and `"devDependencies"` table across all 14 packages:
+   - Complete per-package `"dependencies"` and `"devDependencies"` table across all 13 packages:
 
 | Package | `dependencies` | `devDependencies` |
 | :--- | :--- | :--- |
@@ -159,11 +157,10 @@ packages:
 | `@harness-dsl/git` | `"@harness-dsl/core": "workspace:*"`, `"picomatch": "^4.0.2"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"@types/picomatch": "^4.0.2"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
 | `@harness-dsl/claude` | `"@harness-dsl/core": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
 | `@harness-dsl/openai` | `"@harness-dsl/core": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
+| `@harness-dsl/gemini` | `"@harness-dsl/core": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
 | `@harness-dsl/github` | `"@harness-dsl/core": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
 | `@harness-dsl/slack` | `"@harness-dsl/core": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
-| `@harness-dsl/stripe` | `"@harness-dsl/core": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
-| `@harness-dsl/netsuite` | `"@harness-dsl/core": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
-| `@harness-dsl/integration` | `"@harness-dsl/core": "workspace:*"`, `"@harness-dsl/sqlite": "workspace:*"`, `"@harness-dsl/postgres": "workspace:*"`, `"@harness-dsl/fs": "workspace:*"`, `"@harness-dsl/markdown": "workspace:*"`, `"@harness-dsl/node": "workspace:*"`, `"@harness-dsl/git": "workspace:*"`, `"@harness-dsl/claude": "workspace:*"`, `"@harness-dsl/openai": "workspace:*"`, `"@harness-dsl/github": "workspace:*"`, `"@harness-dsl/slack": "workspace:*"`, `"@harness-dsl/stripe": "workspace:*"`, `"@harness-dsl/netsuite": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
+| `@harness-dsl/integration` | `"@harness-dsl/core": "workspace:*"`, `"@harness-dsl/sqlite": "workspace:*"`, `"@harness-dsl/postgres": "workspace:*"`, `"@harness-dsl/fs": "workspace:*"`, `"@harness-dsl/markdown": "workspace:*"`, `"@harness-dsl/node": "workspace:*"`, `"@harness-dsl/git": "workspace:*"`, `"@harness-dsl/claude": "workspace:*"`, `"@harness-dsl/openai": "workspace:*"`, `"@harness-dsl/gemini": "workspace:*"`, `"@harness-dsl/github": "workspace:*"`, `"@harness-dsl/slack": "workspace:*"`, `"zod": "^3.24.2"` | `"@types/node": "^22.9.0"`, `"typescript": "^5.8.2"`, `"vitest": "^3.2.0"` |
 
 5. **Each `packages/<pkg>/tsconfig.json`:**
    - Extends `"../../tsconfig.base.json"`, with `"include": ["src/**/*.ts", "test/**/*.ts"]`.
@@ -410,7 +407,7 @@ export interface PartitionMap<TPartition extends string = string> {
 }
 
 export interface AccountSeatDescriptor {
-  readonly kind: 'harness:account-seat' | 'claude:account-seat' | 'openai:account-seat';
+  readonly kind: 'harness:account-seat' | 'claude:account-seat' | 'openai:account-seat' | 'gemini:account-seat';
   readonly id: string;
   readonly configDirPath?: string;
   readonly apiKeyRef?: EnvRef | string;
@@ -513,7 +510,8 @@ export interface ForkContext {
 
 export interface ModelDriver {
   readonly kind: 'harness:model-driver';
-  readonly vendorId: string;
+  readonly vendorId: 'anthropic' | 'openai' | 'google' | string;
+  readonly vendor?: 'anthropic' | 'openai' | 'google' | string;
   invokeTurn(req: {
     readonly modelId: string;
     readonly accountConfig?: unknown;
@@ -2299,7 +2297,7 @@ Re-exports `z` from `'zod'`, `H`, `registerStepExecutors`, and all types/interfa
    - In `PoolDefImpl.strategy(modeOrBuilder)`, if `typeof modeOrBuilder === 'string'`, sets `strategyConfig = { mode: modeOrBuilder }`; if `typeof modeOrBuilder === 'object' && modeOrBuilder !== null && modeOrBuilder.kind === 'harness:pool-strategy'`, sets `strategyConfig = { mode: 'custom', customStrategy: modeOrBuilder }`; if `typeof modeOrBuilder === 'function'`, invokes `(modeOrBuilder as any)(builderInstance, { poolId: this.id, runId: '', retryAttempt: 0, nowMs: 0 })` inside a `try/catch` (or checks whether the returned value is the `PoolStrategyBuilder` instance): if the returned value is the `PoolStrategyBuilder` instance, extracts its built `PoolStrategyConfig<TItem>`, otherwise treats `modeOrBuilder` as a `PoolSelectorFn<TItem>` with `strategyConfig = { mode: 'custom', customStrategy: modeOrBuilder as PoolSelectorFn<TItem> }`.
 9. **Cross-Boundary Runtime Contracts Frozen in `ports.ts`:**
    - **Speculative `forkId` Convention:** `.speculate()` passes `forkId = "speculate-${callId}-branch-${branchIndex}"` to `BranchableScope.forkChild`, allowing `@harness-dsl/git` to parse `/branch-(\d+)$/` to set `handle.branchIndex` and register live candidate handles by `${runId}:${branchIndex}`.
-   - **Account/Model Descriptors, Custom `PoolStrategy` Contracts & HTTP `429` Rate-Limit Error Contract:** `AccountSeatDescriptor`, `ModelDescriptor`, `PoolCandidateState<TItem>`, `PoolSelectionContext`, `PoolSelectorFn<TItem>`, and `PoolStrategyPort<TItem>` define the structural contracts shared between `@harness-dsl/core` (`PoolScheduler`) and `@harness-dsl/claude` / `@harness-dsl/openai` / custom pool strategies; on HTTP `429`, `ModelDriver.invokeTurn` throws an error carrying `{ status: 429, resetAtMs?: number }`.
+   - **Account/Model Descriptors, Custom `PoolStrategy` Contracts & HTTP `429` Rate-Limit Error Contract:** `AccountSeatDescriptor`, `ModelDescriptor`, `PoolCandidateState<TItem>`, `PoolSelectionContext`, `PoolSelectorFn<TItem>`, and `PoolStrategyPort<TItem>` define the structural contracts shared between `@harness-dsl/core` (`PoolScheduler`) and `@harness-dsl/claude` / `@harness-dsl/openai` / `@harness-dsl/gemini` / custom pool strategies; on HTTP `429`, `ModelDriver.invokeTurn` throws an error carrying `{ status: 429, resetAtMs?: number }`.
    - **`ReconcileResult` Conflict Paths, `ConfigurableLedgerStore`, and `PartitionMap`:** `ReconcileResult` includes `readonly conflictedPaths?: readonly string[]` on its `'conflict'` variant; `CompactionRuleConfig`, `LedgerCompactionBuilder`, and `ConfigurableLedgerStore` define the ledger compaction contract shared with `@harness-dsl/sqlite` and `@harness-dsl/postgres`; `PartitionGlobEntry` and `PartitionMap<TPartition>` define the partition-to-glob contract shared with `@harness-dsl/fs` and `@harness-dsl/git`.
 
 ---

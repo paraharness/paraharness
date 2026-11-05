@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "strict": true,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@harness-dsl/core": ["packages/core/src/index.ts"],
+      "@harness-dsl/sqlite": ["packages/sqlite/src/index.ts"],
+      "@harness-dsl/postgres": ["packages/postgres/src/index.ts"],
+      "@harness-dsl/fs": ["packages/fs/src/index.ts"],
+      "@harness-dsl/markdown": ["packages/markdown/src/index.ts"],
+      "@harness-dsl/node": ["packages/node/src/index.ts"],
+      "@harness-dsl/git": ["packages/git/src/index.ts"],
+      "@harness-dsl/claude": ["packages/claude/src/index.ts"],
+      "@harness-dsl/openai": ["packages/openai/src/index.ts"],
+      "@harness-dsl/gemini": ["packages/gemini/src/index.ts"],
+      "@harness-dsl/github": ["packages/github/src/index.ts"],
+      "@harness-dsl/slack": ["packages/slack/src/index.ts"]
+    }
+  }
+}

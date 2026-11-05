@@ -22,7 +22,7 @@
   - `packages/postgres/test/postgres-stores.test.ts`
 - **Forbidden Directories:**
   - Do not modify root workspace files (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `pnpm-lock.yaml`) or `packages/core/**`.
-  - Do not touch `packages/fs`, `packages/markdown`, `packages/node`, `packages/git`, `packages/claude`, `packages/openai`, `packages/github`, `packages/slack`, `packages/stripe`, `packages/netsuite`, or `packages/integration`.
+  - Do not touch `packages/fs`, `packages/markdown`, `packages/node`, `packages/git`, `packages/claude`, `packages/openai`, `packages/gemini`, `packages/github`, `packages/slack`, `packages/stripe`, `packages/netsuite`, or `packages/integration`.
   - Zero cross-adapter imports: `packages/sqlite` imports only from `@harness-dsl/core`, `zod`, `better-sqlite3`, and Node.js built-ins (`node:crypto`, `node:path`, `node:fs`, `node:sqlite`); `packages/postgres` imports only from `@harness-dsl/core`, `zod`, and Node.js built-ins (`node:crypto`, `node:path`, `node:fs`).
 
 ---
@@ -33,12 +33,12 @@ Read the following sections in full before authoring any file in `M3a`:
 
 | Document | Section | Line Range | Key Contracts & Storage Semantics Covered |
 | :--- | :--- | :--- | :--- |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries & §1.2 Invariant 5 | `20–21, 31` | Local WAL-mode SQLite & PostgreSQL storage responsibilities; Host-Root Storage Port Resolution |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.6 Storage Ports (`LedgerStore`, `TopologyStore`, `LessonStore`) | `430–829` | Exact method signatures and behavioral contracts for `LedgerStore`, `TopologyStore`, `LessonStore` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.3 Relational System Topology (`H.topology`) | `949–960` | Run-scoped CoW overlays, `baseContractTextAtAcquire` pinning, `stepExecId` tagging, `syncRunOverlays`, `resetRunOverlay` (`step` vs `run`), `sealRunOverlay`, monotonic 3-way `commitRunOverlay`, `discardRunOverlay` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1 Rules & §3.4.3 Lessons | `963–1030` | `GlobalRule` relational `Source`, `LessonStore` BM25 similarity $R(L, Q) \in [0, 1]$, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.10 Ledger Compaction (`.compactWhen()`) | `1359` | Persisted compaction deadlines, stacked-PR `baseBranch !== 'main'` deferral, active `itemKey` protection |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 Adapter Specifications | `1465–1471` | `sqlite.ledger`, `sqlite.topologyStore`, `sqlite.lessonStore`, `sqlite.globalRules`, `postgres.*` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries & §1.2 Invariant 5 | `21–22, 32` | Local WAL-mode SQLite & PostgreSQL storage responsibilities; Host-Root Storage Port Resolution |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.6 Storage Ports (`LedgerStore`, `TopologyStore`, `LessonStore`) | `433–832` | Exact method signatures and behavioral contracts for `LedgerStore`, `TopologyStore`, `LessonStore` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.3 Relational System Topology (`H.topology`) | `952–963` | Run-scoped CoW overlays, `baseContractTextAtAcquire` pinning, `stepExecId` tagging, `syncRunOverlays`, `resetRunOverlay` (`step` vs `run`), `sealRunOverlay`, monotonic 3-way `commitRunOverlay`, `discardRunOverlay` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1 Rules & §3.4.3 Lessons | `966–1033` | `GlobalRule` relational `Source`, `LessonStore` BM25 similarity $R(L, Q) \in [0, 1]$, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.10 Ledger Compaction (`.compactWhen()`) | `1362` | Persisted compaction deadlines, stacked-PR `baseBranch !== 'main'` deferral, active `itemKey` protection |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 Adapter Specifications | `1475–1481` | `sqlite.ledger`, `sqlite.topologyStore`, `sqlite.lessonStore`, `sqlite.globalRules`, `postgres.*` |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 `engineering-harness.ts` | `344–355, 457–475, 554` | Exact builder invocations for `sqlite.ledger(...).compactWhen(...)`, `sqlite.topologyStore(...)`, `sqlite.globalRules(..., { table })` |
 
 ---
@@ -113,26 +113,26 @@ Exports `threeWayMergeText(baseText: string, oursText: string, theirsText: strin
 - Performs line-based 3-way merge of `oursText` and `theirsText` against `baseText`.
 - If `oursText === baseText`, returns `theirsText`; if `theirsText === baseText` or `oursText === theirsText`, returns `oursText`.
 - If non-overlapping hunks changed in `oursText` and `theirsText`, merges both cleanly.
-- If genuinely concurrent independent runs modified overlapping lines, falls back to deterministic section concatenation (`SPEC.md` §3.3 line 955) so `commitRunOverlay` never throws or leaves conflict markers in contract text.
+- If genuinely concurrent independent runs modified overlapping lines, falls back to deterministic section concatenation (`SPEC.md` §3.3 line 958) so `commitRunOverlay` never throws or leaves conflict markers in contract text.
 
 ---
 
 ## 4. Critical Implementation Invariants
 
 1. **Host-Root Path Resolution (`SPEC.md` §1.2 Invariant 5):** `sqlite.ledger`, `sqlite.topologyStore`, `sqlite.lessonStore`, and `sqlite.globalRules` resolve relative file URIs (such as `'.harness/state.sqlite'`) against an immutable `hostRootDir` pinned at store construction time (`path.resolve(opts?.hostRootDir ?? process.cwd(), uri)`), never against `process.cwd()` inside a worktree.
-2. **`getInterruptedStepsOnBoot` Coverage (`SPEC.md` §2.6 lines 716–728):**
+2. **`getInterruptedStepsOnBoot` Coverage (`SPEC.md` §2.6 lines 719–731):**
    - Returns all non-terminal runs (`status IN ('RUNNING', 'WAITING', 'SUSPENDED')`).
    - For runs mid-step, returns the active step's `stepExecId`, `stepId`, `baseScopeCheckpoint`, `headScopeCheckpoint`, and `continuationStack`.
    - For runs that crashed between steps (before Step 0 `recordStepStart`, between Step $i$ `COMPLETED` and Step $i+1$ `recordStepStart`, or during `.replaceWith()` `abortHook`), returns `stepExecId: null`, `stepId: currentStepId`, and `continuationStack: []`.
 3. **`markFrameTombstone` Immutability (`SPEC.md` §2.5, §3.4.2):**
    - `markFrameTombstone(runId, messageId, callId, compactedTombstone)` updates `compacted_tombstones_json` (`compactedTombstones[callId] = compactedTombstone`) on `messageId` while keeping `raw_wire_frame` 100% untouched.
-4. **CoW Topology Overlay & 3-Way Stacked-PR Commit (`SPEC.md` §2.6 lines 740–778, §3.3 line 955):**
+4. **CoW Topology Overlay & 3-Way Stacked-PR Commit (`SPEC.md` §2.6 lines 744–781, §3.3 line 958):**
    - `getPartitions(runId)`: when `runId` first loads a partition not yet in `topology_run_overlays`, pins `base_contract_text_at_acquire = base.contract_text` from `topology_base_partitions`.
    - `updateContract(runId, partitionId, newContractText, stepExecId)`: writes to `topology_run_overlays` without re-reading `topology_base_partitions`, increments `current_epoch`, and appends an entry to `topology_overlay_step_mutations` tagged with `stepExecId`.
    - `syncRunOverlays(targetRunId, prerequisiteRunIds)`: copies `ACTIVE` or `SEALED_UNMERGED` overlay entries from `prerequisiteRunIds` into `targetRunId`, advances `targetRunId`'s `base_contract_text_at_acquire` and `synced_contract_text` for each absorbed partition to the prerequisite's `current_contract_text`, and records `prerequisiteRunIds` (plus their transitive `topology_overlay_ancestors`) in `topology_overlay_ancestors` for `targetRunId`.
    - `resetRunOverlay(runId, { scope, stepExecId })`: when `scope === 'step'`, reverts only `topology_overlay_step_mutations` matching `(runId, stepExecId)`, restoring `current_contract_text` and `current_epoch` to the state after the latest earlier `COMPLETED` step (or `synced_contract_text` if none); when `scope === 'run'`, deletes all `topology_overlay_step_mutations` for `runId` and resets `current_contract_text = synced_contract_text` and `current_epoch = synced_epoch`.
    - `commitRunOverlay(runId)`: inside a single SQLite `IMMEDIATE` transaction, collects `committedRunIds = [...ancestors, runId]` (never including dependent child overlays that merely synced *from* `runId` unless folded into `runId` via `syncRunOverlays(runId, [childRunId])`), allocates `newBaseEpoch = currentBase.epoch + 1` monotonically per modified partition, 3-way merges `contractText` against `base_contract_text_at_acquire`, deletes the committed overlays, and returns `{ committedRunIds, updatedEpochs }`.
-5. **Compaction Deadlines & Stacked-PR Safety (`SPEC.md` §2.6 line 729, §3.10 line 1359):**
+5. **Compaction Deadlines & Stacked-PR Safety (`SPEC.md` §2.6 line 732, §3.10 line 1362):**
    - `compactRunFrames(runId)` zeroes out `raw_wire_frame` (`Uint8Array(0)`) and sets `is_pruned = 1` on `harness_messages` for `run_id = runId` **only** if `runId` is in a terminal state (`status NOT IN ('RUNNING', 'WAITING', 'SUSPENDED', 'QUEUED')`), never pruning frames of any other `runId` (even one sharing the same `itemKey`) and retaining `harness_runs` receipts and `harness_steps` telemetry.
 6. **Offline-Safe SQLite Driver Fallback & Zero-Dependency `PgPoolLike` Engine:**
    - `@harness-dsl/sqlite` loads `better-sqlite3` when its native binary is present and falls back transparently to Node 22+'s built-in `node:sqlite` (`DatabaseSync`) with identical WAL pragma and synchronous transaction semantics if the native addon is unavailable.

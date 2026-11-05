@@ -1,0 +1,35 @@
+{
+  "name": "@harness-dsl/integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@harness-dsl/core": "workspace:*",
+    "@harness-dsl/sqlite": "workspace:*",
+    "@harness-dsl/postgres": "workspace:*",
+    "@harness-dsl/fs": "workspace:*",
+    "@harness-dsl/markdown": "workspace:*",
+    "@harness-dsl/node": "workspace:*",
+    "@harness-dsl/git": "workspace:*",
+    "@harness-dsl/claude": "workspace:*",
+    "@harness-dsl/openai": "workspace:*",
+    "@harness-dsl/gemini": "workspace:*",
+    "@harness-dsl/github": "workspace:*",
+    "@harness-dsl/slack": "workspace:*",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.0"
+  }
+}

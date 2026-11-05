@@ -2,7 +2,7 @@
   "name": "wg-monorepo",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.34.9",
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
@@ -11,6 +11,21 @@
     "explore": "bash infra/scripts/explore.sh",
     "lesson": "bash .claude/scripts/lesson.sh",
     "grounding": "node .claude/scripts/grounding.mjs",
-    "last-messages": "node .claude/hooks/last-messages.mjs"
+    "last-messages": "node .claude/hooks/last-messages.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "check:comments": "node -e \"const fs=require('node:fs'),path=require('node:path'),ts=require('typescript');const walk=(d)=>fs.existsSync(d)?fs.readdirSync(d,{withFileTypes:true}).flatMap((e)=>{const p=path.join(d,e.name);return e.isDirectory()?walk(p):/\\.(ts|tsx|js|mjs)$/.test(e.name)?[p]:[];}):[];const bad=[];for(const f of walk('packages')){const src=fs.readFileSync(f,'utf8');const sc=ts.createScanner(ts.ScriptTarget.Latest,false,ts.LanguageVariant.Standard,src);let tok;while((tok=sc.scan())!==ts.SyntaxKind.EndOfFileToken){if(tok===ts.SyntaxKind.SingleLineCommentTrivia||tok===ts.SyntaxKind.MultiLineCommentTrivia){bad.push(f+':'+sc.getTokenPos());break;}}}if(bad.length){console.error('Comments found:',bad.join(', '));process.exit(1);}\""
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "picomatch": "^4.0.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.9.0",
+    "@types/picomatch": "^4.0.2",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.0"
   }
 }
