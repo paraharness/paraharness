@@ -882,8 +882,44 @@ export interface HarnessRuntimeController {
 
 `H.pool` schedules concurrent access across account seats or models:
 
-* **Account Pools & Run-Sticky Seat Affinity:** Multiplex across subscription seats (`strategy: 'soonest-reset' | 'round-robin' | 'least-used'`) and cascade to `.fallback(account)` when all primary seats are rate-limited. Once a `runId` acquires an account seat, all turns and child forks within that `runId` stick to that seat (preserving per-account Anthropic KV prefix caches and OpenAI `previous_response_id` server-side state) unless that seat hits a `429`/quota exhaustion, in which case failover to another seat or `.fallback(account)` replays the full `WireFrameRecord[]` history (automatically stripping account-bound OpenAI `previous_response_id`, server item IDs `rs_...`/`fc_...`/`msg_...`, and org-keyed `encrypted_content` when failing over across distinct OpenAI accounts).
-* **Model Pools:** Track empirical completion rates per model in the ledger and escalate along the pool chain via `.strategy(($) => $.escalateOnRetry().minSuccessRate(r).minSamples(n))`.
+* **Account Pools & Run-Sticky Seat Affinity:** Multiplex across subscription seats (`strategy: 'soonest-reset' | 'round-robin' | 'least-used'`, or a custom `PoolStrategyPort<TItem>` / `PoolSelectorFn<TItem>`) and cascade to `.fallback(account)` when all primary seats are rate-limited. Once a `runId` acquires an account seat, all turns and child forks within that `runId` stick to that seat (preserving per-account Anthropic KV prefix caches and OpenAI `previous_response_id` server-side state) unless that seat hits a `429`/quota exhaustion, in which case failover to another seat or `.fallback(account)` replays the full `WireFrameRecord[]` history (automatically stripping account-bound OpenAI `previous_response_id`, server item IDs `rs_...`/`fc_...`/`msg_...`, and org-keyed `encrypted_content` when failing over across distinct OpenAI accounts).
+* **Model Pools & Custom Selection Strategies:** Track empirical completion rates per model in the ledger and escalate along the pool chain via `.strategy(($) => $.escalateOnRetry().minSuccessRate(r).minSamples(n))`, or select candidates via a custom `PoolStrategyPort<TItem>` (`{ kind: 'harness:pool-strategy', id, select(candidates, ctx) }`), a custom `PoolSelectorFn<TItem>` (`(candidates: readonly PoolCandidateState<TItem>[], ctx: PoolSelectionContext) => TItem | undefined`), or `.strategy(($) => $.custom(strategy))`.
+
+~~~ts
+export interface PoolCandidateState<TItem = unknown> {
+  readonly item: TItem;
+  readonly index: number;
+  readonly id: string;
+  readonly rateLimitedUntilMs?: number;
+  readonly usageCount: number;
+  readonly lastUsedAtMs?: number;
+  readonly successCount: number;
+  readonly sampleCount: number;
+  readonly empiricalSuccessRate: number;
+}
+
+export interface PoolSelectionContext {
+  readonly poolId: string;
+  readonly runId: string;
+  readonly retryAttempt: number;
+  readonly nowMs: number;
+  readonly stickyCandidateId?: string;
+}
+
+export type PoolSelectorFn<TItem = unknown> = (
+  candidates: readonly PoolCandidateState<TItem>[],
+  ctx: PoolSelectionContext,
+) => TItem | undefined;
+
+export interface PoolStrategyPort<TItem = unknown> {
+  readonly kind: 'harness:pool-strategy';
+  readonly id: string;
+  select(
+    candidates: readonly PoolCandidateState<TItem>[],
+    ctx: PoolSelectionContext,
+  ): TItem | undefined;
+}
+~~~
 
 ### 3.2.1 Run-Immutable Unified Warm-Fork Prefix Groups (`H.prefixGroup`)
 
