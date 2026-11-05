@@ -1,0 +1,11 @@
+{
+  "context-watch-700k": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./hooks/context-watch-700k.mjs",
+        "timeout": 10
+      }
+    ]
+  }
+}
