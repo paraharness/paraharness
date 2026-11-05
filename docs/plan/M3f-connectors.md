@@ -27,8 +27,8 @@ Read the following sections in full before authoring any file in `M3f`:
 | :--- | :--- | :--- | :--- |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries & §1.2 Invariant 3 | `22–23, 29` | `@harness-dsl/github` and `@harness-dsl/slack` responsibilities; opaque `EnvRef` resolution |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.7 External Tracker, Stream, Human & Control-Plane Ports | `831–868` | `TrackerAdapter`, `StreamSource`, `HumanAdapter`, `ControlPlaneAdapter`, `HarnessRuntimeController` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.1 Signals & Streams, §3.6 Humans (`H.human`), §3.7.2 & §3.10 `cancelDecision` | `875–880, 1033–1036, 1200, 1318` | Bidirectional `HumanAdapter` requirement (`requestDecision` + `cancelDecision`), sibling-interrupt & rewind cancellation |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 `@harness-dsl/github` & `@harness-dsl/slack` | `1429–1435` | `github.issues`, `github.webhookStream`, `slack.webhook`, `slack.bot` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.1 Signals & Streams, §3.6 Humans (`H.human`), §3.7.2 & §3.10 `cancelDecision` | `875–880, 1069–1072, 1236, 1354` | Bidirectional `HumanAdapter` requirement (`requestDecision` + `cancelDecision`), sibling-interrupt & rewind cancellation |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 `@harness-dsl/github` & `@harness-dsl/slack` | `1465–1471` | `github.issues`, `github.webhookStream`, `slack.webhook`, `slack.bot` |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 `engineering-harness.ts` | `356–365, 431–452, 1132–1170, 1204–1207` | `slackBot`, `owner`, `githubWebhookSource`, `githubMergeStream`, `githubPrClosedStream`, `issuesTracker` |
 
 ---
@@ -163,7 +163,7 @@ export const slack: {
    - Computes `expected = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex')` and compares against `headers['x-hub-signature-256']` using `crypto.timingSafeEqual` (returning `false` and dropping the payload on mismatch or missing signature).
    - Verifies `${eventHeader}.${payload.action}` (or `${eventHeader}`) is in `opts.events` (e.g., `'pull_request.closed'`) and, if `payload.repository?.full_name` is present, matches `opts.repo`.
    - Delivers matching events to all active callbacks registered via `subscribe(onEvent)`.
-3. **`slack.webhook` vs `slack.bot` Bidirectional Enforcement (`SPEC.md` §3.6 lines 1033–1036):**
+3. **`slack.webhook` vs `slack.bot` Bidirectional Enforcement (`SPEC.md` §3.6 lines 1069–1072):**
    - `slack.webhook(url)` implements `notify(message)` via HTTP `POST` JSON `{ text: message }` and throws an explicit error if `requestDecision` is called on it.
    - `slack.bot(opts)` implements both `HumanAdapter` (`notify`, `requestDecision`, `cancelDecision`) and `ControlPlaneAdapter` (`start`).
    - In `requestDecision(req)`:

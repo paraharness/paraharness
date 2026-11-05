@@ -31,9 +31,9 @@ Read the following sections in full before authoring any file in `M3e`:
 | :--- | :--- | :--- | :--- |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries | `14–15` | `@harness-dsl/claude` and `@harness-dsl/openai` responsibilities |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.5 `ModelDriver`, `CompiledWirePrefix`, `WireFrameRecord`, `ForkContext` | `307–428` | Exact `ModelDriver` method signatures (`invokeTurn`, `prepareFork`, `appendToolResultNotes`) and wire frame invariants |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.2 Capacity Pools (`H.pool`) & `H.prefixGroup` | `881–912` | Run-sticky account seat affinity, `429` failover, `'role-scoped'` vs `'union'` wire tool schemas |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.2 Skill Tombstones, §3.5 Epistemic Flush, §3.8 Cross-Model Loop Escalation | `962–967, 1027–1031, 1254` | Per-`callId` `compactedTombstones` substitution only on `substituteTombstones: true`, `toolChoice: 'none'` flush turns, omitted `childRoleContextFrameText` on same-actor escalation |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.1 `@harness-dsl/claude` & `@harness-dsl/openai` | `1330–1338` | Native `output_config.format` / `text.format`, `thinking` signature preservation vs stripping, empty text block omission, OpenAI `previous_response_id` & `rs_...`/`fc_...`/`msg_...`/`encrypted_content` stripping on cross-seat or cross-model transitions, full-turn `(1..k)` `tool_result` / `function_call_output` pairing |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.2 Capacity Pools (`H.pool`) & `H.prefixGroup` | `881–948` | Run-sticky account seat affinity, `429` failover, `'role-scoped'` vs `'union'` wire tool schemas |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.2 Skill Tombstones, §3.5 Epistemic Flush, §3.8 Cross-Model Loop Escalation | `998–1003, 1063–1067, 1290` | Per-`callId` `compactedTombstones` substitution only on `substituteTombstones: true`, `toolChoice: 'none'` flush turns, omitted `childRoleContextFrameText` on same-actor escalation |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.1 `@harness-dsl/claude` & `@harness-dsl/openai` | `1366–1374` | Native `output_config.format` / `text.format`, `thinking` signature preservation vs stripping, empty text block omission, OpenAI `previous_response_id` & `rs_...`/`fc_...`/`msg_...`/`encrypted_content` stripping on cross-seat or cross-model transitions, full-turn `(1..k)` `tool_result` / `function_call_output` pairing |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 `engineering-harness.ts` | `324–343` | `claude.cliAccount`, `claude.model`, `claudeAccounts`, `workerModels` |
 
 ---
@@ -152,7 +152,7 @@ export const openai: {
 
 ## 4. Critical Implementation Invariants
 
-### 4.1 `@harness-dsl/claude` Wire Invariants (`SPEC.md` §1.1 line 14, §2.5, §4.1 lines 1332–1336)
+### 4.1 `@harness-dsl/claude` Wire Invariants (`SPEC.md` §1.1 line 14, §2.5, §4.1 lines 1368–1372)
 
 1. **Seat Credential Extraction, Run-Sticky Affinity & HTTP `429` Error Contract:**
    - `claude.cliAccount(id).configDir(path)` resolves `~` to `os.homedir()` and reads OAuth access token credentials from `<configDir>/.credentials.json` or `<configDir>/credentials.json` at invocation time; `.apiKey(envRef)` resolves `EnvRef` from `process.env[envRef.key]`.
@@ -174,7 +174,7 @@ export const openai: {
    - If `frame.canonical.role === 'tool'`, locates the `tool_result` entry matching `targetCallId` (or the final `tool_result` entry if `targetCallId` is omitted), appends `\n\n${notes.join('\n')}` to its content, sets `isError = opts.isError` if `opts?.isError !== undefined`, and updates both `rawWireFrame` and `frame.canonical`.
    - If `frame.canonical.role === 'user'`, appends `\n\n${notes.join('\n')}` to the text content block in both `rawWireFrame` and `frame.canonical`.
 
-### 4.2 `@harness-dsl/openai` Wire Invariants (`SPEC.md` §1.1 line 15, §2.5, §4.1 line 1337)
+### 4.2 `@harness-dsl/openai` Wire Invariants (`SPEC.md` §1.1 line 15, §2.5, §4.1 line 1373)
 
 1. **Responses API, `text.format`, HTTP `429` Error Contract & Run-Sticky `previous_response_id`:**
    - Formats requests for OpenAI `/v1/responses` with `instructions: wirePrefix?.systemPromptText`, `tools`, `tool_choice: req.toolChoice ?? 'auto'`, and (when `req.outputSchema` is set) `text: { format: { type: 'json_schema', name: 'structured_output', strict: true, schema: zodToJsonSchema(req.outputSchema) } }`.

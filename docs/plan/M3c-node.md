@@ -31,8 +31,8 @@ Read the following sections in full before authoring any file in `M3c`:
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries & §1.2 Invariant 3 | `16, 29` | `@harness-dsl/node` responsibilities; opaque `EnvRef` resolution at invocation time |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.3 Executable Units, Checks, Tools & Services | `149–220` | `StepExecutable`, `Check`, `ToolDefinition` (`describeEffects` omission), `Service`, `ServiceSession` |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.7 `ControlPlaneAdapter` & `HarnessRuntimeController` | `860–868` | Control-plane server lifecycle and runtime inspection/signal methods |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.2 Skills & §3.5 Post-Flight Scope Diffing | `956–967, 1009–1015` | Static `Service.toolSchemas`, reference-counted daemon quiescing, post-flight rollback on `.asTool()` omitting `describeEffects` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.2 `@harness-dsl/node` | `1339–1348` | `local.runner({ slots, maxDaemons })`, `local.command` (`.stdin('closed')`, `.unrepeatable()`), `local.streamCheck` (`.circuitBreakWhenStdout()`), `local.daemon` (SHA-256 `scopeKey`, `.stopCommand()`, TCP readiness, PTY `ECHO`-disabled `.interact()`), `mcp.server` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.2 Skills & §3.5 Post-Flight Scope Diffing | `992–1003, 1045–1051` | Static `Service.toolSchemas`, reference-counted daemon quiescing, post-flight rollback on `.asTool()` omitting `describeEffects` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.2 `@harness-dsl/node` | `1375–1384` | `local.runner({ slots, maxDaemons })`, `local.command` (`.stdin('closed')`, `.unrepeatable()`), `local.streamCheck` (`.circuitBreakWhenStdout()`), `local.daemon` (SHA-256 `scopeKey`, `.stopCommand()`, TCP readiness, PTY `ECHO`-disabled `.interact()`), `mcp.server` |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 `engineering-harness.ts` | `322, 367–430, 504–511, 1002–1031, 1204–1207` | `runner`, `drizzleGenerate`, `verifySuite`, `localPostgres`, `browserSandbox`, `checkExistingPr`, `publishPr`, `mcp.server({ port: 9100 })` |
 
 ---
@@ -150,21 +150,21 @@ export const mcp: {
 
 ## 4. Critical Implementation Invariants
 
-1. **Disjoint `slots` vs `maxDaemons` Semaphores, Worktree `cwd`/`env` Inheritance & Process-Group Teardown (`SPEC.md` §4.2 line 1343):**
+1. **Disjoint `slots` vs `maxDaemons` Semaphores, Worktree `cwd`/`env` Inheritance & Process-Group Teardown (`SPEC.md` §4.2 line 1379):**
    - `local.runner({ slots, maxDaemons })` maintains two independent FIFO semaphores: `slots` (acquired by `local.command`, `local.streamCheck`, and `runner.exec`) and `maxDaemons` (defaulting to `slots`, acquired by `local.daemon.acquire()` and held until `ServiceSession.stop()` completes). Holding all `maxDaemons` slots never blocks `local.command` or `local.streamCheck` from acquiring a `slots` permit.
-   - `local.command`, `local.streamCheck`, `local.daemon` (`.start`, `.stopCommand`, `.interact`), and `local.cliTool` (`exec`, `execInteractive`, `spawnBackground`, `glob`, `grep`, `readFile`, `applyEdits`) all resolve `cwd` from `(ctx.scopeHandle as { worktreePath?: string })?.worktreePath ?? process.cwd()` and merge `(ctx.scopeHandle as { env?: Record<string, string> })?.env` into subprocess environment variables before applying step-specific `.env(...)` overrides.
+   - `local.command`, `local.streamCheck`, and `local.daemon` (`.start`, `.stopCommand`, `.interact`) all resolve `cwd` from `(ctx.scopeHandle as { worktreePath?: string })?.worktreePath ?? process.cwd()` and merge `(ctx.scopeHandle as { env?: Record<string, string> })?.env` into subprocess environment variables before applying step-specific `.env(...)` overrides.
    - All spawned subprocesses use `detached: true` so the child PID is its own POSIX process group leader (`pgid = child.pid`). Teardown sends `process.kill(-child.pid, 'SIGTERM')`, waits up to a configurable grace window (`250ms` default), and escalates to `process.kill(-child.pid, 'SIGKILL')` if any process in the group remains alive.
-2. **`local.command` Closed Stdin, `EnvRef` Resolution, Output Coercion & `.unrepeatable()` (`SPEC.md` §4.2 line 1344):**
+2. **`local.command` Closed Stdin, `EnvRef` Resolution, Output Coercion & `.unrepeatable()` (`SPEC.md` §4.2 line 1380):**
    - When `.stdin('closed')` is set (or by default), the child process is spawned with `stdio: ['ignore', 'pipe', 'pipe']`.
    - `EnvRef` values (`{ kind: 'harness:env-ref', key }`) are resolved in-memory at execution time from `process.env[key]` (never serialized to logs or ledger) and merged over `process.env` and `ctx.scopeHandle?.env`.
    - When `.unrepeatable(preCheckCmd, { key })` is configured, `execute(input, ctx)` first runs `const alreadyDone = await preCheckCmd.execute(input, ctx)`; if `alreadyDone === true` (or if `key(input)` was already recorded as completed in the current run), the command skips execution and returns a no-op success.
    - `command.asTool()` returns a `ToolDefinition` with `describeEffects: undefined` so `@harness-dsl/core` enforces post-flight `CheckpointableScope.diffEffects()`.
-3. **`local.streamCheck` Combined Rolling `stdout`/`stderr` Circuit Breaker (`SPEC.md` §4.2 line 1345):**
+3. **`local.streamCheck` Combined Rolling `stdout`/`stderr` Circuit Breaker (`SPEC.md` §4.2 line 1381):**
    - Appends incoming chunks from **both** `stdout` and `stderr` into a unified rolling multi-line buffer (bounded to the last 200 lines / 64 KB).
    - Evaluates `circuitBreakWhenStdout` regex across the combined rolling buffer on every chunk (so failure banners written to `stderr` or spanning multiple lines match immediately).
    - Once matched, counts subsequent newline-delimited lines across `stdout`/`stderr` until `graceLinesAfterMatch` lines are collected (or the process exits / a `200ms` post-match settle timer fires), kills the process group (`SIGTERM` -> `SIGKILL`), and returns `{ ok: false, deficits: [capturedWindow] }`.
    - `streamCheck.asTool()` returns a `ToolDefinition` with `describeEffects: undefined`.
-4. **`local.daemon` Collision-Free `scopeKey`, Pre-Start `.stopCommand()`, TCP Readiness & PTY `ECHO`-Disabled `.interact()` (`SPEC.md` §4.2 line 1346):**
+4. **`local.daemon` Collision-Free `scopeKey`, Pre-Start `.stopCommand()`, TCP Readiness & PTY `ECHO`-Disabled `.interact()` (`SPEC.md` §4.2 line 1382):**
    - `sanitizeScopeKey(rawScopeKey)` replaces any character outside `[a-zA-Z0-9_.-]` with `_` and appends `-${sha256(rawScopeKey).slice(0, 8)}` so `run#1` and `run_1` produce distinct container/daemon names.
    - `daemon.toolSchemas` is populated statically at builder construction time as each `.interact(toolName, ...)` call is chained.
    - `acquire({ runId, scopeKey, scopeHandle })`:

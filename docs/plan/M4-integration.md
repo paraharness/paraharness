@@ -27,8 +27,8 @@ Read the following sections in full before authoring any file in `M4`:
 
 | Document | Section | Line Range | Key End-to-End Scenarios Covered |
 | :--- | :--- | :--- | :--- |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1–§4 Full Framework Specification | `1–1436` | All core runtime and peer adapter invariants |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 Domain-Generality Verification: Non-Coding Financial Harness Example | `1438–1547` | Complete `reconciliationFlow` over `@harness-dsl/stripe` and `@harness-dsl/netsuite` Tier-1 `IsolationScope` |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1–§4 Full Framework Specification | `1–1472` | All core runtime and peer adapter invariants |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 Domain-Generality Verification: Non-Coding Financial Harness Example | `1474–1583` | Complete `reconciliationFlow` over `@harness-dsl/stripe` and `@harness-dsl/netsuite` Tier-1 `IsolationScope` |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §1–§5 Operational Invariants, `.harness/` Layout, CoW Worktree Hierarchy, Actor Matrix, Protocols 1–3 | `1–174` | All 5 operational invariants and Protocols 1, 2, and 3 |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 Complete Production Implementation (`engineering-harness.ts`) | `176–1208` | Full `acme-engineering` production harness definition |
 
@@ -90,7 +90,7 @@ export const netsuite: {
 
 ### 3.3 `packages/integration/src/financial-harness.ts`
 
-Contains the exact non-coding financial reconciliation harness from `SPEC.md` §5 (lines 1442–1547), exporting `discrepancyItem`, `settlementReceipt`, `highValueApprovalRequest`, `reconcileLimitExceeded`, `financeController`, `autoReconcilePolicy`, `manualReconcilePolicy`, `reconciliationAgent`, `manualEscalationAgent`, and `reconciliationFlow`. Strip all `//` and `/* */` comments present in the `SPEC.md` §5 reference listing so `financial-harness.ts` contains zero comments in compliance with `CLAUDE.MD` line 20.
+Contains the exact non-coding financial reconciliation harness from `SPEC.md` §5 (lines 1478–1583), exporting `discrepancyItem`, `settlementReceipt`, `highValueApprovalRequest`, `reconcileLimitExceeded`, `financeController`, `autoReconcilePolicy`, `manualReconcilePolicy`, `reconciliationAgent`, `manualEscalationAgent`, and `reconciliationFlow`. Strip all `//` and `/* */` comments present in the `SPEC.md` §5 reference listing so `financial-harness.ts` contains zero comments in compliance with `CLAUDE.MD` line 20.
 
 ### 3.4 `packages/integration/src/engineering-harness.ts`
 
