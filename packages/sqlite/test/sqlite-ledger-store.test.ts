@@ -76,20 +76,25 @@ describe('SqliteLedgerStore durability, DAG mutation, wire frames, and compactio
     });
 
     const frame: AgentContinuationFrame = {
-      frameType: 'agent',
-      stepExecId: 'exec-1',
+      kind: 'agent-frame',
       agentId: 'agent-a',
-      turnIndex: 2,
+      roleKey: 'role-a',
+      modelId: 'claude-3-7-sonnet',
+      stepExecId: 'exec-1',
+      inputJson: '{"v":1}',
       leafMessageId: 'msg-2',
-      unlockedSkillIds: ['skill-1'],
-      unlockedPartitions: ['part-a'],
-      activeFenceTokens: { 'part-a': 4 },
-      accumulatedSourceIds: ['src-1'],
+      turnsTaken: 2,
+      costUsd: 0.25,
+      elapsedDurationMs: 120,
+      activeLeases: [],
+      activeSkillIds: ['skill-1'],
+      activeSkillActivations: {},
       observedEffects: [],
+      injectedScopedRuleIds: ['rule-1'],
+      pausedAtPhase: 'TOOL_BOUNDARY',
       pauseState: {
         kind: 'active-turn',
-        turnIndex: 2,
-        leafMessageId: 'msg-2',
+        inFlightPreToolCheckpoint: 'cp-in-flight-1',
       },
     };
     await store.updateContinuationStack('run-1', 'exec-1', [frame], {

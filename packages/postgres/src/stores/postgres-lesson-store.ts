@@ -1,0 +1,172 @@
+import type { LessonOutcome, LessonRecord, LessonStore } from '@harness-dsl/core';
+import {
+  ensurePostgresSchemaInitialized,
+  runInPostgresTransaction,
+} from '../ddl/internal/resolve-postgres-client.js';
+import type { PostgresQueryClient } from '../ddl/postgres-query-client.js';
+import {
+  admitLessonInPg,
+  queryLessonCandidatesInPg,
+  recordLessonOutcomesInPg,
+  syncLessonEpochsInPg,
+} from './internal/pg-lesson-ops.js';
+
+/**
+ * PostgreSQL implementation of the `@harness-dsl/core` `LessonStore` runtime port.
+ *
+ * Persists distilled empirical lessons, computes normalized token/trigram relevance scores $R(L, Q) \in [0, 1]$,
+ * tracks 4-state execution outcome windows, aligns creation epochs on overlay commit, and retires lessons.
+ */
+export class PostgresLessonStore implements LessonStore {
+  /** Underlying PostgreSQL query client. */
+  private readonly client: PostgresQueryClient;
+  /** Lazily memoized schema initialization promise. */
+  private initPromise: Promise<PostgresQueryClient> | undefined;
+
+  /**
+   * Initializes a `PostgresLessonStore` backed by `client`.
+   *
+   * Defers DDL execution until the first store operation so constructing the store performs zero I/O.
+   *
+   * @param {PostgresQueryClient} client - PostgreSQL query client instance.
+   */
+  constructor(client: PostgresQueryClient) {
+    this.client = client;
+  }
+
+  /**
+   * Ensures the PostgreSQL schema DDL has been applied on `this.client`.
+   *
+   * Memoizes the initialization promise so DDL runs at most once per store instance.
+   *
+   * @returns {Promise<PostgresQueryClient>} Initialized query client.
+   */
+  private ensureReady(): Promise<PostgresQueryClient> {
+    if (this.initPromise === undefined) {
+      this.initPromise = ensurePostgresSchemaInitialized(this.client);
+    }
+    return this.initPromise;
+  }
+
+  /**
+   * Queries non-retired candidate lessons relevant to `req.queryText` and `req.partitions`.
+   *
+   * Computes normalized text similarity `relevanceScore` in `[0, 1]` for each candidate lesson.
+   *
+   * @param {{ readonly queryText: string; readonly partitions: readonly string[] }} req - Search query and active partitions.
+   *
+   * @returns {Promise<readonly LessonRecord[]>} Candidate lesson records with `relevanceScore` populated.
+   */
+  async queryCandidates(req: {
+    readonly queryText: string;
+    readonly partitions: readonly string[];
+  }): Promise<readonly LessonRecord[]> {
+    const client = await this.ensureReady();
+    return queryLessonCandidatesInPg(client, req);
+  }
+
+  /**
+   * Persists a newly distilled lesson into the store and returns its assigned `lessonId`.
+   *
+   * Deduplicates identical `(partition, directive)` entries and records `epochAtCreation` and `createdByRunId`.
+   *
+   * @param {{ readonly partition?: string; readonly directive: string; readonly epochAtCreation: number; readonly createdByRunId?: string }} lesson - Lesson definition to admit.
+   *
+   * @returns {Promise<string>} Newly assigned or content-addressed `lessonId`.
+   */
+  async admit(lesson: {
+    readonly partition?: string;
+    readonly directive: string;
+    readonly epochAtCreation: number;
+    readonly createdByRunId?: string;
+  }): Promise<string> {
+    const client = await this.ensureReady();
+    return runInPostgresTransaction(client, () => admitLessonInPg(client, lesson));
+  }
+
+  /**
+   * Appends deduplicated step execution outcomes to the specified lessons and returns their updated records.
+   *
+   * Increments `totalCleanPasses` or `totalViolated` and updates each lesson's `recentOutcomes` window.
+   *
+   * @param {ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>} outcomes - Batch of `(lessonId, outcome)` pairs.
+   *
+   * @returns {Promise<readonly LessonRecord[]>} Updated lesson records reflecting the recorded outcomes.
+   */
+  async recordOutcomes(
+    outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>,
+  ): Promise<readonly LessonRecord[]> {
+    const client = await this.ensureReady();
+    return runInPostgresTransaction(client, () => recordLessonOutcomesInPg(client, outcomes));
+  }
+
+  /**
+   * Aligns `epochAtCreation` for lessons created by `runIds` when their topology overlays commit to the base store.
+   *
+   * Prevents lessons authored in a run that also updated a partition's contract from being falsely penalized.
+   *
+   * @param {readonly string[]}           runIds        - Run IDs whose topology overlays were committed.
+   * @param {ReadonlyMap<string, number>} updatedEpochs - Map of `partitionId` to newly committed base epoch.
+   *
+   * @returns {Promise<void>} Resolves when creation epochs are synchronized.
+   */
+  async syncCreationEpochsForRuns(
+    runIds: readonly string[],
+    updatedEpochs: ReadonlyMap<string, number>,
+  ): Promise<void> {
+    const client = await this.ensureReady();
+    await runInPostgresTransaction(client, () =>
+      syncLessonEpochsInPg(client, runIds, updatedEpochs),
+    );
+  }
+
+  /**
+   * Records the ISO-8601 timestamp when a promotion signal was emitted for `lessonId`.
+   *
+   * Persists the timestamp in `signalLastEmittedAt[signalId]` to enforce `cooldownHours` across restarts.
+   *
+   * @param {string} lessonId  - Identifier of the lesson that triggered the signal.
+   * @param {string} signalId  - Identifier of the emitted signal.
+   * @param {string} emittedAt - ISO-8601 timestamp string of the emission.
+   *
+   * @returns {Promise<void>} Resolves when the cooldown timestamp is persisted.
+   */
+  async markSignalEmitted(lessonId: string, signalId: string, emittedAt: string): Promise<void> {
+    const client = await this.ensureReady();
+    await runInPostgresTransaction(client, async () => {
+      const res = await client.query<{ readonly signal_last_emitted_at_json: string | null }>(
+        'SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = $1',
+        [lessonId],
+      );
+      const row = res.rows[0];
+      if (row === undefined) return;
+      const map: Record<string, string> =
+        row.signal_last_emitted_at_json !== null
+          ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
+          : {};
+      map[signalId] = emittedAt;
+      await client.query(
+        'UPDATE harness_lessons SET signal_last_emitted_at_json = $1 WHERE id = $2',
+        [JSON.stringify(map), lessonId],
+      );
+    });
+  }
+
+  /**
+   * Permanently retires lessons that breached violation or low clean-pass-rate thresholds.
+   *
+   * Excludes retired lessons from all subsequent `queryCandidates()` recalls.
+   *
+   * @param {readonly string[]} lessonIds - Identifiers of lessons to retire.
+   *
+   * @returns {Promise<void>} Resolves when all specified lessons are retired.
+   */
+  async retire(lessonIds: readonly string[]): Promise<void> {
+    const client = await this.ensureReady();
+    await runInPostgresTransaction(client, async () => {
+      for (const id of lessonIds) {
+        await client.query('UPDATE harness_lessons SET retired = 1 WHERE id = $1', [id]);
+      }
+    });
+  }
+}
