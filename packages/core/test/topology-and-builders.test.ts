@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   BudgetApprovalSchema, type ExecutionContext, type GitScopeReceipt, type GitWorktreeHandle, H,
-  type LessonDistillationBuilder, type LessonRecord, type LessonRetirementBuilder,
+  type InterruptBuilder, type LessonDistillationBuilder, type LessonRecord, type LessonRetirementBuilder,
   type LessonScoringBuilder, type LessonSignalTriggerBuilder, type MarkdownFrontmatterSourceNode,
   type PolicyLimitExceededBuilder, type PolicyViolation, type PoolCandidateState,
-  type PoolSelectionContext, type PoolStrategyConfigurator, type ScopedRule, type SkillNode,
-  affectedBy, createExecutorRegistry, dependentsOf, z,
+  type PoolSelectionContext, type PoolStrategyConfigurator, type ScopedRule, type SignalBuilder,
+  type SkillNode, affectedBy, createExecutorRegistry, dependentsOf, z,
 } from '../src/index.js';
 import {
   SAMPLE_ABORT_HOOK_NODE, SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_CLEAN_TREE_CHECK_NODE,
@@ -62,8 +62,14 @@ describe('H.topology DAG validation and graph queries', () => {
 
 describe('Primitive and context builders (signal, interrupt, stream, pool, prefixGroup, rules, skill, lessons, policy, human, command)', () => {
   it('maintains copy-on-write immutability and deep-freeze across signal, interrupt, stream, and pool builders', () => {
+    const defaultPayloadSchema = z.object({ ok: z.boolean().default(true) });
+    const directSignal: SignalBuilder<{ readonly ok: boolean }> = H.signal('sig-default', defaultPayloadSchema);
+    const directInterrupt: InterruptBuilder<{ readonly ok: boolean }> = H.interrupt('intr-default', defaultPayloadSchema);
+    expect(directSignal.toAST().schema.parse({})).toEqual({ ok: true });
+    expect(directInterrupt.toAST().schema.parse({})).toEqual({ ok: true });
+
     const baseSignal = H.signal('base-sig');
-    const typedSignal = baseSignal.payload(z.object({ ok: z.boolean().default(true) }));
+    const typedSignal = baseSignal.payload(defaultPayloadSchema);
     expect(baseSignal.toAST()).not.toBe(typedSignal.toAST());
     expect(typedSignal.id).toBe('base-sig');
     expect(typedSignal.type).toBe('harness:signal');

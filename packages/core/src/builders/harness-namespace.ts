@@ -58,21 +58,21 @@ export interface HarnessNamespace {
    *
    * Defaults the payload schema to `z.unknown()` when `schema` is omitted.
    * @template TPayload Validated signal payload type.
-   * @param {string}              id       - Unique identifier of the signal.
-   * @param {z.ZodType<TPayload>} [schema] - Optional initial Zod payload schema.
+   * @param {string}                                     id       - Unique identifier of the signal.
+   * @param {z.ZodType<TPayload, z.ZodTypeDef, unknown>} [schema] - Optional initial Zod payload schema.
    * @returns {SignalBuilder<TPayload>} Frozen `SignalBuilder` instance.
    */
-  signal<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload>): SignalBuilder<TPayload>;
+  signal<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload, z.ZodTypeDef, unknown>): SignalBuilder<TPayload>;
   /**
    * Creates a fluent `InterruptBuilder` for an upward or guard-triggered interrupt (`H.interrupt(id)`).
    *
    * Defaults the payload schema to `z.unknown()` when `schema` is omitted.
    * @template TPayload Validated interrupt payload type.
-   * @param {string}              id       - Unique identifier of the interrupt.
-   * @param {z.ZodType<TPayload>} [schema] - Optional initial Zod payload schema.
+   * @param {string}                                     id       - Unique identifier of the interrupt.
+   * @param {z.ZodType<TPayload, z.ZodTypeDef, unknown>} [schema] - Optional initial Zod payload schema.
    * @returns {InterruptBuilder<TPayload>} Frozen `InterruptBuilder` instance.
    */
-  interrupt<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload>): InterruptBuilder<TPayload>;
+  interrupt<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload, z.ZodTypeDef, unknown>): InterruptBuilder<TPayload>;
   /**
    * Creates a fluent `StreamBuilder` for an inbound event stream (`H.stream(id)`).
    *
