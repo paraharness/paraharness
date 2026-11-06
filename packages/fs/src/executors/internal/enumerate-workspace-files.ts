@@ -1,0 +1,148 @@
+import { execFileSync } from 'node:child_process';
+import { readdirSync, realpathSync } from 'node:fs';
+import path from 'node:path';
+import type { ToolEffect } from '@harness-dsl/core';
+import type { FsToolEffect } from '../fs-tool-effect.js';
+import {
+  compileGlobOrExactMatcher,
+  extractWorktreeRootAndBaseRef,
+} from './jail-and-glob-helpers.js';
+
+/**
+ * Enumerates all jailed workspace-relative POSIX file paths matching `globPattern` in lexicographical order.
+ *
+ * Skips `.git` and `node_modules` directories and ignores any symlink whose resolved `realpathSync`
+ * target escapes `realRoot`.
+ *
+ * @param {string} rootPath    - Worktree or repository root directory path.
+ * @param {string} globPattern - POSIX glob pattern to match against relative paths.
+ *
+ * @returns {readonly string[]} Sorted frozen array of matching relative POSIX file paths.
+ */
+export function enumerateWorkspaceFilesSync(
+  rootPath: string,
+  globPattern: string,
+): readonly string[] {
+  const realRoot = realpathSync(path.resolve(rootPath));
+  const isMatch = compileGlobOrExactMatcher([globPattern]);
+  const matched: string[] = [];
+  const stack: string[] = [realRoot];
+  while (stack.length > 0) {
+    const currentDir = stack.pop();
+    if (currentDir === undefined) continue;
+    const entries = readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === '.git' || entry.name === 'node_modules') continue;
+      const fullPath = path.join(currentDir, entry.name);
+      let realEntryPath: string;
+      try {
+        realEntryPath = realpathSync(fullPath);
+      } catch {
+        continue;
+      }
+      const rel = path.relative(realRoot, realEntryPath);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
+      if (entry.isDirectory()) {
+        stack.push(realEntryPath);
+      } else if (entry.isFile() || entry.isSymbolicLink()) {
+        const posixRel = rel.split(path.sep).join('/');
+        if (isMatch(posixRel)) matched.push(posixRel);
+      }
+    }
+  }
+  matched.sort((a, b) => a.localeCompare(b));
+  return Object.freeze(matched);
+}
+
+/**
+ * Constructs a frozen read-mode `FsToolEffect` record (`mutatesScope: false`).
+ *
+ * Preserves monomorphic property order across all `FsToolEffect` instances (`Rule 4.3`).
+ *
+ * @param {readonly string[]} paths - Canonicalized worktree-relative POSIX file paths read.
+ *
+ * @returns {FsToolEffect} Deeply frozen read `FsToolEffect`.
+ */
+export function createFsReadEffect(paths: readonly string[]): FsToolEffect {
+  return Object.freeze<FsToolEffect>({
+    kind: 'fs:effect',
+    mutatesScope: false,
+    attributes: Object.freeze({
+      mode: 'read',
+      paths: Object.freeze([...paths]),
+      existingPathsAtBaseRef: undefined,
+      proposedContent: undefined,
+    }),
+  });
+}
+
+/**
+ * Constructs a frozen write-mode `FsToolEffect` record (`mutatesScope: true`).
+ *
+ * Populates `existingPathsAtBaseRef` and `proposedContent` for downstream policy guards (`SPEC.md` §4.3).
+ *
+ * @param {readonly string[]}                paths                  - Canonicalized worktree-relative POSIX paths mutated.
+ * @param {readonly string[]}                existingPathsAtBaseRef - Subset of `paths` existing at `baseRef`.
+ * @param {Readonly<Record<string, string>>} proposedContent        - Proposed post-edit UTF-8 content per path.
+ *
+ * @returns {FsToolEffect} Deeply frozen write `FsToolEffect`.
+ */
+export function createFsWriteEffect(
+  paths: readonly string[],
+  existingPathsAtBaseRef: readonly string[],
+  proposedContent: Readonly<Record<string, string>>,
+): FsToolEffect {
+  return Object.freeze<FsToolEffect>({
+    kind: 'fs:effect',
+    mutatesScope: true,
+    attributes: Object.freeze({
+      mode: 'write',
+      paths: Object.freeze([...paths]),
+      existingPathsAtBaseRef: Object.freeze([...existingPathsAtBaseRef]),
+      proposedContent: Object.freeze({ ...proposedContent }),
+    }),
+  });
+}
+
+/**
+ * Collects distinct mutated file paths from `observedEffects` and git working-tree changes since `baseRef`.
+ *
+ * Ensures `fs.regexCheck` inspects only files mutated during the session or since `scopeHandle.baseRef` (`SPEC.md` §4.3).
+ *
+ * @param {readonly ToolEffect[]} observedEffects - Tool effects recorded in `StepExecutionContext`.
+ * @param {unknown}               scopeHandle     - Active isolation scope handle.
+ *
+ * @returns {readonly string[]} Sorted frozen array of distinct mutated worktree-relative POSIX paths.
+ */
+export function collectMutatedPathsSinceBaseRef(
+  observedEffects: readonly ToolEffect[],
+  scopeHandle: unknown,
+): readonly string[] {
+  const mutated = new Set<string>();
+  for (const eff of observedEffects) {
+    if (eff.kind !== 'fs:effect') continue;
+    const mode = eff.attributes?.['mode'];
+    if (eff.mutatesScope !== true && mode !== 'write') continue;
+    const paths = eff.attributes?.['paths'];
+    if (Array.isArray(paths)) {
+      for (const p of paths) {
+        if (typeof p === 'string') mutated.add(p.replace(/\\/g, '/').replace(/^\.\//, ''));
+      }
+    }
+  }
+  const { rootPath, baseRef } = extractWorktreeRootAndBaseRef(scopeHandle);
+  if (mutated.size === 0 && baseRef !== undefined) {
+    try {
+      const gitOpts = { cwd: rootPath, encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'ignore'] as const, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } };
+      const diffOut = execFileSync('git', ['diff', '--name-only', baseRef], gitOpts);
+      const untrackedOut = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], gitOpts);
+      for (const line of `${diffOut}\n${untrackedOut}`.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed.length > 0) mutated.add(trimmed.replace(/\\/g, '/').replace(/^\.\//, ''));
+      }
+    } catch {
+      void 0;
+    }
+  }
+  return Object.freeze([...mutated].sort((a, b) => a.localeCompare(b)));
+}
