@@ -86,7 +86,7 @@ export async function runLoopActPhase<TIn, TOut, THandle>(
   const scopeFactory = state.ctx.scopeNode !== undefined ? state.ctx.registry.scopes[state.ctx.scopeNode.type] : undefined;
   const scopeDriver = (scopeFactory !== undefined && state.ctx.scopeNode !== undefined ? scopeFactory(state.ctx.scopeNode as never, { registry: state.ctx.registry, resolveEnv: (v) => (typeof v === 'string' ? v : undefined), getRunner: (n) => { const f = state.ctx.registry.runners[n.type]; if (f === undefined) throw new Error(n.type); return f(n as never); } }) : undefined) as IsolationScope<THandle> | undefined;
   const scopeReceipt = scopeDriver !== undefined ? await state.lockManager.withReadLock(state.ctx.scopeHandle, () => scopeDriver.inspect(state.ctx.scopeHandle)) : {};
-  const latestLeaf = resumeLeaf ?? `msg:${state.ctx.stepExecId}:assistant:${String(updatedLoop.actTurnsTaken)}`;
+  const latestLeaf = updatedLoop.preservedActLeafMessageId ?? resumeLeaf ?? `msg:${state.ctx.stepExecId}:assistant:${String(updatedLoop.actTurnsTaken)}`;
   state.loopFrame = Object.freeze<LoopContinuationFrame>({ ...updatedLoop, phase: 'evaluate', lastActModelId: state.currentActModelNode.modelId, preservedActLeafMessageId: latestLeaf, lastActOutputJson: JSON.stringify(actOutput), lastActScopeReceiptJson: JSON.stringify(scopeReceipt), accumulatedLessonOutcomes: Object.freeze({ ...state.accumulatedLessonOutcomes }) });
   if (state.ledgerStore !== undefined) {
     const stack: readonly ContinuationFrame[] = Object.freeze([...state.outerFrames, state.loopFrame]);
@@ -131,6 +131,7 @@ export async function runLoopEvaluatePhase<TIn, TOut, THandle>(
       nextLeaf = fbMsgId;
     }
     state.loopFrame = Object.freeze<LoopContinuationFrame>({ ...updatedLoop, iteration: updatedLoop.iteration + 1, phase: 'act', preservedActLeafMessageId: nextLeaf, lastRejectedIterationJson: JSON.stringify({ output: actOutput, scopeReceipt, evaluatorFeedback: feedback, deficits: [feedback] }), accumulatedLessonOutcomes: Object.freeze({ ...state.accumulatedLessonOutcomes }) });
+    if (state.ledgerStore !== undefined) await state.ledgerStore.updateContinuationStack(state.ctx.runId, state.ctx.stepExecId, Object.freeze([...state.outerFrames, state.loopFrame]));
     return Object.freeze<LoopEvaluatePhaseResult<TOut>>({ accepted: false, actOutput, feedback, evaluatorOutput: evalOutput });
   }
   const hadPriorReject = updatedLoop.lastRejectedIterationJson !== undefined;
@@ -143,5 +144,7 @@ export async function runLoopEvaluatePhase<TIn, TOut, THandle>(
     const rej = JSON.parse(updatedLoop.lastRejectedIterationJson) as { readonly output: unknown; readonly scopeReceipt?: Record<string, unknown>; readonly evaluatorFeedback?: string; readonly deficits: readonly string[] };
     await runContrastiveLessonDistillation({ lessonsNode: state.node.distillLessons, lessonStore: state.lessonStore, topologyStore: state.topologyStore, trajectory: { source: 'loop', rejected: rej, accepted: { output: actOutput, scopeReceipt } }, ctx: state.ctx as never, poolManager: state.poolManager });
   }
+  state.loopFrame = Object.freeze<LoopContinuationFrame>({ ...updatedLoop, accumulatedLessonOutcomes: Object.freeze({ ...state.accumulatedLessonOutcomes }) });
+  if (state.ledgerStore !== undefined) await state.ledgerStore.updateContinuationStack(state.ctx.runId, state.ctx.stepExecId, Object.freeze([...state.outerFrames, state.loopFrame]));
   return Object.freeze<LoopEvaluatePhaseResult<TOut>>({ accepted: true, actOutput, evaluatorOutput: evalOutput });
 }

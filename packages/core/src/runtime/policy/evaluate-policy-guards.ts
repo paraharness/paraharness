@@ -37,7 +37,7 @@ export async function evaluatePreFlightToolBatch<THandle = unknown>(
   overrideEffects?: readonly ToolEffect[],
 ): Promise<PolicyEvaluationResult> {
   const primary = params.remainingCalls[0];
-  if (primary === undefined || params.policy === undefined) {
+  if (primary === undefined) {
     return Object.freeze<PolicyEvaluationResult>({ status: 'allowed', primaryEffects: overrideEffects ?? Object.freeze([]) });
   }
   const primaryNode = params.toolsByName.get(primary.toolName);
@@ -45,6 +45,9 @@ export async function evaluatePreFlightToolBatch<THandle = unknown>(
   const primaryEffects = overrideEffects ?? (primaryNode !== undefined && primaryDriver?.describeEffects !== undefined
     ? await primaryDriver.describeEffects(primaryNode as never, JSON.parse(primary.argsJson || '{}'), params.ctx.scopeHandle)
     : Object.freeze([]));
+  if (params.policy === undefined) {
+    return Object.freeze<PolicyEvaluationResult>({ status: 'allowed', primaryEffects });
+  }
   for (const clause of params.policy.clauses) {
     if (clause.mode !== 'deny-with-error') continue;
     const res = await evaluateSingleGuardClause(clause, { toolName: primary.toolName, proposedEffects: primaryEffects, activeLeases: params.activeLeases, ctx: params.ctx });
@@ -55,7 +58,7 @@ export async function evaluatePreFlightToolBatch<THandle = unknown>(
     }
   }
   for (const clause of params.policy.clauses) {
-    if (clause.mode !== 'raise-interrupt' || primary.adjudicatedClauseIds?.includes(clause.id) === true) continue;
+    if (clause.mode !== 'raise-interrupt') continue;
     const res = await evaluateSingleGuardClause(clause, { toolName: primary.toolName, proposedEffects: primaryEffects, activeLeases: params.activeLeases, ctx: params.ctx });
     if (!res.allowed) {
       return batchSameClauseInterrupt({ batchParams: params, clause, primaryEffects, primaryEval: res });

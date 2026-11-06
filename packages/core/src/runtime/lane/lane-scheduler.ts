@@ -170,22 +170,22 @@ export class LaneScheduler<TIn = unknown> {
     if (scopeFactory === undefined) throw new Error(`No IsolationScope registered for '${this.cfg.lane.flow.scope.type}'.`);
     const scopeDriver = scopeFactory(this.cfg.lane.flow.scope as never, { registry: this.cfg.registry, resolveEnv: (v) => (typeof v === 'string' ? v : this.cfg.env[v.key]), getRunner: (n) => { const f = this.cfg.registry.runners[n.type]; if (f === undefined) throw new Error(n.type); return f(n as never); } }) as IsolationScope<unknown>;
     const scopeHandle = await scopeDriver.acquireRoot(item.runId);
-    const syncRootFn = (scopeDriver as { readonly syncRoot?: (h: unknown, r: Record<string, unknown>) => Promise<unknown> }).syncRoot;
+    const syncRootFn = (scopeDriver as { readonly syncRoot?: (h: unknown, r: readonly Record<string, unknown>[]) => Promise<unknown> }).syncRoot, depReceipts: Record<string, unknown>[] = [];
     for (const depKey of item.dependsOn) {
-      const depItem = this.itemsByKey.get(depKey);
-      if (depItem?.scopeReceipt !== undefined && syncRootFn !== undefined) await syncRootFn.call(scopeDriver, scopeHandle, depItem.scopeReceipt);
+      const depItem = this.itemsByKey.get(depKey); if (depItem?.scopeReceipt !== undefined) depReceipts.push(depItem.scopeReceipt);
       if (depItem !== undefined && this.cfg.topologyStore !== undefined) await this.cfg.topologyStore.syncRunOverlays(item.runId, [depItem.runId]);
     }
+    if (depReceipts.length > 0 && syncRootFn !== undefined) await syncRootFn.call(scopeDriver, scopeHandle, depReceipts);
     const flowCtx: FlowExecutionContext<TIn, unknown> = { runId: item.runId, laneId: item.laneId, itemKey: item.itemKey, flow: this.cfg.lane.flow, currentInput: item.input, scopeHandle, scopeDriver: scopeDriver as never, registry: this.cfg.registry, env: this.cfg.env, ledgerStore: this.cfg.ledgerStore, topologyStore: this.cfg.topologyStore, lessonStore: this.cfg.lessonStore, lockManager: this.lockManager, continuationQueue: this.continuationQueue, poolManager: this.poolManager, serviceRegistry: this.serviceRegistry, humanAdaptersById: this.cfg.humanAdaptersById ?? new Map(), prefixGroups: this.cfg.prefixGroups, wirePrefixesByGroupId: new Map(), completedStepOutputs: new Map(), observedRunEffects: [], activeStepId: null, activeStepExecId: null, activeStepAbortController: new AbortController(), retryConfig: this.cfg.lane.retry };
     item.activeFlowCtx = flowCtx;
     try {
       const res = await executeFlow(flowCtx); item.scopeReceipt = res.scopeReceipt;
       if (res.exitState === 'SUSPENDED') { item.status = 'SUSPENDED'; await this.syncTrackerState(item.itemKey, 'waiting'); return res; }
-      item.status = 'COMPLETED'; item.terminalExitState = res.exitState; await this.syncTrackerState(item.itemKey, `exit:${res.exitState}`, res.exitState);
+      item.status = 'COMPLETED'; item.terminalExitState = res.exitState; await this.cfg.ledgerStore.recordRunTerminalReceipt(item.runId, item.itemKey, res.exitState, JSON.stringify(res.scopeReceipt)); await this.syncTrackerState(item.itemKey, `exit:${res.exitState}`, res.exitState);
       return res;
     } catch (err) {
-      if (this.cfg.lane.retry !== undefined) { item.status = 'FAILED'; item.terminalExitState = this.cfg.lane.retry.orFailState; await this.syncTrackerState(item.itemKey, 'errored'); await this.syncTrackerState(item.itemKey, `exit:${item.terminalExitState}`, item.terminalExitState); return Object.freeze<FlowRunResult>({ runId: item.runId, exitState: item.terminalExitState, scopeReceipt: {}, stepOutputs: Object.freeze({}) }); }
-      item.status = 'FAILED'; await this.syncTrackerState(item.itemKey, 'errored'); throw err;
+      if (this.cfg.lane.retry !== undefined) { item.status = 'FAILED'; item.terminalExitState = this.cfg.lane.retry.orFailState; await this.cfg.ledgerStore.recordRunTerminalReceipt(item.runId, item.itemKey, item.terminalExitState); await this.syncTrackerState(item.itemKey, 'errored'); await this.syncTrackerState(item.itemKey, `exit:${item.terminalExitState}`, item.terminalExitState); return Object.freeze<FlowRunResult>({ runId: item.runId, exitState: item.terminalExitState, scopeReceipt: {}, stepOutputs: Object.freeze({}) }); }
+      item.status = 'FAILED'; await this.cfg.ledgerStore.recordRunTerminalReceipt(item.runId, item.itemKey, 'errored'); await this.syncTrackerState(item.itemKey, 'errored'); throw err;
     } finally { await scopeDriver.release(scopeHandle); item.activeFlowCtx = undefined; }
   }
 

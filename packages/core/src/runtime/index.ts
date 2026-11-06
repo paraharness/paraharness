@@ -222,6 +222,7 @@ export type {
 } from './services/active-service-entry.js';
 export { ServiceSessionRegistry } from './services/service-session-registry.js';
 export { executeSpeculateTournament } from './speculate/execute-speculate-tournament.js';
+export { resolvePostRaceCases } from './speculate/internal/resolve-tournament-race.js';
 export type {
   PostRaceResolution,
   SpeculateTournamentParams,

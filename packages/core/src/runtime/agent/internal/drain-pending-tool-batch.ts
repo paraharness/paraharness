@@ -106,7 +106,9 @@ export async function handleBuiltInSkillAndCapabilityTools<TIn, TOut, THandle>(
     await session.serviceRegistry.releaseSkillServices(session.ctx.stepExecId, skillId);
     if (actCoord !== undefined && session.ledgerStore !== undefined) await session.ledgerStore.markFrameTombstone(session.ctx.runId, actCoord.messageId, actCoord.callId, summary);
     const nextActs = { ...session.agentFrame.activeSkillActivations }; delete nextActs[skillId];
-    session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, activeSkillIds: Object.freeze(session.agentFrame.activeSkillIds.filter((id) => id !== skillId)), activeSkillActivations: Object.freeze(nextActs) });
+    const nextActiveIds = Object.freeze(session.agentFrame.activeSkillIds.filter((id) => id !== skillId)), frozenActs = Object.freeze(nextActs);
+    session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, activeSkillIds: nextActiveIds, activeSkillActivations: frozenActs });
+    for (let idx = 0; idx < session.outerFrames.length; idx += 1) { const outer = session.outerFrames[idx]; if (outer?.kind === 'loop-frame' && outer.phase === 'act') session.outerFrames[idx] = Object.freeze<LoopContinuationFrame>({ ...outer, activeSkillIds: nextActiveIds, activeSkillActivations: frozenActs }); }
     return Object.freeze({ status: 'completed', content: `[SKILL_COMPLETED: ${skillId}] ${summary}`, isError: false });
   }
   const scopeFactory = session.ctx.scopeNode !== undefined ? session.ctx.registry.scopes[session.ctx.scopeNode.type] : undefined, scopeDriver = (scopeFactory !== undefined && session.ctx.scopeNode !== undefined ? scopeFactory(session.ctx.scopeNode as never, drvCtx) : undefined) as BranchableScope<THandle, Record<string, unknown>, Record<string, unknown>>;
@@ -151,7 +153,7 @@ export async function executeSingleToolInPipeline<TIn, TOut, THandle>(
     const preEval = await evaluatePreFlightToolBatch({ policy: session.node.policy, remainingCalls: [call], toolsByName: session.toolsByName, activeLeases: session.agentFrame.activeLeases, ctx: session.ctx });
     if (preEval.status === 'denied-with-error') return Object.freeze({ status: 'completed', content: preEval.deniedErrorMessage ?? 'Denied', isError: true });
     if (preEval.status === 'raise-interrupt' && preEval.raisedInterrupt !== undefined) {
-      if (call.blockedPreFlight === true && batch.adjudicationFeedback !== undefined) return Object.freeze({ status: 'completed', content: `[Lease Denied: ${batch.adjudicationFeedback}]`, isError: true, leaseDenied: true });
+      if (call.blockedPreFlight === true && batch.adjudicationFeedback !== undefined && (preEval.violatedClauseId === undefined || call.adjudicatedClauseIds?.includes(preEval.violatedClauseId) === true)) return Object.freeze({ status: 'completed', content: `[Lease Denied: ${batch.adjudicationFeedback}]`, isError: true, leaseDenied: true });
       const intrRes = await resolveInterruptEdge(session, preEval.raisedInterrupt.id, preEval.interruptPayload);
       if (intrRes.status !== 'resumed') return Object.freeze({ status: 'interrupted', content: `[Interrupted: ${preEval.raisedInterrupt.id}]`, isError: true, interruptResolution: intrRes });
       const reEval = await evaluatePreFlightToolBatch({ policy: session.node.policy, remainingCalls: [call], toolsByName: session.toolsByName, activeLeases: session.agentFrame.activeLeases, ctx: session.ctx }, preEval.primaryEffects);
@@ -159,8 +161,8 @@ export async function executeSingleToolInPipeline<TIn, TOut, THandle>(
     }
     const mutates = preEval.primaryEffects.some((e) => e.mutatesScope === true);
     const rawOut = mutates ? await session.lockManager.withWriteLock(session.ctx.scopeHandle, () => Promise.resolve(toolDriver.execute(toolNode as never, validatedArgs as never, session.ctx as never))) : await session.lockManager.withReadLock(session.ctx.scopeHandle, () => Promise.resolve(toolDriver.execute(toolNode as never, validatedArgs as never, session.ctx as never)));
-    const outStr = typeof rawOut === 'string' ? rawOut : JSON.stringify(rawOut);
-    return Object.freeze({ status: 'completed', content: await applyReactiveScopedRulesAndRecordEffects(session, preEval.primaryEffects, outStr), isError: false });
+    const outStr = typeof rawOut === 'string' ? rawOut : typeof (rawOut as { readonly content?: unknown })?.content === 'string' ? (rawOut as { readonly content: string }).content : JSON.stringify(rawOut);
+    return Object.freeze({ status: 'completed', content: await applyReactiveScopedRulesAndRecordEffects(session, preEval.primaryEffects, outStr), isError: Boolean((rawOut as { readonly isError?: boolean })?.isError) });
   }
   const scopeFactory = session.ctx.scopeNode !== undefined ? session.ctx.registry.scopes[session.ctx.scopeNode.type] : undefined;
   const scopeDriver = (scopeFactory !== undefined && session.ctx.scopeNode !== undefined ? scopeFactory(session.ctx.scopeNode as never, { registry: session.ctx.registry, resolveEnv: (v) => (typeof v === 'string' ? v : undefined), getRunner: (n) => { const f = session.ctx.registry.runners[n.type]; if (f === undefined) throw new Error(n.type); return f(n as never); } }) : undefined) as CheckpointableScope<THandle> | undefined;

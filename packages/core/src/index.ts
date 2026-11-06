@@ -227,10 +227,10 @@ export {
   type SpeculateContinuationFrame, type SpeculateHumanRulingRecord, type StepExecutionContext,
   type StepStartRecord, type StepTransitionRecord, type StreamSource, type StreamSubscriptionHandle,
   type SuspendedForkRecord, type ToolBatchPauseState, type ToolDriver, type ToolEffect, type ToolExecutionResult, type TopologyPartitionState, type TopologyStore, type TrackerAdapter, type UniversalStepTelemetry, type WireFrameRecord, type WireToolSchema,
-  LaneScheduler, PoolManager, ScopeLockManager, ServiceSessionRegistry, StepContinuationQueue, buildRoleAndScopeContextFrame, compilePrefixGroups, compileRunWirePrefixes, computeLessonScore, computeUpdatedGroundingDiffs, createExecutorRegistry, createRuntime, defaultExecutionEngine,
+  LaneScheduler, PoolManager, ScopeLockManager, ServiceSessionRegistry, StepContinuationQueue, buildRoleAndScopeContextFrame, compilePrefixGroups, compileRunWirePrefixes, computeInRunGroundingDiffs, computeLessonScore, computeUpdatedGroundingDiffs, createExecutorRegistry, createRuntime, defaultExecutionEngine,
   evaluateLessonRetirementAndSignals, evaluateLessonSignalTriggers, evaluatePreFlightToolBatch, evaluateQuotaTripwires, executeAddDependencies, executeAgent, executeCommand, executeFlow, executeFlowBranch, executeFlowStep, executeForkBatch, executeHierarchicalRewindDrain,
   executeLimitExceededSequence, executeLoop, executePostFlightSandboxedTool, executeReplaceWithPromotion, executeResumeForkBatch, executeSpawnTasks, executeSpeculateTournament, executeStepNode, executeUpdatePartitionContract, flushStepLessonOutcomes,
-  mergeLessonOutcomePrecedence, recoverInterruptedRunOnBoot, runContrastiveLessonDistillation, scoreAndRecallLessons, selectRecalledLessons, shouldRetireLesson, syncSuspendedRunPrerequisites,
+  mergeLessonOutcomePrecedence, recoverInterruptedRunOnBoot, resolvePostRaceCases, runContrastiveLessonDistillation, scoreAndRecallLessons, selectRecalledLessons, shouldRetireLesson, syncSuspendedRunPrerequisites,
 } from './runtime/index.js';
 export {
   type BudgetApproval, BudgetApprovalSchema, DistilledLessonCandidateSchema,

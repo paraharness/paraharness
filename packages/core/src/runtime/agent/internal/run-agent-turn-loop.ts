@@ -111,7 +111,7 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
     const outer = session.outerFrames[idx];
     if (outer?.kind === 'loop-frame') {
       const isAct = outer.phase === 'act';
-      session.outerFrames[idx] = Object.freeze<LoopContinuationFrame>({ ...outer, actTurnsTaken: isAct ? outer.actTurnsTaken + 1 : outer.actTurnsTaken, actCostUsd: isAct ? outer.actCostUsd + response.usage.costUsd : outer.actCostUsd, actElapsedDurationMs: isAct ? outer.actElapsedDurationMs + latencyMs : outer.actElapsedDurationMs, turnsTaken: outer.turnsTaken + 1, costUsd: outer.costUsd + response.usage.costUsd, elapsedDurationMs: outer.elapsedDurationMs + latencyMs });
+      session.outerFrames[idx] = Object.freeze<LoopContinuationFrame>({ ...outer, preservedActLeafMessageId: isAct ? assistantMsgId : outer.preservedActLeafMessageId, actTurnsTaken: isAct ? outer.actTurnsTaken + 1 : outer.actTurnsTaken, actCostUsd: isAct ? outer.actCostUsd + response.usage.costUsd : outer.actCostUsd, actElapsedDurationMs: isAct ? outer.actElapsedDurationMs + latencyMs : outer.actElapsedDurationMs, turnsTaken: outer.turnsTaken + 1, costUsd: outer.costUsd + response.usage.costUsd, elapsedDurationMs: outer.elapsedDurationMs + latencyMs });
     }
   }
   return response;

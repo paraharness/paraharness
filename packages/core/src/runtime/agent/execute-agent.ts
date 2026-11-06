@@ -84,7 +84,7 @@ export async function executeAgent<TIn = unknown, TOut = unknown, THandle = unkn
   const modelDriverFactory = ctx.registry.models[modelNode.type];
   if (modelDriverFactory === undefined) throw new Error(`No ModelDriver registered for '${modelNode.type}' on agent '${node.id}'.`);
   const modelDriver = modelDriverFactory(modelNode as never, { registry: ctx.registry, resolveEnv: (v) => (typeof v === 'string' ? v : undefined), getRunner: (n) => { const f = ctx.registry.runners[n.type]; if (f === undefined) throw new Error(n.type); return f(n as never); } });
-  const outerFrames: ContinuationFrame[] = rtEnv?.outerFrames !== undefined ? [...rtEnv.outerFrames] : [];
+  const outerFrames: ContinuationFrame[] = rtEnv?.outerFrames ?? [];
   const loopFrame = outerFrames.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame');
   let recalledLessons: readonly RecalledLoopLessonRecord[] = loopFrame?.recalledLessons ?? [];
   if (recalledLessons.length === 0 && node.lessons !== undefined && rtEnv?.lessonStore !== undefined) {
