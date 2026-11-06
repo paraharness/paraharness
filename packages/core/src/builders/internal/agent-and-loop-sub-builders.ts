@@ -9,14 +9,14 @@ import type {
   ToolASTNode,
 } from '../../ast/domain-ast.types.js';
 import { extractAST } from '../../ast/extract-ast.js';
-import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.js';
+import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../../ast/interrupt-node.js';
 import type { LessonsNode } from '../../ast/lessons-node.js';
 import type { PolicyNode } from '../../ast/policy-node.js';
 import type { PoolNode } from '../../ast/pool-node.js';
 import type { PrefixGroupNode } from '../../ast/prefix-group-node.js';
 import type { RulesNode } from '../../ast/rules-node.js';
-import type { SkillNode } from '../../ast/skill-node.js';
+import type { SkillNode } from '../../ast/skill-node.types.js';
 import type { TopologyNode } from '../../ast/topology-node.js';
 import type { AgentBuilder } from '../agent-builder.js';
 import type { AgentCapabilitiesBuilder } from '../agent-capabilities-builder.js';

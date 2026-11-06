@@ -1,7 +1,7 @@
 import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { AstBuilder } from '../ast/ast-builder.js';
 import type { FlowStepNode } from '../ast/flow-step-node.js';
-import type { InterruptHandlerNode } from '../ast/interrupt-handler-node.js';
+import type { InterruptHandlerNode } from '../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../ast/interrupt-node.js';
 import type { InterruptEdgeBuilder } from './interrupt-edge-builder.js';
 

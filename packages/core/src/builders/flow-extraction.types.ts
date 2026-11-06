@@ -1,8 +1,6 @@
 import type { z } from 'zod';
-import type {
-  BaseIsolationScopeASTNode,
-  BaseTrackerASTNode,
-} from '../ast/base/index.js';
+import type { BaseIsolationScopeASTNode } from '../ast/base/base-isolation-scope-ast-node.js';
+import type { BaseTrackerASTNode } from '../ast/base/base-tracker-ast-node.js';
 
 /**
  * Extracts the runtime scope handle type `THandle` from an `IsolationScopeASTNode`.

@@ -3,7 +3,7 @@ import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type { StepASTNode } from '../../ast/domain-ast.types.js';
 import type { FlowStepInputMapper } from '../../ast/flow-step-input-mapper.types.js';
 import type { FlowStepNode } from '../../ast/flow-step-node.js';
-import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.js';
+import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../../ast/interrupt-node.js';
 import { createInterruptEdgeBuilder } from '../create-interrupt-edge-builder.js';
 import type { FlowStepConfigBuilder } from '../flow-step-config-builder.js';

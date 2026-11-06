@@ -4,6 +4,21 @@ import type { EnvRef } from '../env-ref.js';
 import type { NodeRunnerNode } from './node-runner-node.js';
 
 /**
+ * Idempotency guard configuration on `LocalCommandNode` that skips execution when `preCheckCmd` returns `true`.
+ *
+ * Prevents re-running side-effecting commands across retries or crash recovery when `preCheckCmd` confirms completion.
+ *
+ * @template TIn     Validated command input type.
+ * @template THandle Isolation scope handle type.
+ */
+export interface LocalCommandUnrepeatableConfig<TIn = unknown, THandle = unknown> {
+  /** Pre-check command evaluated prior to running the main command. */
+  readonly preCheckCmd: LocalCommandNode<unknown, boolean, THandle>;
+  /** Deduplication key or mapper identifying the unrepeatable operation. */
+  readonly key: string | BivariantCallback<[input: TIn], string>;
+}
+
+/**
  * Passive AST node representing a one-shot local OS subprocess command (`local.command`).
  *
  * Participates in `StepASTNode` and can be projected into a `LocalCommandCheckNode` (`.asCheck()`)
@@ -26,10 +41,5 @@ export interface LocalCommandNode<TIn = unknown, TOut = unknown, THandle = unkno
   /** Optional execution timeout in minutes. */
   readonly timeoutMinutes?: number;
   /** Optional idempotency guard that skips execution when `preCheckCmd` returns `true`. */
-  readonly unrepeatable?: {
-    /** Pre-check command evaluated prior to running the main command. */
-    readonly preCheckCmd: LocalCommandNode<unknown, boolean, THandle>;
-    /** Deduplication key or mapper identifying the unrepeatable operation. */
-    readonly key: string | BivariantCallback<[input: TIn], string>;
-  };
+  readonly unrepeatable?: LocalCommandUnrepeatableConfig<TIn, THandle>;
 }

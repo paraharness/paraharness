@@ -1,5 +1,3 @@
-export type { RunTerminalReceiptRecord } from './run-terminal-receipt-record.js';
-
 /**
  * Terminal run receipt entry returned by `LedgerStore.getRunTerminalReceipts()`.
  *

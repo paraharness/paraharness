@@ -3,7 +3,7 @@ import type { StepASTNode } from '../../ast/domain-ast.types.js';
 import type { FlowBranchNode } from '../../ast/flow-branch-node.js';
 import type { FlowNode } from '../../ast/flow-node.js';
 import type { FlowStepNode } from '../../ast/flow-step-node.js';
-import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.js';
+import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.types.js';
 import {
   agentRequiresBranchableScope,
   findPostFlightSubprocessTool,

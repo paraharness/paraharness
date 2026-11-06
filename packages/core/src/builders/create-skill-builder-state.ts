@@ -4,7 +4,7 @@ import type {
   SourceASTNode,
   ToolASTNode,
 } from '../ast/domain-ast.types.js';
-import type { SkillNode } from '../ast/skill-node.js';
+import type { SkillNode } from '../ast/skill-node.types.js';
 import type { ScopePredicate } from '../schemas/core-rules.schema.js';
 
 /**

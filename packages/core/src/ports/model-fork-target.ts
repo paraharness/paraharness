@@ -1,5 +1,3 @@
-export type { PrepareForkTarget } from './prepare-fork-target.js';
-
 /**
  * Target model and tombstone substitution options passed to `ModelDriver.prepareFork()`.
  *

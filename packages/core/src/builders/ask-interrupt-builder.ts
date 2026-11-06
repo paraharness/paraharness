@@ -1,5 +1,5 @@
 import type { AstBuilder } from '../ast/ast-builder.js';
-import type { AskInterruptHandlerNode } from '../ast/interrupt-handler-node.js';
+import type { AskInterruptHandlerNode } from '../ast/interrupt-handler-node.types.js';
 import type { LeaseDelta } from '../ports/lease-delta.js';
 
 /**

@@ -1,6 +1,6 @@
 import type { AbortHookASTNode, QuotaTripwireASTNode } from './domain-ast.types.js';
 import type { InterruptNode } from './interrupt-node.js';
-import type { PolicyGuardClauseNode } from './policy-guard-clause-node.js';
+import type { PolicyGuardClauseNode } from './policy-guard-clause-node.types.js';
 
 /**
  * Epistemic flush and abort hook configuration executed when a quantitative policy limit or tripwire is breached.

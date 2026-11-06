@@ -1,5 +1,3 @@
-export type { CreateOrResumeRunRequest } from './create-or-resume-run-request.js';
-
 /**
  * Input record passed to `LedgerStore.createOrResumeRun()`.
  *

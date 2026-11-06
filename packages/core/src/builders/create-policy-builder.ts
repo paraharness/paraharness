@@ -5,7 +5,7 @@ import type {
   QuotaTripwireASTNode,
 } from '../ast/domain-ast.types.js';
 import { extractAST } from '../ast/extract-ast.js';
-import type { PolicyGuardClauseNode } from '../ast/policy-guard-clause-node.js';
+import type { PolicyGuardClauseNode } from '../ast/policy-guard-clause-node.types.js';
 import type { PolicyNode } from '../ast/policy-node.js';
 import type { CreatePolicyBuilderOptions } from './create-policy-builder-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';

@@ -2,7 +2,7 @@ import type { MaybeBuilder, MaybeSource } from '../../ast/ast-foundation.types.j
 import type { AstBuilder } from '../../ast/ast-builder.js';
 import type { SourceASTNode } from '../../ast/domain-ast.types.js';
 import { extractAST } from '../../ast/extract-ast.js';
-import type { ScopedRuleNode } from '../../ast/scoped-rule-node.js';
+import type { ScopedRuleNode } from '../../ast/scoped-rule-node.types.js';
 import type { ScopePredicate, ScopedRule } from '../../schemas/core-rules.schema.js';
 import type { ScopePredicateInput } from '../scope-predicate-input.js';
 import { deepFreeze } from './deep-freeze.js';

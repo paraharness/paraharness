@@ -1,5 +1,5 @@
 import type { ASTNode } from '../ast/ast-node.js';
-import type { PoolStrategyNode } from '../ast/pool-strategy-node.js';
+import type { PoolStrategyNode } from '../ast/pool-strategy.types.js';
 
 /**
  * Optional state parameters for constructing a `PoolBuilder` instance.

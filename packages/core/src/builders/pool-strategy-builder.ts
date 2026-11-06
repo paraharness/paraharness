@@ -1,6 +1,6 @@
 import type { AstBuilder } from '../ast/ast-builder.js';
-import type { PoolStrategyNode } from '../ast/pool-strategy-node.js';
-import type { PoolSelectorFn } from '../ast/pool-selector.types.js';
+import type { PoolStrategyNode } from '../ast/pool-strategy.types.js';
+import type { PoolSelectorFn } from '../ast/pool-strategy.types.js';
 import type { EscalateOnRetryStrategyBuilder } from './escalate-on-retry-strategy-builder.js';
 
 /**

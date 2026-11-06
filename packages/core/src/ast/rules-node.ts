@@ -1,6 +1,6 @@
 import type { GlobalRule, ScopedRule } from '../schemas/core-rules.schema.js';
 import type { SourceValue } from './ast-foundation.types.js';
-import type { ScopedRuleNode } from './scoped-rule-node.js';
+import type { ScopedRuleNode } from './scoped-rule-node.types.js';
 
 /**
  * Passive AST node representing a rule registry (`H.rules(id)`) combining always-on global rules and conditional scoped rules.

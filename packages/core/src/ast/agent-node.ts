@@ -8,14 +8,14 @@ import type {
   SourceASTNode,
   ToolASTNode,
 } from './domain-ast.types.js';
-import type { InterruptHandlerNode } from './interrupt-handler-node.js';
+import type { InterruptHandlerNode } from './interrupt-handler-node.types.js';
 import type { InterruptNode } from './interrupt-node.js';
 import type { LessonsNode } from './lessons-node.js';
 import type { PolicyNode } from './policy-node.js';
 import type { PoolNode } from './pool-node.js';
 import type { PrefixGroupNode } from './prefix-group-node.js';
 import type { RulesNode } from './rules-node.js';
-import type { SkillNode } from './skill-node.js';
+import type { SkillNode } from './skill-node.types.js';
 import type { TopologyNode } from './topology-node.js';
 
 /**

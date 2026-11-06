@@ -6,7 +6,7 @@ import type { HumanNode } from '../ast/human-node.js';
 import type {
   InterruptHandlerNode,
   ReplaceInterruptHandlerNode,
-} from '../ast/interrupt-handler-node.js';
+} from '../ast/interrupt-handler-node.types.js';
 import type { UniversalStepTelemetry } from '../ports/universal-step-telemetry.js';
 import type { AdjudicateInterruptBuilder } from './adjudicate-interrupt-builder.js';
 import type { AskInterruptBuilder } from './ask-interrupt-builder.js';

@@ -1,7 +1,5 @@
 import type { ContinuationFrame } from './continuation-frame.types.js';
 
-export type { RecordStepStartInput } from './record-step-start-input.js';
-
 /**
  * Step start record passed to `LedgerStore.recordStepStart()`.
  *

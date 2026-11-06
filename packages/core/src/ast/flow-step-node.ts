@@ -1,6 +1,6 @@
 import type { StepASTNode } from './domain-ast.types.js';
 import type { FlowStepInputMapper } from './flow-step-input-mapper.types.js';
-import type { InterruptHandlerNode } from './interrupt-handler-node.js';
+import type { InterruptHandlerNode } from './interrupt-handler-node.types.js';
 
 /**
  * Passive AST node representing a single sequential step inside a `FlowNode` (`.step(id, step, $s => ...)`).

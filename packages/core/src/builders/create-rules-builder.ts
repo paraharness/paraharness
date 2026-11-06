@@ -1,6 +1,6 @@
 import type { MaybeBuilder, MaybeSource, SourceValue } from '../ast/ast-foundation.types.js';
 import type { RulesNode } from '../ast/rules-node.js';
-import type { ScopedRuleNode } from '../ast/scoped-rule-node.js';
+import type { ScopedRuleNode } from '../ast/scoped-rule-node.types.js';
 import type { GlobalRule, ScopedRule } from '../schemas/core-rules.schema.js';
 import type { CreateRulesBuilderOptions } from './create-rules-builder-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';

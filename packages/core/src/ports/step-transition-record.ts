@@ -1,5 +1,3 @@
-export type { RecordStepTransitionInput } from './record-step-transition-input.js';
-
 /**
  * Step transition record passed to `LedgerStore.recordStepTransition()`.
  *

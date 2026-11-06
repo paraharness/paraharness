@@ -5,7 +5,7 @@ import type {
   ToolASTNode,
 } from '../ast/domain-ast.types.js';
 import { extractAST } from '../ast/extract-ast.js';
-import type { SkillNode } from '../ast/skill-node.js';
+import type { SkillNode } from '../ast/skill-node.types.js';
 import type { CreateSkillBuilderOptions } from './create-skill-builder-state.js';
 import { flattenExtractedNodes } from './internal/agent-and-loop-sub-builders.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';

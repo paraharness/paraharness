@@ -2,7 +2,7 @@ import type {
   AbortHookASTNode,
   QuotaTripwireASTNode,
 } from '../ast/domain-ast.types.js';
-import type { PolicyGuardClauseNode } from '../ast/policy-guard-clause-node.js';
+import type { PolicyGuardClauseNode } from '../ast/policy-guard-clause-node.types.js';
 import type { PolicyLimitExceededConfig } from '../ast/policy-node.js';
 
 /**

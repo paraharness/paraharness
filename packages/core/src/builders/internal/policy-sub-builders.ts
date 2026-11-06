@@ -9,7 +9,7 @@ import type {
   DenyWithErrorPolicyGuardClauseNode,
   PolicyGuardClauseNode,
   RaiseInterruptPolicyGuardClauseNode,
-} from '../../ast/policy-guard-clause-node.js';
+} from '../../ast/policy-guard-clause-node.types.js';
 import type { PolicyLimitExceededConfig } from '../../ast/policy-node.js';
 import type { PolicyViolation } from '../../ast/policy-violation.js';
 import type { PolicyBuilder } from '../policy-builder.js';

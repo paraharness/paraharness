@@ -8,6 +8,22 @@ import type { GitSyncReceipt } from './git-sync-receipt.js';
 import type { GitWorktreeHandle } from './git-worktree-handle.js';
 
 /**
+ * Branch landing reconciliation strategy (`'rebase-onto-base'` or `'batch-merge-train'`) for `GitCowWorktreeNode`.
+ *
+ * Configures how completed branches reconcile onto the target base branch and which verification check runs afterward.
+ *
+ * @template THandle Worktree scope handle type.
+ */
+export interface GitReconcileStrategyConfig<THandle = GitWorktreeHandle> {
+  /** Reconciliation mode. */
+  readonly mode: 'rebase-onto-base' | 'batch-merge-train';
+  /** Optional verification check executed after rebasing onto the target base branch. */
+  readonly verifyWith?: BaseCheckASTNode<string, THandle>;
+  /** Optional maximum cumulative batch size for `'batch-merge-train'`. */
+  readonly maxBatchSize?: number;
+}
+
+/**
  * Passive AST node configuring a Tier-3 branchable Copy-on-Write Git worktree scope (`git.cowWorktree`).
  *
  * Provides isolated root and child worktrees, dirty-index checkpointing without mutating `HEAD`,
@@ -48,14 +64,7 @@ export interface GitCowWorktreeNode<
     readonly maxUntrackedFileSizeBytes?: number;
   };
   /** Optional branch landing reconciliation strategy (`'rebase-onto-base'` or `'batch-merge-train'`). */
-  readonly reconcileStrategy?: {
-    /** Reconciliation mode. */
-    readonly mode: 'rebase-onto-base' | 'batch-merge-train';
-    /** Optional verification check executed after rebasing onto the target base branch. */
-    readonly verifyWith?: BaseCheckASTNode<string, THandle>;
-    /** Optional maximum cumulative batch size for `'batch-merge-train'`. */
-    readonly maxBatchSize?: number;
-  };
+  readonly reconcileStrategy?: GitReconcileStrategyConfig<THandle>;
   /** Built-in conflict cleanliness check enforced after conflicted merges or rebases. */
   readonly conflictCleanCheck: GitCleanWorkingTreeNode<THandle>;
 }

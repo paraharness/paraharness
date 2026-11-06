@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import type { CheckpointableScope } from './checkpointable-scope.js';
 import type { LeaseDelta } from './lease-delta.js';
-import type { ReconcileResult } from './reconcile-result.js';
+import type { ReconcileResult } from './reconcile-result.types.js';
 
 /**
  * Tier-3 runtime driver contract for branchable isolation scopes (`capabilityTier: 'branchable'`).

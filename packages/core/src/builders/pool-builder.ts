@@ -2,8 +2,8 @@ import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { AstBuilder } from '../ast/ast-builder.js';
 import type { ASTNode } from '../ast/ast-node.js';
 import type { PoolNode } from '../ast/pool-node.js';
-import type { PoolStrategyNode } from '../ast/pool-strategy-node.js';
-import type { PoolSelectorFn } from '../ast/pool-selector.types.js';
+import type { PoolStrategyNode } from '../ast/pool-strategy.types.js';
+import type { PoolSelectorFn } from '../ast/pool-strategy.types.js';
 import type { PoolStrategyBuilder } from './pool-strategy-builder.js';
 
 /**

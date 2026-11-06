@@ -1,4 +1,4 @@
-import type { AgentPauseState } from './agent-pause-state.js';
+import type { AgentPauseState } from './agent-pause-state.types.js';
 import type { LeaseDelta } from './lease-delta.js';
 import type { LessonOutcome } from './lesson-outcome.types.js';
 import type { ToolEffect } from './tool-effect.js';

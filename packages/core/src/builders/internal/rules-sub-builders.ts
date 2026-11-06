@@ -1,7 +1,7 @@
 import type { MaybeBuilder, MaybeSource } from '../../ast/ast-foundation.types.js';
 import type { CheckASTNode, SourceASTNode } from '../../ast/domain-ast.types.js';
 import { extractAST } from '../../ast/extract-ast.js';
-import type { ScopedRuleNode } from '../../ast/scoped-rule-node.js';
+import type { ScopedRuleNode } from '../../ast/scoped-rule-node.types.js';
 import type { ScopedRule } from '../../schemas/core-rules.schema.js';
 import type { CreateScopedRuleBuilderOptions } from '../create-scoped-rule-builder-state.js';
 import type { ScopePredicateInput } from '../scope-predicate-input.js';

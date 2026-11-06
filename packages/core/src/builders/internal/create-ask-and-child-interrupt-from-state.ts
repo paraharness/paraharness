@@ -4,7 +4,7 @@ import type { HumanNode } from '../../ast/human-node.js';
 import type {
   AskInterruptHandlerNode,
   AskLeaseElevationConfig,
-} from '../../ast/interrupt-handler-node.js';
+} from '../../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../../ast/interrupt-node.js';
 import type { LeaseDelta } from '../../ports/lease-delta.js';
 import type { AskInterruptEdgeBuilder } from '../ask-interrupt-builder.js';

@@ -1,7 +1,5 @@
 import type { ContinuationFrame } from './continuation-frame.types.js';
 
-export type { InterruptedStepBootRecord } from './interrupted-step-boot-record.js';
-
 /**
  * Non-terminal run and step record returned by `LedgerStore.getInterruptedStepsOnBoot()`.
  *

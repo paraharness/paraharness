@@ -5,8 +5,8 @@ import type {
   CustomPoolStrategyNode,
   PoolStrategyNode,
   StandardPoolStrategyNode,
-} from '../../ast/pool-strategy-node.js';
-import type { PoolSelectorFn } from '../../ast/pool-selector.types.js';
+} from '../../ast/pool-strategy.types.js';
+import type { PoolSelectorFn } from '../../ast/pool-strategy.types.js';
 import type { EscalateOnRetryStrategyBuilder } from '../escalate-on-retry-strategy-builder.js';
 import type { PoolStrategyConfigurator } from '../pool-strategy-builder.js';
 import { createEscalateOnRetryBuilder } from './create-escalate-on-retry-builder.js';

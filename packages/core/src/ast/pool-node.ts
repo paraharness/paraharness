@@ -1,4 +1,4 @@
-import type { PoolStrategyNode } from './pool-strategy-node.js';
+import type { PoolStrategyNode } from './pool-strategy.types.js';
 
 /**
  * Passive AST node representing a capacity pool of account seats or models.

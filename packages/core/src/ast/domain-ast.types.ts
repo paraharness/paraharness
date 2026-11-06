@@ -21,8 +21,6 @@ import type {
 } from './domain/index.js';
 import type { LoopNode } from './loop-node.js';
 
-export type { CoreASTNode } from './core-ast-node.types.js';
-
 /**
  * Workspace-wide discriminated union of isolation scope AST nodes.
  * @template THandle  Isolation scope runtime handle type.
