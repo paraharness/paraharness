@@ -65,6 +65,8 @@ export interface FlowExecutionContext<TIn = unknown, THandle = unknown> {
   wirePrefixesByGroupId: ReadonlyMap<string, CompiledWirePrefix>;
   /** Completed step outputs keyed by `FlowStepNode.id` or outer `FlowBranchNode.id`. */
   readonly completedStepOutputs: Map<string, unknown>;
+  /** Optional map of initial base scope checkpoints keyed by `FlowStepNode.id`. */
+  readonly stepBaseCheckpointsByStepId?: Map<string, string>;
   /** Accumulated `ToolEffect` entries observed across all steps in the flow run. */
   readonly observedRunEffects: ToolEffect[];
   /** Currently executing `stepId` (or `null` between steps). */

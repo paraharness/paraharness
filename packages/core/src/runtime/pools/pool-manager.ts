@@ -6,10 +6,8 @@ import {
   getOrCreateCandidateMetrics,
   selectCandidateByStrategy,
 } from './internal/evaluate-pool-strategy.js';
-import type {
-  PoolModelSelectionOptions,
-  PoolRuntimeState,
-} from './pool-runtime-state.js';
+import type { PoolModelSelectionOptions } from './pool-model-selection-options.js';
+import type { PoolRuntimeState } from './pool-runtime-state.js';
 
 /**
  * Runtime capacity pool scheduler managing run-sticky account seat affinity, HTTP `429`

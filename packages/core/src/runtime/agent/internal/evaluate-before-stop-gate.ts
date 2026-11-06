@@ -2,6 +2,7 @@ import type { CheckASTNode } from '../../../ast/domain-ast.types.js';
 import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
 import type { IsolationScope } from '../../../ports/isolation-scope.js';
+import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
 import { runContrastiveLessonDistillation } from '../../lessons/lesson-distiller-runner.js';
 import { mergeLessonOutcomePrecedence } from '../../lessons/lesson-scoring.js';
@@ -125,7 +126,7 @@ export async function evaluateBeforeStopGate<TIn, TOut, THandle>(
   for (const checkNode of allChecks) {
     const checkExec = session.ctx.registry.checks[checkNode.type];
     if (checkExec === undefined) throw new Error(`No CheckExecutor registered for '${checkNode.type}' in agent '${session.node.id}'.`);
-    const res = await session.lockManager.withReadLock(session.ctx.scopeHandle, () => Promise.resolve(checkExec(checkNode as never, undefined as never, session.ctx as never)));
+    const res = await session.lockManager.withReadLock(session.ctx.scopeHandle, () => Promise.resolve(checkExec(checkNode as never, undefined, session.ctx as StepExecutionContext<unknown>)));
     if (!res.ok) {
       const checkId = 'id' in checkNode && typeof checkNode.id === 'string' ? checkNode.id : checkNode.type;
       failedCheckIds.push(checkId);

@@ -123,7 +123,7 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
   executable: StepASTNode<unknown, unknown, THandle>,
   stepParams: { readonly stepExecId: string; readonly activePartitions: readonly string[]; readonly baseScopeCheckpoint: string | undefined; readonly stepInterruptHandlers: readonly InterruptHandlerNode<unknown, unknown, THandle>[] },
 ): { readonly executable: StepASTNode<unknown, unknown, THandle>; readonly stepCtx: StepExecutionContext<THandle> } {
-  const execType = (executable as { readonly type?: string }).type;
+  const execType = (executable as { readonly type?: string } | undefined)?.type;
   let mergedExec = executable;
   if (stepParams.stepInterruptHandlers.length > 0 && execType === 'harness:agent') {
     const ag = executable as AgentNode<unknown, unknown, THandle>;

@@ -1,13 +1,16 @@
+import type { StepASTNode } from '../../../ast/domain-ast.types.js';
 import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
 import type { BranchableScope } from '../../../ports/branchable-scope.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
 import type { ForkBatchContinuationFrame } from '../../../ports/fork-batch-continuation-frame.js';
 import type { SpeculateContinuationFrame } from '../../../ports/speculate-continuation-frame.js';
+import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import { syncSuspendedRunPrerequisites } from '../../plan/execute-plan-mutation.js';
 import type { FlowExecutionContext } from '../flow-execution-context.js';
 import type { HierarchicalRewindDrainParams } from '../hierarchical-rewind-drain-params.js';
 import type { RecoverInterruptedRunParams } from '../recover-interrupted-run-params.js';
 import type { ReplaceWithPromotionParams } from '../replace-with-promotion-params.js';
+import { buildFlowStepExecutionContext } from './collect-flow-actors.js';
 
 /**
  * Promotes a `.replaceWith(replacementActor, mapInput)` handler by resetting step overlays and atomically recording replacement step start (`SPEC.md` §3.6 & §3.9).
@@ -30,7 +33,8 @@ export async function executeReplaceWithPromotion<TIn = unknown, THandle = unkno
   if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'step', stepExecId });
   if (abortHook !== undefined) {
     const abortExec = flowCtx.registry.abortHooks[abortHook.type as keyof typeof flowCtx.registry.abortHooks];
-    if (abortExec !== undefined) await abortExec(abortHook as never, { handle: flowCtx.scopeHandle, runId: flowCtx.runId, stepExecId } as never, undefined as never);
+    const { stepCtx } = buildFlowStepExecutionContext(flowCtx, replacementExecutable, { stepExecId, activePartitions: [], baseScopeCheckpoint, stepInterruptHandlers: [] });
+    if (abortExec !== undefined) await abortExec(abortHook as never, { handle: flowCtx.scopeHandle, runId: flowCtx.runId, stepExecId } as never, stepCtx as StepExecutionContext<unknown>);
   } else if (baseScopeCheckpoint !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) {
     await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, baseScopeCheckpoint);
   }
@@ -80,9 +84,13 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
     }
     const shouldResetOverlay = (onRewindHook as { readonly resetsRunOverlay?: boolean } | undefined)?.resetsRunOverlay !== false;
     if (flowCtx.topologyStore !== undefined && shouldResetOverlay) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'run' });
+    const targetStepBaseScopeCheckpoint = params.targetStepBaseScopeCheckpoint ?? (rewindToStepId !== null ? flowCtx.stepBaseCheckpointsByStepId?.get(rewindToStepId) : undefined);
     if (onRewindHook !== undefined) {
       const hookExec = flowCtx.registry.rewindHooks[onRewindHook.type];
-      if (hookExec !== undefined) await hookExec(onRewindHook as never, { handle: flowCtx.scopeHandle } as never, undefined as never);
+      const { stepCtx } = buildFlowStepExecutionContext(flowCtx, flowCtx.activeReplacementExecutable as StepASTNode<unknown, unknown, THandle>, { stepExecId: flowCtx.activeStepExecId ?? flowCtx.runId, activePartitions: [], baseScopeCheckpoint: targetStepBaseScopeCheckpoint, stepInterruptHandlers: [] });
+      if (hookExec !== undefined) await hookExec(onRewindHook as never, { handle: flowCtx.scopeHandle, targetStepBaseScopeCheckpoint } as never, stepCtx as StepExecutionContext<unknown>);
+    } else if (rewindToStepId !== null && targetStepBaseScopeCheckpoint !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) {
+      await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, targetStepBaseScopeCheckpoint);
     }
     await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(updatedInput), rewindPendingToStepId: undefined });
   });
@@ -156,6 +164,7 @@ export async function foldFlowCustomTelemetry<TIn = unknown, THandle = unknown>(
   const telNode = flowCtx.flow.telemetry;
   const telExec = flowCtx.registry.telemetryCollectors[telNode.type];
   if (telExec === undefined) return undefined;
-  const rawMetrics = await telExec(telNode as never, flowCtx.observedRunEffects, undefined as never);
+  const { stepCtx } = buildFlowStepExecutionContext(flowCtx, flowCtx.activeReplacementExecutable as StepASTNode<unknown, unknown, THandle>, { stepExecId: flowCtx.activeStepExecId ?? flowCtx.runId, activePartitions: [], baseScopeCheckpoint: undefined, stepInterruptHandlers: [] });
+  const rawMetrics = await telExec(telNode as never, flowCtx.observedRunEffects, stepCtx as StepExecutionContext<unknown>);
   return Object.freeze(rawMetrics);
 }

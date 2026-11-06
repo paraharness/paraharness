@@ -19,6 +19,8 @@ export interface HierarchicalRewindDrainParams<TIn = unknown, THandle = unknown>
   readonly updatedInput: TIn;
   /** Optional scope rewind hook executed during Step 4 of the drain barrier. */
   readonly onRewindHook?: ScopeRewindHookASTNode<THandle>;
+  /** Optional base scope checkpoint recorded when the target step originally started. */
+  readonly targetStepBaseScopeCheckpoint?: string;
   /** Terminal status recorded on the interrupted active step (`'INTERRUPTED'` or `'CANCELLED'`). */
   readonly stepTerminalStatus?: 'INTERRUPTED' | 'CANCELLED';
 }

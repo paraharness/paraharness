@@ -20,18 +20,6 @@ export interface PoolCandidateRuntimeMetrics {
 }
 
 /**
- * Optional retry and timestamp parameters supplied to `PoolManager.selectModel()`.
- *
- * Controls retry tier escalation and deterministic wall-clock evaluation for rate-limit windows.
- */
-export interface PoolModelSelectionOptions {
-  /** Zero-based retry attempt index for `'escalate-on-retry'` pools. */
-  readonly retryAttempt?: number;
-  /** Optional current epoch timestamp in milliseconds (defaults to `Date.now()`). */
-  readonly nowMs?: number;
-}
-
-/**
  * Per-pool runtime state managed by `PoolManager` (`SPEC.md` §3.2).
  *
  * Stores candidate telemetry metrics, round-robin cursor position, and run-sticky seat affinity
@@ -46,6 +34,4 @@ export interface PoolRuntimeState {
   roundRobinCursor: number;
   /** Map of active `runId` to sticky candidate identifier (`seat.id`). */
   readonly stickySeatByRunId: Map<string, string>;
-  /** Optional monotonic clock reference for selection options. */
-  readonly defaultOptions?: PoolModelSelectionOptions;
 }

@@ -36,9 +36,9 @@ export async function executeFlowStep<TIn = unknown, THandle = unknown>(flowCtx:
     const stepInput = !isReplaced && stepNode.inputFrom !== undefined ? stepNode.inputFrom(flowCtx.currentInput, Object.fromEntries(flowCtx.completedStepOutputs.entries()), scopeReceipt) : flowCtx.currentInput;
     const extractPartsFn = (targetExecutable as { readonly extractPartitions?: (i: unknown) => readonly string[] }).extractPartitions, stepExecId = flowCtx.activeStepExecId ?? `${flowCtx.runId}:${stepNode.id}:${String(attempt)}`;
     const baseCkpt = flowCtx.scopeDriver.serializeCheckpoint !== undefined ? await flowCtx.scopeDriver.serializeCheckpoint(flowCtx.scopeHandle) : undefined;
+    if (baseCkpt !== undefined && flowCtx.stepBaseCheckpointsByStepId !== undefined && !flowCtx.stepBaseCheckpointsByStepId.has(stepNode.id)) flowCtx.stepBaseCheckpointsByStepId.set(stepNode.id, baseCkpt);
     if (flowCtx.activeStepExecId === null) await flowCtx.ledgerStore.recordStepStart({ runId: flowCtx.runId, stepExecId, stepId: stepNode.id, executableId: targetExecutable.id, inputMsgId: null, baseScopeCheckpoint: baseCkpt, continuationStack: Object.freeze([]) });
-    flowCtx.activeStepId = stepNode.id;
-    flowCtx.activeStepExecId = stepExecId;
+    Object.assign(flowCtx, { activeStepId: stepNode.id, activeStepExecId: stepExecId });
     const { executable, stepCtx } = buildFlowStepExecutionContext(flowCtx, targetExecutable, { stepExecId, activePartitions: extractPartsFn !== undefined ? extractPartsFn(stepInput) : [], baseScopeCheckpoint: baseCkpt, stepInterruptHandlers: isReplaced ? [] : stepNode.onInterruptHandlers });
     try {
       const output = await executeStepNode(executable, stepInput, stepCtx);

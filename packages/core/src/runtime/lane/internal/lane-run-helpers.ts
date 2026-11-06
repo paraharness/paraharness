@@ -82,7 +82,7 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
     topologyStore: cfg.topologyStore, lessonStore: cfg.lessonStore, lockManager: managers.lockManager,
     continuationQueue: managers.continuationQueue, poolManager: managers.poolManager, serviceRegistry: managers.serviceRegistry,
     humanAdaptersById: cfg.humanAdaptersById ?? new Map(), prefixGroups: cfg.prefixGroups, wirePrefixesByGroupId: new Map(),
-    completedStepOutputs: new Map(), observedRunEffects: [], activeStepId: null, activeStepExecId: null,
+    completedStepOutputs: new Map(), stepBaseCheckpointsByStepId: new Map(), observedRunEffects: [], activeStepId: null, activeStepExecId: null,
     activeStepAbortController: new AbortController(), retryConfig: cfg.lane.retry,
   };
   return { scopeDriver, scopeHandle, flowCtx };

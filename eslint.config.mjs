@@ -76,7 +76,10 @@ function verifySingleRootInterface(interfaces, filename, context) {
   const reachable = new Set([root.name]);
   const queue = [root.name];
   while (queue.length > 0) for (const next of edges.get(queue.shift()) ?? []) if (!reachable.has(next)) { reachable.add(next); queue.push(next); }
-  for (const item of interfaces) if (!reachable.has(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' is not a property sub-interface of '${root.name}'. Top-level interfaces must live one per file (Rule 1.2).` });
+  for (const item of interfaces) {
+    if (item !== root && /(?:Options|Params)$/.test(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' must live in its own dedicated '*Options' / '*Params' file (Rule 1.2).` });
+    else if (!reachable.has(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' is not a property sub-interface of '${root.name}'. Top-level interfaces must live one per file (Rule 1.2).` });
+  }
 }
 
 /**
@@ -84,9 +87,7 @@ function verifySingleRootInterface(interfaces, filename, context) {
  *
  * Enforces summary + detailed description paragraphs, `@template`, `@param {Type} name - Desc`,
  * column alignment across multi-tag blocks, and `@returns {Type} Desc` for non-void callables.
- *
  * @param {object} params - Validation target node, callable node, kind label, name, and ESLint context.
- *
  * @returns {void}
  */
 function checkStructuredJsdoc({ node, callableNode, kindLabel, name, requireTwoParagraphs, isCallable, context }) {
@@ -171,6 +172,7 @@ export default [
               return {
                 TSAsExpression(node) {
                   if (node.typeAnnotation?.type === 'TSUnknownKeyword' || node.typeAnnotation?.type === 'TSAnyKeyword') context.report({ node, message: "Unsound 'as unknown' or 'as any' type assertion is forbidden (Rule 5.1)." });
+                  if (node.expression?.type === 'Identifier' && node.expression.name === 'undefined' && node.typeAnnotation?.type === 'TSNeverKeyword') context.report({ node, message: "Unsound 'undefined as never' type assertion is forbidden (Rule 5.1)." });
                 },
                 Program(program) {
                   const totalLines = context.sourceCode.lines.length;

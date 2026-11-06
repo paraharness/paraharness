@@ -120,7 +120,8 @@ export type { PlanMutationParams, SpawnTaskInputEntry } from './plan/plan-mutati
 export type { PlanMutationResult } from './plan/plan-mutation-result.js';
 export type { SyncPrerequisitesParams } from './plan/sync-prerequisites-params.js';
 export { PoolManager } from './pools/pool-manager.js';
-export type { PoolRuntimeState } from './pools/pool-runtime-state.js';
+export type { PoolModelSelectionOptions } from './pools/pool-model-selection-options.js';
+export type { PoolCandidateRuntimeMetrics, PoolRuntimeState } from './pools/pool-runtime-state.js';
 export { evaluatePreFlightToolBatch, evaluateQuotaTripwires, executePostFlightSandboxedTool } from './policy/evaluate-policy-guards.js';
 export { executeLimitExceededSequence } from './policy/execute-limit-exceeded-flush.js';
 export type { LimitExceededFlushParams } from './policy/limit-exceeded-flush-params.js';
