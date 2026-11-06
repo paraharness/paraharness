@@ -31,6 +31,7 @@ harness_files      := [
   "docs/IMPL_LOOP.md",
   "docs/HARNESS_LOOP.md",
   "package.json",
+  "eslint.config.mjs",
   ".agents/hooks.json",
   ".agents/hooks/post-compaction.mjs"
 ]
@@ -55,7 +56,7 @@ Every agent in any loop must load its role manifest as its first action before i
 
 | Role | Required Bootstrap Files |
 | :--- | :--- |
-| **Head** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/HEAD.md`, `docs/lessons/GENERAL.md`, `docs/lessons/HEAD.md`, active `docs/*_LOOP.md` |
+| **Head** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/HEAD.md`, `docs/lessons/GENERAL.md`, `docs/lessons/HEAD.md`, `docs/SPEC.md`, and the single active `docs/*_LOOP.md` |
 | **Builder / Remediator** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/BUILDER.md`, `docs/lessons/GENERAL.md`, `docs/lessons/BUILDER.md`, `docs/CODING_GUIDELINES.md` |
 | **Reviewer** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/REVIEWER.md`, `docs/lessons/GENERAL.md`, `docs/lessons/REVIEWER.md`, `docs/CODING_GUIDELINES.md` |
 | **Verifier** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/VERIFIER.md`, `docs/lessons/GENERAL.md`, `docs/lessons/VERIFIER.md`, `docs/CODING_GUIDELINES.md` |
@@ -143,13 +144,13 @@ LOOP:
         3.1 Launch 1 Harness Builder Subagent with its Builder bootstrap manifest (§3) and `$verified_changes`:
             - Read its Builder bootstrap manifest (§3) as Turn 1, then read all remaining implicated files in `harness_files` not already loaded in Turn 1 in full.
             - Apply `$verified_changes` surgically across `harness_files` (pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` per `docs/rules/BUILDER.md` Rule 2).
-            - Run smoke verification checks (`node --check .agents/hooks/post-compaction.mjs`, JSON syntax validation of `package.json` and `.agents/hooks.json`, and `echo '{}' | node .agents/hooks/post-compaction.mjs` plus a mock transcript payload check) until exit code `0`, and self-audit cross-file references, role manifests, and `git diff` to ensure zero unintended edits or broken links, recording any unrelated adjacent defects in `disclosed_adjacent_defects` (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2).
+            - Run smoke verification checks (`node --check .agents/hooks/post-compaction.mjs`, `node --check eslint.config.mjs`, JSON syntax validation of `package.json` and `.agents/hooks.json`, and `echo '{}' | node .agents/hooks/post-compaction.mjs` plus a mock transcript payload check) until exit code `0`, self-audit cross-file references, role manifests, and `git diff` to ensure zero unintended edits or broken links, commit the mutated harness files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- <mutated_harness_files> && git commit -m 'harness: remediate round <round>' -- <mutated_harness_files>"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6), and record any unrelated adjacent defects in `disclosed_adjacent_defects` (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2).
         3.2 Increment `round := round + 1` and repeat LOOP at STEP 1.
 
 DISTILLATION (When `round > 1` or when verified changes / false-positive clusters occurred)
 1. Launch 1 Distiller Subagent (`invoke_subagent`, TypeName: 'loop-distiller', Model: 'inherit') with its Distiller bootstrap manifest (§3) and `round_history` (all `$verified_changes` and rejected false-positive patterns across completed rounds `1..round`).
-2. Distiller reads its Turn-1 manifest (§3) and updates `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` in-place per `docs/rules/DISTILLER.md` Rules 1–4 (`NO_LESSONS_ADDED` with zero file edits is the expected output when all findings were already covered by existing rules/guidelines). Head audits `git diff -- docs/lessons/` against `docs/rules/DISTILLER.md` Rules 1–4 before TERMINATION.
+2. Distiller reads its Turn-1 manifest (§3), updates `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` in-place per `docs/rules/DISTILLER.md` Rules 1–4 (`NO_LESSONS_ADDED` with zero file edits is the expected output when all findings were already covered by existing rules/guidelines), and commits any modified `docs/lessons/*.md` files locally (never running `git push`). Head audits `git diff origin/main...HEAD -- docs/lessons/` against `docs/rules/DISTILLER.md` Rules 1–4 before TERMINATION.
 
 TERMINATION (count($verified_changes) == 0)
-Present converged harness diff summary (`git diff --stat`) and verification results to Owner.
+Head executes `git push origin main` (`docs/rules/HEAD.md` Rule 5) and presents converged harness diff summary (`git diff --stat`) and verification results to Owner.
 ```

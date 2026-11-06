@@ -1,13 +1,4 @@
-import {
-  closeSync,
-  existsSync,
-  fstatSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  readSync,
-  writeFileSync,
-} from 'node:fs';
+import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,35 +23,11 @@ const ROLE_GROUNDING_FILES = {
     'docs/lessons/GENERAL.md',
     'docs/lessons/HEAD.md',
     'docs/SPEC.md',
-    'docs/SPEC_LOOP.md',
-    'docs/PLAN_LOOP.md',
-    'docs/IMPL_LOOP.md',
-    'docs/HARNESS_LOOP.md',
+    'and the active loop file (docs/IMPL_LOOP.md)',
   ],
-  builder: [
-    'CLAUDE.MD',
-    'docs/rules/GENERAL.md',
-    'docs/rules/BUILDER.md',
-    'docs/lessons/GENERAL.md',
-    'docs/lessons/BUILDER.md',
-    'docs/CODING_GUIDELINES.md',
-  ],
-  reviewer: [
-    'CLAUDE.MD',
-    'docs/rules/GENERAL.md',
-    'docs/rules/REVIEWER.md',
-    'docs/lessons/GENERAL.md',
-    'docs/lessons/REVIEWER.md',
-    'docs/CODING_GUIDELINES.md',
-  ],
-  verifier: [
-    'CLAUDE.MD',
-    'docs/rules/GENERAL.md',
-    'docs/rules/VERIFIER.md',
-    'docs/lessons/GENERAL.md',
-    'docs/lessons/VERIFIER.md',
-    'docs/CODING_GUIDELINES.md',
-  ],
+  builder: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/BUILDER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/BUILDER.md', 'docs/CODING_GUIDELINES.md'],
+  reviewer: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/REVIEWER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/REVIEWER.md', 'docs/CODING_GUIDELINES.md'],
+  verifier: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/VERIFIER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/VERIFIER.md', 'docs/CODING_GUIDELINES.md'],
   distiller: [
     'CLAUDE.MD',
     'docs/rules/GENERAL.md',
@@ -113,7 +80,7 @@ function readRange(fd, start, end) {
  * Checks whether a parsed JSONL transcript entry is an injected grounding message or completed read.
  *
  * Inspects non-model system message fields for the grounding sentinel and checks model tool calls
- * for completed terminal grounding file reads (`docs/HARNESS_LOOP.md` or `docs/CODING_GUIDELINES.md`).
+ * for completed terminal grounding file reads (`docs/*_LOOP.md` or `docs/CODING_GUIDELINES.md`).
  *
  * @param {unknown} entry - Parsed JSONL transcript object.
  *
@@ -127,13 +94,11 @@ function isGroundedEntry(entry) {
       return (
         (tc?.name === 'read_file' || tc?.name === 'view_file') &&
         typeof targetPath === 'string' &&
-        (targetPath.includes('docs/HARNESS_LOOP.md') || targetPath.includes('docs/CODING_GUIDELINES.md'))
+        (targetPath.endsWith('_LOOP.md') || targetPath.includes('docs/CODING_GUIDELINES.md'))
       );
     });
   }
-  if (entry.type === 'PLANNER_RESPONSE' || entry.type === 'TOOL_RESULT' || entry.type === 'GENERIC') {
-    return false;
-  }
+  if (entry.type === 'PLANNER_RESPONSE' || entry.type === 'TOOL_RESULT' || entry.type === 'GENERIC') return false;
   const candidates = [
     entry.systemMessage?.systemMessage,
     entry.systemMessage,
@@ -159,8 +124,7 @@ function isGroundedEntry(entry) {
 function scanCompactionState(text, skipLeadingPartialLine) {
   const firstNewline = skipLeadingPartialLine ? text.indexOf('\n') : -1;
   if (skipLeadingPartialLine && firstNewline === -1) return 'none';
-  const completeText = skipLeadingPartialLine ? text.slice(firstNewline + 1) : text;
-  const lines = completeText.split('\n');
+  const lines = (skipLeadingPartialLine ? text.slice(firstNewline + 1) : text).split('\n');
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -210,10 +174,7 @@ function checkCompactionGrounding(transcriptPath) {
       const start = Math.max(0, size - tail);
       const state = scanCompactionState(readRange(fd, start, size), start > 0);
       if (state === 'grounded') return { needed: false, role: 'head' };
-      if (state === 'ungrounded') {
-        const headSlice = readRange(fd, 0, Math.min(size, HEAD_BYTES));
-        return { needed: true, role: detectRoleFromHead(headSlice) };
-      }
+      if (state === 'ungrounded') return { needed: true, role: detectRoleFromHead(readRange(fd, 0, Math.min(size, HEAD_BYTES))) };
       if (start === 0) return { needed: false, role: 'head' };
     }
   } finally {
@@ -233,18 +194,17 @@ function checkCompactionGrounding(transcriptPath) {
  * @returns {string} Complete post-compaction grounding instruction with sentinel prefix.
  */
 function loadOrGenerateGroundingNote(workspaceRoot, role) {
-  const fileName = role === 'head' ? 'post-compaction.md' : `post-compaction-${role}.md`;
-  const notePath = resolve(workspaceRoot, '.memory', fileName);
+  const notePath = resolve(workspaceRoot, '.memory', role === 'head' ? 'post-compaction.md' : `post-compaction-${role}.md`);
   if (existsSync(notePath)) {
     const existing = readFileSync(notePath, 'utf8').trim();
-    if (existing.length > 0) {
-      return existing.startsWith(GROUNDING_SENTINEL_PREFIX)
-        ? existing
-        : `${GROUNDING_SENTINEL_PREFIX} ${existing}`;
-    }
+    if (existing.length > 0) return existing.startsWith(GROUNDING_SENTINEL_PREFIX) ? existing : `${GROUNDING_SENTINEL_PREFIX} ${existing}`;
   }
   const files = ROLE_GROUNDING_FILES[role] ?? ROLE_GROUNDING_FILES.head;
-  const generated = `${GROUNDING_SENTINEL_PREFIX} You were compacted. Ground yourself immediately: read ${files.join(', ')} in this exact sequence, one by one, each one fully. Do not do anything else before you finish.`;
+  const suffix =
+    role === 'head'
+      ? " Do not load inactive *_LOOP.md files, docs/CODING_SAMPLE.md, or other roles' rule/lesson files. Do not do anything else before you finish."
+      : ' Do not do anything else before you finish.';
+  const generated = `${GROUNDING_SENTINEL_PREFIX} You were compacted. Ground yourself immediately: read ${files.join(', ')} in this exact sequence, one by one, each one fully.${suffix}`;
   mkdirSync(dirname(notePath), { recursive: true });
   writeFileSync(notePath, `${generated}\n`, 'utf8');
   return generated;
@@ -271,12 +231,9 @@ async function main() {
     process.stdout.write(isStopHook ? '{"decision":"allow"}\n' : '{}\n');
     return;
   }
-  const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-  const workspaceRoot = payload.workspacePaths?.[0] || defaultRoot;
+  const workspaceRoot = payload.workspacePaths?.[0] || resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const note = loadOrGenerateGroundingNote(workspaceRoot, role);
-  const response = isStopHook
-    ? { decision: 'continue', reason: note }
-    : { injectSteps: [{ systemMessage: { systemMessage: note } }] };
+  const response = isStopHook ? { decision: 'continue', reason: note } : { injectSteps: [{ systemMessage: { systemMessage: note } }] };
   process.stdout.write(`${JSON.stringify(response)}\n`);
 }
 

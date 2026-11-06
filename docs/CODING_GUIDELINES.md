@@ -1,15 +1,20 @@
 # Coding Guidelines
 
-Every file authored in this repository must conform to these guidelines, enforced by code review and verification gates.
+Every file authored in this repository must conform to these guidelines, enforced deterministically by `pnpm lint` (`eslint.config.mjs`), code review, and verification gates.
 *(Note: `/** ... */` JSDoc blocks are omitted from snippets outside **§2** to isolate each rule; in production and `test/fixtures/` files, every entity must carry full JSDoc per **§2**.)*
 
 ## 1. File & Module Taxonomy
 
-### Rule 1.1 — Cohesive Single-Concept Files (No Multi-Entity Grab-Bags) & Universal Line Ceilings
-- Unrelated interfaces, classes, functions, constants, and `type` aliases must never share a multi-entity grab-bag file. Every production source file (`src/**`, `test/fixtures/**`) belongs to one primary category: (1) one top-level `interface` (plus tightly coupled nested sub-interfaces), (2) one `class`, (3) `*.types.ts`, (4) `*.constants.ts` / `*.schema.ts`, (5) cohesive public functions (`<domain-verb>.ts`) or `internal/<domain-verb>.ts`, or (6) a pure barrel (`index.ts`).
-- **Permitted single-concept co-locations (within `<= 250` lines):** (a) a Zod schema constant (`export const FooSchema = z.object(...)`) and its directly inferred type (`export type Foo = z.infer<typeof FooSchema>`) may share a `*.schema.ts` (or `*.constants.ts`) file; (b) a function, method, or class may co-locate its dedicated `*Params` / `*Options` / `*Result` interface or type in the same file when that shape is specific to that function/class (shared cross-module domain contracts and ports still live in dedicated interface files); (c) private module-scope `const` values (pre-compiled `RegExp`, `picomatch` matchers, `ReadonlySet`, local bounds) used solely by that file's class or functions may live in the same file; and (d) logically related `internal/` helper functions operating on the same narrow concept (such as branch predicates and phase helpers extracted under Rules 2.4 & 3.1) may share a cohesive `internal/<domain-verb>.ts` file.
-- **Universal file line-count ceiling & test/CLI scope:** Every non-test file (`src/**`, `test/fixtures/**`, `scripts/**`, `.agents/hooks/**`—interfaces, `*.types.ts`, `*.constants.ts`, `*.schema.ts`, classes, functions, `index.ts`) must be **`<= 250` lines**; every test file (`test/**/*.test.ts`) must be **`<= 400` lines** and may co-locate file-local test constants and small local setup helpers with `describe`/`it` suites without separate entity files (reusable test doubles/fakes still live in `test/fixtures/**` per Rule 6.1). Standalone CLI scripts in `.agents/hooks/**` and `scripts/**` (`<= 250` lines) may co-locate constants, documented functions, and top-level CLI entrypoint execution in one file.
-**DON'T (`src/runtime/runner.ts` — mixing unrelated constants, shared interfaces, union types, classes, and factory functions):**
+### Rule 1.1 — Strict Single-Kind Entity Files (Zero Cross-Kind Co-Location) & Universal Line Ceilings
+- Unrelated or different-kind declarations (`interface`, `type`, `class`, `function`, `const`) must **never** share a production source file (`src/**`, `test/fixtures/**`). Every production file belongs strictly to one of six mutually exclusive categories enforced by `harness/file-separation`:
+  1. **Types (`*.types.ts`):** Pure `type` aliases only (multiple logically grouped `type` aliases may share a `*.types.ts` file; never mix `type` aliases with `interface`, `function`, `class`, or `const` declarations).
+  2. **Schemas (`*.schema.ts`):** Sole permitted cross-kind pairing—a Zod schema constant (`export const FooSchema = z.object(...)`) and its directly inferred type (`export type Foo = z.infer<typeof FooSchema>`), never mixed with `interface` or `class` declarations.
+  3. **Interfaces (`<entity-name>.ts`):** Strictly **one top-level `interface` per file** (plus sub-interfaces referenced directly by that parent interface's `TSPropertySignature` properties; never mix interfaces with functions, constants, types, or classes). Use clear `kebab-case` entity filenames (`lessons-builder.ts`, `lesson-distillation-builder.ts`, `create-lessons-builder-options.ts`) without a rigid `.interface.ts` suffix.
+  4. **Classes (`<class-name>.ts`):** Strictly **one `class` per file**, never mixed with interfaces, functions, constants, or types.
+  5. **Functions (`create-*-builder.ts`, `<domain-verb>.ts`, `internal/<domain-verb>.ts`):** Functions only, never mixed with interfaces, constants, types, or classes. Entity builder factories (`**/builders/*.ts`, `**/create-*.ts`) and any file containing a function `> 40` lines allow **at most 1 function per file**; cohesive helper files in `internal/` allow **at most 4 functions per file**.
+  6. **Constants (`*.constants.ts`) & Barrels (`index.ts`):** `*.constants.ts` contains only logically grouped `const` values (never mixed with interfaces, functions, classes, or types); `index.ts` contains only pure `export { ... } from '...'` and `export type { ... } from '...'` re-exports (zero declarations).
+- **Universal file line-count ceiling & test/CLI scope:** Every non-test file (`src/**`, `test/fixtures/**`, `scripts/**`, `.agents/hooks/**`, `eslint.config.mjs`) must be **`<= 250` lines**; every test file (`test/**/*.test.ts`) must be **`<= 400` lines** and may co-locate file-local test constants and small local setup helpers with `describe`/`it` suites without separate entity files (reusable test doubles/fakes still live in `test/fixtures/**` per Rule 6.1). Standalone CLI scripts in `.agents/hooks/**` and `scripts/**` (`<= 250` lines) may co-locate constants, documented functions, and top-level CLI entrypoint execution in one file.
+**DON'T (`src/runtime/runner.ts` — mixing constants, interfaces, union types, classes, and factory functions in one file):**
 ```ts
 export const DEFAULT_TIMEOUT_MS = 5_000;
 export interface RunnerOptions { readonly timeoutMs?: number; }
@@ -17,7 +22,7 @@ export type RunnerMode = 'local' | 'container';
 export class LocalRunner { run(options: RunnerOptions): void {} }
 export function createLocalRunner(): LocalRunner { return new LocalRunner(); }
 ```
-**DO (split unrelated entities into `runner.constants.ts`, `runner-options.ts`, `runner.types.ts`, `local-runner.ts`, `create-local-runner.ts`, each `<= 250` lines):**
+**DO (split each entity kind into `runner.constants.ts`, `runner-options.ts`, `runner.types.ts`, `local-runner.ts`, `create-local-runner.ts`, each `<= 250` lines):**
 ```ts
 import type { RunnerOptions } from './runner-options.js';
 export class LocalRunner {
@@ -25,22 +30,23 @@ export class LocalRunner {
 }
 ```
 
-### Rule 1.2 — One Top-Level `interface` Per File (Natural Sub-Interfaces & Co-Located `*Params` Allowed, No God Interfaces)
-- Place each shared top-level exported `interface` in its own `kebab-case` file (`TopologyNode` $\to$ `topology-node.ts`); a dedicated `*Params` / `*Options` / `*Result` interface specific to a single function or class may either live in its own file or be co-located with that function/class per Rule 1.1(b).
-- **Natural nesting:** Tightly coupled sub-interfaces that exist solely to type nested properties of that top-level interface may live in the same file rather than scattering 3-line shapes across 10 files.
+### Rule 1.2 — One Top-Level `interface` Per File (Property-Referenced Sub-Interfaces Only, Zero Co-Located Sub-Builders or `*Options`)
+- Place each top-level `interface` in its own `kebab-case` file (`LessonsBuilder` $\to$ `lessons-builder.ts`, `LessonDistillationBuilder` $\to$ `lesson-distillation-builder.ts`, `CreateLessonsBuilderOptions` $\to$ `create-lessons-builder-options.ts`).
+- **Property-referenced sub-interfaces only:** A secondary `interface` may share a file with the root `interface` **if and only if** it is reachable from the root interface via **`TSPropertySignature` property type annotations** (or `extends`). Interfaces referenced only in **`TSMethodSignature` parameter or return types** (such as callback sub-builders `($d: LessonDistillationBuilder) => ...`), function `*Options` / `*Params` interfaces, and sibling AST/port interfaces must **each live in their own file**.
 - **No god interfaces:** Never build 30-property/25-method interfaces mixing unrelated concerns (locks, SQLite, model streaming, git worktrees). Decompose distinct capability surfaces into focused interfaces in separate files.
-**DON'T (`src/ast.ts` — unrelated top-level interfaces plus a bloated god interface):**
+**DON'T (`src/builders/lessons-builder.ts` — packing callback sub-builder interfaces, function `*Options` interfaces, and factory functions into one file):**
 ```ts
-export interface SignalNode<TPayload = unknown> { readonly type: 'harness:signal'; readonly id: string; }
-export interface InterruptNode<TPayload = unknown> { readonly type: 'harness:interrupt'; readonly id: string; }
-export interface EverythingContext {
-  readonly runId: string;
-  acquireWriteLock(scopeId: string): Promise<void>;
-  saveSqliteCheckpoint(blob: Uint8Array): Promise<void>;
-  createGitWorktree(branch: string): Promise<string>;
+export interface LessonDistillationBuilder { onLoopRecovery(enabled?: boolean): LessonDistillationBuilder; }
+export interface LessonsBuilder<TIn = unknown> {
+  readonly id: string;
+  distillWith(configure: ($d: LessonDistillationBuilder) => LessonDistillationBuilder): LessonsBuilder<TIn>;
+}
+export interface CreateLessonsBuilderOptions<TIn> { readonly store?: LessonStoreASTNode; }
+export function createLessonsBuilder<TIn = unknown>(id: string, opts?: CreateLessonsBuilderOptions<TIn>): LessonsBuilder<TIn> {
+  throw new Error(id);
 }
 ```
-**DO (`src/ast/topology-node.ts` — one top-level interface with its natural nested config sub-interface):**
+**DO (`src/ast/topology-node.ts` — one top-level interface with its `TSPropertySignature`-referenced config sub-interface):**
 ```ts
 export interface TopologyCommitOverlayConfig<TOnSig = unknown> {
   readonly onSignal: { readonly signal: SignalNode<TOnSig>; readonly correlateBy: (payload: TOnSig) => string };
@@ -54,7 +60,7 @@ export interface TopologyNode<TPartition extends string = string> {
 ```
 
 ### Rule 1.3 — One `class` Per File & Single-Responsibility Classes (No God Classes)
-- Place each `class` in its own `kebab-case` file (`ScopeLockManager` $\to$ `scope-lock-manager.ts`), focused on a single stateful responsibility (co-locating only private module-scope `const` values or dedicated `*Params`/`*Options` specific to that class per Rule 1.1(b)–(c)).
+- Place each `class` in its own `kebab-case` file (`ScopeLockManager` $\to$ `scope-lock-manager.ts`), focused on a single stateful responsibility, importing any constants from `*.constants.ts` and parameter/option interfaces from their dedicated interface files.
 - Never pack multiple classes into one file or manage unrelated state machines in one class; extract stateless algorithms into `internal/` functions.
 **DON'T (`src/runtime/managers.ts` — multiple classes and mixed responsibilities):**
 ```ts
@@ -81,9 +87,9 @@ export class ScopeLockManager {
 }
 ```
 
-### Rule 1.4 — Grouped `type` Aliases (`*.types.ts`) & Schema Type Co-Location
-- Pure `type` aliases (discriminated unions, primitive/template-literal/mapped/conditional types) may be grouped in `*.types.ts`; a `z.infer<typeof FooSchema>` type may be co-located with `FooSchema` in `*.schema.ts` / `*.constants.ts` per Rule 1.1(a), and dedicated `*Params` / `*Options` / `*Result` types may be co-located with their function or class per Rule 1.1(b).
-- Never place `interface`, `class`, `const`, or `function` declarations inside `*.types.ts`, and never use `type Foo = { ... }` object-type literals as a backdoor to avoid dedicated single-interface files for shared contracts.
+### Rule 1.4 — Grouped `type` Aliases (`*.types.ts`) & Schema Type Co-Location (`*.schema.ts`)
+- Pure `type` aliases (discriminated unions, primitive/template-literal/mapped/conditional types) live in `*.types.ts`; a `z.infer<typeof FooSchema>` type may be paired with `FooSchema` in `*.schema.ts` per Rule 1.1(2).
+- Never place `interface`, `class`, `const`, or `function` declarations inside `*.types.ts`, and never use `type Foo = { ... }` object-type literals as a backdoor to avoid dedicated single-interface files.
 **DON'T (`src/ast/step.types.ts` — object-shape interfaces and constants inside `*.types.ts`):**
 ```ts
 export const STEP_VERSION = 1;
@@ -98,10 +104,10 @@ export type CoreStepASTNode<TIn = unknown, TOut = unknown> = AgentNode<TIn, TOut
 export type CoreStepNodeType = CoreStepASTNode['type'];
 ```
 
-### Rule 1.5 — Grouped Constants (`*.constants.ts` / `*.schema.ts`), Private Module Constants & Zero Magic Literals
-- Group shared constants, protocol markers, default bounds, and frozen lookup tables in `*.constants.ts` (and Zod schemas with their directly inferred `z.infer` types in `*.schema.ts` or `*.constants.ts` per Rule 1.1(a)); private module-scope `const` values (pre-compiled `RegExp`, `picomatch` matchers, `ReadonlySet`, local bounds) used solely by one file's class or functions may remain in that file per Rule 1.1(c).
-- Never scatter magic numbers (`65_536`, `5_000`, `0.25`) or protocol wire strings (`'harness:fork-dispatched'`) inline across function bodies, and never mix functions into `*.constants.ts`.
-**DON'T (`src/runtime/lane/compute-priority.ts` — magic numbers inline and exported constants mixed with functions):**
+### Rule 1.5 — Grouped Constants (`*.constants.ts`), Schemas (`*.schema.ts`) & Zero Magic Literals
+- Place all module-scope constants, protocol markers, default bounds, pre-compiled regexes, and frozen lookup tables in dedicated `*.constants.ts` files (and Zod schemas with their directly inferred `z.infer` types in `*.schema.ts`).
+- Never mix constants into interface, class, type, or function files, and never scatter magic numbers (`65_536`, `5_000`, `0.25`) or protocol wire strings (`'harness:fork-dispatched'`) inline across function bodies.
+**DON'T (`src/runtime/lane/compute-priority.ts` — magic numbers inline and constants mixed with functions):**
 ```ts
 export const DEFAULT_AGING_MS = 60_000;
 export function computeEffectivePriority(level: string, waitedMs: number): number {
@@ -118,9 +124,10 @@ export const DEFAULT_PRIORITY_AGING_INTERVAL_MS = 60_000;
 export const PRIORITY_AGING_STEP_WEIGHT = 5;
 ```
 
-### Rule 1.6 — Cohesive Function Files & `internal/` Folder Convention
-- Logically related public functions operating on the same narrow concept may share a `<domain-verb>.ts` file, and logically related non-public helper functions operating on the same narrow concept (such as branch predicates and phase helpers extracted under Rules 2.4 & 3.1) may share a cohesive `internal/<domain-verb>.ts` file per Rule 1.1(d).
-- Non-public helper functions must live under `internal/` (`src/builders/internal/assert-valid-max-turns.ts`) and never be mixed into the same file as public factory or entrypoint functions.
+### Rule 1.6 — Single-Function Builder/Large Function Files & Cohesive `internal/` Helpers
+- Functions must never share a file with interfaces, constants, types, or classes.
+- Entity builder factories (`**/builders/*.ts`, `**/create-*.ts` outside `internal/`) and any file containing a function `> 40` lines must contain **at most 1 top-level function per file** (`createLessonsBuilder` $\to$ `create-lessons-builder.ts`).
+- Small, logically grouped helper functions (`<= 40` lines each) operating on the same narrow concept may share a file (**up to 4 functions per file**), with non-public helpers placed under `internal/` (`src/builders/internal/assert-valid-max-turns.ts`).
 **DON'T (`src/builders/agent.ts` — mixing internal helpers and public factories in one file):**
 ```ts
 function assertValidMaxTurns(maxTurns: number): void {
@@ -223,13 +230,18 @@ export class FenceClock {
 }
 ```
 
-### Rule 2.2 — JSDoc Anatomy, Tag Completeness & Vertical Alignment
-Structure every JSDoc block so TypeDoc, TSServer, and engineers can parse the full contract without reading the body (classes, top-level interfaces, functions, and methods require the full 3-part anatomy below, whereas interface/class properties, exported constants, and simple type aliases may use a concise 1-sentence `/** Summary. */` block unless non-obvious invariants or `@template` parameters require detail):
+### Rule 2.2 — JSDoc Anatomy, Tag Completeness & Vertical Alignment (Functions, Class Methods, AND Interface Methods)
+Structure every JSDoc block so TypeDoc, TSServer, and engineers can parse the full contract without reading the body. **Every `class`, top-level `interface`, `function`, class method (`MethodDefinition`), AND interface method (`TSMethodSignature`) requires the full 3-part JSDoc anatomy below** (only interface/class properties (`TSPropertySignature` / `PropertyDefinition`), exported constants, and simple type aliases may use a concise 1-sentence `/** Summary. */` block unless non-obvious invariants or `@template` parameters require detail; 1-line stub JSDocs on interface methods are strictly forbidden and rejected by `harness/require-complete-jsdoc`):
 1. **Summary line:** One direct sentence stating what the entity is or does.
-2. **Detailed description:** Separated by an empty `*` line; explains behavioral invariants, state transitions, or concurrency guarantees.
-3. **Grouped, vertically aligned block tags** separated by empty `*` lines: `@template TName Description`, `@param {Type} name - Description` (`[name=default]` when optional, column-aligned), `@returns {Type} Description` (non-`void`), `@throws {ErrorType} Description`, and `@note` / `@example` when applicable.
-**DON'T (missing types, unaligned parameters, missing `@template` / `@returns` / `@throws`):**
+2. **Detailed description:** Separated by an empty `*` line; explains behavioral invariants, state transitions, edge cases, or concurrency guarantees.
+3. **Grouped, vertically aligned block tags** separated by empty `*` lines: `@template TName Description` (column-aligned when $\ge 2$), `@param {Type} name - Description` (`[name=default]` when optional, column-aligned when $\ge 2$), `@returns {Type} Description` (mandatory for all non-`void` functions, class methods, and interface methods), `@throws {ErrorType} Description`, and `@note` / `@example` when applicable.
+**DON'T (1-line interface method stubs missing detailed descriptions, `@param`, and `@returns`, plus unaligned function tags):**
 ```ts
+/** Fluent configurator for contrastive lesson distillation. */
+export interface LessonDistillationBuilder {
+  /** Enables contrastive distillation on outer `H.loop` recovery iterations. */
+  onLoopRecovery(enabled?: boolean): LessonDistillationBuilder;
+}
 /**
  * Executes a step node.
  * @param node the node
@@ -239,8 +251,28 @@ export async function executeStepNode<TIn, TOut>(node: StepASTNode<TIn, TOut>, i
   throw new Error('Not implemented');
 }
 ```
-**DO (complete, structured, vertically aligned JSDoc):**
+**DO (complete 3-part JSDoc on both the interface/interface method AND the function, with vertically aligned tags):**
 ```ts
+/**
+ * Fluent configurator for contrastive lesson distillation (`$d` in `.distillWith(model, $d => ...)`).
+ *
+ * Captures trigger conditions and guidelines used when distilling failure-to-pass trajectory pairs
+ * into empirical lessons stored in the backing `LessonStore`.
+ */
+export interface LessonDistillationBuilder {
+  /**
+   * Enables or disables contrastive distillation when an outer `H.loop` iteration recovers after a failed check.
+   *
+   * Pairs the most recent failing loop iteration trajectory with the subsequent passing iteration trajectory
+   * and invokes the configured distillation model before advancing the loop.
+   *
+   * @param {boolean} [enabled=true] - Whether outer loop recovery distillation is active.
+   *
+   * @returns {LessonDistillationBuilder} Updated immutable builder instance for method chaining.
+   */
+  onLoopRecovery(enabled?: boolean): LessonDistillationBuilder;
+}
+
 /**
  * Dispatches a passive step AST node to its registered runtime executor.
  *
@@ -394,7 +426,7 @@ export function resolveInterrupt(handler: InterruptHandlerNode | undefined, sign
 ```
 
 ### Rule 3.3 — Named Parameter Objects Over Long Positional Parameter Lists (`> 3` Parameters)
-- Functions, methods, and constructors requiring **more than 3 parameters** must accept a single typed parameter interface (co-located when specific to that function/class per Rule 1.1(b), or defined in its own file or as a sub-interface of its port when shared). Never pass positional boolean flags.
+- Functions, methods, and constructors requiring **more than 3 parameters** must accept a single typed parameter interface (defined in its own dedicated interface file, such as `dispatch-fork-child-params.ts`, or as a property-referenced sub-interface of its port per Rule 1.2). Never pass positional boolean flags.
 **DON'T (6 positional arguments including mystery booleans):**
 ```ts
 export async function dispatchForkChild(
@@ -574,6 +606,7 @@ export function computeSlotThreeDigest(frames: readonly WireFrameRecord[]): stri
 
 ### Rule 5.1 — Exhaustive Type Narrowing (Zero Unsound Casts, Type Erasures, or `!`)
 - `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `: any`, `as any`, `as unknown as T`, and unguarded `!` non-null assertions are forbidden in `src/**` and `test/**`.
+- Explicitly annotate every function and object-literal method parameter, and pass the target interface type argument to generic wrapper calls (`Object.freeze<TargetInterface>({ ... })`, `deepFreeze<TargetInterface>({ ... })`), because unannotated object literals inside generic calls lose contextual typing from the outer return type.
 - Narrow discriminated unions via exhaustive `switch (node.type)` (`assertNever` default) or type predicates (`x is T`), and check indexed lookups for `undefined` under `noUncheckedIndexedAccess: true`.
 **DON'T (non-null assertions `!` and `as unknown as` casts hiding runtime crashes):**
 ```ts
