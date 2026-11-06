@@ -1,10 +1,11 @@
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  NodeRunnerNode,
-  ResolutionContext,
-  StepExecutionContext,
+import {
+  type NodeRunnerNode,
+  type ResolutionContext,
+  type StepExecutionContext,
+  createExecutorRegistry,
 } from '@harness-dsl/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -25,8 +26,8 @@ import { createTempFsWorkspace } from './fixtures/temp-fs-workspace.js';
 const dummyRunner: NodeRunnerNode = Object.freeze({
   type: 'node:runner',
   id: 'node:runner:test',
-  isolation: 'local-process',
-  maxConcurrentProcesses: 4,
+  slots: 4,
+  maxDaemons: 2,
 });
 
 function createStepContext(worktreePath: string, baseRef = 'HEAD'): StepExecutionContext {
@@ -34,6 +35,7 @@ function createStepContext(worktreePath: string, baseRef = 'HEAD'): StepExecutio
     runId: 'run-fs-test',
     stepExecId: 'step-1',
     activePartitions: Object.freeze(['core']),
+    activeLeases: Object.freeze([]),
     observedEffects: Object.freeze([]),
     scopeHandle: Object.freeze({
       worktreePath,
@@ -46,7 +48,8 @@ function createStepContext(worktreePath: string, baseRef = 'HEAD'): StepExecutio
     getRunner: () => {
       throw new Error('Runner not used by native fs tools');
     },
-    emitSignal: async () => {},
+    recordEffects: () => {},
+    registry: createExecutorRegistry([fsExecutors]),
   });
 }
 
@@ -103,11 +106,11 @@ describe('@harness-dsl/fs tools and sources', () => {
     const ctx = createStepContext(ws.rootDir);
 
     const readDriver = createFsReadToolDriver();
-    const readEffects = readDriver.describeEffects(
+    const readEffects = (readDriver.describeEffects?.(
       readNode,
       { path: 'src/alpha.ts' },
       ctx.scopeHandle,
-    ) as readonly FsToolEffect[];
+    ) ?? []) as readonly FsToolEffect[];
     expect(readEffects).toEqual([
       {
         kind: 'fs:effect',
@@ -144,7 +147,7 @@ describe('@harness-dsl/fs tools and sources', () => {
     const ctx = createStepContext(ws.rootDir, ws.baseRef);
 
     const editDriver = createFsEditToolDriver();
-    const editEffects = editDriver.describeEffects(
+    const editEffects = (editDriver.describeEffects?.(
       editNode,
       {
         path: 'src/existing.ts',
@@ -152,7 +155,7 @@ describe('@harness-dsl/fs tools and sources', () => {
         newString: 'count = 42',
       },
       ctx.scopeHandle,
-    ) as readonly FsToolEffect[];
+    ) ?? []) as readonly FsToolEffect[];
     expect(editEffects).toEqual([
       {
         kind: 'fs:effect',
@@ -183,14 +186,14 @@ describe('@harness-dsl/fs tools and sources', () => {
     );
 
     const writeDriver = createFsWriteToolDriver();
-    const writeEffects = writeDriver.describeEffects(
+    const writeEffects = (writeDriver.describeEffects?.(
       writeNode,
       {
         path: 'src/brand-new.ts',
         content: 'export const created = true;\n',
       },
       ctx.scopeHandle,
-    ) as readonly FsToolEffect[];
+    ) ?? []) as readonly FsToolEffect[];
     expect(writeEffects).toEqual([
       {
         kind: 'fs:effect',
@@ -259,7 +262,7 @@ describe('@harness-dsl/fs tools and sources', () => {
 
     const editDriver = createFsEditToolDriver();
     expect(() =>
-      editDriver.describeEffects(
+      editDriver.describeEffects?.(
         editNode,
         { path: 'node_modules/pkg/index.js', oldString: 'a', newString: 'b' },
         ctx.scopeHandle,

@@ -4,6 +4,7 @@ import {
   type QuotaTripwireEvaluationInput,
   type StepExecutionContext,
   type ToolEffect,
+  createExecutorRegistry,
 } from '@harness-dsl/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -21,6 +22,7 @@ import {
   evaluateFsWriteGuard,
   executeFsRegexCheck,
   fs,
+  fsExecutors,
 } from '../src/index.js';
 import type { TempFsWorkspaceHandle } from './fixtures/temp-fs-workspace-handle.js';
 import { createTempFsWorkspace } from './fixtures/temp-fs-workspace.js';
@@ -61,7 +63,6 @@ function makeGuardInput(
 ): PolicyGuardEvaluationInput {
   return Object.freeze<PolicyGuardEvaluationInput>({
     toolName: 'write_file',
-    args: {},
     proposedEffects,
     activeLeases,
   });
@@ -76,6 +77,7 @@ function createStepContext(
     runId: 'run-guard-test',
     stepExecId: 'step-guard-1',
     activePartitions,
+    activeLeases: Object.freeze([]),
     observedEffects,
     scopeHandle: Object.freeze({
       worktreePath,
@@ -88,7 +90,8 @@ function createStepContext(
     getRunner: () => {
       throw new Error('Not needed');
     },
-    emitSignal: async () => {},
+    recordEffects: () => {},
+    registry: createExecutorRegistry([fsExecutors]),
   });
 }
 
@@ -104,7 +107,7 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
 
   it('builds partitionMap, inPartition predicate, and boundaryGuard blocking unleased boundary writes', () => {
     const topology = H.topology('repo-topology')
-      .store({ type: 'sqlite:topology', id: 'sqlite:topology:test', uri: ':memory:' })
+      .store({ type: 'sqlite:topology', uri: ':memory:' })
       .partitions({
         db: { dependsOn: [] },
         api: { dependsOn: ['db'] },
@@ -202,7 +205,7 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
 
   it('enforces protect, readOnly, allowOnly, requireReadBeforeWrite, scopedWrite, and secretLiterals guards', () => {
     const topology = H.topology('t2')
-      .store({ type: 'sqlite:topology', id: 'sqlite:topology:t2', uri: ':memory:' })
+      .store({ type: 'sqlite:topology', uri: ':memory:' })
       .partitions({
         db: { dependsOn: [] },
         api: { dependsOn: ['db'] },

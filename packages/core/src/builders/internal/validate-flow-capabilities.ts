@@ -1,4 +1,5 @@
 import type { AgentNode } from '../../ast/agent-node.js';
+import type { ScopeCapabilityTier } from '../../ast/base/base-domain-ast.types.js';
 import type { StepASTNode } from '../../ast/domain-ast.types.js';
 import type { FlowBranchNode } from '../../ast/flow-branch-node.js';
 import type { FlowNode } from '../../ast/flow-node.js';
@@ -27,7 +28,7 @@ function validateReplaceHandlersHaveAbortSupport(
   owner: { readonly id: string; readonly hasPolicyAbort: boolean },
   handlers: readonly InterruptHandlerNode[],
 ): void {
-  const scopeTier = flowNode.scope.capabilityTier;
+  const scopeTier = flowNode.scope.capabilityTier as ScopeCapabilityTier;
   const scopeType = flowNode.scope.type;
   for (const handler of handlers) {
     if (handler.mode === 'replace') {
@@ -60,7 +61,7 @@ function validateReplaceHandlersHaveAbortSupport(
  * @throws {Error} If the agent requires a higher capability tier than `flowNode.scope.capabilityTier`.
  */
 function validateAgentAgainstScopeTier(flowNode: FlowNode, agentNode: AgentNode): void {
-  const scopeTier = flowNode.scope.capabilityTier;
+  const scopeTier = flowNode.scope.capabilityTier as ScopeCapabilityTier;
   const scopeType = flowNode.scope.type;
   validatePrefixGroupCloneTranscriptMode(agentNode);
 

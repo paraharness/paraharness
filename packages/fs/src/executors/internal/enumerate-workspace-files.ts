@@ -133,7 +133,7 @@ export function collectMutatedPathsSinceBaseRef(
   const { rootPath, baseRef } = extractWorktreeRootAndBaseRef(scopeHandle);
   if (mutated.size === 0 && baseRef !== undefined) {
     try {
-      const gitOpts = { cwd: rootPath, encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'ignore'] as const, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } };
+      const gitOpts = { cwd: rootPath, encoding: 'utf8' as const, stdio: 'pipe' as const, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } };
       const diffOut = execFileSync('git', ['diff', '--name-only', baseRef], gitOpts);
       const untrackedOut = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], gitOpts);
       for (const line of `${diffOut}\n${untrackedOut}`.split(/\r?\n/)) {
