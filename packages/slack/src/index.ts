@@ -1,0 +1,12 @@
+export type { SlackApproverNode, SlackNotifierNode } from '@harness-dsl/core';
+export { createSlackBotBuilder } from './builders/create-slack-bot-builder.js';
+export { createSlackWebhookBuilder } from './builders/create-slack-webhook-builder.js';
+export type { SlackBotOptions } from './builders/slack-bot-options.js';
+export type { SlackNamespace } from './builders/slack-namespace-contract.js';
+export { slack } from './builders/slack-namespace.js';
+export { createSlackExecutors } from './executors/create-slack-executors.js';
+export { defaultSlackTransport } from './executors/default-slack-transport.constants.js';
+export { SlackApproverAdapter } from './executors/slack-approver-adapter.js';
+export { slackExecutors } from './executors/slack-executors.constants.js';
+export { SlackNotifierAdapter } from './executors/slack-notifier-adapter.js';
+export type { SlackTransport } from './executors/slack-transport.js';
