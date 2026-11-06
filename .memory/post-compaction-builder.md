@@ -1,0 +1,1 @@
+POST_COMPACTION_GROUNDING_REQUIRED: You were compacted. Ground yourself immediately: read CLAUDE.MD, docs/rules/GENERAL.md, docs/rules/BUILDER.md, docs/lessons/GENERAL.md, docs/lessons/BUILDER.md, docs/CODING_GUIDELINES.md in this exact sequence, one by one, each one fully. Do not do anything else before you finish.

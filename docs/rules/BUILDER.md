@@ -1,0 +1,19 @@
+# Builder Rules
+
+1. **Decompose Modules Autonomously Inside `owned_dirs`**
+   In `IMPL_LOOP`, decompose planned modules inside `owned_dirs` into single-entity/cohesive files (`<= 250` lines `src/**`, `<= 400` lines `test/**`), `internal/` helpers, and `test/fixtures/` incrementally as you author code per `docs/CODING_GUIDELINES.md` §1 & §6 while preserving all planned public exports.
+
+2. **Apply Document Precedence & Escalate Only True Upstream/Spec Blockers**
+   Follow the precedence hierarchy in `docs/rules/GENERAL.md` Rule 2, and pause mid-turn via `send_message` **only** for `BLOCKED_ON_UPSTREAM` (requires editing `forbidden_dirs` not yet authorized in `upstream_patches`) or `SPEC_CONTRADICTION` (direct contradiction between governing documents or between `$verified_findings` / `$verified_changes` and a higher-ranked governing document or spec-mandated test).
+
+3. **Apply In-Scope Cascades Autonomously & Report Unrelated Adjacent Defects at Completion**
+   Apply direct in-scope cascade updates inside your assigned target scope (`owned_dirs` and Head-authorized `upstream_patches` in `IMPL_LOOP`, or the active loop's target files in `HARNESS_LOOP`, `SPEC_LOOP`, and `PLAN_LOOP`) required by `$verified_findings` / `$verified_changes` autonomously without asking, and record any unrelated adjacent defects discovered in a `disclosed_adjacent_defects` section of your completion report (without halting mid-turn) for the next round's Review and Verification Gate.
+
+4. **Fail First, Fix Second**
+   In `IMPL_LOOP`, reproduce every behavioral or runtime bug (including verified behavioral review defects) with a failing test before modifying `src/**`, and never weaken or tailor a test assertion to match buggy code, because a fix whose test never failed proves nothing.
+
+5. **Trace Every Diff Line to the Task**
+   Touch only files inside your assigned target scope (`owned_dirs` and Head-authorized `upstream_patches` in `IMPL_LOOP`, or the active loop's target files in `HARNESS_LOOP`, `SPEC_LOOP`, and `PLAN_LOOP`) required by the milestone or `$verified_findings` / `$verified_changes`, delete only what your change leaves unused, and never leave stubbed no-ops, hardcoded test-input branches, or silent fallbacks.
+
+6. **Exit Only on a Green Scoped Verification Gate**
+   In `IMPL_LOOP`, run target package `typecheck` and `vitest run --reporter=verbose` (plus any patched upstream unit's `gate_cmd`) and verify zero new or newly modified files in `<non_sibling_forbidden_dirs_excluding_upstream_patches>` relative to `baseline_dirty` before returning (in `HARNESS_LOOP`, `SPEC_LOOP`, and `PLAN_LOOP`, run that loop's verification checks); include `git status --porcelain` / `git diff --stat` in your report, never report completion while a scoped gate fails, and never run `git checkout`, `git restore`, `git clean`, or `git reset` outside your assigned target scope.
