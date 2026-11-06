@@ -61,13 +61,17 @@ Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fi
 | `src/ddl/sqlite-schema.constants.ts` | `const` | `SQLITE_PRAGMA_STATEMENTS`, `SQLITE_DDL_STATEMENTS` |
 | `src/ddl/internal/open-sqlite-connection.ts` | `function` | `openSqliteConnection`, `assertValidSqlIdentifier` |
 | `src/stores/sqlite-ledger-store.ts` | `class` | `SqliteLedgerStore` (implementing `LedgerStore`) |
-| `src/stores/internal/sqlite-ledger-run-and-step-ops.ts` | `function` | `createOrResumeRunInSqlite`, `recordStepStartInSqlite`, `updateContinuationStackInSqlite`, `updateRunInputInSqlite`, `recordStepTransitionInSqlite`, `recordRunTerminalReceiptInSqlite`, `getRunTerminalReceiptsFromSqlite`, `getInterruptedStepsOnBootFromSqlite` |
+| `src/stores/internal/sqlite-ledger-run-ops.ts` | `function` | `createOrResumeRunInSqlite`, `updateRunInputInSqlite`, `recordRunTerminalReceiptInSqlite`, `getRunTerminalReceiptsFromSqlite` |
+| `src/stores/internal/sqlite-ledger-step-ops.ts` | `function` | `recordStepStartInSqlite`, `updateContinuationStackInSqlite`, `recordStepTransitionInSqlite`, `getInterruptedStepsOnBootFromSqlite` |
 | `src/stores/internal/sqlite-ledger-plan-and-fork-ops.ts` | `function` | `mutateLanePlanInSqlite`, `recordForkSuspensionInSqlite`, `getSuspendedForksFromSqlite`, `resolveSuspendedForkInSqlite` |
-| `src/stores/internal/sqlite-ledger-frame-ops.ts` | `function` | `appendMessageFrameInSqlite`, `replaceMessageFrameInSqlite`, `markFrameTombstoneInSqlite`, `getMessageChainFromSqlite`, `compactRunFramesInSqlite` |
+| `src/stores/internal/sqlite-ledger-frame-ops.ts` | `function` | `appendMessageFrameInSqlite`, `replaceMessageFrameInSqlite`, `markFrameTombstoneInSqlite`, `getMessageChainFromSqlite` |
+| `src/stores/internal/sqlite-ledger-compaction-ops.ts` | `function` | `compactRunFramesInSqlite` |
 | `src/stores/sqlite-topology-store.ts` | `class` | `SqliteTopologyStore` (implementing `TopologyStore`) |
-| `src/stores/internal/sqlite-topology-overlay-ops.ts` | `function` | `getPartitionsWithOverlay`, `updateContractInOverlay`, `syncPrerequisiteOverlays`, `resetOverlayByScope`, `sealOverlayForRun`, `commitOverlayThreeWayMerge`, `discardOverlayForRun` |
+| `src/stores/internal/sqlite-topology-overlay-ops.ts` | `function` | `getPartitionsWithOverlay`, `updateContractInOverlay`, `syncPrerequisiteOverlays`, `resetOverlayByScope` |
+| `src/stores/internal/sqlite-topology-commit-ops.ts` | `function` | `sealOverlayForRun`, `commitOverlayThreeWayMerge`, `discardOverlayForRun` |
 | `src/stores/sqlite-lesson-store.ts` | `class` | `SqliteLessonStore` (implementing `LessonStore`) |
-| `src/stores/internal/sqlite-lesson-ops.ts` | `function` | `queryLessonCandidatesInSqlite`, `computeNormalizedRelevance`, `admitLessonInSqlite`, `recordLessonOutcomesInSqlite`, `syncLessonEpochsInSqlite` |
+| `src/stores/internal/sqlite-lesson-ops.ts` | `function` | `queryLessonCandidatesInSqlite`, `admitLessonInSqlite`, `recordLessonOutcomesInSqlite`, `syncLessonEpochsInSqlite` |
+| `src/stores/internal/compute-normalized-relevance.ts` | `function` | `computeNormalizedRelevance` |
 | `src/executors/sqlite-rules-source-executor.ts` | `function` | `executeSqliteGlobalRulesSource` |
 | `src/executors/create-sqlite-executors.ts` | `function` | `createSqliteExecutors` |
 | `src/executors/sqlite-executors.constants.ts` | `const` | `sqliteExecutors: RuntimeExecutorRegistrySlice` |
@@ -94,11 +98,14 @@ Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fi
 | `src/ddl/postgres-schema.constants.ts` | `const` | `POSTGRES_DDL_STATEMENTS` |
 | `src/ddl/internal/resolve-postgres-client.ts` | `function` | `resolvePostgresClient`, `assertValidPostgresIdentifier` |
 | `src/stores/postgres-ledger-store.ts` | `class` | `PostgresLedgerStore` (implementing `LedgerStore`) |
-| `src/stores/internal/pg-ledger-run-and-step-ops.ts` | `function` | `createOrResumeRunInPg`, `recordStepStartInPg`, `updateContinuationStackInPg`, `updateRunInputInPg`, `recordStepTransitionInPg`, `recordRunTerminalReceiptInPg`, `getRunTerminalReceiptsFromPg`, `getInterruptedStepsOnBootFromPg` |
+| `src/stores/internal/pg-ledger-run-ops.ts` | `function` | `createOrResumeRunInPg`, `updateRunInputInPg`, `recordRunTerminalReceiptInPg`, `getRunTerminalReceiptsFromPg` |
+| `src/stores/internal/pg-ledger-step-ops.ts` | `function` | `recordStepStartInPg`, `updateContinuationStackInPg`, `recordStepTransitionInPg`, `getInterruptedStepsOnBootFromPg` |
 | `src/stores/internal/pg-ledger-plan-and-fork-ops.ts` | `function` | `mutateLanePlanInPg`, `recordForkSuspensionInPg`, `getSuspendedForksFromPg`, `resolveSuspendedForkInPg` |
-| `src/stores/internal/pg-ledger-frame-ops.ts` | `function` | `appendMessageFrameInPg`, `replaceMessageFrameInPg`, `markFrameTombstoneInPg`, `getMessageChainFromPg`, `compactRunFramesInPg` |
+| `src/stores/internal/pg-ledger-frame-ops.ts` | `function` | `appendMessageFrameInPg`, `replaceMessageFrameInPg`, `markFrameTombstoneInPg`, `getMessageChainFromPg` |
+| `src/stores/internal/pg-ledger-compaction-ops.ts` | `function` | `compactRunFramesInPg` |
 | `src/stores/postgres-topology-store.ts` | `class` | `PostgresTopologyStore` (implementing `TopologyStore`) |
-| `src/stores/internal/pg-topology-overlay-ops.ts` | `function` | `getPartitionsWithPgOverlay`, `updateContractInPgOverlay`, `syncPrerequisitePgOverlays`, `resetPgOverlayByScope`, `sealPgOverlayForRun`, `commitPgOverlayThreeWayMerge`, `discardPgOverlayForRun` |
+| `src/stores/internal/pg-topology-overlay-ops.ts` | `function` | `getPartitionsWithPgOverlay`, `updateContractInPgOverlay`, `syncPrerequisitePgOverlays`, `resetPgOverlayByScope` |
+| `src/stores/internal/pg-topology-commit-ops.ts` | `function` | `sealPgOverlayForRun`, `commitPgOverlayThreeWayMerge`, `discardPgOverlayForRun` |
 | `src/stores/postgres-lesson-store.ts` | `class` | `PostgresLessonStore` (implementing `LessonStore`) |
 | `src/stores/internal/pg-lesson-ops.ts` | `function` | `queryLessonCandidatesInPg`, `admitLessonInPg`, `recordLessonOutcomesInPg`, `syncLessonEpochsInPg` |
 | `src/executors/postgres-rules-source-executor.ts` | `function` | `executePostgresGlobalRulesSource` |
@@ -113,7 +120,7 @@ Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fi
 ### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
 1. **Zero Co-Location of Entity Kinds**:
    - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/{sqlite,postgres}/src/**` or `packages/{sqlite,postgres}/test/fixtures/**`.
-   - Every builder interface (`*-builder.ts`), options/result interface (`*-options.ts`, `postgres-query-result.ts`, `postgres-query-client.ts`, `postgres-pool-factory.ts`), and namespace contract (`*-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*-builder.ts`) gets its own single-function file; every store class gets its own single-class file; every `const` (DDL constants, namespace `const`, executor slice `const`) lives in its own `const`-only file.
+   - Every builder interface (`*-builder.ts`), options/result interface (`*-options.ts`, `postgres-query-result.ts`, `postgres-query-client.ts`, `postgres-pool-factory.ts`), and namespace contract (`*-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*-builder.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); every store class gets its own single-class file; every `const` (DDL constants, namespace `const`, executor slice `const`) lives in its own `const`-only file.
 2. **Full 3-Part JSDoc Requirement**:
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres lint`.
 

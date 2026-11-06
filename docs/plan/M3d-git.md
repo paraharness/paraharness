@@ -61,7 +61,8 @@ Every file in `packages/git/src/**` and `packages/git/test/fixtures/**` adheres 
 | `src/executors/internal/porcelain-v2-and-checkpoints.ts` | `function` | `computeWorktreeStatusMap`, `serializeGitWorktreeCheckpoint`, `diffGitWorktreeEffects`, `restoreGitWorktreeCheckpoint` |
 | `src/executors/internal/conflict-pruning-and-parent-flush.ts` | `function` | `pruneResolvedConflictPaths`, `hasPairedConflictMarkers`, `flushParentWorkingTreeCleanChanges`, `buildConflictLeaseDelta` |
 | `src/executors/internal/stateless-merge-tree-reconcile.ts` | `function` | `inspectGitWorktreeNonMutating`, `commitChildViaMergeTree`, `syncChildViaMergeTree`, `syncRootViaMergeTree` |
-| `src/executors/internal/worktree-clone-and-reattach.ts` | `function` | `acquireRootWorktree`, `forkChildWorktree`, `reattachRootWorktree`, `reattachChildWorktree`, `releaseWorktreeAndPinRef` |
+| `src/executors/internal/worktree-acquire-and-fork.ts` | `function` | `acquireRootWorktree`, `forkChildWorktree`, `releaseWorktreeAndPinRef` |
+| `src/executors/internal/worktree-crash-reattach.ts` | `function` | `reattachRootWorktree`, `reattachChildWorktree` |
 | `src/executors/git-cow-worktree-scope.ts` | `class` | `GitCowWorktreeScopeDriver` (implementing `BranchableScope<GitWorktreeHandle, GitScopeReceipt, GitSyncReceipt>`) |
 | `src/executors/git-commit-and-merge-steps.ts` | `function` | `executeGitCommitAndPushStep`, `executeGitMergeQueueStep` |
 | `src/executors/git-hooks-and-checks.ts` | `function` | `executeGitCleanWorkingTreeCheck`, `executeGitSnapshotAndResetHook`, `executeGitKeepWorktreeHook`, `executeGitDiscardBranchHook` |
@@ -77,7 +78,7 @@ Every file in `packages/git/src/**` and `packages/git/test/fixtures/**` adheres 
 ### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
 1. **Zero Co-Location of Entity Kinds**:
    - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/git/src/**` or `packages/git/test/fixtures/**` (sole exception: `src/schemas/git-receipts.schema.ts` pairing Zod schemas with their `z.infer` types).
-   - Every builder interface (`*-builder.ts`), options/payload interface (`*-options.ts`, `git-checkpoint-payload.ts`), and namespace contract (`git-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file; `GitCowWorktreeScopeDriver` gets its own single-class file; `git` and `gitExecutors` live in their own `const`-only files.
+   - Every builder interface (`*-builder.ts`), options/payload interface (`*-options.ts`, `git-checkpoint-payload.ts`), and namespace contract (`git-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); `GitCowWorktreeScopeDriver` gets its own single-class file; `git` and `gitExecutors` live in their own `const`-only files.
 2. **Full 3-Part JSDoc Requirement**:
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/git lint`.
 

@@ -69,8 +69,11 @@ Every file in `packages/fs/src/**`, `packages/markdown/src/**`, and `test/fixtur
 | `src/executors/fs-tool-effect.ts` | `interface` | `FsToolEffect` (plus `TSPropertySignature` sub-interface `FsToolEffectAttributes`) |
 | `src/executors/internal/jail-and-glob-helpers.ts` | `function` | `resolveJailedWorktreePath`, `compileGlobOrExactMatcher`, `checkPathsExistAtBaseRef` |
 | `src/executors/fs-source-executors.ts` | `function` | `executeFsTextSource`, `executeFsGlobSource` |
-| `src/executors/fs-tool-drivers.ts` | `function` | `createFsReadToolDriver`, `createFsEditToolDriver`, `createFsWriteToolDriver`, `createFsGlobToolDriver`, `createFsGrepToolDriver` |
-| `src/executors/fs-policy-guard-executors.ts` | `function` | `evaluateFsBoundaryGuard`, `evaluateFsWriteGuard`, `evaluateFsProtectGuard`, `evaluateFsReadOnlyGuard`, `evaluateFsAllowOnlyGuard`, `evaluateFsRequireReadBeforeWriteGuard`, `evaluateFsScopedWriteGuard`, `evaluateFsSecretLiteralsGuard`, `evaluateFsGlobEffectMatcher` |
+| `src/executors/fs-read-tool-drivers.ts` | `function` | `createFsReadToolDriver`, `createFsGlobToolDriver`, `createFsGrepToolDriver` |
+| `src/executors/fs-write-tool-drivers.ts` | `function` | `createFsEditToolDriver`, `createFsWriteToolDriver` |
+| `src/executors/fs-path-guard-executors.ts` | `function` | `evaluateFsBoundaryGuard`, `evaluateFsProtectGuard`, `evaluateFsReadOnlyGuard`, `evaluateFsAllowOnlyGuard` |
+| `src/executors/fs-write-guard-executors.ts` | `function` | `evaluateFsWriteGuard`, `evaluateFsRequireReadBeforeWriteGuard`, `evaluateFsScopedWriteGuard`, `evaluateFsSecretLiteralsGuard` |
+| `src/executors/fs-glob-effect-matcher.ts` | `function` | `evaluateFsGlobEffectMatcher` |
 | `src/executors/fs-check-tripwire-and-telemetry.ts` | `function` | `executeFsRegexCheck`, `evaluateFsQuotaTripwire`, `collectFsTelemetry` |
 | `src/stores/fs-jsonl-lesson-store.ts` | `class` | `FsJsonlLessonStore` (implementing `LessonStore`) |
 | `src/stores/internal/fs-lesson-lock-and-atomic-io.ts` | `function` | `withNonBlockingAdvisoryFileLock`, `atomicWriteJsonFile`, `readLessonStatsFile` |
@@ -107,7 +110,7 @@ Every file in `packages/fs/src/**`, `packages/markdown/src/**`, and `test/fixtur
 ### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
 1. **Zero Co-Location of Entity Kinds**:
    - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/{fs,markdown}/src/**` or `packages/{fs,markdown}/test/fixtures/**`.
-   - Every builder interface (`*-builder.ts`), options/record interface (`*-options.ts`, `fs-tool-effect.ts`, `parsed-markdown-document.ts`), and namespace contract (`*-namespace-contract.ts`) gets its own single-interface file (with only `TSPropertySignature` sub-interfaces sharing that file); every builder factory function (`create-*.ts`) gets its own single-function file; `FsJsonlLessonStore` gets its own single-class file; every `const` (`fs`, `md`, `fsExecutors`, `markdownExecutors`) lives in its own `const`-only file.
+   - Every builder interface (`*-builder.ts`), options/record interface (`*-options.ts`, `fs-tool-effect.ts`, `parsed-markdown-document.ts`), and namespace contract (`*-namespace-contract.ts`) gets its own single-interface file (with only `TSPropertySignature` sub-interfaces sharing that file); every builder factory function (`create-*.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); `FsJsonlLessonStore` gets its own single-class file; every `const` (`fs`, `md`, `fsExecutors`, `markdownExecutors`) lives in its own `const`-only file.
 2. **Full 3-Part JSDoc Requirement**:
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown lint`.
 

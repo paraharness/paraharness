@@ -57,13 +57,15 @@ Every file in `packages/node/src/**` and `packages/node/test/fixtures/**` adhere
 | `src/builders/mcp-namespace-contract.ts` | `interface` | `McpNamespace` |
 | `src/builders/mcp-namespace.ts` | `const` | `mcp: McpNamespace` |
 | `src/executors/node-subprocess-env.constants.ts` | `const` | `ISOLATED_GIT_ENV_OVERRIDES`, `DEFAULT_SUBPROCESS_GRACE_MS` |
-| `src/executors/internal/process-group-and-ports.ts` | `function` | `spawnDetachedSubprocess`, `terminateProcessGroupWithGrace`, `allocateDynamicPorts`, `waitForTcpPortReady`, `sanitizeDaemonScopeKey`, `resolveWorktreeEnvAndCwd` |
+| `src/executors/internal/process-group-lifecycle.ts` | `function` | `spawnDetachedSubprocess`, `terminateProcessGroupWithGrace`, `resolveWorktreeEnvAndCwd` |
+| `src/executors/internal/daemon-ports-and-scope-key.ts` | `function` | `allocateDynamicPorts`, `waitForTcpPortReady`, `sanitizeDaemonScopeKey` |
 | `src/executors/node-runner-driver.ts` | `class` | `NodeRunnerDriver` (implementing `RunnerDriver` with `withSlot` and `withDaemonSlot`) |
 | `src/executors/local-command-executors.ts` | `function` | `executeLocalCommandStep`, `executeLocalCommandCheck`, `createLocalCommandToolDriver` |
 | `src/executors/local-stream-check-executors.ts` | `function` | `executeLocalStreamCheck`, `createLocalStreamCheckToolDriver` |
 | `src/executors/local-daemon-service.ts` | `function` | `startLocalDaemonService`, `createLocalServiceToolDriver` |
 | `src/executors/internal/pty-framed-session.ts` | `class` | `PtyFramedInteractiveSession` |
-| `src/executors/node-guard-and-control-plane-executors.ts` | `function` | `evaluateNodeAllowBinariesGuard`, `evaluateNodeDenyNetworkGuard`, `createNodeHttpControlPlaneAdapter`, `createNodeMcpStdioAdapter`, `createNodeMcpSseAdapter` |
+| `src/executors/node-guard-executors.ts` | `function` | `evaluateNodeAllowBinariesGuard`, `evaluateNodeDenyNetworkGuard` |
+| `src/executors/node-control-plane-and-mcp-adapters.ts` | `function` | `createNodeHttpControlPlaneAdapter`, `createNodeMcpStdioAdapter`, `createNodeMcpSseAdapter` |
 | `src/executors/create-node-executors.ts` | `function` | `createNodeExecutors` |
 | `src/executors/node-executors.constants.ts` | `const` | `nodeExecutors: RuntimeExecutorRegistrySlice` |
 | `src/index.ts` | `barrel` | Pure explicit re-exports of `local`, `LocalNamespace`, `mcp`, `McpNamespace`, `nodeExecutors`, `createNodeExecutors`, `NodeRunnerDriver`, `sanitizeDaemonScopeKey`, `LocalRunnerBuilder`, `LocalRunnerOptions`, `LocalCommandBuilder`, `LocalCommandUnrepeatableOptions`, `LocalStreamCheckBuilder`, `LocalStreamCheckCircuitBreakerOptions`, `LocalDaemonBuilder`, `LocalDaemonInteractOptions`, `McpServerOptions`, all `create*` builder factories, and all `Node*` / `Local*` AST node types from `@harness-dsl/core` |
@@ -75,7 +77,7 @@ Every file in `packages/node/src/**` and `packages/node/test/fixtures/**` adhere
 ### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
 1. **Zero Co-Location of Entity Kinds**:
    - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/node/src/**` or `packages/node/test/fixtures/**`.
-   - Every builder interface (`*-builder.ts`), options interface (`*-options.ts`), and namespace contract (`local-namespace-contract.ts`, `mcp-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file; `NodeRunnerDriver` and `PtyFramedInteractiveSession` each get their own single-class file; every `const` (`local`, `mcp`, `nodeExecutors`, `ISOLATED_GIT_ENV_OVERRIDES`) lives in its own `const`-only file.
+   - Every builder interface (`*-builder.ts`), options interface (`*-options.ts`), and namespace contract (`local-namespace-contract.ts`, `mcp-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); `NodeRunnerDriver` and `PtyFramedInteractiveSession` each get their own single-class file; every `const` (`local`, `mcp`, `nodeExecutors`, `ISOLATED_GIT_ENV_OVERRIDES`) lives in its own `const`-only file.
 2. **Full 3-Part JSDoc Requirement**:
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/node lint`.
 
