@@ -12,7 +12,7 @@ POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compac
 ```
     LOOP:
         STEP 1 — ADVERSARIAL COLD REVIEW (5x `invoke_subagent`, TypeName: 'loop-reviewer', Model: 'inherit')
-            1.1 Launch 5 parallel cold Reviewer Subagents, each required to read its Reviewer bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, followed by `docs/SPEC.md` and `docs/CODING_SAMPLE.md` in full, in sequence, before auditing its assigned lens:
+            1.1 Launch 5 parallel cold Reviewer Subagents, each required to read its Reviewer bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then audit `docs/SPEC.md` and `docs/CODING_SAMPLE.md` per `docs/rules/REVIEWER.md` Rule 1 (in Round 1, inspecting `git diff origin/main...HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` and reading both files in full; in Round $r \ge 2$, inspecting `git diff HEAD~1..HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` and `git diff origin/main...HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` plus implicated sections) against its assigned lens:
               - Lens 1: Concurrency, State Machine Completeness, Lock Ordering, Crash Recovery & Distributed Ledger.
               - Lens 2: LLM Wire Protocols, Provider KV-Caching, Multi-Tool Batch Execution, Interrupts & Policy Guards.
               - Lens 3: Git Worktree Mechanics, Checkpointing, Merge/Rebase Protocols, OS Subprocesses & Daemon Lifecycles.
@@ -52,14 +52,14 @@ POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compac
             3.1 Launch 1 Remediation Subagent with `$verified_findings`:
                 - Read its Builder bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `docs/SPEC.md` completely and `docs/CODING_SAMPLE.md` completely, in sequence.
                 - Apply every fix in `$verified_findings` (plus direct in-scope cascade updates across `docs/SPEC.md` and `docs/CODING_SAMPLE.md`, and if `docs/plan/M*.md` exist, refreshing any shifted §2 `SPEC.md` / `CODING_SAMPLE.md` line ranges) surgically.
-                - Rule A (Self-Review): Verify no edit breaks any existing invariant, type signature, or cross-reference across either file, and `git diff` is clean of unintended edits.
+                - Rule A (Self-Review & Local Commit): Verify no edit breaks any existing invariant, type signature, or cross-reference across either file, confirm `git diff` is clean of unintended edits, and commit the remediated spec files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- docs/SPEC.md docs/CODING_SAMPLE.md docs/plan && git commit -m 'spec: remediate round <round>' -- docs/SPEC.md docs/CODING_SAMPLE.md docs/plan"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6).
                 - Rule B (Disclosed Adjacent Defects): Record any unrelated adjacent defects discovered during remediation in a `disclosed_adjacent_defects` section of the completion report (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2, pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` per `docs/rules/BUILDER.md` Rule 2).
             3.2 Increment `round := round + 1` and repeat LOOP at STEP 1.
 
     DISTILLATION (When `round > 1` or when verified findings / false-positive clusters occurred)
     1. Launch 1 Distiller Subagent (`invoke_subagent`, TypeName: 'loop-distiller', Model: 'inherit') with its Distiller bootstrap manifest (`docs/HARNESS_LOOP.md` §3) and `round_history` (all verified findings and rejected false-positive patterns across rounds `1..round`).
-    2. Distiller reads its Turn-1 manifest and updates `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` in-place per `docs/rules/DISTILLER.md` (`NO_LESSONS_ADDED` with zero file edits is the expected output when all findings were already covered by existing rules/guidelines). Head audits `git diff -- docs/lessons/` against `docs/rules/DISTILLER.md` Rules 1–4 before TERMINATION.
+    2. Distiller reads its Turn-1 manifest, updates `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` in-place per `docs/rules/DISTILLER.md` (`NO_LESSONS_ADDED` with zero file edits is the expected output when all findings were already covered by existing rules/guidelines), and commits any modified `docs/lessons/*.md` files locally (never running `git push`). Head audits `git diff origin/main...HEAD -- docs/lessons/` against `docs/rules/DISTILLER.md` Rules 1–4 before TERMINATION.
 
     TERMINATION (count($verified_findings) == 0)
-    Report final convergence summary and `git diff --stat` to Owner.
+    Head executes `git push origin main` (`docs/rules/HEAD.md` Rule 5) and reports final convergence summary and `git diff --stat` to Owner.
 ```
