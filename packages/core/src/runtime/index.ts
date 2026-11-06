@@ -101,3 +101,131 @@ export type { TopologyStore } from '../ports/topology-store.js';
 export type { TrackerAdapter } from '../ports/tracker-adapter.js';
 export type { UniversalStepTelemetry } from '../ports/universal-step-telemetry.js';
 export type { WireFrameRecord } from '../ports/wire-frame-record.js';
+export type {
+  AgentTurnSessionState,
+  DrainToolBatchOutcome,
+  InterruptEdgeResolution,
+} from './agent/agent-turn-session-state.js';
+export { executeAgent } from './agent/execute-agent.js';
+export { createRuntime } from './engine/create-runtime.js';
+export { defaultExecutionEngine } from './engine/default-execution-engine.constants.js';
+export { executeFlow, executeFlowBranch, executeFlowStep } from './flow/execute-flow.js';
+export type {
+  FlowExecutionContext,
+  FlowRunResult,
+  HierarchicalRewindDrainParams,
+  RecoverInterruptedRunParams,
+  ReplaceWithPromotionParams,
+} from './flow/flow-execution-context.js';
+export {
+  executeHierarchicalRewindDrain,
+  executeReplaceWithPromotion,
+  foldFlowCustomTelemetry,
+  recoverInterruptedRunOnBoot,
+} from './flow/internal/flow-replace-and-rewind.js';
+export { executeForkBatch, executeResumeForkBatch } from './fork/execute-fork-batch.js';
+export type {
+  ChildForkExecutionOutcome,
+  ForkBatchExecutionParams,
+  ForkBatchExecutionResult,
+} from './fork/fork-batch-execution-params.js';
+export {
+  DEFAULT_MAX_SEALED_AGE_HOURS,
+  DEFAULT_PRIORITY_AGING_INTERVAL_MS,
+  LANE_PRIORITY_WEIGHTS,
+  PRIORITY_AGING_STEP_WEIGHT,
+} from './lane/lane-priority.constants.js';
+export type {
+  EnqueueLaneItemOptions,
+  LaneQueuedItemState,
+  LaneSchedulerConfig,
+} from './lane/lane-queued-item-state.js';
+export { LaneScheduler } from './lane/lane-scheduler.js';
+export type {
+  ContrastiveDistillationTrajectoryPair,
+  EvaluateLessonSignalTriggersParams,
+  FlushStepLessonOutcomesParams,
+  LessonCreationEpochMetadata,
+  LessonDistillationParams,
+  LessonScoreContextParams,
+} from './lessons/lesson-distillation-params.js';
+export {
+  evaluateLessonSignalTriggers,
+  evaluateLessonSignalTriggers as evaluateLessonRetirementAndSignals,
+  flushStepLessonOutcomes,
+  runContrastiveLessonDistillation,
+} from './lessons/lesson-distiller-runner.js';
+export {
+  DEFAULT_LESSON_SCORING_WEIGHTS,
+  LESSON_OUTCOME_PRECEDENCE_RANK,
+} from './lessons/lesson-scoring.constants.js';
+export {
+  computeLessonScore,
+  mergeLessonOutcomePrecedence,
+  selectRecalledLessons,
+  selectRecalledLessons as scoreAndRecallLessons,
+  shouldRetireLesson,
+} from './lessons/lesson-scoring.js';
+export type { ScopeLockEntryState, ScopeLockQueueWaiter } from './locks/scope-lock-entry-state.js';
+export { ScopeLockManager } from './locks/scope-lock-manager.js';
+export { StepContinuationQueue } from './locks/step-continuation-queue.js';
+export { executeLoop } from './loop/execute-loop.js';
+export type { LoopEvaluatePhaseResult, LoopExecutionState } from './loop/loop-execution-state.js';
+export {
+  executeAddDependencies,
+  executeSpawnTasks,
+  executeUpdatePartitionContract,
+  syncSuspendedRunPrerequisites,
+} from './plan/execute-plan-mutation.js';
+export type {
+  PlanMutationParams,
+  PlanMutationResult,
+  SpawnTaskInputEntry,
+  SyncPrerequisitesParams,
+} from './plan/plan-mutation-params.js';
+export { PoolManager } from './pools/pool-manager.js';
+export type { PoolRuntimeState } from './pools/pool-runtime-state.js';
+export {
+  evaluatePreFlightToolBatch,
+  evaluateQuotaTripwires,
+  executePostFlightSandboxedTool,
+} from './policy/evaluate-policy-guards.js';
+export { executeLimitExceededSequence } from './policy/execute-limit-exceeded-flush.js';
+export type {
+  LimitExceededFlushParams,
+  LimitExceededFlushResult,
+} from './policy/limit-exceeded-flush-params.js';
+export type {
+  PolicyEvaluationResult,
+  PreFlightBatchEvalParams,
+} from './policy/policy-evaluation-result.js';
+export type {
+  PostFlightSandboxParams,
+  PostFlightSandboxResult,
+} from './policy/post-flight-sandbox-params.js';
+export {
+  buildRoleAndScopeContextFrame,
+  compileRunWirePrefixes,
+  compileRunWirePrefixes as compilePrefixGroups,
+  computeInRunGroundingDiffs,
+  computeInRunGroundingDiffs as computeUpdatedGroundingDiffs,
+} from './prefix/compile-wire-prefix.js';
+export type {
+  CompileWirePrefixParams,
+  InRunGroundingDiffParams,
+  RoleAndScopeContextFrameParams,
+} from './prefix/compile-wire-prefix-params.js';
+export type {
+  AcquireSkillServicesParams,
+  ActiveServiceEntry,
+  ReacquireSkillServicesParams,
+} from './services/active-service-entry.js';
+export { ServiceSessionRegistry } from './services/service-session-registry.js';
+export { executeSpeculateTournament } from './speculate/execute-speculate-tournament.js';
+export type {
+  PostRaceResolution,
+  SpeculateTournamentParams,
+  SpeculateTournamentResult,
+} from './speculate/speculate-tournament-params.js';
+export { executeCommand } from './step/execute-command.js';
+export { executeStepNode } from './step/execute-step-node.js';
