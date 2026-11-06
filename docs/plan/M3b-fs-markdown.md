@@ -1,213 +1,136 @@
-# Milestone 3b (`M3b`): `@harness-dsl/fs` & `@harness-dsl/markdown` Adapters
+# Milestone M3b — `@harness-dsl/fs` & `@harness-dsl/markdown` Filesystem & Markdown Adapters
 
-## 1. Scope & Package Directory
+## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
-- **Milestone Wave:** Parallel Wave 2 — Scoped Adapter Builder (`c`) (Depends on Wave 1a `M1` -> Wave 1b `M2` completing)
-- **Owned Files & Directories:**
-  - `packages/fs/src/types.ts`
-  - `packages/fs/src/path-jail.ts`
-  - `packages/fs/src/matchers-guards.ts`
-  - `packages/fs/src/checks-telemetry.ts`
-  - `packages/fs/src/coding-tools.ts`
-  - `packages/fs/src/lesson-store.ts`
-  - `packages/fs/src/index.ts`
-  - `packages/fs/test/guards-matchers.test.ts`
-  - `packages/fs/test/coding-tools-jail.test.ts`
-  - `packages/fs/test/lesson-store.test.ts`
-  - `packages/markdown/src/frontmatter.ts`
-  - `packages/markdown/src/loaders.ts`
-  - `packages/markdown/src/index.ts`
-  - `packages/markdown/test/markdown-loaders.test.ts`
-- **Forbidden Directories:**
-  - Do not modify root workspace files (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `pnpm-lock.yaml`) or `packages/core/**`.
-  - Do not touch `packages/sqlite`, `packages/postgres`, `packages/node`, `packages/git`, `packages/claude`, `packages/openai`, `packages/gemini`, `packages/github`, `packages/slack`, `packages/stripe`, `packages/netsuite`, or `packages/integration`.
-  - Zero cross-milestone adapter imports: `packages/fs` imports only from `@harness-dsl/core`, `picomatch`, `zod`, and Node.js built-ins; `packages/markdown` imports only from `@harness-dsl/core`, `@harness-dsl/fs` (co-owned within `M3b`), `picomatch`, `zod`, and Node.js built-ins.
+- **Milestone**: `M3b` (Wave 2 — Parallel Adapter Fan-Out `c`, depends on `M1`)
+- **Packages**: `@harness-dsl/fs` (`packages/fs`) and `@harness-dsl/markdown` (`packages/markdown`)
+- **`owned_dirs`**:
+  - `packages/fs/src/**`
+  - `packages/fs/test/**`
+  - `packages/markdown/src/**`
+  - `packages/markdown/test/**`
+- **`forbidden_dirs`**:
+  - `packages/core/**`
+  - `packages/{sqlite,postgres,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
+  - Root workspace configs (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
+- **Cross-Adapter Independence Rule**:
+  - `@harness-dsl/fs` and `@harness-dsl/markdown` must have **zero runtime or type imports** from each other or from any other M3 adapter package. Both depend exclusively on `@harness-dsl/core` (`workspace:*`), `picomatch`, `zod`, and Node built-ins (`node:fs`, `node:fs/promises`, `node:path`, `node:crypto`, `node:child_process`).
 
 ---
 
-## 2. Exact Spec Grounding Table
+## 2. Normative Specification & Coding Sample Grounding
 
-Read the following sections in full before authoring any file in `M3b`:
-
-| Document | Section | Line Range | Key Contracts & Filesystem/Markdown Semantics Covered |
-| :--- | :--- | :--- | :--- |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries & §1.2 Invariants 5–6 | `18, 20, 32–33` | `@harness-dsl/fs` and `@harness-dsl/markdown` responsibilities; host-root storage & control-plane path resolution vs `ResolutionContext.scopeHandle` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.1–§2.3 Port Contracts | `47–198` | `ResolutionContext`, `Source<T>`, `ToolEffect`, `EffectMatcher`, `LeaseDelta`, `PolicyGuard`, `QuotaTripwire`, `TelemetryCollector`, `Check`, `ToolDefinition` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.6 `LessonStore` & §3.4 Knowledge (`H.rules`, `H.skill`, `H.lessons`) | `783–832, 964–1033` | `GlobalRuleSchema`, `ScopedRuleSchema`, `SkillDefinitionSchema`, `LessonStore` contract |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.3 `@harness-dsl/fs` & §4.5 `@harness-dsl/markdown` | `1395–1410, 1475–1478` | `FsToolEffect`, `fs.text`, `fs.matchGlobs`, `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`, `fs.writeGuard` (`onlyExistingAtBaseRef`), `fs.allowWriteGlobs` (exact normalized path + glob), `fs.maxFilesMutated`, `fs.telemetry`, `fs.regexCheck`, `fs.jsonlLessonStore`, `fs.codingTools` / `fs.readOnlyTools`, `md.*` loaders |
-| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §2 Artifact Formats & §3.1 Partition Map | `21–115` | `.harness/` layout and exact Markdown YAML frontmatter formats for global rules, scoped rules, and skills |
-| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 `engineering-harness.ts` | `477–785` | All `fs.*` and `md.*` builder calls in `acme-engineering` |
-
----
-
-## 3. File-by-File Architecture & Exported Symbols
-
-### 3.1 `packages/fs/src/types.ts` & `packages/fs/src/index.ts`
-
-```ts
-import type {
-  Check,
-  EffectMatcher,
-  LeaseDelta,
-  LessonStore,
-  PartitionGlobEntry,
-  PartitionMap,
-  PolicyGuard,
-  QuotaTripwire,
-  ScopePredicate,
-  Source,
-  TelemetryCollector,
-  ToolDefinition,
-  ToolEffect,
-  TopologyDef,
-} from '@harness-dsl/core';
-
-export type { PartitionGlobEntry, PartitionMap };
-
-export interface FsToolEffectAttributes extends Readonly<Record<string, unknown>> {
-  readonly mode: 'read' | 'write';
-  readonly paths: readonly string[];
-  readonly existingPathsAtBaseRef?: readonly string[];
-}
-
-export interface FsToolEffect extends ToolEffect {
-  readonly kind: 'fs:effect';
-  readonly mutatesScope: boolean;
-  readonly attributes: FsToolEffectAttributes;
-}
-
-export interface RunnerLike {
-  exec?(
-    argv: readonly string[],
-    opts?: {
-      readonly cwd?: string;
-      readonly env?: Readonly<Record<string, string>>;
-      readonly stdin?: 'closed' | string | Uint8Array;
-      readonly timeoutMs?: number;
-      readonly signal?: AbortSignal;
-    },
-  ): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }>;
-}
-
-export interface WorkspaceScopeHandle {
-  readonly worktreePath?: string;
-  readonly baseRef?: string;
-  readonly env?: Readonly<Record<string, string>>;
-}
-
-export const fs: {
-  text(filePath: string, opts?: { readonly hostRootDir?: string }): Source<string>;
-  matchGlobs(globs: readonly string[], mode?: 'read' | 'write' | 'any'): EffectMatcher;
-  partitionMap<TPartition extends string>(
-    topology: TopologyDef<TPartition>,
-    mapping: Readonly<Record<TPartition, PartitionGlobEntry>>,
-  ): PartitionMap<TPartition>;
-  inPartition<TPartition extends string>(
-    partitionMap: PartitionMap<TPartition>,
-    partitionId: TPartition,
-  ): ScopePredicate;
-  boundaryGuard<TPartition extends string>(
-    partitionMap: PartitionMap<TPartition>,
-  ): PolicyGuard;
-  writeGuard(opts: {
-    readonly denyGlobs: readonly string[];
-    readonly allowGlobs?: readonly string[];
-    readonly onlyExistingAtBaseRef?: boolean;
-  }): PolicyGuard;
-  allowWriteGlobs(globs: readonly string[]): LeaseDelta;
-  maxFilesMutated(count: number): QuotaTripwire;
-  telemetry(): TelemetryCollector<{ filesRead: string[]; filesMutated: string[] }>;
-  regexCheck(
-    id: string,
-    opts: {
-      readonly targetGlobs: readonly string[];
-      readonly forbidPattern: RegExp;
-      readonly violationMessage: string;
-    },
-  ): Check<any>;
-  jsonlLessonStore(opts: {
-    readonly definitionsDir: string;
-    readonly statsPath: string;
-    readonly lockFile: string;
-    readonly hostRootDir?: string;
-  }): LessonStore;
-  readOnlyTools(runner?: RunnerLike): readonly ToolDefinition<any>[];
-  codingTools(runner?: RunnerLike): readonly ToolDefinition<any>[];
-};
-```
-
-### 3.2 `packages/markdown/src/index.ts`
-
-```ts
-import type { GlobalRule, ScopedRule, SkillDefinition, Source } from '@harness-dsl/core';
-
-export const md: {
-  globalRules(globPattern: string, opts?: { readonly hostRootDir?: string }): Source<GlobalRule[]>;
-  scopedRule(filePath: string, opts?: { readonly hostRootDir?: string }): Source<ScopedRule>;
-  scopedRules(globPattern: string, opts?: { readonly hostRootDir?: string }): Source<ScopedRule[]>;
-  skill(filePath: string, opts?: { readonly hostRootDir?: string }): Source<SkillDefinition>;
-  skills(globPattern: string, opts?: { readonly hostRootDir?: string }): Source<SkillDefinition[]>;
-};
-```
+| Normative Source | Section & Exact Line Range | Grounded Scope in `M3b` |
+| :--- | :--- | :--- |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`FsReadToolNode`, `FsEditToolNode`, `FsWriteToolNode`, `FsGlobToolNode`, `FsGrepToolNode`, `FsTextSourceNode`, `FsGlobSourceNode`, `FsGlobMatcherNode`, `FsPartitionMapNode`, `FsBoundaryGuardNode`, `FsWriteGuardNode`, `FsProtectGuardNode`, `FsReadOnlyGuardNode`, `FsAllowOnlyGuardNode`, `FsRequireReadBeforeWriteGuardNode`, `FsScopedWriteGuardNode`, `FsSecretLiteralsGuardNode`, `FsQuotaTripwireNode`, `FsTelemetryCollectorNode`, `FsRegexCheckNode`, `FsJsonlLessonStoreNode`, `MarkdownFrontmatterSourceNode`, `MarkdownSectionSourceNode`) and Invariant 5 (control-plane paths resolved against immutable host repository root). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2–§2.4 (`lines 682–1438`) | `BaseToolASTNode`, `BaseCheckASTNode`, `BasePolicyGuardASTNode`, `BaseQuotaTripwireASTNode`, `BaseTelemetryCollectorASTNode`, `BaseSourceASTNode`, `BaseLessonStoreASTNode`, `BaseEffectMatcherASTNode`, `ToolEffect`, `LeaseDelta`, `ToolDriver`, `ResolutionContext`, `StepExecutionContext`, `RuntimeExecutorRegistrySlice`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.7 (`lines 2039–2086`) | `LessonStore`, `LessonRecord`, `LessonOutcome` implemented by `fs.jsonlLessonStore`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1–§3.4.3 (`lines 2206–2285`) | `GlobalRuleSchema`, `ScopedRuleSchema`, `ScopePredicateSchema` (`when.partitions` and `when.effects`), `md.globalRules`, `md.scopedRule`, `md.scopedRules` (translating YAML frontmatter `globs: string[]` into passive `FsGlobMatcherNode` descriptors `{ type: 'fs:match-globs', globs, mode: 'write' }` without importing `@harness-dsl/fs`), `md.skill`, `md.skills`, `md.frontmatter`, `md.section`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.5 (`lines 2286–2323`) | Chained policy guard evaluation, `LeaseDelta` matching (`fs.allowWriteGlobs` matching both exact normalized file paths and glob patterns), `onlyExistingAtBaseRef` checking `existingPathsAtBaseRef`, and `proposedContent` checking. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.3 (`lines 2790–2898`) | Complete `@harness-dsl/fs` specification: `FsToolEffect`, `fs.text`, `fs.glob`, `fs.matchGlobs`, `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`, `fs.writeGuard`, `fs.protect`, `fs.readOnly`, `fs.allowOnly`, `fs.requireReadBeforeWrite`, `fs.scopedWrite`, `fs.secretLiterals`, `fs.allowWriteGlobs`, `fs.maxFilesMutated`, `fs.telemetry`, `fs.regexCheck`, `fs.jsonlLessonStore`, `fs.codingTools(runner)`, `fs.readOnlyTools(runner)`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3086–3096, 3175`) | `MarkdownFrontmatterSourceNode`, `MarkdownSectionSourceNode`, and `@harness-dsl/markdown` builder contracts. |
+| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §2 (`lines 21–101`), §3.1 (`lines 106–115`), §6 (`lines 181, 184, 477–490, 535–709, 727, 743, 762, 780, 809–823, 854, 968, 1035`) | All `fs.*` and `md.*` invocations in `engineering-harness.ts`. |
 
 ---
 
-## 4. Critical Implementation Invariants
+## 3. Planned Module Decomposition & Public Exports
 
-1. **Workspace Jail, `realpath` Symlink Resolution & `node_modules` Denial (`SPEC.md` §4.3 line 1409):**
-   - `fs.codingTools` and `fs.readOnlyTools` normalize every input path to a clean worktree-relative POSIX path (`path.posix.normalize`, rejecting `..` traversal or leading `/`).
-   - Before emitting `FsToolEffect.attributes.paths` in `describeEffects` or touching the filesystem in `execute`, resolve `realWorktreeRoot = await nodeFs.realpath(worktreePath)` and resolve the deepest existing ancestor of the target path (plus the target path itself if it exists) via `nodeFs.realpath`, throwing a security error if the resolved path escapes `realWorktreeRoot`.
-   - For write/edit/delete tools, any normalized path matching `**/node_modules/**` or `node_modules/**` is unconditionally rejected before touching disk.
-   - For write/edit/delete tools when `scopeHandle.baseRef` is present, `describeEffects` checks `git cat-file -e ${baseRef}:${normalizedPath}` in `worktreePath` (using `scopeHandle.env`) and populates `existingPathsAtBaseRef`.
-2. **Single-Guard Violating-Path Projection & Exact + Glob Matching (`SPEC.md` §2.2 line 104, §4.3 line 1404):**
-   - `fs.matchGlobs(globs, mode)` and `fs.allowWriteGlobs(globs)` check **both** `globs.includes(normalizedPath)` (exact normalized string match, so literal paths containing brackets like `app/users/[id]/page.test.tsx` match without escaping) **and** `picomatch.isMatch(normalizedPath, globs, { dot: true })`.
-   - `fs.writeGuard({ denyGlobs, allowGlobs, onlyExistingAtBaseRef })` and `fs.boundaryGuard(partitionMap)` filter each `FsToolEffect` down to **only** the specific file paths that violated that guard and were not covered by `allowGlobs` or any `LeaseDelta` in `activeLeases`.
-   - When `onlyExistingAtBaseRef: true`, a write path is evaluated against `denyGlobs` if and only if `effect.attributes.existingPathsAtBaseRef?.includes(path)` is `true` (allowing new test files to be created freely while intercepting edits/deletions to existing test files).
-3. **`fs.text` Host-Root vs `scopeHandle` Resolution (`SPEC.md` §2.1 line 56, §4.3 line 1400):**
-   - When `ctx.scopeHandle` is `undefined` (control-plane `.instructions()`, `.rules()`, `.skills()`, `.guidelines()`, and initial `.sharedGrounding()` compilation), `fs.text(filePath)` resolves `filePath` against the immutable `hostRootDir` pinned at construction time.
-   - When `ctx.scopeHandle` is provided with a `worktreePath` (in-run `updatedGroundingDiffs` calculation), `fs.text(filePath)` resolves `filePath` inside `worktreePath` (verifying `realpath` stays within `worktreePath`).
-4. **`fs.regexCheck` Mutated-File-Only Scoping (`SPEC.md` §4.3 line 1407):**
-   - Collects candidate paths from `ctx.observedEffects` (`kind === 'fs:effect'` and `mutatesScope === true`) and, if `scopeHandle.worktreePath` and `scopeHandle.baseRef` are present, `git diff --name-only <baseRef>` in `worktreePath`.
-   - Filters candidate paths to those matching `targetGlobs` that currently exist on disk, reads their UTF-8 content, and returns `{ ok: false, deficits }` with `violationMessage` + file path for any file matching `forbidPattern` (resetting `RegExp.lastIndex = 0` per file).
-5. **`fs.jsonlLessonStore` Immutability, Non-Blocking Locking & Atomic Rename (`SPEC.md` §4.3 line 1408):**
-   - Resolves `definitionsDir`, `statsPath`, and `lockFile` against the pinned `hostRootDir`.
-   - `admit(lesson)` writes an immutable JSON file `<definitionsDir>/<lessonId>.json` (`{ id, partition, directive, epochAtCreation, createdByRunId }`) where `lessonId` is `lesson-${sha256(`${partition ?? 'global'}:${directive}`).slice(0, 12)}` and initializes mutable stats in `statsPath`.
-   - `<definitionsDir>/<lessonId>.json` is **never** modified after creation; `recordOutcomes`, `syncCreationEpochsForRuns` (`epochAtCreation` override), `markSignalEmitted` (`signalLastEmittedAt`), and `retire` (`retired: true`) are persisted exclusively in `statsPath`.
-   - Concurrent operations serialize through an in-process async mutex queue combined with a non-blocking cross-process advisory lock on `lockFile` with exponential backoff (`1ms..50ms`), and write `statsPath` to `${statsPath}.tmp.${process.pid}.${++counter}`, `fsync(fd)`, close, and `fs.rename` to `statsPath`.
-6. **`@harness-dsl/markdown` Zero-Dependency Frontmatter Translation (`SPEC.md` §1.1 line 20, §4.5 line 1477; `CODING_SAMPLE.md` §2.1):**
-   - `packages/markdown/src/frontmatter.ts` implements a deterministic, zero-dependency YAML frontmatter parser over `--- ... ---` blocks supporting scalar strings (quoted and unquoted), inline `[a, b]` arrays, and multi-line `- item` lists (`id`, `description`, `partitions`, `globs`) alongside the Markdown body text.
-   - `md.scopedRule` and `md.scopedRules` construct `ScopedRule` with `when: { partitions: frontmatter.partitions ?? [], effects: frontmatter.globs?.length ? fs.matchGlobs(frontmatter.globs, 'write') : undefined }`.
-   - `md.skill` and `md.skills` construct `SkillDefinition` with `id: frontmatter.id ?? path.basename(filePath, '.md')`, `description: frontmatter.description ?? ''`, `when: (frontmatter.partitions?.length || frontmatter.globs?.length) ? { partitions: frontmatter.partitions ?? [], effects: frontmatter.globs?.length ? fs.matchGlobs(frontmatter.globs, 'write') : undefined } : undefined`, and `instructions: bodyText.trim()`.
+Every file in `packages/fs/src/**`, `packages/markdown/src/**`, and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single primary concept per file, `internal/` helpers, pure `src/index.ts` barrels, complete `/** ... */` JSDoc, and zero inline/non-JSDoc comments).
+
+### 3.1 `packages/fs` (`@harness-dsl/fs`)
+
+| File Path | Primary Category | Exported Symbols |
+| :--- | :--- | :--- |
+| `src/builders/fs-source-and-matcher-builders.ts` | `function` | `createFsTextSourceBuilder`, `createFsGlobSourceBuilder`, `createFsGlobMatcherBuilder`, `createFsPartitionMap`, `createFsInPartitionPredicate` |
+| `src/builders/fs-guard-and-tripwire-builders.ts` | `function` | `createFsBoundaryGuardBuilder`, `createFsWriteGuardBuilder`, `createFsProtectGuardBuilder`, `createFsReadOnlyGuardBuilder`, `createFsAllowOnlyGuardBuilder`, `createFsRequireReadBeforeWriteGuardBuilder`, `createFsScopedWriteGuardBuilder`, `createFsSecretLiteralsGuardBuilder`, `createFsAllowWriteGlobsLeaseDelta`, `createFsMaxFilesMutatedBuilder` |
+| `src/builders/fs-tool-check-and-store-builders.ts` | `function` | `createFsCodingTools`, `createFsReadOnlyTools`, `createFsTelemetryBuilder`, `createFsRegexCheckBuilder`, `createFsJsonlLessonStoreBuilder` |
+| `src/builders/fs-namespace.constants.ts` | `const` | `fs`, `FsNamespace` |
+| `src/executors/internal/jail-and-glob-helpers.ts` | `function` | `resolveJailedWorktreePath`, `compileGlobOrExactMatcher`, `checkPathsExistAtBaseRef` |
+| `src/executors/fs-source-executors.ts` | `function` | `executeFsTextSource`, `executeFsGlobSource` |
+| `src/executors/fs-tool-drivers.ts` | `function` | `createFsReadToolDriver`, `createFsEditToolDriver`, `createFsWriteToolDriver`, `createFsGlobToolDriver`, `createFsGrepToolDriver` |
+| `src/executors/fs-policy-guard-executors.ts` | `function` | `evaluateFsBoundaryGuard`, `evaluateFsWriteGuard`, `evaluateFsProtectGuard`, `evaluateFsReadOnlyGuard`, `evaluateFsAllowOnlyGuard`, `evaluateFsRequireReadBeforeWriteGuard`, `evaluateFsScopedWriteGuard`, `evaluateFsSecretLiteralsGuard`, `evaluateFsGlobEffectMatcher` |
+| `src/executors/fs-check-tripwire-and-telemetry.ts` | `function` | `executeFsRegexCheck`, `evaluateFsQuotaTripwire`, `collectFsTelemetry` |
+| `src/stores/fs-jsonl-lesson-store.ts` | `class` | `FsJsonlLessonStore` (implementing `LessonStore`) |
+| `src/stores/internal/fs-lesson-lock-and-atomic-io.ts` | `function` | `withNonBlockingAdvisoryFileLock`, `atomicWriteJsonFile`, `readLessonStatsFile` |
+| `src/executors/fs-executors.constants.ts` | `const` | `fsExecutors: RuntimeExecutorRegistrySlice`, `createFsExecutors` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `fs`, `fsExecutors`, `createFsExecutors`, `FsJsonlLessonStore`, and all `Fs*Node` AST types from `@harness-dsl/core` |
+
+### 3.2 `packages/markdown` (`@harness-dsl/markdown`)
+
+| File Path | Primary Category | Exported Symbols |
+| :--- | :--- | :--- |
+| `src/builders/md-builders.ts` | `function` | `createMdGlobalRulesBuilder`, `createMdScopedRuleBuilder`, `createMdScopedRulesBuilder`, `createMdSkillBuilder`, `createMdSkillsBuilder`, `createMdFrontmatterBuilder`, `createMdSectionBuilder` |
+| `src/builders/md-namespace.constants.ts` | `const` | `md`, `MdNamespace` |
+| `src/parser/internal/parse-markdown-frontmatter.ts` | `function` | `parseMarkdownFrontmatter`, `extractMarkdownHeadingSection` |
+| `src/executors/markdown-source-executors.ts` | `function` | `executeMarkdownFrontmatterSource`, `executeMarkdownSectionSource` |
+| `src/executors/markdown-executors.constants.ts` | `const` | `markdownExecutors: RuntimeExecutorRegistrySlice`, `createMarkdownExecutors` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `md`, `markdownExecutors`, `createMarkdownExecutors`, `MarkdownFrontmatterSourceNode`, `MarkdownSectionSourceNode` |
 
 ---
 
-## 5. Required Test Suite (`packages/fs/test/*.test.ts` & `packages/markdown/test/*.test.ts`)
+## 4. Detailed Implementation Requirements
 
-1. **`guards-matchers.test.ts`:**
-   - `fs.matchGlobs` mode filtering (`'write'` default vs `'read'` vs `'any'`).
-   - `fs.allowWriteGlobs` matching both literal bracketed paths (`app/users/[id]/page.test.tsx`) and wildcard globs (`packages/api/**/*.test.ts`).
-   - `fs.writeGuard` with `onlyExistingAtBaseRef: true` allowing newly created `packages/api/test/new.test.ts` while blocking existing `packages/api/test/auth.test.ts` and projecting only the violating paths into `violatedEffects`.
-   - `fs.boundaryGuard` blocking `packages/db/src/index.ts` unless unlocked by an active `LeaseDelta`.
-   - `fs.maxFilesMutated(4)`, `fs.telemetry()`, and `fs.regexCheck` (verifying pre-existing unmutated files matching `forbidPattern` do not fail `regexCheck`).
-2. **`coding-tools-jail.test.ts`:**
-   - `read_file`, `write_file`, `edit_file`, `delete_file`, `list_files`, `grep_search` inside a real git worktree.
-   - Rejecting `../outside.txt` path traversal and rejecting a symlink inside the worktree pointing outside `worktreePath` via `realpath`.
-   - Rejecting writes to `node_modules/pkg/index.js` and `packages/api/node_modules/foo/bar.js`.
-   - Populating `existingPathsAtBaseRef` via `git cat-file -e <baseRef>:<path>` in `describeEffects`.
-   - `fs.text` resolving against `hostRootDir` when `ctx.scopeHandle` is omitted vs `worktreePath` when `ctx.scopeHandle` is provided.
-3. **`lesson-store.test.ts`:**
-   - `fs.jsonlLessonStore` host-root path resolution, immutable `<definitionsDir>/<lessonId>.json` verification (byte-for-byte unchanged across `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, and `retire`), BM25 `relevanceScore` in $[0, 1]$, and concurrent parallel writers under non-blocking lock + atomic temp rename.
-4. **`markdown-loaders.test.ts`:**
-   - Parsing global rules, scoped rules, and skills matching exact `CODING_SAMPLE.md` §2.1 examples (`.harness/rules/global/typescript-invariants.md`, `.harness/rules/db-migrations.md`, `.harness/skills/db-migrations/SKILL.md`), verifying `when.effects` uses `fs.matchGlobs` and SHA-256 `digest` stability.
+### 4.1 `@harness-dsl/fs` Tools, `FsToolEffect`, and Workspace Path Jail (`SPEC.md` §4.3 lines 2887–2898)
+1. **`fs.codingTools(runner)` & `fs.readOnlyTools(runner)`**:
+   - `fs.codingTools(runner)` returns the 5-tuple `[FsReadToolNode, FsEditToolNode, FsWriteToolNode, FsGlobToolNode, FsGrepToolNode]` (`readonly type: 'fs:read' | 'fs:edit' | 'fs:write' | 'fs:glob' | 'fs:grep'`, `readonly effectTracking: 'declared'`, `name: 'read_file' | 'edit_file' | 'write_file' | 'glob_files' | 'grep_files'`).
+   - `fs.readOnlyTools(runner)` returns `[FsReadToolNode, FsGlobToolNode, FsGrepToolNode]`.
+2. **Symlink-Safe Path Jail & `**/node_modules/**` Write Denial (`resolveJailedWorktreePath`)**:
+   - Canonicalizes worktree-relative POSIX paths, resolves any existing target or parent symlinks via `realpath`, verifies the resolved path stays strictly inside `worktreePath` (or host root when `worktreePath` is absent), and denies writes to `**/node_modules/**`.
+3. **`FsToolEffect` & `describeEffects`**:
+   - Read tools (`fs:read`, `fs:glob`, `fs:grep`) emit `{ kind: 'fs:effect', mutatesScope: false, attributes: { mode: 'read', paths } }`.
+   - Write/edit tools (`fs:write`, `fs:edit`) emit `{ kind: 'fs:effect', mutatesScope: true, attributes: { mode: 'write', paths, existingPathsAtBaseRef, proposedContent } }`, where `existingPathsAtBaseRef` is populated via `git cat-file -e <baseRef>:<path>` when `scopeHandle` has a `baseRef`, and `proposedContent` maps each target path to its proposed post-edit UTF-8 text.
+
+### 4.2 `@harness-dsl/fs` Sources, Partition Maps, Guards, Lease Deltas, Checks, Tripwires & Telemetry (`SPEC.md` §4.3 lines 2888–2896)
+1. **`fs.text(filePath)` & `fs.glob(globPattern)`**:
+   - Compile to `FsTextSourceNode` (`'fs:text-source'`) and `FsGlobSourceNode` (`'fs:glob-source'`).
+   - Control-plane definitions (when `ctx.scopeHandle` is omitted) resolve against the host repository root; when `ctx.scopeHandle` is provided (for in-run `updatedGroundingDiffs`), resolve against `scopeHandle.worktreePath`. Return `{ content, digest }` where `digest` is SHA-256 hex.
+2. **`fs.matchGlobs(globs, mode = 'write')`, `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`**:
+   - `fs.matchGlobs` compiles to `FsGlobMatcherNode` (`'fs:match-globs'`).
+   - `fs.partitionMap(topology, mapping)` compiles to `FsPartitionMapNode` (`'fs:partition-map'`).
+   - `fs.inPartition(partitionMap, partitionId)` returns a `ScopePredicate` (`{ partitions: [partitionId], effects: fs.matchGlobs(partitionMap.mapping[partitionId].globs, 'any') }`).
+   - `fs.boundaryGuard(partitionMap)` compiles to `FsBoundaryGuardNode` (`'fs:boundary-guard'`), blocking write effects matching any partition's `boundaryGlobs` not covered by `activeLeases` (filtering `violatedEffects` strictly to the violating boundary paths).
+3. **`fs.writeGuard`, `fs.protect`, `fs.readOnly`, `fs.allowOnly`, `fs.requireReadBeforeWrite`, `fs.scopedWrite`, `fs.secretLiterals` & `fs.allowWriteGlobs`**:
+   - `fs.writeGuard({ denyGlobs, allowGlobs?, onlyExistingAtBaseRef? })`: when `onlyExistingAtBaseRef: true` is set, only paths present in `existingPathsAtBaseRef` are blocked by `denyGlobs` (allowing creation of new test files while intercepting edits to existing test files); projects `violatedEffects` filtered strictly to the violating paths not covered by `allowGlobs` or `activeLeases`.
+   - `fs.allowWriteGlobs(globs)` produces a `LeaseDelta` (`{ type: 'harness:lease-delta', matcher: { type: 'fs:match-globs', globs, mode: 'write' } }`) whose evaluator matches **both** exact normalized file paths (`globs.includes(path)`) and `picomatch` glob patterns so literal paths containing brackets (`app/users/[id]/page.test.tsx`) match cleanly.
+   - `fs.requireReadBeforeWrite()` rejects mutating a file that exists at `baseRef` unless `observedEffects` already contains a read effect for that path.
+   - `fs.scopedWrite(partitionMap)` rejects mutating files outside the partitions listed in `ctx.activePartitions`.
+   - `fs.secretLiterals(patterns?)` scans `proposedContent` for high-entropy / secret patterns (`sk-...`, `ghp_...`, `xoxb-...`, custom regexes).
+4. **`fs.maxFilesMutated(count)`, `fs.telemetry()`, `fs.regexCheck(id, opts)`**:
+   - `fs.maxFilesMutated` trips when distinct mutated file paths in `observedEffects` exceed `count`.
+   - `fs.telemetry()` collects `{ filesRead, filesMutated }` from `observedEffects`.
+   - `fs.regexCheck(id, { targetGlobs, forbidPattern, violationMessage })` compiles `forbidPattern: string | RegExp` into `{ forbidPattern: string, forbidFlags?: string }` and evaluates the regex strictly over files matching `targetGlobs` that were mutated in `observedEffects` (or mutated since `handle.baseRef`).
+
+### 4.3 `fs.jsonlLessonStore` Crash-Safe Hybrid Store (`SPEC.md` §4.3 line 2896)
+- Resolves `definitionsDir`, `statsPath`, and `lockFile` against the immutable host repository root (never an ephemeral worktree).
+- Writes immutable `<definitionsDir>/<lessonId>.json` (`{ id, partition, directive, epochAtCreation, createdByRunId }`) once on `admit()`.
+- Stores mutable telemetry counters (`recentOutcomes`, `totalCleanPasses`, `totalViolated`, `epochAtCreation` overrides from `syncCreationEpochsForRuns`, `signalLastEmittedAt` from `markSignalEmitted`, and `retired: boolean` from `retire`) in `statsPath`.
+- Synchronizes access with an in-process async queue plus non-blocking advisory file lock on `lockFile` (`O_CREAT | O_EXCL` / `flock(LOCK_EX | LOCK_NB)` with async backoff), committing `statsPath` via `${statsPath}.tmp.${pid}.${counter}` + `fsync` + atomic `rename`.
+
+### 4.4 `@harness-dsl/markdown` (`md.*` & `markdownExecutors`, `SPEC.md` §3.4 & §4.5)
+- `md.globalRules(glob)`, `md.scopedRule(path)`, `md.scopedRules(glob)`, `md.skill(path)`, `md.skills(glob)`, `md.frontmatter(pathOrGlob)`, and `md.section(path, heading)` compile to passive `MarkdownFrontmatterSourceNode` (`'markdown:frontmatter'`) and `MarkdownSectionSourceNode` (`'markdown:section'`).
+- Always resolves control-plane rule and skill paths against the host repository root (`SPEC.md` Invariant 5).
+- Translates frontmatter `globs: string[]` on scoped rules and skills into passive `{ type: 'fs:match-globs', globs, mode: 'write' }` descriptors without importing `@harness-dsl/fs` (`SPEC.md` §3.4.1 line 2240).
+
+---
+
+## 5. Deterministic Test Suite Architecture (`test/**` & `test/fixtures/**`)
+
+| File Path | Line Ceiling | Required Deterministic Test Cases |
+| :--- | :--- | :--- |
+| `packages/fs/test/fixtures/temp-fs-workspace.ts` | `<= 250` | Creates real temporary directories and git-initialized workspaces with symlinks and baseline commits. |
+| `packages/fs/test/fs-tools-and-sources.test.ts` | `<= 400` | Verifies `fs.codingTools` and `fs.readOnlyTools` (`read_file`, `edit_file`, `write_file`, `glob_files`, `grep_files`), `realpath` symlink escape blocking, `**/node_modules/**` write denial, `describeEffects` (`existingPathsAtBaseRef` and `proposedContent`), and `fs.text` / `fs.glob` host-root vs worktree resolution. |
+| `packages/fs/test/fs-guards-and-checks.test.ts` | `<= 400` | Verifies `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`, `fs.writeGuard` (including `onlyExistingAtBaseRef: true` allowing new test files while blocking existing test edits), `fs.allowWriteGlobs` (matching bracketed literal paths `app/users/[id]/page.test.tsx` and globs), `fs.protect`, `fs.readOnly`, `fs.allowOnly`, `fs.requireReadBeforeWrite`, `fs.scopedWrite`, `fs.secretLiterals`, `fs.maxFilesMutated`, `fs.telemetry`, and `fs.regexCheck` (evaluating only mutated files). |
+| `packages/fs/test/fs-jsonl-lesson-store.test.ts` | `<= 400` | Verifies `FsJsonlLessonStore`: host-root path resolution, immutable `<definitionsDir>/<lessonId>.json` creation, atomic `statsPath` rename under concurrent `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire`, and `queryCandidates` relevance scoring. |
+| `packages/markdown/test/markdown-sources-and-rules.test.ts` | `<= 400` | Verifies `md.globalRules`, `md.scopedRule`, `md.scopedRules`, `md.skill`, `md.skills`, `md.frontmatter`, and `md.section`: YAML frontmatter parsing, translation of frontmatter `globs` into passive `fs:match-globs` descriptors, `GlobalRuleSchema` / `ScopedRuleSchema` validation, section extraction, and SHA-256 digest computation. |
 
 ---
 
 ## 6. Verification Gate Commands
 
+Run from workspace root:
+
 ```bash
-pnpm check:comments
-pnpm --filter @harness-dsl/fs typecheck
-pnpm --filter @harness-dsl/fs test
-pnpm --filter @harness-dsl/markdown typecheck
-pnpm --filter @harness-dsl/markdown test
+pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown typecheck
+pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown test -- --reporter=verbose
+test -z "$(git status --porcelain -- packages/core packages/sqlite packages/postgres packages/node packages/git packages/claude packages/openai packages/gemini packages/github packages/slack packages/stripe packages/netsuite packages/integration)"
 ```

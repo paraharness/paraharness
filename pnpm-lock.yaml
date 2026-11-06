@@ -180,6 +180,9 @@ importers:
       '@harness-dsl/markdown':
         specifier: workspace:*
         version: link:../markdown
+      '@harness-dsl/netsuite':
+        specifier: workspace:*
+        version: link:../netsuite
       '@harness-dsl/node':
         specifier: workspace:*
         version: link:../node
@@ -195,6 +198,9 @@ importers:
       '@harness-dsl/sqlite':
         specifier: workspace:*
         version: link:../sqlite
+      '@harness-dsl/stripe':
+        specifier: workspace:*
+        version: link:../stripe
       zod:
         specifier: ^3.24.2
         version: 3.25.76
@@ -230,6 +236,25 @@ importers:
       '@types/picomatch':
         specifier: ^4.0.2
         version: 4.0.3
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.5)
+
+  packages/netsuite:
+    dependencies:
+      '@harness-dsl/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.9.0
+        version: 22.20.5
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -328,6 +353,25 @@ importers:
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
+      '@types/node':
+        specifier: ^22.9.0
+        version: 22.20.5
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.5)
+
+  packages/stripe:
+    dependencies:
+      '@harness-dsl/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.5

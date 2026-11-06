@@ -1,164 +1,126 @@
-# @harness-dsl Master Implementation Plan Index
+# MetaHarness (`@harness-dsl/*`) — Master Implementation Plan Index
 
-## 1. Architectural Overview & Specification Grounding
+This directory contains the self-contained milestone plans for building and verifying the MetaHarness TypeScript monorepo (`@harness-dsl/*`) against [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) (`lines 1–3324`), [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) (`lines 1–1208`), [`CLAUDE.MD`](file:///Users/torniketsomaia/projects/metaharness/CLAUDE.MD), and [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) (§§1–6).
 
-This plan specifies the complete implementation of the `@harness-dsl` framework and ecosystem across its core orchestration runtime (`@harness-dsl/core`), environment and vendor adapter packages (`@harness-dsl/sqlite`, `@harness-dsl/postgres`, `@harness-dsl/fs`, `@harness-dsl/markdown`, `@harness-dsl/node`, `@harness-dsl/git`, `@harness-dsl/claude`, `@harness-dsl/openai`, `@harness-dsl/gemini`, `@harness-dsl/github`, `@harness-dsl/slack`), and the full production reference harness (`packages/integration`).
-
-All milestone specifications are grounded in:
-
-- [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) (lines 1–1593): `@harness-dsl` Framework & Ecosystem Specification (V7)
-- [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) (lines 1–1208): Coding Workflow Application Harness Specification (`acme-engineering` V7)
-- [`CLAUDE.MD`](file:///Users/torniketsomaia/projects/metaharness/CLAUDE.MD) (lines 1–36): Repository engineering rules and operational invariants
+Each milestone file is designed to be handed directly to an isolated **Builder Subagent** (and verified by **Reviewer** and **Verifier** subagents) with bounded context reads: a subagent only needs its mandatory Turn-1 bootstrap manifest (`CLAUDE.MD`, `docs/rules/{GENERAL,BUILDER}.md`, `docs/lessons/{GENERAL,BUILDER}.md`, `docs/CODING_GUIDELINES.md`), its single assigned `docs/plan/M*.md` file, and the exact `docs/SPEC.md` / `docs/CODING_SAMPLE.md` line ranges cited in §2 of that milestone file.
 
 ---
 
-## 2. Monorepo Workspace Layout
+## 1. Package Topology & Dependency Graph
 
-The monorepo is managed by `pnpm@10.34.9` on Node.js `>=22.0.0` using a single flat `packages/*` workspace topology.
-
-### 2.1 `pnpm-workspace.yaml`
-
-```yaml
-packages:
-  - packages/*
-```
-
-### 2.2 `tsconfig.base.json`
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2023",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
-    "strict": true,
-    "exactOptionalPropertyTypes": false,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "baseUrl": ".",
-    "paths": {
-      "@harness-dsl/core": ["packages/core/src/index.ts"],
-      "@harness-dsl/sqlite": ["packages/sqlite/src/index.ts"],
-      "@harness-dsl/postgres": ["packages/postgres/src/index.ts"],
-      "@harness-dsl/fs": ["packages/fs/src/index.ts"],
-      "@harness-dsl/markdown": ["packages/markdown/src/index.ts"],
-      "@harness-dsl/node": ["packages/node/src/index.ts"],
-      "@harness-dsl/git": ["packages/git/src/index.ts"],
-      "@harness-dsl/claude": ["packages/claude/src/index.ts"],
-      "@harness-dsl/openai": ["packages/openai/src/index.ts"],
-      "@harness-dsl/gemini": ["packages/gemini/src/index.ts"],
-      "@harness-dsl/github": ["packages/github/src/index.ts"],
-      "@harness-dsl/slack": ["packages/slack/src/index.ts"]
-    }
-  }
-}
-```
-
-### 2.3 Package Directory Map
-
-| Package Name | Directory Path | Owning Milestone | Runtime Dependencies |
-| :--- | :--- | :--- | :--- |
-| `@harness-dsl/core` | `packages/core` | `M1` (Contracts/AST) & `M2` (Runtime) | `zod` |
-| `@harness-dsl/sqlite` | `packages/sqlite` | `M3a` | `@harness-dsl/core`, `better-sqlite3`, `zod` |
-| `@harness-dsl/postgres` | `packages/postgres` | `M3a` | `@harness-dsl/core`, `zod` |
-| `@harness-dsl/fs` | `packages/fs` | `M3b` | `@harness-dsl/core`, `picomatch`, `zod` |
-| `@harness-dsl/markdown` | `packages/markdown` | `M3b` | `@harness-dsl/core`, `@harness-dsl/fs`, `picomatch`, `zod` |
-| `@harness-dsl/node` | `packages/node` | `M3c` | `@harness-dsl/core`, `zod` |
-| `@harness-dsl/git` | `packages/git` | `M3d` | `@harness-dsl/core`, `picomatch`, `zod` |
-| `@harness-dsl/claude` | `packages/claude` | `M3e` | `@harness-dsl/core`, `zod` |
-| `@harness-dsl/openai` | `packages/openai` | `M3e` | `@harness-dsl/core`, `zod` |
-| `@harness-dsl/gemini` | `packages/gemini` | `M3e` | `@harness-dsl/core`, `zod` |
-| `@harness-dsl/github` | `packages/github` | `M3f` | `@harness-dsl/core`, `zod` |
-| `@harness-dsl/slack` | `packages/slack` | `M3f` | `@harness-dsl/core`, `zod` |
-| `@harness-dsl/integration` | `packages/integration` | `M4` | All `@harness-dsl/*` packages, `zod` |
-
----
-
-## 3. `(b) -> (c)` Builder Execution Topology & Dependency DAG
-
-Execution follows a four-stage `(b) -> (c) -> (b)` wave schedule (`Wave 1a -> Wave 1b -> Wave 2 -> Wave 3`) designed for zero interface drift and zero file contention across parallel builders. Each milestone unit `U` in a wave is built, reviewed, verified, and converged using [`docs/IMPL_LOOP.md`](file:///Users/torniketsomaia/projects/metaharness/docs/IMPL_LOOP.md); Wave `W + 1` starts only after every unit `U` in Wave `W` reaches `TERMINATION` (`count($verified_findings) == 0` and verification gate exit `0`):
-
-1. **Wave 1a — Sequential Core Spine (`b` — Contracts, Schemas, AST & Builders):**
-   - **`M1` (`docs/plan/M1-core-contracts.md`):** Bootstraps the monorepo workspace configuration (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, and all 13 `packages/*/package.json` + `packages/*/tsconfig.json` manifests with `pnpm install --prefer-offline`), and implements 100% of `@harness-dsl/core` port interfaces, data contracts, Zod schema factories, AST node definitions, JSON-Schema compilation helpers, fluent builder APIs (`H.*`), `registerStepExecutors`, and the initial `packages/core/src/runtime/index.ts` stub.
-2. **Wave 1b — Sequential Core Spine (`b` — Runtime State Machine & Orchestration Engine):**
-   - **`M2` (`docs/plan/M2-core-runtime.md`, depends on `M1`):** Implements the complete `@harness-dsl/core` runtime orchestration engine in `packages/core/src/runtime/**` and its deterministic runtime unit test suites in `packages/core/test/runtime-*.test.ts`, wiring `registerStepExecutors` into `packages/core/src/runtime/index.ts`.
-   - Once `M1 -> M2` both pass their verification gates, `@harness-dsl/core` and all workspace manifests are 100% complete and frozen before Wave 2 begins.
-3. **Wave 2 — 6-Way Parallel Adapter Fan-Out (`c` — Scoped Adapters):**
-   - **`M3a` through `M3f`** execute in parallel over strictly disjoint package directories (all depending on `M1 -> M2` completing):
-     - `M3a`: `packages/sqlite/**` and `packages/postgres/**`
-     - `M3b`: `packages/fs/**` and `packages/markdown/**`
-     - `M3c`: `packages/node/**`
-     - `M3d`: `packages/git/**`
-     - `M3e`: `packages/claude/**`, `packages/openai/**`, and `packages/gemini/**`
-     - `M3f`: `packages/github/**` and `packages/slack/**`
-   - None of `M3a..M3f` may modify root workspace files (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `pnpm-lock.yaml`), `packages/core/**`, or any directory outside their assigned package path(s).
-   - Cross-milestone adapter imports (`M3x` importing `M3y`) are strictly forbidden. Cross-package structural compatibility (such as `Runner` passed to `fs.codingTools` or `git.commitAndPush`, and `PartitionMap` from `@harness-dsl/core` passed to `git.cowWorktree.checkpointPolicy` or `git.publicSurfaceCrossTester`) is enforced via `@harness-dsl/core` port contracts and structural TypeScript interfaces without compile-time cross-adapter imports.
-4. **Wave 3 — End-to-End Integration (`b`):**
-   - **`M4` (`docs/plan/M4-integration.md`, depends on `M1`, `M2`, and `M3a..M3f`):** Runs after `M1`, `M2`, and `M3a..M3f` all pass their gates. Compiles and verifies the complete production reference harness (`CODING_SAMPLE.md` §6 `engineering-harness.ts`), and executes the full end-to-end protocol, Tier-1 `IsolationScope`, and crash-recovery test suites in `packages/integration`.
+Every adapter package (`@harness-dsl/sqlite`, `@harness-dsl/postgres`, `@harness-dsl/fs`, `@harness-dsl/markdown`, `@harness-dsl/node`, `@harness-dsl/git`, `@harness-dsl/claude`, `@harness-dsl/openai`, `@harness-dsl/gemini`, `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, `@harness-dsl/netsuite`) depends **exclusively** on `@harness-dsl/core` (`workspace:*`). Cross-adapter imports are strictly forbidden (`docs/SPEC.md` §1.1, `docs/CODING_SAMPLE.md` §2).
 
 ```mermaid
 flowchart TD
-  M1["Wave 1a — M1: Workspace Bootstrap & @harness-dsl/core Contracts/Builders"]
-  M2["Wave 1b — M2: @harness-dsl/core Runtime State Machine & Orchestration Engine"]
-  M3a["Wave 2 — M3a: @harness-dsl/sqlite & @harness-dsl/postgres"]
-  M3b["Wave 2 — M3b: @harness-dsl/fs & @harness-dsl/markdown"]
-  M3c["Wave 2 — M3c: @harness-dsl/node"]
-  M3d["Wave 2 — M3d: @harness-dsl/git"]
-  M3e["Wave 2 — M3e: @harness-dsl/claude, @harness-dsl/openai & @harness-dsl/gemini"]
-  M3f["Wave 2 — M3f: @harness-dsl/github & @harness-dsl/slack"]
-  M4["Wave 3 — M4: End-to-End Reference Harnesses & Protocol Integration"]
+    M1["M1: @harness-dsl/core<br/>(Pure AST, Ports, Schemas, Topology & H.* Builders)"]
+    M2["M2: @harness-dsl/core/runtime<br/>(Universal NodeExecutor Engine & State Machine)"]
+    M3a["M3a: @harness-dsl/sqlite<br/>& @harness-dsl/postgres"]
+    M3b["M3b: @harness-dsl/fs<br/>& @harness-dsl/markdown"]
+    M3c["M3c: @harness-dsl/node"]
+    M3d["M3d: @harness-dsl/git"]
+    M3e["M3e: @harness-dsl/claude,<br/>@harness-dsl/openai & @harness-dsl/gemini"]
+    M3f["M3f: @harness-dsl/github, @harness-dsl/slack,<br/>@harness-dsl/stripe & @harness-dsl/netsuite"]
+    M4["M4: @harness-dsl/integration<br/>(engineering-harness, reconciliation-harness & E2E Tests)"]
 
-  M1 --> M2
-  M2 --> M3a
-  M2 --> M3b
-  M2 --> M3c
-  M2 --> M3d
-  M2 --> M3e
-  M2 --> M3f
+    M1 --> M2
+    M1 --> M3a
+    M1 --> M3b
+    M1 --> M3c
+    M1 --> M3d
+    M1 --> M3e
+    M1 --> M3f
 
-  M2 --> M4
-  M3a --> M4
-  M3b --> M4
-  M3c --> M4
-  M3d --> M4
-  M3e --> M4
-  M3f --> M4
+    M2 --> M4
+    M3a --> M4
+    M3b --> M4
+    M3c --> M4
+    M3d --> M4
+    M3e --> M4
+    M3f --> M4
 ```
 
 ---
 
-## 4. Repository Engineering Rules
+## 2. Milestone Execution Topology: `(b) -> (c) -> (b)`
 
-Every builder executing a milestone in this plan is bound by [`CLAUDE.MD`](file:///Users/torniketsomaia/projects/metaharness/CLAUDE.MD):
+### Wave 1a — Sequential Core Contracts (`M1`, Topology `b`)
+- **[M1-core-contracts.md](./M1-core-contracts.md)**: Bootstraps workspace manifests and builds `@harness-dsl/core` (`packages/core/src/{ast,ports,schemas,topology,builders}/**`, `packages/core/src/index.ts`, and initial `packages/core/src/runtime/index.ts`):
+  - Pure passive discriminated-union AST foundation (`ASTNode`, `AstBuilder<TNode>`, `MaybeBuilder<TNode>`, `extractAST`, `EnvRef`, `CoreASTNode`, `DomainASTNode`, `CustomDomainASTRegistry`, and all base/domain AST interfaces from `SPEC.md` §§2.1–2.2 & §§4.1–4.5).
+  - Universal `NodeExecutor`, `RuntimeExecutorRegistry`, `createExecutorRegistry`, `IsolationScope` (`'scope'`), `CheckpointableScope` (`'checkpointable'`), `BranchableScope` (`'branchable'`), `ModelDriver`, `LedgerStore`, `TopologyStore`, `LessonStore`, `TrackerAdapter`, `StreamSource`, `HumanAdapter`, and `ControlPlaneAdapter` ports (`SPEC.md` §§2.3–2.8).
+  - Schemas (`ScopePredicateSchema`, `GlobalRuleSchema`, `ScopedRuleSchema`, `BudgetApprovalSchema`, `ResumeForkInputSchema`, `SpeculationCandidateSchema`, `SpeculationInputSchema`, `zodToJsonSchema`) and topology DAG queries (`dependentsOf`, `affectedBy`).
+  - All fluent `H.*` builders (`H.env`, `H.signal`, `H.interrupt`, `H.stream`, `H.pool`, `H.prefixGroup`, `H.topology`, `H.rules`, `H.scopedRule`, `H.skill`, `H.lessons`, `H.policy`, `H.human`, `H.command`, `H.agent`, `H.loop`, `H.flow`, `H.lane`, `H.harness`) with static build-time validation of `capabilityTier`, `effectTracking`, `interactionMode`, `.withTools()` canonical `roleKey` derivation, and `.withPolicy()` interrupt handler preservation.
 
-1. **Zero Comments in Authored Files:** Write no comments (`//`, `/* */`, `#`, `<!-- -->`) in any file authored (TypeScript source code, tests, YAML, JSON, shell scripts, or markdown docs); keep a tool directive only where a tool strictly requires it.
-2. **Strict TypeScript:** All packages compile with `tsc --noEmit` under `strict: true`, `noUncheckedIndexedAccess: true`, and `noImplicitOverride: true`. Never use `@ts-ignore` or `any` where a typed generic or `unknown` narrowing applies.
-3. **Surgical Scope Discipline:** Each builder touches only the directories owned by its milestone. No builder reformats or modifies unrelated files, existing `infra/**`, `.claude/**`, or `.agents/**` scripts.
-4. **Goal-Driven Deterministic Testing:** Every invariant, failure path, crash-recovery state transition, and wire-protocol edge case specified in the milestone must have a deterministic automated Vitest test case (`vitest run`) that passes with zero external network calls or flaky sleeps.
-5. **No Secret Reads:** Never read `.env` or print secret values; all environment variables in `@harness-dsl` are represented symbolically via `H.env(key)` (`EnvRef`) and resolved only at leaf adapter invocation boundaries from an explicit environment map or `process.env`.
+### Wave 1b — Sequential Core Runtime Engine (`M2`, Topology `b`)
+- **[M2-core-runtime.md](./M2-core-runtime.md)**: Builds `@harness-dsl/core/runtime` (`packages/core/src/runtime/**`, `packages/core/src/runtime/index.ts`, `packages/core/test/runtime-*.test.ts`, and runtime re-exports in `packages/core/src/index.ts`) once M1 passes its gate:
+  - `ScopeLockManager` (shared-read vs exclusive-write handle locks), `StepContinuationQueue` (per-`stepExecId` FIFO serialization), `PoolManager` (run-sticky seat affinity, `429` failover, `escalate-on-retry`), and `ServiceSessionRegistry` (reference-counted daemons across `activeSkillIds`, step-boundary quiescing, pre-drain re-acquisition with `[SERVICE_REACQUIRED]`).
+  - Run-immutable `CompiledWirePrefix` compilation, in-run `updatedGroundingDiffs`, Turn-0 `[ROLE_AND_SCOPE_CONTEXT]` frames, and `H.lessons` scoring/distillation/retirement.
+  - Two-phase policy guard evaluation (`'deny-with-error'` before `'raise-interrupt'`, multi-call pre-flight batching, post-flight `effectTracking: 'subprocess-post-flight'` sandboxing with `inFlightPreToolCheckpoint` rollback, declaration-ordered `remainingCalls` replay, nested `.adjudicateWith()` outer lease attachment, and 4-step `.onLimitExceeded()` epistemic flush).
+  - `executeAgent`, `executeLoop`, `executeCommand`, `executeStepNode`, `executeFlow`, `LaneScheduler`, and `createRuntime`: downward `.fork()` (with conflict-bounce retry loop), speculative `.speculate()` (Post-Race Cases 1–4, `PARKED_ON_ESCALATION`, `refineWinnerWhen`, non-destructive `unpark-escalation`), dynamic `.mutatePlan()` (linear prerequisite chaining, `suspend-and-yield-slot`, replay-idempotent `syncRoot`), and upward `.onChildInterrupt()` + `resumeFork` (Cases A/B/C and recursive epoch resolution).
+
+### Wave 2 — Parallel Adapter Fan-Out (`M3a`–`M3f`, Topology `c`)
+All 6 adapter milestones depend **only** on `@harness-dsl/core` from M1 and touch strictly disjoint `packages/<adapter>/**` directories:
+- **[M3a-sqlite.md](./M3a-sqlite.md)**: `@harness-dsl/sqlite` (`packages/sqlite/**`) and `@harness-dsl/postgres` (`packages/postgres/**`).
+- **[M3b-fs-markdown.md](./M3b-fs-markdown.md)**: `@harness-dsl/fs` (`packages/fs/**`) and `@harness-dsl/markdown` (`packages/markdown/**`).
+- **[M3c-node.md](./M3c-node.md)**: `@harness-dsl/node` (`packages/node/**`).
+- **[M3d-git.md](./M3d-git.md)**: `@harness-dsl/git` (`packages/git/**`).
+- **[M3e-drivers.md](./M3e-drivers.md)**: `@harness-dsl/claude` (`packages/claude/**`), `@harness-dsl/openai` (`packages/openai/**`), and `@harness-dsl/gemini` (`packages/gemini/**`).
+- **[M3f-connectors.md](./M3f-connectors.md)**: `@harness-dsl/github` (`packages/github/**`), `@harness-dsl/slack` (`packages/slack/**`), `@harness-dsl/stripe` (`packages/stripe/**`), and `@harness-dsl/netsuite` (`packages/netsuite/**`).
+
+### Wave 3 — End-to-End Reference Harnesses & Integration Verification (`M4`, Topology `b`)
+- **[M4-integration.md](./M4-integration.md)**: Builds `@harness-dsl/integration` (`packages/integration/**`), compiling and testing both the complete `engineering-harness` reference implementation (`CODING_SAMPLE.md` §6) and the non-coding financial `reconciliation-harness` (`SPEC.md` §5) end-to-end across all `@harness-dsl/*` packages.
 
 ---
 
-## 5. Milestone Gate Table
+## 3. File & Directory Ownership Matrix
 
-| Milestone | Wave | Plan File | Owned Directories | Spec Grounding | Verification Gate Commands |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`M1`** | Wave 1a (`b`) | [`docs/plan/M1-core-contracts.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M1-core-contracts.md) | `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `packages/*/package.json`, `packages/*/tsconfig.json`, `packages/core/src/{ports,schemas,ast,json-schema,builders,index}.ts`, `packages/core/src/runtime/index.ts`, `packages/core/test/builders.test.ts` | `SPEC.md` §1–§2 (1–872), §3.1–§3.10 (876–1364); `CODING_SAMPLE.md` §6 (176–1208) | `pnpm install --prefer-offline && pnpm check:comments && pnpm --filter @harness-dsl/core typecheck && pnpm --filter @harness-dsl/core test` |
-| **`M2`** | Wave 1b (`b`) | [`docs/plan/M2-core-runtime.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M2-core-runtime.md) | `packages/core/src/runtime/**`, `packages/core/test/runtime-*.test.ts` | `SPEC.md` §1.2 (26–34), §2.3–§2.7 (150–872), §3.1–§3.10 (876–1364); `CODING_SAMPLE.md` §1 (3–18), §4–§5 (130–173) | `pnpm check:comments && pnpm --filter @harness-dsl/core typecheck && pnpm --filter @harness-dsl/core test` |
-| **`M3a`** | Wave 2 (`c`) | [`docs/plan/M3a-sqlite.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M3a-sqlite.md) | `packages/sqlite/**`, `packages/postgres/**` | `SPEC.md` §1.1 (21–22), §1.2 (32), §2.6 (433–832), §3.3 (952–963), §3.4.1 (966–993), §3.10 (1345–1364), §4.5 (1475–1481); `CODING_SAMPLE.md` §6 (344–355, 457–475, 554) | `pnpm check:comments && pnpm --filter @harness-dsl/sqlite typecheck && pnpm --filter @harness-dsl/sqlite test && pnpm --filter @harness-dsl/postgres typecheck && pnpm --filter @harness-dsl/postgres test` |
-| **`M3b`** | Wave 2 (`c`) | [`docs/plan/M3b-fs-markdown.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M3b-fs-markdown.md) | `packages/fs/**`, `packages/markdown/**` | `SPEC.md` §1.1 (18, 20), §1.2 (32–33), §2.1–§2.3 (47–198), §2.6 (783–832), §3.4 (964–1033), §4.3 (1395–1410), §4.5 (1475–1478); `CODING_SAMPLE.md` §2 (21–101), §3.1 (106–115), §6 (477–636) | `pnpm check:comments && pnpm --filter @harness-dsl/fs typecheck && pnpm --filter @harness-dsl/fs test && pnpm --filter @harness-dsl/markdown typecheck && pnpm --filter @harness-dsl/markdown test` |
-| **`M3c`** | Wave 2 (`c`) | [`docs/plan/M3c-node.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M3c-node.md) | `packages/node/**` | `SPEC.md` §1.1 (17), §2.3 (150–221), §2.7 (863–871), §3.4.2 (995–1006), §3.5 (1048–1054), §4.2 (1385–1394); `CODING_SAMPLE.md` §6 (322, 367–430, 504–511, 1002–1031, 1204–1207) | `pnpm check:comments && pnpm --filter @harness-dsl/node typecheck && pnpm --filter @harness-dsl/node test` |
-| **`M3d`** | Wave 2 (`c`) | [`docs/plan/M3d-git.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M3d-git.md) | `packages/git/**` | `SPEC.md` §1.1 (19), §2.2 (136–148), §2.4 (224–306), §3.7.2 (1091–1280), §4.4 (1411–1474); `CODING_SAMPLE.md` §3.2 (116–127), §6 (492–530, 715–718, 854, 909, 987–1001) | `pnpm check:comments && pnpm --filter @harness-dsl/git typecheck && pnpm --filter @harness-dsl/git test` |
-| **`M3e`** | Wave 2 (`c`) | [`docs/plan/M3e-drivers.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M3e-drivers.md) | `packages/claude/**`, `packages/openai/**`, `packages/gemini/**` | `SPEC.md` §1.1 (14–16), §2.5 (308–430), §3.2 (884–951), §3.4.2 (1001–1006), §3.5 (1066–1070), §3.8 (1293), §4.1 (1369–1384); `CODING_SAMPLE.md` §6 (324–343) | `pnpm check:comments && pnpm --filter @harness-dsl/claude typecheck && pnpm --filter @harness-dsl/claude test && pnpm --filter @harness-dsl/openai typecheck && pnpm --filter @harness-dsl/openai test && pnpm --filter @harness-dsl/gemini typecheck && pnpm --filter @harness-dsl/gemini test` |
-| **`M3f`** | Wave 2 (`c`) | [`docs/plan/M3f-connectors.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M3f-connectors.md) | `packages/github/**`, `packages/slack/**` | `SPEC.md` §1.1 (23–24), §2.7 (834–871), §3.1 (878–883), §3.6 (1072–1075), §4.5 (1475–1481); `CODING_SAMPLE.md` §6 (356–365, 431–452, 1132–1170, 1204–1207) | `pnpm check:comments && pnpm --filter @harness-dsl/github typecheck && pnpm --filter @harness-dsl/github test && pnpm --filter @harness-dsl/slack typecheck && pnpm --filter @harness-dsl/slack test` |
-| **`M4`** | Wave 3 (`b`) | [`docs/plan/M4-integration.md`](file:///Users/torniketsomaia/projects/metaharness/docs/plan/M4-integration.md) | `packages/integration/**` | `SPEC.md` §1–§5 (1–1593); `CODING_SAMPLE.md` §1–§6 (1–1208) | `pnpm check:comments && pnpm --filter @harness-dsl/integration typecheck && pnpm --filter @harness-dsl/integration test && pnpm -r typecheck && pnpm -r test` |
+| Milestone | Owned Directories (`owned_dirs` — Read/Write) | Forbidden Directories (`forbidden_dirs` — Zero Touch) |
+| :--- | :--- | :--- |
+| **M1** | Root workspace manifests (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`), `packages/*/{package.json,tsconfig.json}`, `packages/core/src/{ast,ports,schemas,topology,builders}/**`, `packages/core/src/index.ts`, `packages/core/src/runtime/index.ts`, `packages/core/test/{fixtures,ast-and-schemas.test.ts,topology-and-builders.test.ts,flow-and-validation.test.ts}` | `packages/core/src/runtime/**` (except `runtime/index.ts`), `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/{src,test}/**`, `docs/**` |
+| **M2** | `packages/core/src/runtime/**`, `packages/core/src/runtime/index.ts`, `packages/core/src/index.ts` (runtime re-exports), `packages/core/test/fixtures/**`, `packages/core/test/runtime-*.test.ts` | `packages/core/src/{ast,ports,schemas,topology,builders}/**`, all adapter packages, `packages/integration/**`, root configs, `docs/**` |
+| **M3a** | `packages/sqlite/{src,test}/**`, `packages/postgres/{src,test}/**` | `packages/core/**`, all other `packages/*/**`, root configs, `docs/**` |
+| **M3b** | `packages/fs/{src,test}/**`, `packages/markdown/{src,test}/**` | `packages/core/**`, all other `packages/*/**`, root configs, `docs/**` |
+| **M3c** | `packages/node/{src,test}/**` | `packages/core/**`, all other `packages/*/**`, root configs, `docs/**` |
+| **M3d** | `packages/git/{src,test}/**` | `packages/core/**`, all other `packages/*/**`, root configs, `docs/**` |
+| **M3e** | `packages/claude/{src,test}/**`, `packages/openai/{src,test}/**`, `packages/gemini/{src,test}/**` | `packages/core/**`, all other `packages/*/**`, root configs, `docs/**` |
+| **M3f** | `packages/github/{src,test}/**`, `packages/slack/{src,test}/**`, `packages/stripe/{src,test}/**`, `packages/netsuite/{src,test}/**` | `packages/core/**`, all other `packages/*/**`, root configs, `docs/**` |
+| **M4** | `packages/integration/{src,test}/**` | `packages/core/**`, all adapter `packages/*/**`, root configs, `docs/**` |
+
+---
+
+## 4. Global Invariants for All Subagents
+
+1. **Pure AST & Late Binding (`docs/SPEC.md` §1.1–§1.2, `docs/CODING_GUIDELINES.md` Rule 5.2):**
+   - Every builder method and `.toAST()` call must be 100% side-effect-free (zero filesystem, network, subprocess, or database I/O at import or builder time) and return deeply frozen (`Object.freeze`) monomorphic AST objects (`docs/CODING_GUIDELINES.md` Rule 4.3).
+2. **Explicit Capabilities & Symbolic `EnvRef` (`docs/SPEC.md` §1.2, `docs/CODING_GUIDELINES.md` Rule 5.2):**
+   - Never read `.env` or evaluate `process.env` at module import or builder time. Secrets and environment-dependent values are represented symbolically via `H.env('KEY')` (`EnvRef`) in AST definitions and resolved exclusively at leaf adapter execution time via `ctx.resolveEnv`.
+3. **File & Module Taxonomy (`docs/CODING_GUIDELINES.md` §1):**
+   - **Cohesive single-concept files:** One shared top-level `interface` per file (with natural nested sub-interfaces), one `class` per file, grouped pure type unions in `*.types.ts`, grouped constants/schemas in `*.constants.ts` / `*.schema.ts`, non-public helpers in `internal/<domain-verb>.ts`, and pure explicit barrels in `index.ts` (zero wildcard `export *` in package root `src/index.ts`).
+   - **Universal line ceilings:** Every non-test file (`src/**`, `test/fixtures/**`, `scripts/**`, `.agents/hooks/**`) must be **`<= 250` lines**; every test file (`test/**/*.test.ts`) must be **`<= 400` lines**.
+   - **Strict DAG imports & 1:1 naming:** Leaf files import directly from sibling leaf files (never back through `index.js`), and grab-bag file names (`utils.ts`, `helpers.ts`, `common.ts`, `shared.ts`, `misc.ts`, `core.ts`, `base.ts`, unprefixed `types.ts` / `constants.ts` / `schemas.ts`) are forbidden.
+4. **Mandatory JSDoc & Zero Inline Comments (`CLAUDE.MD`, `docs/CODING_GUIDELINES.md` §2):**
+   - Write structured `/** ... */` JSDoc on every class (and its constructor, methods, and properties), interface (and its properties and methods), function (public and `internal/`), and exported `type` alias or `const` in `src/**` and `test/fixtures/**` per `docs/CODING_GUIDELINES.md` Rules 2.1–2.3.
+   - Write **zero inline or non-JSDoc comments** (single-line slash comments, non-JSDoc block comments, hash comments, or HTML comments) in any file, and **zero comments of any kind** inside a function, method, or constructor body (`docs/CODING_GUIDELINES.md` Rule 2.4).
+5. **Clean Code, Runtime Performance & Type Rigor (`docs/CODING_GUIDELINES.md` §§3–5):**
+   - Keep functions `<= 80` lines (hard ceiling `100` lines) with flat guard clauses (max nesting depth `3`) and named parameter objects whenever a function/method/constructor takes `> 3` parameters.
+   - Use single-pass `for` loops (zero array/object spread accumulation in loops, zero `.filter().map().flatMap()` chains in runtime paths) and pre-indexed `Map` / `Set` $O(1)$ lookups; pre-compile `picomatch` globs and `RegExp` instances once at registration.
+   - Release all acquired resources (leases, worktrees, daemons, child processes, DB transactions, `AbortSignal` listeners) inside `try / finally`.
+   - Zero `: any`, `as any`, `as unknown as T`, unguarded `!` non-null assertions, or `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck` directives in `src/**` or `test/**`.
+6. **Real-Resource Deterministic Testing (`docs/CODING_GUIDELINES.md` §6):**
+   - Organize tests per subsystem (`<= 400` lines per `test/*.test.ts`), placing shared fakes/fixtures in `test/fixtures/` (`<= 250` lines per file, with full §2 JSDoc).
+   - Test against real local SQLite databases, real Git repositories/worktrees, real temporary directories, and real Node child processes/daemons; coordinate concurrency with deterministic barrier latches (zero `setTimeout` sleeps) and assert exact structural outputs and error messages.
+
+---
+
+## 5. Milestone Summary & Scoped Gate Commands
+
+| Milestone | Plan File | Target Packages | Scoped Verification Gate Commands |
+| :--- | :--- | :--- | :--- |
+| **M1** | [`docs/plan/M1-core-contracts.md`](./M1-core-contracts.md) | `@harness-dsl/core` *(Pure AST, Ports, Schemas, Topology & `H.*` Builders)* | `pnpm --filter @harness-dsl/core typecheck && pnpm --filter @harness-dsl/core test -- --reporter=verbose` |
+| **M2** | [`docs/plan/M2-core-runtime.md`](./M2-core-runtime.md) | `@harness-dsl/core` *(Runtime Engine & State Machine)* | `pnpm --filter @harness-dsl/core typecheck && pnpm --filter @harness-dsl/core test -- --reporter=verbose` |
+| **M3a** | [`docs/plan/M3a-sqlite.md`](./M3a-sqlite.md) | `@harness-dsl/sqlite`, `@harness-dsl/postgres` | `pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres typecheck && pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres test -- --reporter=verbose` |
+| **M3b** | [`docs/plan/M3b-fs-markdown.md`](./M3b-fs-markdown.md) | `@harness-dsl/fs`, `@harness-dsl/markdown` | `pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown typecheck && pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown test -- --reporter=verbose` |
+| **M3c** | [`docs/plan/M3c-node.md`](./M3c-node.md) | `@harness-dsl/node` | `pnpm --filter @harness-dsl/node typecheck && pnpm --filter @harness-dsl/node test -- --reporter=verbose` |
+| **M3d** | [`docs/plan/M3d-git.md`](./M3d-git.md) | `@harness-dsl/git` | `pnpm --filter @harness-dsl/git typecheck && pnpm --filter @harness-dsl/git test -- --reporter=verbose` |
+| **M3e** | [`docs/plan/M3e-drivers.md`](./M3e-drivers.md) | `@harness-dsl/claude`, `@harness-dsl/openai`, `@harness-dsl/gemini` | `pnpm --filter @harness-dsl/claude --filter @harness-dsl/openai --filter @harness-dsl/gemini typecheck && pnpm --filter @harness-dsl/claude --filter @harness-dsl/openai --filter @harness-dsl/gemini test -- --reporter=verbose` |
+| **M3f** | [`docs/plan/M3f-connectors.md`](./M3f-connectors.md) | `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, `@harness-dsl/netsuite` | `pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite typecheck && pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite test -- --reporter=verbose` |
+| **M4** | [`docs/plan/M4-integration.md`](./M4-integration.md) | `@harness-dsl/integration` *(Full Workspace E2E)* | `pnpm --filter @harness-dsl/integration typecheck && pnpm --filter @harness-dsl/integration test -- --reporter=verbose && pnpm -r typecheck && pnpm -r test -- --reporter=verbose` |

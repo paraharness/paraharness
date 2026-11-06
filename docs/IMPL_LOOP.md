@@ -1,87 +1,76 @@
 STATE
-wave               := W ("Wave 1a: M1" | "Wave 1b: M2" | "Wave 2: M3a..M3f (parallel)" | "Wave 3: M4"; Wave W+1 starts only after all units in Wave W reach TERMINATION)
-unit               := U (target milestone unit from docs/plan/INDEX.md: "M1" | "M2" | "M3a" | "M3b" | "M3c" | "M3d" | "M3e" | "M3f" | "M4")
-plan_file          := docs/plan/<U>-*.md
-owned_dirs         := Owned Files & Directories defined in plan_file §1
-forbidden_dirs     := Forbidden Directories defined in plan_file §1
-gate_cmd           := Verification Gate Commands defined in plan_file §6
-round              := 1
-$verified_findings := []
-context_tokens     := input_tokens + cache_read_tokens + output_tokens (from latest PLANNER_RESPONSE in transcript.jsonl)
+wave                       := W ("Wave 1a: M1" | "Wave 1b: M2" | "Wave 2: M3a..M3f (parallel)" | "Wave 3: M4"; Wave W+1 starts only after all units in Wave W reach TERMINATION and pass the Wave-Barrier Gate)
+unit                       := U (target milestone unit from docs/plan/INDEX.md: "M1" | "M2" | "M3a" | "M3b" | "M3c" | "M3d" | "M3e" | "M3f" | "M4")
+plan_file                  := docs/plan/<U>-*.md
+owned_dirs                 := Owned Files & Directories defined in plan_file §1
+forbidden_dirs             := Forbidden Directories defined in plan_file §1
+baseline_dirty             := pre-existing dirty/untracked paths in <non_sibling_forbidden_dirs> recorded before the wave/unit starts
+upstream_patches           := [] (files outside owned_dirs patched under Head Rule 4 authorization during the active wave)
+gate_cmd                   := Scoped Verification Gate Commands defined in plan_file §6 (package `typecheck` and `vitest run --reporter=verbose`)
+round                      := 1
+$verified_findings         := []
+$pending_adjacent_defects  := []
+round_history              := [] (each completed round's verified findings and rejected false-positive patterns)
 
-HOOK (PreInvocation in .agents/hooks.json)
-On every turn before model invocation:
-Read latest PLANNER_RESPONSE token sum from stdin.transcriptPath.
-If context_tokens >= 700_000:
-Inject high-priority systemMessage: "CONTEXT_THRESHOLD_700K_REACHED".
-
-PRE-COMPACTION HANDOFF (Triggered immediately when context_tokens >= 700_000)
-1. Write full loop state (active wave, unit, round, $verified_findings, completed units, exact instructions) to .memory/head-handoff.md.
-2. Spawn fresh Head (`invoke_subagent`, TypeName: 'self', Model: 'inherit' [Argon 4 High]) with .memory/head-handoff.md, emit its clickable conversation://<id> link, and retire this session.
-
-HEAD CONTEXT INVARIANT
-Head never reads full `packages/**`, `docs/SPEC.md`, `docs/CODING_SAMPLE.md`, or `docs/plan/M*.md` files into its own context during the loop.
-Full-file reads happen strictly inside fresh Builder, Reviewer, Verifier, and Remediation subagent contexts. Head reads `docs/plan/INDEX.md` and structured subagent reports, and may use `grep` for simple targeted lookups or an explorer subagent (`invoke_subagent`, `TypeName: 'research'`) for more complex scoped retrievals across those and other files.
+POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop` after any `CHECKPOINT` compaction in `transcript.jsonl`)
+1. `.agents/hooks/post-compaction.mjs` injects `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md`) if present, or generates and saves the role's sequential grounding note automatically.
+2. When `POST_COMPACTION_GROUNDING_REQUIRED` is injected, read every listed file in exact sequence, one by one, each one fully, before taking any other action.
 
 ```
-    STEP 0 — INITIAL MILESTONE BUILD (`invoke_subagent`, TypeName: 'self', Model: 'inherit' [Argon 4 High])
-        0.1 Launch 1 Builder Subagent for `unit`:
-            - Read `CLAUDE.MD`, `plan_file` in full, and the grounded `docs/SPEC.md` / `docs/CODING_SAMPLE.md` line ranges listed in `plan_file` §2 in sequence.
-            - Author 100% of files specified in `plan_file` §3 (`src/**`) and §5 (`test/**`) strictly inside `owned_dirs`:
-              * Write zero comments (`//`, `/* */`, `#`, `<!-- -->`) in any authored file (`CLAUDE.MD` line 20) and zero `.env` reads or import-time side effects (`SPEC.md` §1.2).
-              * Write zero `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck` directives, zero unsound `as any` / `as unknown as T` / `: any` erasures, and zero unguarded `!` non-null assertions.
-              * Write fast, deterministic, high-signal tests against real local resources (real SQLite/FS/Node/Git, mocking only external HTTP transports) with exact contract assertions and `afterEach` / `try/finally` cleanup—no tautological, weak-assertion, speculative, repetitive, slow, or "make-bugs-pass" tests.
-            - If blocked by an upstream contract/runtime defect in a converged prior wave, do not work around it or edit `forbidden_dirs` silently—report the exact defect to Head (`send_message`) for surgical upstream authorization.
-            - Execute `gate_cmd` plus `pnpm --filter <pkg> test -- --reporter=verbose` for each package in `owned_dirs` (if `pnpm check:comments` in parallel Wave 2 flags a concurrent sibling `M3y` file outside `owned_dirs`, verify zero comments in `owned_dirs` and re-run once the sibling write settles), and verify `git status --porcelain -- <owned_dirs>` (only planned files) and `git status --porcelain -- <forbidden_dirs>` (zero edits in non-sibling `forbidden_dirs` or frozen prior-wave files) until exit code `0`.
-            - Return structured build report: authored file list, exact `gate_cmd` output, verbose per-test timing output, and `git status --porcelain` / `git diff --stat` output.
+    STEP 0 — INITIAL MILESTONE BUILD (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit')
+        0.1 Launch 1 Builder Subagent for `unit` (passing `baseline_dirty` and `upstream_patches`):
+            - Read its Builder bootstrap manifest (`docs/HARNESS_LOOP.md` §3: `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/BUILDER.md`, `docs/lessons/GENERAL.md`, `docs/lessons/BUILDER.md`, `docs/CODING_GUIDELINES.md`) as Turn 1, then read `plan_file` in full and the grounded `docs/SPEC.md` / `docs/CODING_SAMPLE.md` line ranges listed in `plan_file` §2 in sequence.
+            - Author all modules and tests specified in `plan_file` §3 (`src/**`) and §5 (`test/**`) strictly inside `owned_dirs` per `docs/CODING_GUIDELINES.md` §§1–6 and `docs/rules/BUILDER.md` Rules 1–6 while preserving all planned public exports.
+            - Pause mid-turn via `send_message` **only** if blocked by `BLOCKED_ON_UPSTREAM` (requires editing `forbidden_dirs` not yet authorized in `upstream_patches`; Head evaluates and serializes any authorized `upstream_patches` edit per `docs/rules/HEAD.md` Rule 4 so parallel Builders never mutate shared upstream `packages/core` concurrently, and appends authorized files to `upstream_patches`) or `SPEC_CONTRADICTION` (`docs/rules/BUILDER.md` Rule 2).
+            - Execute `gate_cmd` (plus any patched upstream unit's `gate_cmd` when `upstream_patches` is non-empty) until exit code `0`, verify that `git status --porcelain -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` and `git diff -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` show zero new or newly modified files relative to `baseline_dirty`, and capture `git status --porcelain -- <owned_dirs> <upstream_patches>` (`docs/rules/BUILDER.md` Rule 6).
+            - Return structured build report: authored file list, any `disclosed_adjacent_defects` (which Head appends to `$pending_adjacent_defects`), and a compact gate summary (command exit codes, suite/test pass counts, total duration, any test taking `>= 50ms` extracted from `--reporter=verbose`, and `git status --porcelain -- <owned_dirs> <upstream_patches>` / `git diff --stat` output, including full failure output only if a gate failed).
 
     LOOP:
-        STEP 1 — ADVERSARIAL COLD CODE REVIEW (3x `invoke_subagent`, TypeName: 'research', Model: 'inherit' [Argon 4 High])
-            1.1 Launch 3 parallel cold Code Reviewer Subagents (passing the latest `gate_cmd` output, verbose per-test timing output, and `git status --porcelain` / `git diff --stat` output), each required to read `CLAUDE.MD`, `plan_file`, the grounded `SPEC.md` / `CODING_SAMPLE.md` sections, and all `src/**` and `test/**` files in `owned_dirs` in full before auditing its assigned lens:
-              - Lens A (Spec & Plan Behavioral Fidelity): Every port interface, method, schema, builder chain, adapter factory, SQL/git/subprocess command, wire-protocol translation, lock order, state-machine transition, and crash-recovery branch in `plan_file` and `SPEC.md` / `CODING_SAMPLE.md` is completely implemented with zero stubbed no-ops, silent fallbacks, hardcoded test-input branches, or omitted edge cases.
-              - Lens B (Type Rigor, Concurrency, Resource, Purity & Boundary Safety): Zero `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`, zero unsound `as any` / `as unknown as T` / `: any` type erasures or unguarded `!` non-null assertions, exact generic propagation under `strict: true` and `noUncheckedIndexedAccess: true`, zero import-time side effects or `.env` / secret reads (symbolic `H.env(key)` resolved only at leaf invocation), lock/lease/handle/daemon/subprocess release in `try/finally`, symlink/path-jail enforcement, SQL transaction atomicity, `StaleFenceTokenError` validation, zero unintended edits outside `owned_dirs`, and zero forbidden cross-adapter imports.
-              - Lens C (Test Authenticity, Anti-Smell Rigor, Failure-Path Coverage & Repo Rules): Every test scenario in `plan_file` §5 is implemented against real `src/**` behavior and real local SQLite/FS/Node/Git resources (mocking only external HTTP transports); hunt and flag any garbage/tautological/weak-assertion tests (`toBeDefined()` without asserting exact state/wire/receipt contracts, or mocking the unit/adapter under test), "make-bugs-pass" tests (inverted oracle tailored to match buggy `src/**` behavior instead of `SPEC.md` / `plan_file`), speculative tests, repetitive/redundant tests, slow tests (wall-clock `setTimeout` sleeps or heavy setup visible in verbose durations), test smells (over-mocking internals, unawaited `expect(...).rejects`, leaked temp dirs/DBs/daemons without `afterEach` / `try/finally`, shared mutable state across `it()`, swallowed errors, `.skip` / `.todo` / `.only`), and any `CLAUDE.MD` violation (comments `//`, `/* */`, `#`, `<!-- -->` in authored files, non-surgical code).
-            1.2 Wait for all 3 Reviewer Subagents to complete. Collect and deduplicate their raw outputs into `$findings`.
+        STEP 1 — ADVERSARIAL COLD CODE REVIEW (3x `invoke_subagent`, TypeName: 'loop-reviewer', Model: 'inherit')
+            1.0 Pre-Review Green-Gate Precondition: Confirm that `gate_cmd` (plus any patched upstream unit's `gate_cmd` when `upstream_patches` is non-empty) exited `0` and that `git status --porcelain -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` and `git diff -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` show zero new or newly modified files relative to `baseline_dirty` in the latest build/remediation report. If `gate_cmd` failed, route directly to STEP 3 (passing the failing gate output to Step 3.1 and returning to Step 1.0 without incrementing `round`, up to 2 gate-recovery retries before Head escalation); if an unauthorized edit outside `owned_dirs` / `upstream_patches` occurred relative to `baseline_dirty`, Head inspects and resolves/reverts the stray edit before proceeding.
+            1.1 Launch 3 parallel cold Code Reviewer Subagents (passing the compact gate summary: command exit codes, suite/test pass counts, total duration, any test taking `>= 50ms`, and `git status --porcelain` / `git diff --stat` output), each required to read its Reviewer bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, followed by `plan_file`, the grounded `SPEC.md` / `CODING_SAMPLE.md` sections (plus the implicated section of the patched upstream unit's `plan_file` and `SPEC.md` whenever `upstream_patches` is non-empty), and the lens-scoped files in `owned_dirs` (and `upstream_patches`) in full before auditing its assigned lens per `docs/rules/REVIEWER.md`:
+              - Lens A (Spec & Plan Behavioral Fidelity — reads all `src/**` files in `owned_dirs` and `upstream_patches`): Every port interface, method, schema, builder chain, adapter factory, SQL/git/subprocess command, wire-protocol translation, lock order, state-machine transition, and crash-recovery branch in `plan_file` and `SPEC.md` / `CODING_SAMPLE.md` is completely implemented with zero stubbed no-ops, silent fallbacks, hardcoded test-input branches, or omitted edge cases.
+              - Lens B (Type Rigor, Concurrency, Resource Lifecycle, Runtime Performance & Boundary Safety — reads all `src/**` files in `owned_dirs` and `upstream_patches`): Compliance with `docs/CODING_GUIDELINES.md` §§3–5, exact generic propagation under `strict: true` and `noUncheckedIndexedAccess: true`, lock/lease/handle/daemon/subprocess/listener release in `try/finally`, symlink/path-jail enforcement, SQL transaction atomicity, `StaleFenceTokenError` validation, zero unintended edits outside `owned_dirs` / `upstream_patches`, and zero forbidden cross-adapter imports.
+              - Lens C (Test Authenticity, Anti-Smell Rigor & Coding Guidelines Compliance — reads all `src/**` and `test/**` files in `owned_dirs` and `upstream_patches`): Compliance with `docs/CODING_GUIDELINES.md` §§1, 2, 5.1, 6 and `plan_file` §5 against real `src/**` behavior and real local SQLite/FS/Node/Git resources (mocking only external HTTP transports).
+            1.2 Wait for all 3 Reviewer Subagents to complete and collect/deduplicate their raw outputs, merging and draining `$pending_adjacent_defects` into `$findings`.
 
-        STEP 2 — VERIFICATION GATE & HEAD ARBITRATION (`invoke_subagent`, TypeName: 'research', Model: 'inherit' [Argon 4 High])
+        STEP 2 — VERIFICATION GATE & HEAD ARBITRATION (`invoke_subagent`, TypeName: 'loop-verifier', Model: 'inherit')
             2.1 If count($findings) == 0:
-                - Set `$verified_findings := []` and exit loop to TERMINATION.
-            2.2 Launch 1 Verifier Subagent with `$findings` (plus the latest `gate_cmd` output, verbose per-test timing output, and `git status --porcelain` / `git diff --stat` output):
-                - Read `CLAUDE.MD`, `plan_file`, the grounded `SPEC.md` / `CODING_SAMPLE.md` sections, and the implicated `src/**` and `test/**` files in `owned_dirs` to verify every candidate in `$findings`.
+                - Set `$verified_findings := []` and exit unit LOOP to UNIT TERMINATION.
+            2.2 Launch 1 Verifier Subagent with `$findings` and the compact gate summary (command exit codes, suite/test pass counts, total duration, any test taking `>= 50ms`, and `git status --porcelain` / `git diff --stat` output):
+                - Require it to read its Verifier bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `docs/rules/BUILDER.md`, `plan_file`, the grounded `SPEC.md` / `CODING_SAMPLE.md` sections (plus the implicated section of the patched upstream unit's `plan_file` and `SPEC.md` whenever `upstream_patches` is non-empty), and the implicated `src/**` and `test/**` files in `owned_dirs` (and `upstream_patches`) to verify every candidate in `$findings` per `docs/rules/VERIFIER.md`.
                 - DEFECT GATE (Admit to `$verified_findings` IF AND ONLY IF at least one holds):
                   (a) Behavioral, concurrency, lock-ordering, crash-recovery, wire-protocol, git/FS/subprocess, or SQL defect, stubbed/hardcoded branch, or import-time side effect relative to `plan_file`, `SPEC.md`, or `CODING_SAMPLE.md`.
-                  (b) Type error, unsound `as any` / `as unknown as T` / `: any` / `@ts-ignore` / `@ts-expect-error` / unguarded `!`, generic erasure, or cross-package contract mismatch.
-                  (c) Broken milestone boundary (file modified outside `owned_dirs`, forbidden cross-adapter import, or upstream contract/runtime defect in a prior wave requiring a surgical upstream patch).
-                  (d) Missing required test from `plan_file` §5, garbage/tautological/weak-assertion test, mocked local SQLite/FS/Node/Git adapter test, "make-bugs-pass" test encoding buggy behavior, speculative test, repetitive/redundant test, slow/sleep-based test, or test smell (`.skip` / `.todo` / `.only`, unawaited async assertion, leaked temp dir/handle/daemon, over-mocking internals, shared mutable state).
-                  (e) Violation of `CLAUDE.MD` (`RULE[user_global]`): comment (`//`, `/* */`, `#`, `<!-- -->`) present in any authored file, `.env` read or secret exposure, speculative production feature, or dead/unused code.
+                  (b) Type error, unsound cast/assertion, generic erasure, or cross-package contract mismatch (`docs/CODING_GUIDELINES.md` §5).
+                  (c) Broken milestone boundary (file modified outside `owned_dirs` without Head authorization, forbidden cross-adapter import, or upstream contract/runtime defect in a prior wave requiring a surgical upstream patch).
+                  (d) Missing required test from `plan_file` §5, mocked local SQLite/FS/Node/Git adapter test, "make-bugs-pass" inverted-oracle test, weak/tautological assertion, wall-clock sleep, or leaked resource (`docs/CODING_GUIDELINES.md` §6).
+                  (e) Violation of `CLAUDE.MD` (`RULE[user_global]`), `docs/CODING_GUIDELINES.md` (§§1–6), or `docs/rules/BUILDER.md`.
                 - REJECTION GATE (Reject from `$verified_findings` if any holds):
                   (x) Factually false upon inspecting the actual `src/**` and `test/**` files.
                   (y) Speculative production feature, extra abstraction, or option not in `plan_file`, `SPEC.md`, or `CODING_SAMPLE.md`.
-                  (z) Stylistic code preference that alters no correctness, type safety, test quality, or repo rule compliance.
+                  (z) Subjective JSDoc phrasing, identifier naming, or stylistic preference that already satisfies the objective criteria of `docs/CODING_GUIDELINES.md`, or flagging compliant decomposition of planned modules inside `owned_dirs` into single-entity/cohesive files, `internal/` helpers, and `test/fixtures/` per `docs/CODING_GUIDELINES.md` §§1 & 6 while preserving `plan_file` public exports.
                 - For each admitted item, Verifier outputs:
-                  (1) Exact file + line numbers and quoted snippet from `owned_dirs` (and `plan_file` / `SPEC.md`),
-                  (2) Concrete failure or test-smell proof,
-                  (3) Alternative surgical fixes (`Option A`, `Option B`) with trade-offs, and
+                  (1) Exact file + line numbers and quoted snippet from `owned_dirs` / `upstream_patches` (and `plan_file` / `SPEC.md`),
+                  (2) Concrete failure or guideline violation proof,
+                  (3) Surgical fix options (`Option A`, and `Option B` when genuine trade-offs exist per `docs/rules/VERIFIER.md` Rule 3), and
                   (4) Verifier's recommended fix and why.
-            2.3 Head arbitrates / tie-breaks the Verifier's recommendations against `RULE[user_global]` and locks in the winning fixes as `$verified_findings`.
+            2.3 Head arbitrates / tie-breaks the Verifier's recommendations against `RULE[user_global]` and `docs/rules/HEAD.md` Rule 1 (checking `round_history`), locks in the winning fixes as `$verified_findings`, and records the round's verified findings and rejected false-positive patterns in `round_history`.
             2.4 If count($verified_findings) == 0:
-                - Exit loop to TERMINATION.
+                - Exit unit LOOP to UNIT TERMINATION.
 
-        STEP 3 — TEST-FIRST CODE REMEDIATION (`invoke_subagent`, TypeName: 'self', Model: 'inherit' [Argon 4 High])
-            3.1 Launch 1 Code Remediation Subagent with `$verified_findings`:
-                - Read `plan_file`, the grounded `SPEC.md` / `CODING_SAMPLE.md` sections, and all implicated files in `owned_dirs` in sequence.
-                - Goal-Driven Test-First Rule (`RULE[user_global]` #4): For every behavioral/runtime defect in `$verified_findings`, first write or tighten a failing test in `test/*.test.ts` that reproduces the defect, then apply the surgical fix in `src/*.ts`. For every test-smell defect in `$verified_findings` (garbage, "make-bugs-pass", speculative, repetitive, or slow test), replace, consolidate, or delete the offending test.
-                - Rule A (Self-Review & CLI Gate): Verify no edit breaks existing invariants or milestone boundaries, and execute `gate_cmd` (plus the upstream unit's `gate_cmd` and regression test if `$verified_findings` or Rule B includes a Head-authorized upstream patch) with `pnpm --filter <pkg> test -- --reporter=verbose` until exit code `0`.
-                - Rule B (No Glossing Over): If fixing an item exposes an adjacent defect (or an upstream contract/runtime defect in a prior wave), DO NOT gloss over it and DO NOT silently improvise—report the exact disclosed defect(s) to Head.
-            3.2 While Remediation Subagent reports disclosed adjacent or upstream defects (Rule B):
-                - Head evaluates each disclosed defect against the Defect Gate (Step 2.2) (serializing any upstream `packages/core/**` patch across active Wave 2 builders).
-                - Head messages the SAME Remediation Subagent (`send_message`) authorizing the exact surgical fix to fold in.
-                - Remediation Subagent applies the authorized fix (including a failing-then-passing regression test), re-runs Rule A self-review, `gate_cmd`, and any patched upstream unit's `gate_cmd`, and reports back.
-            3.3 Remediation step closes only when Remediation Subagent confirms and returns in its report:
-                - All `$verified_findings` and all authorized Rule B disclosures are applied.
-                - `gate_cmd` (and any Head-authorized upstream unit's `gate_cmd`) exits `0`, verbose per-test timings (`--reporter=verbose`) are captured, and `git status --porcelain` / `git diff --stat` show zero unintended edits outside `owned_dirs` (and any Head-authorized upstream patch).
-            3.4 Increment `round := round + 1` and repeat LOOP at STEP 1.
+        STEP 3 — TEST-FIRST CODE REMEDIATION (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit')
+            3.1 Launch 1 Code Remediation Subagent with `$verified_findings` (or the full failing gate output when routed from Step 1.0):
+                - Read its Builder bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `plan_file`, the grounded `SPEC.md` / `CODING_SAMPLE.md` sections, and all implicated files in `owned_dirs` (and any authorized `upstream_patches`) in sequence.
+                - Goal-Driven Test-First Rule (`docs/rules/BUILDER.md` Rule 4): For every behavioral/runtime defect in `$verified_findings`, first write or tighten a failing test in `test/*.test.ts` that reproduces the defect, then apply the surgical fix in `src/*.ts` (plus any direct in-scope cascade updates inside `owned_dirs`). For every test-smell defect in `$verified_findings`, replace, consolidate, or delete the offending test.
+                - Pause mid-turn via `send_message` **only** if blocked by `BLOCKED_ON_UPSTREAM` (requires editing `forbidden_dirs` not yet authorized in `upstream_patches`; Head evaluates and serializes any authorized `upstream_patches` edit per `docs/rules/HEAD.md` Rule 4 so two parallel Builders never mutate shared upstream `packages/core` concurrently, and appends authorized files to `upstream_patches`) or `SPEC_CONTRADICTION` (`docs/rules/BUILDER.md` Rule 2).
+                - Record any unrelated adjacent defects discovered inside `owned_dirs` in a `disclosed_adjacent_defects` section of the completion report (`docs/rules/BUILDER.md` Rule 3, which Head appends to `$pending_adjacent_defects` so they survive any Step 1.0 reroute and are evaluated at the next Step 1.2).
+                - Run `gate_cmd` (plus any patched upstream unit's `gate_cmd` when `upstream_patches` is non-empty) until exit code `0`, verify that `git status --porcelain -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` and `git diff -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` show zero new or newly modified files relative to `baseline_dirty`, and return a compact gate summary (command exit codes, suite/test pass counts, total duration, any test taking `>= 50ms` extracted from `--reporter=verbose`, and `git status --porcelain -- <owned_dirs> <upstream_patches>` / `git diff --stat` output, including full failure output only if a gate failed).
+            3.2 If routed from Step 1.0 due to a failed gate, return to Step 1.0 without incrementing `round`; otherwise increment `round := round + 1` and repeat LOOP at STEP 1.
 
-    TERMINATION (count($verified_findings) == 0)
-    Confirm `gate_cmd` exit code `0` and report `unit` convergence summary + `git diff --stat` to Head / Owner.
+    TERMINATION & WAVE-BARRIER GATE (count($verified_findings) == 0)
+    1. Unit Termination: Confirm `gate_cmd` (plus any patched upstream unit's `gate_cmd` when `upstream_patches` is non-empty) exits `0` and that `git status --porcelain -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` and `git diff -- <non_sibling_forbidden_dirs_excluding_upstream_patches>` show zero new or newly modified files relative to `baseline_dirty` (if any check fails, the unit re-enters its unit `LOOP` at `STEP 3 -> STEP 1 -> STEP 2`), and report `unit` convergence summary + compact gate summary to Head / Owner.
+    2. Wave-Barrier Distillation (after all units in `Wave W` finish their unit `LOOP`s and when any unit had `round > 1`, verified findings / false-positive clusters, or non-empty `upstream_patches`):
+       - Launch 1 Distiller Subagent (`invoke_subagent`, TypeName: 'loop-distiller', Model: 'inherit') with its Distiller bootstrap manifest (`docs/HARNESS_LOOP.md` §3) and the aggregated `round_history` across all units of `Wave W`, so parallel Wave-2 units never race on `docs/lessons/*.md` or dirty `<non_sibling_forbidden_dirs>` while sibling Builders are running.
+       - Distiller reads its Turn-1 manifest and updates `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` in-place per `docs/rules/DISTILLER.md` (`NO_LESSONS_ADDED` with zero file edits is the expected output when all findings were already covered by existing rules/guidelines). Head audits `git diff -- docs/lessons/` against `docs/rules/DISTILLER.md` Rules 1–4 before TERMINATION.
+    3. Wave-Barrier Gate (when all units in `Wave W` reach Unit Termination and Wave-Barrier Distillation completes): Run repo-wide `pnpm typecheck && pnpm test` and `git status --porcelain` across the entire workspace and verify exit code `0` (if any gate fails, the failing unit(s) re-enter their unit `LOOP` at `STEP 3 -> STEP 1 -> STEP 2`), then report wave completion to Owner before advancing to `Wave W+1`.
 ```

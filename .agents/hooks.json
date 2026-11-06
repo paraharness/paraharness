@@ -1,9 +1,16 @@
 {
-  "context-watch-700k": {
+  "post-compaction-grounding": {
     "PreInvocation": [
       {
         "type": "command",
-        "command": "node ./hooks/context-watch-700k.mjs",
+        "command": "test -f ./hooks/post-compaction.mjs && node ./hooks/post-compaction.mjs || node ./.agents/hooks/post-compaction.mjs",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "test -f ./hooks/post-compaction.mjs && node ./hooks/post-compaction.mjs || node ./.agents/hooks/post-compaction.mjs",
         "timeout": 10
       }
     ]

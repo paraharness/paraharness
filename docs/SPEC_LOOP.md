@@ -1,71 +1,65 @@
 STATE
-docs               := ["docs/SPEC.md", "docs/CODING_SAMPLE.md"]
-round              := 5
-$verified_findings := Round_5_Verified_Findings (count = 13, Options 1A..13A)
-context_tokens     := input_tokens + cache_read_tokens + output_tokens (from latest PLANNER_RESPONSE in transcript.jsonl)
+docs                       := ["docs/SPEC.md", "docs/CODING_SAMPLE.md", "docs/CODING_GUIDELINES.md"]
+round                      := 1
+$verified_findings         := []
+$pending_adjacent_defects  := []
+round_history              := [] (each completed round's verified findings and rejected false-positive patterns)
 
-HOOK (PreInvocation in .agents/hooks.json)
-On every turn before model invocation:
-Read latest PLANNER_RESPONSE token sum from stdin.transcriptPath.
-If context_tokens >= 700_000:
-Inject high-priority systemMessage: "CONTEXT_THRESHOLD_700K_REACHED".
-
-PRE-COMPACTION HANDOFF (Triggered immediately when context_tokens >= 700_000)
-1. Write full loop state (round, $verified_findings, completed rounds, exact instructions) to .memory/head-handoff.md.
-2. Spawn fresh Head (`invoke_subagent`, TypeName: 'self', Model: 'inherit' [Argon 4 High]) with .memory/head-handoff.md, emit its clickable conversation://<id> link, and retire this session (or halt for manual left-sidebar "New Conversation" if preferred).
-
-HEAD CONTEXT INVARIANT
-Head never reads full `docs/SPEC.md` or `docs/CODING_SAMPLE.md` into its own context during the loop.
-Full-document reads happen strictly inside fresh Remediation and Verifier subagent contexts.
+POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop` after any `CHECKPOINT` compaction in `transcript.jsonl`)
+1. `.agents/hooks/post-compaction.mjs` injects `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md`) if present, or generates and saves the role's sequential grounding note automatically.
+2. When `POST_COMPACTION_GROUNDING_REQUIRED` is injected, read every listed file in exact sequence, one by one, each one fully, before taking any other action.
 
 ```
-    LOOP: while count($verified_findings) > 0:
-        STEP 1 — REMEDIATION (`invoke_subagent`, TypeName: 'self', Model: 'inherit' [Argon 4 High])
-            1.1 Launch 1 Remediation Subagent with `$verified_findings` and strict rules:
-            - Read `docs/SPEC.md` completely, then `docs/CODING_SAMPLE.md` completely, in sequence.
-              - Apply every fix in `$verified_findings` surgically across both files.
-              - Rule A (Self-Review): Verify no edit breaks any existing invariant, type signature, or cross-reference across either file.
-              - Rule B (No Glossing Over): If fixing an item exposes an adjacent or dependent defect not listed in `$verified_findings`, DO NOT gloss over it and DO NOT silently improvise unapproved architectural changes—report the exact disclosed defect(s) to Head.
-              1.2 While Remediation Subagent reports disclosed adjacent defects (Rule B):
-              - Head evaluates each disclosed defect against the Defect Gate (Step 3.2).
-              - Head messages the SAME Remediation Subagent (`send_message`) authorizing the exact fix to fold in.
-              - Remediation Subagent applies the authorized fix, re-runs Rule A self-review, and reports back.
-              1.3 Remediation step closes only when Remediation Subagent confirms:
-              - All `$verified_findings` and all authorized Rule B disclosures are applied.
-              - `git diff` is clean of unintended edits.
-        
-        STEP 2 — ADVERSARIAL COLD REVIEW (4x `invoke_subagent`, TypeName: 'research', Model: 'inherit' [Argon 4 High])
-            2.1 Launch 4 parallel cold Reviewer Subagents, each required to read `docs/SPEC.md` and `docs/CODING_SAMPLE.md` in full, in sequence, before auditing its assigned lens:
-            - Lens 1: Concurrency, State Machine Completeness, Lock Ordering, Crash Recovery & Distributed Ledger.
+    LOOP:
+        STEP 1 — ADVERSARIAL COLD REVIEW (5x `invoke_subagent`, TypeName: 'loop-reviewer', Model: 'inherit')
+            1.1 Launch 5 parallel cold Reviewer Subagents, each required to read its Reviewer bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, followed by `docs/SPEC.md` and `docs/CODING_SAMPLE.md` in full, in sequence, before auditing its assigned lens:
+              - Lens 1: Concurrency, State Machine Completeness, Lock Ordering, Crash Recovery & Distributed Ledger.
               - Lens 2: LLM Wire Protocols, Provider KV-Caching, Multi-Tool Batch Execution, Interrupts & Policy Guards.
               - Lens 3: Git Worktree Mechanics, Checkpointing, Merge/Rebase Protocols, OS Subprocesses & Daemon Lifecycles.
-              - Lens 4: DSL Type Safety, Schema Projections, Topology Overlays, Lesson Math & Cross-Document Consistency.
-              2.2 Wait for all 4 Reviewer Subagents to complete. Collect and deduplicate their raw outputs into `$findings`.
-        
-        STEP 3 — VERIFICATION GATE (`invoke_subagent`, TypeName: 'research', Model: 'inherit' [Argon 4 High])
-            3.1 If count($findings) == 0:
-            - Set `$verified_findings := []` and exit loop.
-            3.2 Launch 1 Verifier Subagent with `$findings`:
-              - Instruct it to read `docs/SPEC.md` and `docs/CODING_SAMPLE.md` in full, in sequence, and verify every item in `$findings` against the exact lines of both files.
-              - DEFECT GATE (Admit to `$verified_findings` IF AND ONLY IF at least one holds):
-              (a) Concurrency race, lock-ordering deadlock, or state-machine transition gap.
-              (b) Crash-recovery data loss, non-idempotent replay, or orphaned state.
-              (c) Provider wire-protocol error (HTTP 400), broken message alternation, or KV-cache prefix invalidation.
-              (d) Git, filesystem, checkpoint, or OS subprocess/daemon failure.
-              (e) TypeScript generic/builder type error or Zod schema mismatch.
-              (f) Mathematical formula defect or unreachable state.
-              (g) Cross-document or intra-document contradiction.
-              - REJECTION GATE (Reject from `$verified_findings` if any holds):
-              (x) Factually false (already handled by existing text).
-              (y) Speculative new feature, new abstraction, or scope expansion nobody asked for.
-              (z) Stylistic preference or prose wording nitpick that alters no behavior.
-              - For each admitted item, Verifier outputs:
-                (1) Exact defective line numbers and quoted snippet from `SPEC.md` / `CODING_SAMPLE.md`,
-                (2) Concrete failure proof,
-                (3) Alternative surgical fixes (`Option A`, `Option B`) with trade-offs, and
-                (4) Verifier's recommended fix and why.
-              3.3 Head arbitrates / tie-breaks the Verifier's recommendations against `RULE[user_global]` (Simplicity first; surgical changes; escalating to Owner only if a fix alters undecided product/DSL design), locks in the winning fixes as `$verified_findings`, and increments `round := round + 1`.
-        
-        TERMINATION (count($verified_findings) == 0)
-        Report final convergence summary and `git diff --stat` to Owner.
+              - Lens 4: DSL Type Safety, Schema Projections, Topology Overlays, Lesson Math & Cross-Document Consistency (including alignment with `docs/CODING_GUIDELINES.md`).
+              - Lens 5: Architectural Soundness, Pure AST Decoupling & First-Principles Critique (attacks architectural flaws across DSL architecture, AST purity vs. execution coupling, builder vs. AST separation, discriminated-union `type` nodes, `NodeExecutor<TNode>` dispatch, data flow, state management, execution, and forking — without blindly accepting existing premises; subject to Core Paradigm Invariant `(w)` and Anti-Nitpick Gate `(z)`).
+            1.2 Wait for all 5 Reviewer Subagents to complete and collect/deduplicate their raw outputs, merging and draining `$pending_adjacent_defects` into `$findings`.
+
+        STEP 2 — VERIFICATION GATE & HEAD ARBITRATION (`invoke_subagent`, TypeName: 'loop-verifier', Model: 'inherit')
+            2.1 If count($findings) == 0:
+                - Set `$verified_findings := []` and exit loop to DISTILLATION.
+            2.2 Launch 1 Verifier Subagent with `$findings`:
+                - Require it to read its Verifier bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `docs/SPEC.md` and `docs/CODING_SAMPLE.md` in full, in sequence, and verify every item in `$findings` against the exact lines of both files.
+                - DEFECT GATE (Admit to `$verified_findings` IF AND ONLY IF at least one holds):
+                  (a) Concurrency race, lock-ordering deadlock, or state-machine transition gap.
+                  (b) Crash-recovery data loss, non-idempotent replay, or orphaned state.
+                  (c) Provider wire-protocol error (HTTP 400), broken message alternation, or KV-cache prefix invalidation.
+                  (d) Git, filesystem, checkpoint, or OS subprocess/daemon failure.
+                  (e) TypeScript generic/builder type error, type erasure, or Zod schema mismatch.
+                  (f) Mathematical formula defect or unreachable state.
+                  (g) Cross-document or intra-document contradiction (across `SPEC.md`, `CODING_SAMPLE.md`, and `CODING_GUIDELINES.md`).
+                  (h) Genuine architectural flaw: coupling between passive AST nodes and runtime execution logic (self-executing AST nodes, execution/builder methods on AST nodes, duck-typing runtime methods during static validation, or inability to swap the runtime execution engine over the same AST), broken data-flow/state-ownership invariant, or broken `NodeExecutor<TNode>` / discriminated-union (`type`) contract.
+                - REJECTION GATE (Reject from `$verified_findings` if any holds):
+                  (w) Violates the Core Paradigm Invariant by proposing to replace the declarative pure-AST DSL with imperative `async`/`await` functions, generators, or native TypeScript control flow (`if`/`for`/`while`).
+                  (x) Factually false (already handled by existing text).
+                  (y) Speculative new feature, new abstraction, or scope expansion nobody asked for.
+                  (z) Stylistic preference, naming bike-shed, or prose wording nitpick disguised as an architectural flaw without a concrete structural or behavioral failure proof.
+                - For each admitted item, Verifier outputs:
+                  (1) Exact defective line numbers and quoted snippet from `SPEC.md` / `CODING_SAMPLE.md`,
+                  (2) Concrete failure proof,
+                  (3) Surgical fix options (`Option A`, and `Option B` when genuine trade-offs exist per `docs/rules/VERIFIER.md` Rule 3), and
+                  (4) Verifier's recommended fix and why.
+            2.3 Head arbitrates / tie-breaks the Verifier's recommendations against `RULE[user_global]` and `docs/rules/HEAD.md` (checking `round_history` per `docs/rules/HEAD.md` Rule 1 and escalating to Owner only if a fix alters undecided product/DSL design), locks in the winning fixes as `$verified_findings`, and records the round's verified findings and rejected false-positive patterns in `round_history`.
+            2.4 If count($verified_findings) == 0:
+                - Exit loop to DISTILLATION.
+
+        STEP 3 — SPEC REMEDIATION (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit')
+            3.1 Launch 1 Remediation Subagent with `$verified_findings`:
+                - Read its Builder bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `docs/SPEC.md` completely and `docs/CODING_SAMPLE.md` completely, in sequence.
+                - Apply every fix in `$verified_findings` (plus direct in-scope cascade updates across `docs/SPEC.md` and `docs/CODING_SAMPLE.md`, and if `docs/plan/M*.md` exist, refreshing any shifted §2 `SPEC.md` / `CODING_SAMPLE.md` line ranges) surgically.
+                - Rule A (Self-Review): Verify no edit breaks any existing invariant, type signature, or cross-reference across either file, and `git diff` is clean of unintended edits.
+                - Rule B (Disclosed Adjacent Defects): Record any unrelated adjacent defects discovered during remediation in a `disclosed_adjacent_defects` section of the completion report (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2, pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` per `docs/rules/BUILDER.md` Rule 2).
+            3.2 Increment `round := round + 1` and repeat LOOP at STEP 1.
+
+    DISTILLATION (When `round > 1` or when verified findings / false-positive clusters occurred)
+    1. Launch 1 Distiller Subagent (`invoke_subagent`, TypeName: 'loop-distiller', Model: 'inherit') with its Distiller bootstrap manifest (`docs/HARNESS_LOOP.md` §3) and `round_history` (all verified findings and rejected false-positive patterns across rounds `1..round`).
+    2. Distiller reads its Turn-1 manifest and updates `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` in-place per `docs/rules/DISTILLER.md` (`NO_LESSONS_ADDED` with zero file edits is the expected output when all findings were already covered by existing rules/guidelines). Head audits `git diff -- docs/lessons/` against `docs/rules/DISTILLER.md` Rules 1–4 before TERMINATION.
+
+    TERMINATION (count($verified_findings) == 0)
+    Report final convergence summary and `git diff --stat` to Owner.
 ```

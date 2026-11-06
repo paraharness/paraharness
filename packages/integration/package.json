@@ -25,6 +25,8 @@
     "@harness-dsl/gemini": "workspace:*",
     "@harness-dsl/github": "workspace:*",
     "@harness-dsl/slack": "workspace:*",
+    "@harness-dsl/stripe": "workspace:*",
+    "@harness-dsl/netsuite": "workspace:*",
     "zod": "^3.24.2"
   },
   "devDependencies": {

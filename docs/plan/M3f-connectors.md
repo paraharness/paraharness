@@ -1,195 +1,127 @@
-# Milestone 3f (`M3f`): `@harness-dsl/github` & `@harness-dsl/slack` External Connectors
+# Milestone M3f — `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe` & `@harness-dsl/netsuite` Connector Adapters
 
-## 1. Scope & Package Directory
+## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
-- **Milestone Wave:** Parallel Wave 2 — Scoped Adapter Builder (`c`) (Depends on Wave 1a `M1` -> Wave 1b `M2` completing)
-- **Owned Files & Directories:**
-  - `packages/github/src/issues-tracker.ts`
-  - `packages/github/src/webhook-stream.ts`
-  - `packages/github/src/index.ts`
-  - `packages/github/test/github-adapter.test.ts`
-  - `packages/slack/src/webhook.ts`
-  - `packages/slack/src/bot.ts`
-  - `packages/slack/src/index.ts`
-  - `packages/slack/test/slack-adapter.test.ts`
-- **Forbidden Directories:**
-  - Do not modify root workspace files (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `pnpm-lock.yaml`) or `packages/core/**`.
-  - Do not touch `packages/sqlite`, `packages/postgres`, `packages/fs`, `packages/markdown`, `packages/node`, `packages/git`, `packages/claude`, `packages/openai`, `packages/gemini`, `packages/stripe`, `packages/netsuite`, or `packages/integration`.
-  - Zero cross-milestone adapter imports: `packages/github` and `packages/slack` import only from `@harness-dsl/core`, `zod`, and Node.js built-ins (`node:crypto`, `node:http`).
-
----
-
-## 2. Exact Spec Grounding Table
-
-Read the following sections in full before authoring any file in `M3f`:
-
-| Document | Section | Line Range | Key Contracts & Connector Semantics Covered |
-| :--- | :--- | :--- | :--- |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries & §1.2 Invariant 3 | `23–24, 30` | `@harness-dsl/github` and `@harness-dsl/slack` responsibilities; opaque `EnvRef` resolution |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.7 External Tracker, Stream, Human & Control-Plane Ports | `834–871` | `TrackerAdapter`, `StreamSource`, `HumanAdapter`, `ControlPlaneAdapter`, `HarnessRuntimeController` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.1 Signals & Streams, §3.6 Humans (`H.human`), §3.7.2 & §3.10 `cancelDecision` | `878–883, 1072–1075, 1239, 1357` | Bidirectional `HumanAdapter` requirement (`requestDecision` + `cancelDecision`), sibling-interrupt & rewind cancellation |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 `@harness-dsl/github` & `@harness-dsl/slack` | `1475–1481` | `github.issues`, `github.webhookStream`, `slack.webhook`, `slack.bot` |
-| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 `engineering-harness.ts` | `356–365, 431–452, 1132–1170, 1204–1207` | `slackBot`, `owner`, `githubWebhookSource`, `githubMergeStream`, `githubPrClosedStream`, `issuesTracker` |
+- **Milestone**: `M3f` (Wave 2 — Parallel Adapter Fan-Out `c`, depends on `M1`)
+- **Packages**: `@harness-dsl/github` (`packages/github`), `@harness-dsl/slack` (`packages/slack`), `@harness-dsl/stripe` (`packages/stripe`), and `@harness-dsl/netsuite` (`packages/netsuite`)
+- **`owned_dirs`**:
+  - `packages/github/src/**`, `packages/github/test/**`
+  - `packages/slack/src/**`, `packages/slack/test/**`
+  - `packages/stripe/src/**`, `packages/stripe/test/**`
+  - `packages/netsuite/src/**`, `packages/netsuite/test/**`
+- **`forbidden_dirs`**:
+  - `packages/core/**`
+  - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,integration}/**`
+  - Root workspace configs (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
+- **Cross-Adapter Independence Rule**:
+  - `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, and `@harness-dsl/netsuite` must have **zero runtime or type imports** from each other or from any other M3 adapter package. Each depends exclusively on `@harness-dsl/core` (`workspace:*`), `zod`, and Node built-ins (`node:http`, `node:crypto`).
 
 ---
 
-## 3. File-by-File Architecture & Exported Symbols
+## 2. Normative Specification & Coding Sample Grounding
 
-### 3.1 `packages/github/src/index.ts`
-
-```ts
-import type { EnvRef, StreamSource, TrackerAdapter } from '@harness-dsl/core';
-
-export interface GitHubIssue {
-  readonly number: number;
-  readonly title: string;
-  readonly body: string | null;
-  readonly state: 'open' | 'closed';
-  readonly labels: readonly string[];
-  readonly html_url?: string;
-}
-
-export interface GitHubPullRequestWebhookEvent {
-  readonly action: string;
-  readonly repository?: { readonly full_name: string };
-  readonly pull_request: {
-    readonly number: number;
-    readonly merged: boolean;
-    readonly merge_commit_sha: string;
-    readonly head: { readonly ref: string; readonly sha?: string };
-    readonly base: { readonly ref: string };
-  };
-}
-
-export type GitHubFetchTransport = (
-  url: string,
-  init: {
-    readonly method: string;
-    readonly headers: Readonly<Record<string, string>>;
-    readonly body?: string;
-  },
-) => Promise<{
-  readonly status: number;
-  readonly json(): Promise<unknown>;
-  readonly text(): Promise<string>;
-}>;
-
-export interface GitHubWebhookStreamSource extends StreamSource<GitHubPullRequestWebhookEvent> {
-  ingestWebhook(req: {
-    readonly headers: Readonly<Record<string, string | undefined>>;
-    readonly rawBody: string | Uint8Array;
-  }): Promise<boolean>;
-}
-
-export const github: {
-  issues(opts: {
-    readonly repo: string;
-    readonly token: EnvRef | string;
-    readonly apiBaseUrl?: string;
-    readonly transport?: GitHubFetchTransport;
-  }): TrackerAdapter<GitHubIssue, string>;
-  webhookStream(opts: {
-    readonly repo: string;
-    readonly secret: EnvRef | string;
-    readonly events: readonly string[];
-    readonly port?: number;
-  }): GitHubWebhookStreamSource;
-};
-```
-
-### 3.2 `packages/slack/src/index.ts`
-
-```ts
-import type { ControlPlaneAdapter, EnvRef, HumanAdapter } from '@harness-dsl/core';
-
-export interface SlackMessageRecord {
-  readonly ts: string;
-  readonly channel: string;
-  readonly text: string;
-  readonly threadTs?: string;
-  readonly requestId?: string;
-  readonly runId?: string;
-  readonly cancelled?: boolean;
-}
-
-export interface SlackBotTransport {
-  postMessage(msg: {
-    readonly channel: string;
-    readonly text: string;
-    readonly threadTs?: string;
-    readonly requestId?: string;
-    readonly runId?: string;
-  }): Promise<{ readonly ts: string }>;
-  updateMessage(msg: {
-    readonly channel: string;
-    readonly ts: string;
-    readonly text: string;
-    readonly cancelled?: boolean;
-  }): Promise<void>;
-}
-
-export interface SlackBotAdapter extends HumanAdapter, ControlPlaneAdapter {
-  submitDecisionResponse(requestId: string, rawPayload: unknown): Promise<void>;
-  triggerControlSignal<TPayload>(signalId: string, payload: TPayload): Promise<void>;
-  getPostedMessages(): readonly SlackMessageRecord[];
-}
-
-export const slack: {
-  webhook(
-    url: EnvRef | string,
-    opts?: {
-      readonly transport?: (url: string, body: string) => Promise<{ readonly status: number }>;
-    },
-  ): HumanAdapter;
-  bot(opts: {
-    readonly appToken: EnvRef | string;
-    readonly botToken: EnvRef | string;
-    readonly channel: EnvRef | string;
-    readonly transport?: SlackBotTransport;
-  }): SlackBotAdapter;
-};
-```
+| Normative Source | Section & Exact Line Range | Grounded Scope in `M3f` |
+| :--- | :--- | :--- |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`GithubIssuesTrackerNode`, `GithubWebhookStreamNode`, `GithubCreateOrUpdatePrNode`, `SlackApproverNode`, `SlackNotifierNode`, `StripeReadToolNode`, `StripeMaxRefundGuardNode`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode`), `CustomDomainASTRegistry` declaration merging, and late-bound `EnvRef` resolution via `ctx.resolveEnv`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2–§2.5 & §2.8 (`lines 682–1505`, `2089–2123`) | `BaseTrackerASTNode`, `BaseStreamSourceASTNode`, `BaseDomainStepASTNode`, `BaseHumanChannelASTNode` (`interactionMode: 'bidirectional' \| 'notify-only'`), `BaseControlPlaneASTNode`, `BaseIsolationScopeASTNode` (`capabilityTier: 'scope'`), `BaseToolASTNode` (`effectTracking: 'declared'`), `BasePolicyGuardASTNode`, `BaseCheckASTNode`, `BaseAbortHookASTNode`, `IsolationScope`, `TrackerAdapter`, `StreamSource`, `HumanAdapter`, `ControlPlaneAdapter`, `RuntimeExecutorRegistrySlice`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3136–3179`) | `@harness-dsl/github` (`github.issues(opts)`, `github.webhookStream(opts)` defaulting `port` to `3000` and `path` to `'/webhooks/github'`, `github.createOrUpdatePr(id, opts)`) and `@harness-dsl/slack` (`slack.webhook(url)` with `interactionMode: 'notify-only'`, `slack.bot(opts)` with `interactionMode: 'bidirectional'` implementing `HumanAdapter` & `ControlPlaneAdapter`). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 (`lines 3182–3324`) | Non-coding financial harness domain adapters `@harness-dsl/stripe` (`stripe.readTools()`, `stripe.maxRefundGuardUsd(limit)`, `stripe.allowRefundUpToUsd(limit)`) and `@harness-dsl/netsuite` (`netsuite.draftJournalScope()` with `capabilityTier: 'scope'`, `netsuite.forbidClosedPeriodPosting()`, `netsuite.journalTools()`, `netsuite.balanceZeroCheck()`, `netsuite.rollbackDraftJournal()`). |
+| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 (`lines 183, 186, 356–365, 431–452, 1132–1169, 1206`) | `slack.bot(...)`, `github.webhookStream(...)`, `github.issues(...)` in `engineering-harness.ts`. |
 
 ---
 
-## 4. Critical Implementation Invariants
+## 3. Planned Module Decomposition & Public Exports
 
-1. **`github.issues` Polling & Label State Transitions (`SPEC.md` §2.7, §4.5; `CODING_SAMPLE.md` lines 1132–1170):**
-   - Resolves `token` (`EnvRef` or string) in-memory at invocation time.
-   - `poll()` fetches open issues from `/repos/${repo}/issues?state=open&per_page=100`, excludes GitHub pull requests (`item.pull_request !== undefined`), maps label objects (`{ name: string }` or `string`) to `readonly string[]`, and returns `GitHubIssue[]`.
-   - `setExternalState(itemKey, state)` extracts issue number from `itemKey` (e.g., `'#102'` -> `102`), fetches current issue labels, preserves non-lifecycle labels (`partition:db`, `partition:api`, `partition:web`, `epic`, `architecture`, `deep`), replaces any prior lifecycle state label (`agent-ready`, `queued`, `in-progress`, `needs-human`, `errored`, `cancelled`, `pr-open`, `needs-triage`) with `state`, and writes the updated label set via `PUT /repos/${repo}/issues/${issueNumber}/labels`.
-2. **`github.webhookStream` HMAC-SHA256 Verification & Event Filtering (`SPEC.md` §2.7, §3.1; `CODING_SAMPLE.md` lines 431–452):**
-   - Resolves `secret` (`EnvRef` or string) in-memory at verification time.
-   - Computes `expected = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex')` and compares against `headers['x-hub-signature-256']` using `crypto.timingSafeEqual` (returning `false` and dropping the payload on mismatch or missing signature).
-   - Verifies `${eventHeader}.${payload.action}` (or `${eventHeader}`) is in `opts.events` (e.g., `'pull_request.closed'`) and, if `payload.repository?.full_name` is present, matches `opts.repo`.
-   - Delivers matching events to all active callbacks registered via `subscribe(onEvent)`.
-3. **`slack.webhook` vs `slack.bot` Bidirectional Enforcement (`SPEC.md` §3.6 lines 1072–1075):**
-   - `slack.webhook(url)` implements `notify(message)` via HTTP `POST` JSON `{ text: message }` and throws an explicit error if `requestDecision` is called on it.
-   - `slack.bot(opts)` implements both `HumanAdapter` (`notify`, `requestDecision`, `cancelDecision`) and `ControlPlaneAdapter` (`start`).
-   - In `requestDecision(req)`:
-     - Posts a message for `req.requestId` (or if `req.payload` carries `replacesRequestId` referencing an earlier message `ts`, updates the prior Slack message via `updateMessage` and posts a thread reply referencing that `ts`).
-     - Validates human responses submitted via Socket Mode / `submitDecisionResponse(requestId, rawPayload)` against `req.responseSchema` using `safeParse`; if invalid, posts an in-thread validation error and keeps waiting for a valid response.
-     - If `req.signal` aborts or `cancelDecision(runId, requestId)` is called, updates the Slack message (`cancelled: true`), cleans up any keep-alive interval timer, and rejects the pending `requestDecision` promise with an `AbortError`.
+Every file in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single primary concept per file, `internal/` helpers, pure `src/index.ts` barrels, complete `/** ... */` JSDoc, and zero inline/non-JSDoc comments).
+
+### 3.1 `packages/github` (`@harness-dsl/github`)
+
+| File Path | Primary Category | Exported Symbols |
+| :--- | :--- | :--- |
+| `src/builders/github-builders.ts` | `function` | `createGithubIssuesBuilder`, `createGithubWebhookStreamBuilder`, `createGithubCreateOrUpdatePrBuilder`, `GithubCreateOrUpdatePrBuilder` |
+| `src/builders/github-namespace.constants.ts` | `const` | `github`, `GithubNamespace` |
+| `src/executors/github-http-transport.ts` | `interface` | `GithubHttpTransport`, `GithubIssueRecord`, `defaultGithubHttpTransport` |
+| `src/executors/github-issues-tracker.ts` | `class` | `GithubIssuesTrackerAdapter` (implementing `TrackerAdapter<GithubIssueRecord, string>`) |
+| `src/executors/github-webhook-stream.ts` | `class` | `GithubWebhookStreamSource` (implementing `StreamSource<any>` with HMAC-SHA256 `X-Hub-Signature-256` verification) |
+| `src/executors/github-pr-step-executor.ts` | `function` | `executeGithubCreateOrUpdatePrStep` |
+| `src/executors/github-executors.constants.ts` | `const` | `githubExecutors: RuntimeExecutorRegistrySlice`, `createGithubExecutors` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `github`, `githubExecutors`, `createGithubExecutors`, `GithubIssuesTrackerAdapter`, `GithubWebhookStreamSource`, `GithubHttpTransport`, `GithubIssueRecord`, `GithubCreateOrUpdatePrBuilder`, `GithubIssuesTrackerNode`, `GithubWebhookStreamNode`, `GithubCreateOrUpdatePrNode` |
+
+### 3.2 `packages/slack` (`@harness-dsl/slack`)
+
+| File Path | Primary Category | Exported Symbols |
+| :--- | :--- | :--- |
+| `src/builders/slack-builders.ts` | `function` | `createSlackBotBuilder`, `createSlackWebhookBuilder` |
+| `src/builders/slack-namespace.constants.ts` | `const` | `slack`, `SlackNamespace` |
+| `src/executors/slack-transport.ts` | `interface` | `SlackTransport`, `defaultSlackTransport` |
+| `src/executors/slack-approver-adapter.ts` | `class` | `SlackApproverAdapter` (implementing `HumanAdapter` and `ControlPlaneAdapter`) |
+| `src/executors/slack-notifier-adapter.ts` | `class` | `SlackNotifierAdapter` (implementing `HumanAdapter` for `'notify-only'`) |
+| `src/executors/slack-executors.constants.ts` | `const` | `slackExecutors: RuntimeExecutorRegistrySlice`, `createSlackExecutors` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `slack`, `slackExecutors`, `createSlackExecutors`, `SlackApproverAdapter`, `SlackNotifierAdapter`, `SlackTransport`, `SlackApproverNode`, `SlackNotifierNode` |
+
+### 3.3 `packages/stripe` (`@harness-dsl/stripe`) & `packages/netsuite` (`@harness-dsl/netsuite`)
+
+| Package & File Path | Primary Category | Exported Symbols |
+| :--- | :--- | :--- |
+| `packages/stripe/src/nodes/stripe-domain-nodes.ts` | `interface` | `StripeReadToolNode`, `StripeMaxRefundGuardNode`, `StripeMaxRefundMatcherNode` |
+| `packages/stripe/src/builders/stripe-namespace.constants.ts` | `const` | `stripe`, `StripeNamespace` (`readTools`, `maxRefundGuardUsd`, `allowRefundUpToUsd`) |
+| `packages/stripe/src/executors/stripe-executors.constants.ts` | `const` | `stripeExecutors: RuntimeExecutorRegistrySlice`, `createStripeExecutors` |
+| `packages/stripe/src/index.ts` | `barrel` | Pure explicit re-exports of `stripe`, `stripeExecutors`, `createStripeExecutors`, `StripeReadToolNode`, `StripeMaxRefundGuardNode`, `StripeMaxRefundMatcherNode` |
+| `packages/netsuite/src/nodes/netsuite-domain-nodes.ts` | `interface` | `NetSuiteDraftHandle`, `DraftJournalReceipt`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode` |
+| `packages/netsuite/src/builders/netsuite-namespace.constants.ts` | `const` | `netsuite`, `NetSuiteNamespace` (`draftJournalScope`, `forbidClosedPeriodPosting`, `journalTools`, `balanceZeroCheck`, `rollbackDraftJournal`) |
+| `packages/netsuite/src/executors/netsuite-draft-scope-driver.ts` | `class` | `NetSuiteDraftScopeDriver` (implementing Tier-1 `IsolationScope<NetSuiteDraftHandle, DraftJournalReceipt>`) |
+| `packages/netsuite/src/executors/netsuite-executors.constants.ts` | `const` | `netsuiteExecutors: RuntimeExecutorRegistrySlice`, `createNetSuiteExecutors` |
+| `packages/netsuite/src/index.ts` | `barrel` | Pure explicit re-exports of `netsuite`, `netsuiteExecutors`, `createNetSuiteExecutors`, `NetSuiteDraftScopeDriver`, `NetSuiteDraftHandle`, `DraftJournalReceipt`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode` |
 
 ---
 
-## 5. Required Test Suite (`packages/github/test/*.test.ts` & `packages/slack/test/*.test.ts`)
+## 4. Detailed Implementation Requirements
 
-1. **`github-adapter.test.ts`:**
-   - `github.issues`: `poll()` filtering out PRs and normalizing labels; `setExternalState('#42', 'in-progress')` stripping `agent-ready`/`queued` while preserving `partition:db` and `epic`; `CODING_SAMPLE.md` `.from(issue)` mapper integration test.
-   - `github.webhookStream`: valid HMAC-SHA256 signature acceptance vs invalid/tampered signature rejection (`timingSafeEqual`); filtering `pull_request.closed` merged (`githubMergeStream` -> `changeShippedSignal`) vs unmerged (`githubPrClosedStream` -> `prClosedUnmergedSignal`).
-2. **`slack-adapter.test.ts`:**
-   - `slack.webhook`: `notify()` delivery and `requestDecision()` throwing bidirectional requirement error.
-   - `slack.bot`: `notify()`, `requestDecision()` with Zod schema validation (rejecting malformed response and resolving on valid response), `replacesRequestId` updating the original message and replying in-thread, `cancelDecision(runId, requestId)` and `AbortSignal` cancellation updating the Slack message and rejecting the pending promise, and `ControlPlaneAdapter.start(runtime)` forwarding signals via `triggerControlSignal`.
+### 4.1 `@harness-dsl/github` (`SPEC.md` §4.5 line 3177 & `CODING_SAMPLE.md` lines 431–452, 1132–1169)
+1. **`github.issues({ repo, token, labels? })`**:
+   - Compiles to `GithubIssuesTrackerNode` (`readonly type: 'github:issues'`).
+   - `GithubIssuesTrackerAdapter` (`trackers['github:issues']`) implements `poll()` (fetching issues from `/repos/${repo}/issues` with resolved `token`) and `setExternalState(itemKey, state)` (updating issue labels on `/repos/${repo}/issues/${issueNumber}/labels`).
+2. **`github.webhookStream({ repo?, port?, path?, secret, events })`**:
+   - Compiles to `GithubWebhookStreamNode` (`readonly type: 'github:webhook-stream'`, defaulting `port` to `3000` and `path` to `'/webhooks/github'`).
+   - `GithubWebhookStreamSource` (`streamSources['github:webhook-stream']`) verifies HMAC-SHA256 (`X-Hub-Signature-256`) using resolved `secret`, filters by `X-GitHub-Event` / `payload.action` against `node.events` and `payload.repository.full_name` against `node.repo`, and invokes `onEvent(payload)`.
+3. **`github.createOrUpdatePr(id, { repo, token, branch, baseBranch?, title, body })`**:
+   - Compiles to `GithubCreateOrUpdatePrNode` (`readonly type: 'github:create-or-update-pr'`, supporting `.input(schema)` and `.output(schema)`).
+   - Step executor queries open PRs for `head: branch(input)` and creates or updates the PR on `/repos/${repo}/pulls`.
+
+### 4.2 `@harness-dsl/slack` (`SPEC.md` §4.5 line 3178 & `CODING_SAMPLE.md` lines 356–365, 1197–1206)
+1. **`slack.bot({ appToken, botToken, channel })`**:
+   - Compiles to `SlackApproverNode` (`readonly type: 'slack:approver'`, `readonly interactionMode: 'bidirectional'`).
+   - `SlackApproverAdapter` (`humanChannels['slack:approver']` & `controlPlanes['slack:approver']`):
+     - `notify(message)`: posts to `channel` via `chat.postMessage`.
+     - `requestDecision(req)`: posts interactive decision block keyed by `(req.runId, req.requestId)`, emits periodic keep-alive heartbeat pings when `req.keepAliveSeconds` is configured, validates the human's response against `req.responseSchema`, and cleans up on `req.signal` abort.
+     - `cancelDecision(runId, requestId)`: updates the Slack message to mark it superseded/cancelled and rejects/clears the pending promise (`SPEC.md` §3.6 & §3.7.2).
+     - `start(controller)`: connects Socket Mode control plane allowing external signals (`controller.emitSignal`) and active-run queries (`controller.getActiveRuns`).
+2. **`slack.webhook(url)`**:
+   - Compiles to `SlackNotifierNode` (`readonly type: 'slack:notifier'`, `readonly interactionMode: 'notify-only'`).
+   - `SlackNotifierAdapter` implements `notify(message)` and throws an actionable error if `requestDecision` is ever called on a `'notify-only'` channel.
+
+### 4.3 `@harness-dsl/stripe` & `@harness-dsl/netsuite` (`SPEC.md` §5 lines 3182–3324)
+- Implement the exact Tier-1 (`capabilityTier: 'scope'`) scope, tools (`effectTracking: 'declared'`), policy guards (`forbidClosedPeriodPosting`, `maxRefundGuardUsd(500)`), lease delta (`allowRefundUpToUsd(10_000)`), check (`balanceZeroCheck`), and abort hook (`rollbackDraftJournal`) specified in `SPEC.md` §5 so the non-coding financial harness compiles and executes end-to-end without git semantics.
+
+---
+
+## 5. Deterministic Test Suite Architecture (`test/**` & `test/fixtures/**`)
+
+| File Path | Line Ceiling | Required Deterministic Test Cases |
+| :--- | :--- | :--- |
+| `packages/github/test/github-adapter.test.ts` | `<= 400` | Verifies `github.issues`, `github.webhookStream` (default `port: 3000`, `path: '/webhooks/github'`, HMAC-SHA256 verification, event & repo filtering), and `github.createOrUpdatePr` using a deterministic recorded transport / local HTTP webhook test client. |
+| `packages/slack/test/slack-adapter.test.ts` | `<= 400` | Verifies `slack.bot` (`interactionMode: 'bidirectional'`, `notify`, `requestDecision` with schema validation and keep-alive heartbeats, `cancelDecision` superseding active requests, `start(controller)` control-plane signal emission) and `slack.webhook` (`interactionMode: 'notify-only'`). |
+| `packages/stripe/test/stripe-adapter.test.ts` | `<= 400` | Verifies `stripe.readTools()`, `stripe.maxRefundGuardUsd(500)` pre-flight `ToolEffect` evaluation, and `stripe.allowRefundUpToUsd(10_000)` `LeaseDelta` matcher elevation. |
+| `packages/netsuite/test/netsuite-adapter.test.ts` | `<= 400` | Verifies `netsuite.draftJournalScope()` Tier-1 `IsolationScope` (`capabilityTier: 'scope'`, `acquireRoot`, `reattachRoot`, `inspect`, `release`), `netsuite.forbidClosedPeriodPosting()`, `netsuite.journalTools()`, `netsuite.balanceZeroCheck()`, and `netsuite.rollbackDraftJournal()`. |
 
 ---
 
 ## 6. Verification Gate Commands
 
+Run from workspace root:
+
 ```bash
-pnpm check:comments
-pnpm --filter @harness-dsl/github typecheck
-pnpm --filter @harness-dsl/github test
-pnpm --filter @harness-dsl/slack typecheck
-pnpm --filter @harness-dsl/slack test
+pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite typecheck
+pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite test -- --reporter=verbose
+test -z "$(git status --porcelain -- packages/core packages/sqlite packages/postgres packages/fs packages/markdown packages/node packages/git packages/claude packages/openai packages/gemini packages/integration)"
 ```

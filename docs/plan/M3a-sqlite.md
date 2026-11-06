@@ -1,171 +1,162 @@
-# Milestone 3a (`M3a`): `@harness-dsl/sqlite` & `@harness-dsl/postgres` Storage Adapters
+# Milestone M3a — `@harness-dsl/sqlite` & `@harness-dsl/postgres` Storage Adapters
 
-## 1. Scope & Package Directory
+## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
-- **Milestone Wave:** Parallel Wave 2 — Scoped Adapter Builder (`c`) (Depends on Wave 1a `M1` -> Wave 1b `M2` completing)
-- **Owned Files & Directories:**
-  - `packages/sqlite/src/schema.ts`
-  - `packages/sqlite/src/ledger-store.ts`
-  - `packages/sqlite/src/topology-store.ts`
-  - `packages/sqlite/src/lesson-store.ts`
-  - `packages/sqlite/src/rule-store.ts`
-  - `packages/sqlite/src/merge3.ts`
-  - `packages/sqlite/src/index.ts`
-  - `packages/sqlite/test/ledger-store.test.ts`
-  - `packages/sqlite/test/topology-store.test.ts`
-  - `packages/sqlite/test/lesson-rule-store.test.ts`
-  - `packages/postgres/src/ledger-store.ts`
-  - `packages/postgres/src/topology-store.ts`
-  - `packages/postgres/src/lesson-store.ts`
-  - `packages/postgres/src/rule-store.ts`
-  - `packages/postgres/src/index.ts`
-  - `packages/postgres/test/postgres-stores.test.ts`
-- **Forbidden Directories:**
-  - Do not modify root workspace files (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `pnpm-lock.yaml`) or `packages/core/**`.
-  - Do not touch `packages/fs`, `packages/markdown`, `packages/node`, `packages/git`, `packages/claude`, `packages/openai`, `packages/gemini`, `packages/github`, `packages/slack`, `packages/stripe`, `packages/netsuite`, or `packages/integration`.
-  - Zero cross-adapter imports: `packages/sqlite` imports only from `@harness-dsl/core`, `zod`, `better-sqlite3`, and Node.js built-ins (`node:crypto`, `node:path`, `node:fs`, `node:sqlite`); `packages/postgres` imports only from `@harness-dsl/core`, `zod`, and Node.js built-ins (`node:crypto`, `node:path`, `node:fs`).
+- **Milestone**: `M3a` (Wave 2 — Parallel Adapter Fan-Out `c`, depends on `M1`)
+- **Packages**: `@harness-dsl/sqlite` (`packages/sqlite`) and `@harness-dsl/postgres` (`packages/postgres`)
+- **`owned_dirs`**:
+  - `packages/sqlite/src/**`
+  - `packages/sqlite/test/**`
+  - `packages/postgres/src/**`
+  - `packages/postgres/test/**`
+- **`forbidden_dirs`**:
+  - `packages/core/**`
+  - `packages/{fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
+  - Root workspace configs (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
+- **Cross-Adapter Independence Rule**:
+  - `@harness-dsl/sqlite` and `@harness-dsl/postgres` must have **zero runtime or type imports** from each other or from any other M3 adapter package. Both depend exclusively on `@harness-dsl/core` (`workspace:*`), `zod`, and their storage drivers (`better-sqlite3` for `@harness-dsl/sqlite`, `pg` for `@harness-dsl/postgres`).
 
 ---
 
-## 2. Exact Spec Grounding Table
+## 2. Normative Specification & Coding Sample Grounding
 
-Read the following sections in full before authoring any file in `M3a`:
-
-| Document | Section | Line Range | Key Contracts & Storage Semantics Covered |
-| :--- | :--- | :--- | :--- |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1 Package Boundaries & §1.2 Invariant 5 | `21–22, 32` | Local WAL-mode SQLite & PostgreSQL storage responsibilities; Host-Root Storage Port Resolution |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.6 Storage Ports (`LedgerStore`, `TopologyStore`, `LessonStore`) | `433–832` | Exact method signatures and behavioral contracts for `LedgerStore`, `TopologyStore`, `LessonStore` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.3 Relational System Topology (`H.topology`) | `952–963` | Run-scoped CoW overlays, `baseContractTextAtAcquire` pinning, `stepExecId` tagging, `syncRunOverlays`, `resetRunOverlay` (`step` vs `run`), `sealRunOverlay`, monotonic 3-way `commitRunOverlay`, `discardRunOverlay` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1 Rules & §3.4.3 Lessons | `966–1033` | `GlobalRule` relational `Source`, `LessonStore` BM25 similarity $R(L, Q) \in [0, 1]$, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire` |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.10 Ledger Compaction (`.compactWhen()`) | `1362` | Persisted compaction deadlines, stacked-PR `baseBranch !== 'main'` deferral, active `itemKey` protection |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 Adapter Specifications | `1475–1481` | `sqlite.ledger`, `sqlite.topologyStore`, `sqlite.lessonStore`, `sqlite.globalRules`, `postgres.*` |
-| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 `engineering-harness.ts` | `344–355, 457–475, 554` | Exact builder invocations for `sqlite.ledger(...).compactWhen(...)`, `sqlite.topologyStore(...)`, `sqlite.globalRules(..., { table })` |
-
----
-
-## 3. File-by-File Architecture & Exported Symbols
-
-### 3.1 `packages/sqlite/src/index.ts` & `packages/postgres/src/index.ts`
-
-```ts
-import type {
-  CompactionRuleConfig,
-  CompactionSignalRuleConfig,
-  ConfigurableLedgerStore,
-  GlobalRule,
-  LedgerCompactionBuilder,
-  LedgerStore,
-  LessonStore,
-  SignalDef,
-  Source,
-  TopologyStore,
-} from '@harness-dsl/core';
-
-export type {
-  CompactionRuleConfig,
-  CompactionSignalRuleConfig,
-  ConfigurableLedgerStore,
-  LedgerCompactionBuilder,
-};
-
-export interface PgPoolLike {
-  query(
-    sql: string,
-    params?: readonly unknown[],
-  ): Promise<{ readonly rows: readonly Record<string, any>[] }>;
-  close?(): Promise<void>;
-}
-
-export const sqlite: {
-  ledger(uri: string, opts?: { readonly hostRootDir?: string }): ConfigurableLedgerStore;
-  topologyStore(uri: string, opts?: { readonly hostRootDir?: string }): TopologyStore;
-  lessonStore(uri: string, opts?: { readonly hostRootDir?: string }): LessonStore;
-  globalRules(uri: string, opts: { readonly table: string; readonly hostRootDir?: string }): Source<GlobalRule[]>;
-  rules(uri: string, opts: { readonly table: string; readonly hostRootDir?: string }): Source<GlobalRule[]>;
-};
-
-export const postgres: {
-  ledger(uri: string, opts?: { readonly pool?: PgPoolLike }): ConfigurableLedgerStore;
-  topologyStore(uri: string, opts?: { readonly pool?: PgPoolLike }): TopologyStore;
-  lessonStore(uri: string, opts?: { readonly pool?: PgPoolLike }): LessonStore;
-  globalRules(uri: string, opts: { readonly table: string; readonly pool?: PgPoolLike }): Source<GlobalRule[]>;
-  rules(uri: string, opts: { readonly table: string; readonly pool?: PgPoolLike }): Source<GlobalRule[]>;
-};
-```
-
-### 3.2 `packages/sqlite/src/schema.ts`
-
-Initializes SQLite connection in WAL mode (`PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;`) and creates all tables idempotently:
-- `harness_runs`: `run_id TEXT PRIMARY KEY`, `lane_id TEXT NOT NULL`, `item_key TEXT NOT NULL`, `status TEXT NOT NULL`, `current_step_id TEXT`, `input_json TEXT NOT NULL`, `rewind_pending_to_step_id TEXT`, `compiled_prefixes_json TEXT`, `cost_usd REAL NOT NULL DEFAULT 0`, `approved_max_cost_usd REAL`, `terminal_state TEXT`, `scope_receipt_json TEXT`, `updated_at TEXT NOT NULL`.
-- `harness_steps`: `step_exec_id TEXT PRIMARY KEY`, `run_id TEXT NOT NULL`, `step_id TEXT NOT NULL`, `status TEXT NOT NULL`, `input_msg_id TEXT`, `base_scope_checkpoint TEXT`, `head_scope_checkpoint TEXT`, `output_json TEXT`, `telemetry_json TEXT`, `pending_tool_batch_json TEXT`, `continuation_stack_json TEXT NOT NULL`, `started_at TEXT NOT NULL`, `updated_at TEXT NOT NULL`.
-- `harness_messages`: `message_id TEXT PRIMARY KEY`, `run_id TEXT NOT NULL`, `parent_message_id TEXT`, `vendor_id TEXT NOT NULL`, `raw_wire_frame BLOB NOT NULL`, `canonical_json TEXT NOT NULL`, `prefix_digest TEXT NOT NULL`, `compacted_tombstones_json TEXT`, `is_pruned INTEGER NOT NULL DEFAULT 0`, `created_at TEXT NOT NULL`.
-- `harness_suspended_forks`: `suspended_fork_id TEXT PRIMARY KEY`, `fork_id TEXT NOT NULL`, `suspension_epoch INTEGER NOT NULL`, `run_id TEXT NOT NULL`, `parent_step_exec_id TEXT NOT NULL`, `fork_tool_name TEXT NOT NULL`, `active_partitions_json TEXT NOT NULL`, `suspension_reason TEXT NOT NULL`, `triggered_by_fork_id TEXT`, `raised_by_phase TEXT`, `conflict_retry_count INTEGER NOT NULL`, `conflict_check_armed INTEGER NOT NULL`, `synced_to_parent_checkpoint TEXT`, `sync_result_json TEXT`, `resume_frame_injected INTEGER NOT NULL DEFAULT 0`, `interrupt_id TEXT`, `interrupt_payload_json TEXT`, `suspended_at_call_id TEXT`, `child_scope_checkpoint TEXT`, `continuation_stack_json TEXT NOT NULL`, `resolution_status TEXT NOT NULL DEFAULT 'OPEN'`.
-- `harness_compaction_deadlines`: `run_id TEXT PRIMARY KEY`, `item_key TEXT NOT NULL`, `compact_after TEXT NOT NULL`, `awaiting_base_branch TEXT`, `compacted INTEGER NOT NULL DEFAULT 0`.
-- `topology_base_partitions`: `partition_id TEXT PRIMARY KEY`, `epoch INTEGER NOT NULL`, `contract_text TEXT NOT NULL`, `updated_at TEXT NOT NULL`.
-- `topology_run_overlays`: `run_id TEXT NOT NULL`, `partition_id TEXT NOT NULL`, `status TEXT NOT NULL DEFAULT 'ACTIVE'`, `base_contract_text_at_acquire TEXT NOT NULL`, `synced_contract_text TEXT NOT NULL`, ` synced_epoch INTEGER NOT NULL`, `current_contract_text TEXT NOT NULL`, `current_epoch INTEGER NOT NULL`, `updated_at TEXT NOT NULL`, `PRIMARY KEY (run_id, partition_id)`.
-- `topology_overlay_step_mutations`: `id INTEGER PRIMARY KEY AUTOINCREMENT`, `run_id TEXT NOT NULL`, `step_exec_id TEXT NOT NULL`, `partition_id TEXT NOT NULL`, `prev_contract_text TEXT NOT NULL`, `prev_epoch INTEGER NOT NULL`, `new_contract_text TEXT NOT NULL`, `new_epoch INTEGER NOT NULL`.
-- `topology_overlay_ancestors`: `target_run_id TEXT NOT NULL`, `ancestor_run_id TEXT NOT NULL`, `PRIMARY KEY (target_run_id, ancestor_run_id)`.
-- `lessons`: `id TEXT PRIMARY KEY`, `partition TEXT`, `directive TEXT NOT NULL`, `epoch_at_creation INTEGER NOT NULL`, `created_by_run_id TEXT`, `recent_outcomes_json TEXT NOT NULL`, `total_clean_passes INTEGER NOT NULL DEFAULT 0`, `total_violated INTEGER NOT NULL DEFAULT 0`, `signal_last_emitted_at_json TEXT NOT NULL DEFAULT '{}'`, `retired INTEGER NOT NULL DEFAULT 0`.
-
-### 3.3 `packages/sqlite/src/merge3.ts`
-
-Exports `threeWayMergeText(baseText: string, oursText: string, theirsText: string): { readonly mergedText: string; readonly hadConflictFallback: boolean }`:
-- Performs line-based 3-way merge of `oursText` and `theirsText` against `baseText`.
-- If `oursText === baseText`, returns `theirsText`; if `theirsText === baseText` or `oursText === theirsText`, returns `oursText`.
-- If non-overlapping hunks changed in `oursText` and `theirsText`, merges both cleanly.
-- If genuinely concurrent independent runs modified overlapping lines, falls back to deterministic section concatenation (`SPEC.md` §3.3 line 958) so `commitRunOverlay` never throws or leaves conflict markers in contract text.
+| Normative Source | Section & Exact Line Range | Grounded Scope in `M3a` |
+| :--- | :--- | :--- |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`SqliteLedgerNode`, `PostgresLedgerNode`, `SqliteTopologyNode`, `PostgresTopologyNode`, `SqliteLessonsNode`, `PostgresLessonsNode`, `SqliteRulesSourceNode`, `PostgresRulesSourceNode`), zero I/O at builder time, and late-bound `EnvRef` resolution via `ctx.resolveEnv`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.1 (`lines 180–205`, `325–353`) | `CompactionConfigNode` (`onSignal`, `onTerminalExit`, `retainFailedRunsForDays`) and `TopologyNode.commitOverlayWhen`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2 (`lines 928–1092`) | `BaseSourceASTNode`, `BaseLedgerStoreASTNode`, `BaseTopologyStoreASTNode`, `BaseLessonStoreASTNode`, `SourceASTNode`, `LedgerStoreASTNode`, `TopologyStoreASTNode`, `LessonStoreASTNode`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.3 (`lines 1094–1390`) | `NodeExecutor`, `RuntimeDriverContext`, `ResolutionContext`, `RuntimeExecutorRegistry`, `RuntimeExecutorRegistrySlice`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.6–§2.7 (`lines 1510–2086`) | `CanonicalMessage`, `WireFrameRecord`, `CompiledWirePrefix`, `UniversalStepTelemetry`, `PendingToolBatch`, `AgentPauseState`, `ContinuationFrame`, `SuspendedForkRecord`, `LedgerStore` (`lines 1882–1989`), `TopologyPartitionState`, `TopologyStore` (`lines 1991–2037`), `LessonOutcome`, `DistilledLessonCandidate`, `LessonRecord`, `LessonStore` (`lines 2039–2086`). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.3 (`lines 2194–2205`) | Relational Topology CoW overlay lifecycle (`getPartitions`, `updateContract` with `stepExecId` and at-most-once per-`(runId, partitionId)` epoch increment, `syncRunOverlays`, `resetRunOverlay` for `scope: 'step' \| 'run'`, `sealRunOverlay`, `commitRunOverlay` 3-way merge against `baseContractTextAtAcquire`, `discardRunOverlay`). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1 & §3.4.3 (`lines 2208–2285`) | `GlobalRuleSchema` validation for `sqlite:global-rules` / `postgres:global-rules`, and `LessonStore` relevance scoring $R(L, Q)$ in `queryCandidates`, `admit`, `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, and `retire`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.7.2 (`lines 2460–2532`) | `LedgerStore.mutateLanePlan` (linear prerequisite stacking $T_{\text{prevTip}} \leftarrow T_1 \leftarrow \dots \leftarrow T_k \leftarrow T_{\text{parent}}$, `maxPrerequisiteDepth`, cycle detection), `SuspendedForkRecord` monotonic `${forkId}#${suspensionEpoch}`, and `resolveSuspendedFork` recursive epoch resolution. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.9–§3.10 (`lines 2549–2616`) | `getInterruptedStepsOnBoot` reboot recovery and `compactRunFrames` raw wire frame pruning. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3084–3179`) | `SqliteLedgerNode`, `PostgresLedgerNode`, `SqliteTopologyNode`, `PostgresTopologyNode`, `SqliteLessonsNode`, `PostgresLessonsNode`, `SqliteRulesSourceNode`, `PostgresRulesSourceNode`, and `sqlite.*` / `postgres.*` builder contracts (`line 3176`). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 (`line 3197`) | `import { postgres } from '@harness-dsl/postgres'`. |
+| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §2 (`line 55`) & §6 (`lines 187, 344–355, 457–475, 554`) | `sqlite.ledger('.harness/state.sqlite').compactWhen(...)`, `sqlite.topologyStore('.harness/state.sqlite')`, and `sqlite.globalRules('.harness/state.sqlite', { table: 'owner_global_rules' })`. |
 
 ---
 
-## 4. Critical Implementation Invariants
+## 3. Planned Module Decomposition & Public Exports
 
-1. **Host-Root Path Resolution (`SPEC.md` §1.2 Invariant 5):** `sqlite.ledger`, `sqlite.topologyStore`, `sqlite.lessonStore`, and `sqlite.globalRules` resolve relative file URIs (such as `'.harness/state.sqlite'`) against an immutable `hostRootDir` pinned at store construction time (`path.resolve(opts?.hostRootDir ?? process.cwd(), uri)`), never against `process.cwd()` inside a worktree.
-2. **`getInterruptedStepsOnBoot` Coverage (`SPEC.md` §2.6 lines 719–731):**
-   - Returns all non-terminal runs (`status IN ('RUNNING', 'WAITING', 'SUSPENDED')`).
-   - For runs mid-step, returns the active step's `stepExecId`, `stepId`, `baseScopeCheckpoint`, `headScopeCheckpoint`, and `continuationStack`.
-   - For runs that crashed between steps (before Step 0 `recordStepStart`, between Step $i$ `COMPLETED` and Step $i+1$ `recordStepStart`, or during `.replaceWith()` `abortHook`), returns `stepExecId: null`, `stepId: currentStepId`, and `continuationStack: []`.
-3. **`markFrameTombstone` Immutability (`SPEC.md` §2.5, §3.4.2):**
-   - `markFrameTombstone(runId, messageId, callId, compactedTombstone)` updates `compacted_tombstones_json` (`compactedTombstones[callId] = compactedTombstone`) on `messageId` while keeping `raw_wire_frame` 100% untouched.
-4. **CoW Topology Overlay & 3-Way Stacked-PR Commit (`SPEC.md` §2.6 lines 744–781, §3.3 line 958):**
-   - `getPartitions(runId)`: when `runId` first loads a partition not yet in `topology_run_overlays`, pins `base_contract_text_at_acquire = base.contract_text` from `topology_base_partitions`.
-   - `updateContract(runId, partitionId, newContractText, stepExecId)`: writes to `topology_run_overlays` without re-reading `topology_base_partitions`, increments `current_epoch`, and appends an entry to `topology_overlay_step_mutations` tagged with `stepExecId`.
-   - `syncRunOverlays(targetRunId, prerequisiteRunIds)`: copies `ACTIVE` or `SEALED_UNMERGED` overlay entries from `prerequisiteRunIds` into `targetRunId`, advances `targetRunId`'s `base_contract_text_at_acquire` and `synced_contract_text` for each absorbed partition to the prerequisite's `current_contract_text`, and records `prerequisiteRunIds` (plus their transitive `topology_overlay_ancestors`) in `topology_overlay_ancestors` for `targetRunId`.
-   - `resetRunOverlay(runId, { scope, stepExecId })`: when `scope === 'step'`, reverts only `topology_overlay_step_mutations` matching `(runId, stepExecId)`, restoring `current_contract_text` and `current_epoch` to the state after the latest earlier `COMPLETED` step (or `synced_contract_text` if none); when `scope === 'run'`, deletes all `topology_overlay_step_mutations` for `runId` and resets `current_contract_text = synced_contract_text` and `current_epoch = synced_epoch`.
-   - `commitRunOverlay(runId)`: inside a single SQLite `IMMEDIATE` transaction, collects `committedRunIds = [...ancestors, runId]` (never including dependent child overlays that merely synced *from* `runId` unless folded into `runId` via `syncRunOverlays(runId, [childRunId])`), allocates `newBaseEpoch = currentBase.epoch + 1` monotonically per modified partition, 3-way merges `contractText` against `base_contract_text_at_acquire`, deletes the committed overlays, and returns `{ committedRunIds, updatedEpochs }`.
-5. **Compaction Deadlines & Stacked-PR Safety (`SPEC.md` §2.6 line 732, §3.10 line 1362):**
-   - `compactRunFrames(runId)` zeroes out `raw_wire_frame` (`Uint8Array(0)`) and sets `is_pruned = 1` on `harness_messages` for `run_id = runId` **only** if `runId` is in a terminal state (`status NOT IN ('RUNNING', 'WAITING', 'SUSPENDED', 'QUEUED')`), never pruning frames of any other `runId` (even one sharing the same `itemKey`) and retaining `harness_runs` receipts and `harness_steps` telemetry.
-6. **Offline-Safe SQLite Driver Fallback & Zero-Dependency `PgPoolLike` Engine:**
-   - `@harness-dsl/sqlite` loads `better-sqlite3` when its native binary is present and falls back transparently to Node 22+'s built-in `node:sqlite` (`DatabaseSync`) with identical WAL pragma and synchronous transaction semantics if the native addon is unavailable.
-   - `@harness-dsl/postgres` accepts an injected `PgPoolLike` (`query(sql, params)`) for external PostgreSQL connections and provides a built-in deterministic in-memory transactional engine when `opts?.pool` is omitted so all `@harness-dsl/postgres` contract tests execute with zero external npm driver dependencies.
+Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single primary concept per file, `internal/` helpers, pure `src/index.ts` barrels, complete `/** ... */` JSDoc, and zero inline/non-JSDoc comments).
+
+### 3.1 `packages/sqlite` (`@harness-dsl/sqlite`)
+
+| File Path | Primary Category | Exported Symbols |
+| :--- | :--- | :--- |
+| `src/builders/compaction-config-builder.ts` | `interface` | `CompactionConfigBuilder`, `createCompactionConfigBuilder` |
+| `src/builders/sqlite-ledger-builder.ts` | `interface` | `SqliteLedgerBuilder`, `createSqliteLedgerBuilder` |
+| `src/builders/sqlite-builders.ts` | `function` | `createSqliteTopologyBuilder`, `createSqliteLessonsBuilder`, `createSqliteGlobalRulesBuilder`, `SqliteTopologyBuilder`, `SqliteLessonsBuilder`, `SqliteGlobalRulesBuilder` |
+| `src/builders/sqlite-namespace.constants.ts` | `const` | `sqlite`, `SqliteNamespace` |
+| `src/ddl/sqlite-schema.constants.ts` | `const` | `SQLITE_PRAGMA_STATEMENTS`, `SQLITE_DDL_STATEMENTS` |
+| `src/ddl/internal/open-sqlite-connection.ts` | `function` | `openSqliteConnection`, `assertValidSqlIdentifier` |
+| `src/stores/sqlite-ledger-store.ts` | `class` | `SqliteLedgerStore` (implementing `LedgerStore`) |
+| `src/stores/internal/sqlite-ledger-run-and-step-ops.ts` | `function` | `createOrResumeRunInSqlite`, `recordStepStartInSqlite`, `updateContinuationStackInSqlite`, `updateRunInputInSqlite`, `recordStepTransitionInSqlite`, `recordRunTerminalReceiptInSqlite`, `getRunTerminalReceiptsFromSqlite`, `getInterruptedStepsOnBootFromSqlite` |
+| `src/stores/internal/sqlite-ledger-plan-and-fork-ops.ts` | `function` | `mutateLanePlanInSqlite`, `recordForkSuspensionInSqlite`, `getSuspendedForksFromSqlite`, `resolveSuspendedForkInSqlite` |
+| `src/stores/internal/sqlite-ledger-frame-ops.ts` | `function` | `appendMessageFrameInSqlite`, `replaceMessageFrameInSqlite`, `markFrameTombstoneInSqlite`, `getMessageChainFromSqlite`, `compactRunFramesInSqlite` |
+| `src/stores/sqlite-topology-store.ts` | `class` | `SqliteTopologyStore` (implementing `TopologyStore`) |
+| `src/stores/internal/sqlite-topology-overlay-ops.ts` | `function` | `getPartitionsWithOverlay`, `updateContractInOverlay`, `syncPrerequisiteOverlays`, `resetOverlayByScope`, `sealOverlayForRun`, `commitOverlayThreeWayMerge`, `discardOverlayForRun` |
+| `src/stores/sqlite-lesson-store.ts` | `class` | `SqliteLessonStore` (implementing `LessonStore`) |
+| `src/stores/internal/sqlite-lesson-ops.ts` | `function` | `queryLessonCandidatesInSqlite`, `computeNormalizedRelevance`, `admitLessonInSqlite`, `recordLessonOutcomesInSqlite`, `syncLessonEpochsInSqlite` |
+| `src/executors/sqlite-rules-source-executor.ts` | `function` | `executeSqliteGlobalRulesSource` |
+| `src/executors/sqlite-executors.constants.ts` | `const` | `sqliteExecutors: RuntimeExecutorRegistrySlice`, `createSqliteExecutors` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `sqlite`, `sqliteExecutors`, `createSqliteExecutors`, `SqliteLedgerStore`, `SqliteTopologyStore`, `SqliteLessonStore`, `SqliteLedgerBuilder`, `CompactionConfigBuilder`, `SqliteLedgerNode`, `SqliteTopologyNode`, `SqliteLessonsNode`, `SqliteRulesSourceNode` |
+
+### 3.2 `packages/postgres` (`@harness-dsl/postgres`)
+
+| File Path | Primary Category | Exported Symbols |
+| :--- | :--- | :--- |
+| `src/builders/postgres-ledger-builder.ts` | `interface` | `PostgresLedgerBuilder`, `createPostgresLedgerBuilder` |
+| `src/builders/postgres-builders.ts` | `function` | `createPostgresTopologyBuilder`, `createPostgresLessonsBuilder`, `createPostgresGlobalRulesBuilder`, `PostgresTopologyBuilder`, `PostgresLessonsBuilder`, `PostgresGlobalRulesBuilder` |
+| `src/builders/postgres-namespace.constants.ts` | `const` | `postgres`, `PostgresNamespace` |
+| `src/ddl/postgres-query-client.ts` | `interface` | `PostgresQueryClient`, `PostgresPoolFactory` |
+| `src/ddl/postgres-schema.constants.ts` | `const` | `POSTGRES_DDL_STATEMENTS` |
+| `src/ddl/internal/resolve-postgres-client.ts` | `function` | `resolvePostgresClient`, `assertValidPostgresIdentifier` |
+| `src/stores/postgres-ledger-store.ts` | `class` | `PostgresLedgerStore` (implementing `LedgerStore`) |
+| `src/stores/internal/pg-ledger-run-and-step-ops.ts` | `function` | `createOrResumeRunInPg`, `recordStepStartInPg`, `updateContinuationStackInPg`, `updateRunInputInPg`, `recordStepTransitionInPg`, `recordRunTerminalReceiptInPg`, `getRunTerminalReceiptsFromPg`, `getInterruptedStepsOnBootFromPg` |
+| `src/stores/internal/pg-ledger-plan-and-fork-ops.ts` | `function` | `mutateLanePlanInPg`, `recordForkSuspensionInPg`, `getSuspendedForksFromPg`, `resolveSuspendedForkInPg` |
+| `src/stores/internal/pg-ledger-frame-ops.ts` | `function` | `appendMessageFrameInPg`, `replaceMessageFrameInPg`, `markFrameTombstoneInPg`, `getMessageChainFromPg`, `compactRunFramesInPg` |
+| `src/stores/postgres-topology-store.ts` | `class` | `PostgresTopologyStore` (implementing `TopologyStore`) |
+| `src/stores/internal/pg-topology-overlay-ops.ts` | `function` | `getPartitionsWithPgOverlay`, `updateContractInPgOverlay`, `syncPrerequisitePgOverlays`, `resetPgOverlayByScope`, `sealPgOverlayForRun`, `commitPgOverlayThreeWayMerge`, `discardPgOverlayForRun` |
+| `src/stores/postgres-lesson-store.ts` | `class` | `PostgresLessonStore` (implementing `LessonStore`) |
+| `src/stores/internal/pg-lesson-ops.ts` | `function` | `queryLessonCandidatesInPg`, `admitLessonInPg`, `recordLessonOutcomesInPg`, `syncLessonEpochsInPg` |
+| `src/executors/postgres-rules-source-executor.ts` | `function` | `executePostgresGlobalRulesSource` |
+| `src/executors/postgres-executors.constants.ts` | `const` | `postgresExecutors: RuntimeExecutorRegistrySlice`, `createPostgresExecutors` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `postgres`, `postgresExecutors`, `createPostgresExecutors`, `PostgresLedgerStore`, `PostgresTopologyStore`, `PostgresLessonStore`, `PostgresLedgerBuilder`, `PostgresQueryClient`, `PostgresLedgerNode`, `PostgresTopologyNode`, `PostgresLessonsNode`, `PostgresRulesSourceNode` |
 
 ---
 
-## 5. Required Test Suite (`packages/sqlite/test/*.test.ts` & `packages/postgres/test/*.test.ts`)
+## 4. Detailed Implementation Requirements
 
-1. **`ledger-store.test.ts`:**
-   - `createOrResumeRun` persistence of `compiledPrefixesJson`, `costUsd`, `approvedMaxCostUsd`, `rewindPendingToStepId`, and `completedStepOutputsJson` across multiple completed steps and outer `branchStepId`s.
-   - `appendMessageFrame`, `replaceMessageFrame`, `markFrameTombstone` (verifying `rawWireFrame` bytes stay identical while `compactedTombstones[callId]` updates), and `getMessageChain` root-to-leaf reconstruction.
-   - `recordForkSuspension`, `getSuspendedForks` with `forkIds` and `parentStepExecId` filtering, and `resolveSuspendedFork` (`RESUMED` vs `ABORTED`).
-   - `getInterruptedStepsOnBoot` returning mid-step runs (`baseScopeCheckpoint`, `headScopeCheckpoint`, `continuationStack`) and between-step runs (`stepExecId: null`).
-   - `compactRunFrames(runId)` and persisted deadline survival across store re-instantiation, verifying a new active run for the same `itemKey` is never pruned and run receipts/telemetry remain intact.
-2. **`topology-store.test.ts`:**
-   - Run isolation: `updateContract(runA, 'db', ...)` is invisible to `getPartitions(runB)` and `getPartitions()`.
-   - `baseContractTextAtAcquire` pinning: base store updates after `runA` starts do not alter `runA`'s 3-way merge base.
-   - Step-scoped vs run-scoped rollback: `resetRunOverlay(runA, { scope: 'step', stepExecId: 'step-2' })` preserves `'step-1'` contract updates, while `resetRunOverlay(runA, { scope: 'run' })` reverts back to the synced prerequisite/run-start base.
-   - Stacked PR linear chain ($T_1 \to T_2$) and 3-way merge: `sealRunOverlay(T_1)`, `syncRunOverlays(T_2, [T_1])` advancing $T_2$'s merge base to $C_1$, sequential `commitRunOverlay(T_1)` then `commitRunOverlay(T_2)` merging $C_0 \to C_1 \to C_2$ with zero false conflicts, and verifying `commitRunOverlay(T_1)` does NOT prematurely commit unmerged child $T_2$'s overlay, whereas folding a stacked PR into $T_1$ via `syncRunOverlays(T_1, [T_2])` commits both when $T_1$ merges to `main`.
-3. **`lesson-rule-store.test.ts` & `postgres-stores.test.ts`:**
-   - `LessonStore`: `admit`, `queryCandidates` BM25 relevance score $R(L, Q) \in [0, 1]$ and partition filtering, `recordOutcomes` sliding window and counters, `syncCreationEpochsForRuns`, `markSignalEmitted`, and `retire`.
-   - `sqlite.globalRules` loading validated `GlobalRule[]` and deterministic SHA-256 `digest`.
-   - `postgres.*` adapter contract parity tests against both an injected `PgPoolLike` double and the built-in in-memory transactional engine.
+### 4.1 Pure AST Builders (`sqlite.*` & `postgres.*`, `SPEC.md` §4.5 & `CODING_SAMPLE.md` §6)
+1. **`sqlite.ledger(uri)` & `postgres.ledger(uri)`**:
+   - Returns an immutable `AstBuilder<SqliteLedgerNode>` / `AstBuilder<PostgresLedgerNode>` exposing `.compactWhen(($c) => ...)` and `.toAST()`.
+   - `.compactWhen` receives a configurator with `.onSignal(signal, { correlateBy, afterGracePeriodHours })`, `.onTerminalExit(states, { afterGracePeriodHours })`, and `.retainFailedRunsForDays(days)` matching `CODING_SAMPLE.md` lines `344–355`.
+2. **`sqlite.topologyStore(uri)` / `postgres.topologyStore(uri)`**:
+   - Compiles to `SqliteTopologyNode` (`readonly type: 'sqlite:topology'`) / `PostgresTopologyNode` (`readonly type: 'postgres:topology'`).
+3. **`sqlite.lessonStore(uri)` / `postgres.lessonStore(uri)`**:
+   - Compiles to `SqliteLessonsNode` (`readonly type: 'sqlite:lessons'`) / `PostgresLessonsNode` (`readonly type: 'postgres:lessons'`).
+4. **`sqlite.globalRules(uri, { table })` / `postgres.globalRules(uri, { table })`**:
+   - Compiles to `SqliteRulesSourceNode` (`readonly type: 'sqlite:global-rules'`) / `PostgresRulesSourceNode` (`readonly type: 'postgres:global-rules'`).
+   - Validates `table` against `^[A-Za-z_][A-Za-z0-9_]*$`.
+
+### 4.2 `LedgerStore` Implementation (`SPEC.md` §2.7 lines 1882–1989, §3.7.2, §3.9, §3.10)
+1. **Run & Step Lifecycle**:
+   - `createOrResumeRun`: inserts a new run row (`status: 'RUNNING'`) or returns the existing run's persisted `status`, `currentStepId`, `inputJson`, `rewindPendingToStepId`, `compiledPrefixesJson` (pinned at initial run start and never overwritten on resume), `costUsd`, `approvedMaxCostUsd`, and `completedStepOutputsJson` (`ReadonlyMap<string, string>` mapping completed `stepId -> outputJson`).
+   - `recordStepStart`, `updateContinuationStack` (updating `continuation_stack_json` and optional `baseScopeCheckpoint`), `updateRunInput` (updating `inputJson` and `rewindPendingToStepId`), `recordStepTransition`, `recordRunTerminalReceipt`, `getRunTerminalReceipts`, and `getInterruptedStepsOnBoot` (returning all runs in `'QUEUED' | 'RUNNING' | 'WAITING' | 'SUSPENDED'` along with their latest step's `stepExecId`, `stepId`, `executableId`, `baseScopeCheckpoint`, `headScopeCheckpoint`, and `continuationStack`).
+2. **Dynamic DAG Mutation (`mutateLanePlan`)**:
+   - Enforces `maxPrerequisiteDepth` and DAG acyclicity across `dependsOn` edges.
+   - When `spawnedItems` is provided (`[T_1, ..., T_k]`), chains them linearly onto any previously spawned prerequisite tip $T_{\text{prevTip}}$ of `parentItemKey` ($T_{\text{prevTip}} \leftarrow T_1 \leftarrow \dots \leftarrow T_k \leftarrow T_{\text{parent}}$) inside a single transaction (`SPEC.md` §3.7.2).
+3. **Wire Frame & Compaction Operations**:
+   - `appendMessageFrame`, `replaceMessageFrame` (updating `rawWireFrame` BLOB and `canonical` JSON for `appendToolResultNotes`), `markFrameTombstone` (setting `compactedTombstones[callId] = compactedTombstone` without mutating `rawWireFrame`), `getMessageChain(leafMessageId)` (walking `parentMessageId` links from `leafMessageId` back to root and returning frames in chronological root-to-leaf order), and `compactRunFrames(runId)` (pruning `rawWireFrame` blobs on terminal runs while preserving canonical audit headers).
+4. **Suspended Fork Records (`recordForkSuspension`, `getSuspendedForks`, `resolveSuspendedFork`)**:
+   - Stores `SuspendedForkRecord` keyed by `suspendedForkId` (`${forkId}#${suspensionEpoch}`).
+   - `getSuspendedForks(runId, opts)` returns only unresolved records matching optional `forkIds` (by `forkId` or `suspendedForkId`) and `parentStepExecId`.
+   - `resolveSuspendedFork(suspendedForkId, status)` marks `${forkId}#${epoch}` and any earlier unresolved epochs `${forkId}#1 .. ${forkId}#${epoch}` for the same `(runId, forkId)` as resolved (`'RESUMED' | 'ABORTED'`).
+
+### 4.3 `TopologyStore` Implementation (`SPEC.md` §2.7 lines 1991–2037 & §3.3)
+1. **`getPartitions(runId?)`**:
+   - Returns `ReadonlyMap<string, TopologyPartitionState>` merging any active/sealed overlay for `runId` over the canonical base partitions, and pinning `baseContractTextAtAcquire` on first access for `(runId, partitionId)`.
+2. **`updateContract(runId, partitionId, newContractText, stepExecId?)`**:
+   - Writes to `runId`'s isolated CoW overlay tagged with `stepExecId`, sets `lastMutatedByRunId = runId`, and increments the partition's overlay `epoch` **at most once per `(runId, partitionId)`** (`newEpoch = overlayAlreadyMutatedInRun ? currentOverlayEpoch : currentOverlayEpoch + 1`, unless reset by `resetRunOverlay`).
+3. **`syncRunOverlays(targetRunId, prerequisiteRunIds)`**:
+   - Merges `ACTIVE` or `SEALED_UNMERGED` overlays from `prerequisiteRunIds` into `targetRunId`'s overlay, preserving `lastMutatedByRunId` and advancing `targetRunId`'s `baseContractTextAtAcquire` for each absorbed partition to the prerequisite's `contractText` so stacked PR commits never false-conflict.
+4. **`resetRunOverlay(runId, opts)`**:
+   - When `opts?.scope === 'step'`, reverts overlay mutations tagged with `opts.stepExecId` back to the pre-step overlay state (preserving earlier completed steps' overlay mutations); when `scope === 'run'` (or omitted), resets all uncommitted overlay mutations for `runId` back to its synced prerequisite/run-start baseline.
+5. **`sealRunOverlay`, `commitRunOverlay`, and `discardRunOverlay`**:
+   - `sealRunOverlay(runId)` transitions `runId`'s overlay to `SEALED_UNMERGED`.
+   - `commitRunOverlay(runId)` atomically commits `runId`'s overlay (and any absorbed prerequisite `SEALED_UNMERGED` overlays) into the canonical base table, allocating `base.epoch = currentBase.epoch + 1` monotonically, performing a 3-way contract text merge against `baseContractTextAtAcquire`, and returning `{ committedRunIds, updatedEpochs }`.
+   - `discardRunOverlay(runId)` deletes `runId`'s overlay without modifying canonical base rows.
+
+### 4.4 `LessonStore` & Global Rules Source Executor (`SPEC.md` §2.7 lines 2039–2086, §3.4, §4.5)
+1. **`LessonStore`**:
+   - `queryCandidates({ queryText, partitions })`: queries non-retired lessons matching `partition IS NULL OR partition IN (partitions)`, computes normalized token/trigram similarity `relevanceScore` $R(L, Q) \in [0, 1]$, and returns `LessonRecord[]`.
+   - `admit`, `recordOutcomes` (appending to `recentOutcomes` and incrementing `totalCleanPasses` on `'clean_pass'` or `totalViolated` on `'violated'`), `syncCreationEpochsForRuns(runIds, updatedEpochs)`, `markSignalEmitted(lessonId, signalId, emittedAt)`, and `retire(lessonIds)`.
+2. **`sqlite:global-rules` & `postgres:global-rules` Source Executor**:
+   - Queries `SELECT id, directive FROM <table> ORDER BY id ASC`, validates rows with `z.array(GlobalRuleSchema)`, computes SHA-256 `digest`, and returns `{ content: rules, digest }`.
+
+---
+
+## 5. Deterministic Test Suite Architecture (`test/**` & `test/fixtures/**`)
+
+| File Path | Line Ceiling | Required Deterministic Test Cases |
+| :--- | :--- | :--- |
+| `packages/sqlite/test/fixtures/temp-sqlite-db.ts` | `<= 250` | Creates and cleans up real temporary SQLite database files in `os.tmpdir()`. |
+| `packages/sqlite/test/sqlite-builders-and-rules.test.ts` | `<= 400` | Verifies `sqlite.ledger(uri).compactWhen(...)`, `sqlite.topologyStore(uri)`, `sqlite.lessonStore(uri)`, `sqlite.globalRules(uri, { table })`, `.toAST()` immutability, SQL identifier validation, and `sqlite:global-rules` source execution with `GlobalRuleSchema` validation and SHA-256 digest computation. |
+| `packages/sqlite/test/sqlite-ledger-store.test.ts` | `<= 400` | Verifies `SqliteLedgerStore`: `createOrResumeRun` (pinning `compiledPrefixesJson`), `recordStepStart`, `updateContinuationStack`, `mutateLanePlan` (linear stacking chain $T_{\text{prevTip}} \leftarrow T_1 \leftarrow T_2 \leftarrow T_{\text{parent}}$, depth limit, cycle rejection), `appendMessageFrame`, `replaceMessageFrame`, `markFrameTombstone`, `getMessageChain`, `SuspendedForkRecord` epoch tracking & recursive `resolveSuspendedFork`, `getInterruptedStepsOnBoot`, and `compactRunFrames`. |
+| `packages/sqlite/test/sqlite-topology-and-lessons.test.ts` | `<= 400` | Verifies `SqliteTopologyStore` (CoW overlay isolation, at-most-once per-run epoch increment, `syncRunOverlays` stacked-PR baseline advancement, `resetRunOverlay` for `scope: 'step'` vs `'run'`, `sealRunOverlay`, `commitRunOverlay` 3-way merge returning `{ committedRunIds, updatedEpochs }`, `discardRunOverlay`) and `SqliteLessonStore` (`admit`, `queryCandidates` with `relevanceScore`, `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire`). |
+| `packages/postgres/test/fixtures/sqlite-backed-pg-client.ts` | `<= 250` | Deterministic local SQL adapter implementing `PostgresQueryClient` for offline unit testing of `@harness-dsl/postgres`. |
+| `packages/postgres/test/postgres-builders-and-stores.test.ts` | `<= 400` | Verifies `postgres.*` builders (including `H.env('DATABASE_URL')` late-bound resolution), `PostgresLedgerStore`, `PostgresTopologyStore`, `PostgresLessonStore`, and `postgres:global-rules` source executor. |
 
 ---
 
 ## 6. Verification Gate Commands
 
+Run from workspace root:
+
 ```bash
-pnpm check:comments
-pnpm --filter @harness-dsl/sqlite typecheck
-pnpm --filter @harness-dsl/sqlite test
-pnpm --filter @harness-dsl/postgres typecheck
-pnpm --filter @harness-dsl/postgres test
+pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres typecheck
+pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres test -- --reporter=verbose
+test -z "$(git status --porcelain -- packages/core packages/fs packages/markdown packages/node packages/git packages/claude packages/openai packages/gemini packages/github packages/slack packages/stripe packages/netsuite packages/integration)"
 ```
