@@ -7,14 +7,14 @@ import type {
 import { extractAST } from '../ast/extract-ast.js';
 import type { PolicyGuardClauseNode } from '../ast/policy-guard-clause-node.types.js';
 import type { PolicyNode } from '../ast/policy-node.js';
-import type { CreatePolicyBuilderOptions } from './create-policy-builder-state.js';
+import type { CreatePolicyBuilderState as CreatePolicyBuilderOptions } from './create-policy-builder-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
 import {
   createPolicyGuardClausePendingBuilder,
   createPolicyLimitExceededBuilder,
 } from './internal/policy-sub-builders.js';
 import type { PolicyBuilder } from './policy-builder.js';
-import type { PolicyGuardClausePendingBuilder } from './policy-guard-clause-builder.js';
+import type { PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder } from './policy-guard-clause-builder.js';
 import type { PolicyLimitExceededBuilder } from './policy-limit-exceeded-builder.js';
 
 /**
@@ -40,52 +40,28 @@ export function createPolicyBuilder<THandle = unknown>(
 
   return Object.freeze<PolicyBuilder<THandle>>({
     id,
-    guard(
-      ...guards: ReadonlyArray<MaybeBuilder<PolicyGuardASTNode>>
-    ): PolicyGuardClausePendingBuilder<THandle> {
+    guard(...guards: ReadonlyArray<MaybeBuilder<PolicyGuardASTNode>>): PolicyGuardClausePendingBuilder<THandle> {
       const extractedGuards: PolicyGuardASTNode[] = [];
-      for (const g of guards) {
-        extractedGuards.push(extractAST(g));
-      }
+      for (const g of guards) extractedGuards.push(extractAST(g));
       return createPolicyGuardClausePendingBuilder<THandle>(
         `${id}:clause:${currentClauses.length}`,
         extractedGuards,
         (clause: PolicyGuardClauseNode) =>
-          createPolicyBuilder<THandle>(id, {
-            ...options,
-            clauses: Object.freeze([...currentClauses, clause]),
-          }),
+          createPolicyBuilder<THandle>(id, { ...options, clauses: Object.freeze([...currentClauses, clause]) }),
       );
     },
-    tripwire(
-      ...tripwires: ReadonlyArray<MaybeBuilder<QuotaTripwireASTNode>>
-    ): PolicyBuilder<THandle> {
+    tripwire(...tripwires: ReadonlyArray<MaybeBuilder<QuotaTripwireASTNode>>): PolicyBuilder<THandle> {
       const next: QuotaTripwireASTNode[] = [...currentTripwires];
-      for (const tw of tripwires) {
-        next.push(extractAST(tw));
-      }
-      return createPolicyBuilder<THandle>(id, {
-        ...options,
-        tripwires: Object.freeze(next),
-      });
+      for (const tw of tripwires) next.push(extractAST(tw));
+      return createPolicyBuilder<THandle>(id, { ...options, tripwires: Object.freeze(next) });
     },
-    maxTurns(turns: number): PolicyBuilder<THandle> {
-      return createPolicyBuilder<THandle>(id, { ...options, maxTurns: turns });
-    },
-    maxCostUsd(costUsd: number): PolicyBuilder<THandle> {
-      return createPolicyBuilder<THandle>(id, { ...options, maxCostUsd: costUsd });
-    },
-    maxDurationSeconds(seconds: number): PolicyBuilder<THandle> {
-      return createPolicyBuilder<THandle>(id, { ...options, maxDurationSeconds: seconds });
-    },
-    onAbort(
-      hook: MaybeBuilder<AbortHookASTNode<THandle, Record<string, unknown>>>,
-    ): PolicyBuilder<THandle> {
-      return createPolicyBuilder<THandle>(id, { ...options, abortHook: extractAST(hook) });
-    },
-    onLimitExceeded(
-      configure: ($limit: PolicyLimitExceededBuilder<THandle>) => PolicyLimitExceededBuilder<THandle>,
-    ): PolicyBuilder<THandle> {
+    maxTurns: (turns: number) => createPolicyBuilder<THandle>(id, { ...options, maxTurns: turns }),
+    maxCostUsd: (costUsd: number) => createPolicyBuilder<THandle>(id, { ...options, maxCostUsd: costUsd }),
+    maxDurationSeconds: (seconds: number) =>
+      createPolicyBuilder<THandle>(id, { ...options, maxDurationSeconds: seconds }),
+    onAbort: (hook: MaybeBuilder<AbortHookASTNode<THandle, Record<string, unknown>>>) =>
+      createPolicyBuilder<THandle>(id, { ...options, abortHook: extractAST(hook) }),
+    onLimitExceeded: (configure: ($limit: PolicyLimitExceededBuilder<THandle>) => PolicyLimitExceededBuilder<THandle>) => {
       const built = configure(createPolicyLimitExceededBuilder<THandle>(id)).build();
       return createPolicyBuilder<THandle>(id, { ...options, onLimitExceeded: built });
     },
@@ -95,9 +71,7 @@ export function createPolicyBuilder<THandle = unknown>(
       for (let i = 0; i < currentClauses.length; i += 1) {
         const existing = currentClauses[i];
         if (existing !== undefined) {
-          rekeyedClauses.push(
-            deepFreeze<PolicyGuardClauseNode>({ ...existing, id: `${newId}:clause:${i}` }),
-          );
+          rekeyedClauses.push(deepFreeze<PolicyGuardClauseNode>({ ...existing, id: `${newId}:clause:${i}` }));
         }
       }
       return createPolicyBuilder<THandle>(newId, {

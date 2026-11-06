@@ -15,10 +15,10 @@ import {
   zodToJsonSchema,
 } from '../src/index.js';
 import {
-  SampleCrossReportSchema,
-  SampleScopeReceiptSchema,
-  Tier1ScopeNode,
-  Tier2ScopeNode,
+  SAMPLE_CROSS_REPORT_SCHEMA,
+  SAMPLE_SCOPE_RECEIPT_SCHEMA,
+  SAMPLE_TIER1_SCOPE_NODE,
+  SAMPLE_TIER2_SCOPE_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 
 describe('AST extraction, symbolic EnvRef, and CustomDomainASTRegistry merging', () => {
@@ -57,8 +57,8 @@ describe('AST extraction, symbolic EnvRef, and CustomDomainASTRegistry merging',
   });
 
   it('merges both exact keys and namespaced keys in CustomDomainASTRegistry', () => {
-    const tier1AsCustom: CustomDomainAST<'scope'> = Tier1ScopeNode;
-    const tier2AsCustom: CustomDomainAST<'scope'> = Tier2ScopeNode;
+    const tier1AsCustom: CustomDomainAST<'scope'> = SAMPLE_TIER1_SCOPE_NODE;
+    const tier2AsCustom: CustomDomainAST<'scope'> = SAMPLE_TIER2_SCOPE_NODE;
     const scopes: readonly IsolationScopeASTNode[] = [tier1AsCustom, tier2AsCustom];
 
     expect(scopes[0]?.type).toBe('sample:tier1-scope');
@@ -129,8 +129,8 @@ describe('Built-in Zod schemas and SpeculationInputSchema', () => {
     const candidateSchema = SpeculationCandidateSchema(
       branchInSchema,
       branchOutSchema,
-      SampleScopeReceiptSchema,
-      SampleCrossReportSchema,
+      SAMPLE_SCOPE_RECEIPT_SCHEMA,
+      SAMPLE_CROSS_REPORT_SCHEMA,
       escalationUnionSchema,
     );
 
@@ -171,8 +171,8 @@ describe('Built-in Zod schemas and SpeculationInputSchema', () => {
     const arbiterInputSchema = SpeculationInputSchema(
       branchInSchema,
       branchOutSchema,
-      SampleScopeReceiptSchema,
-      SampleCrossReportSchema,
+      SAMPLE_SCOPE_RECEIPT_SCHEMA,
+      SAMPLE_CROSS_REPORT_SCHEMA,
       escalationUnionSchema,
     );
 
@@ -245,10 +245,15 @@ describe('Deterministic canonical zodToJsonSchema converter', () => {
       type: 'object',
     });
 
-    const propsValue = jsonSchema['properties'];
-    const propKeys =
-      typeof propsValue === 'object' && propsValue !== null ? Object.keys(propsValue) : [];
-    expect(propKeys).toEqual([
+    expect(Object.keys(jsonSchema)).toEqual([
+      'additionalProperties',
+      'description',
+      'properties',
+      'required',
+      'type',
+    ]);
+    const propsValue = jsonSchema['properties'] as Record<string, Record<string, unknown>>;
+    expect(Object.keys(propsValue)).toEqual([
       'alpha',
       'defaultedCount',
       'exactTag',
@@ -260,6 +265,24 @@ describe('Deterministic canonical zodToJsonSchema converter', () => {
       'pair',
       'zebra',
     ]);
+    expect(Object.keys(propsValue['defaultedCount'] ?? {})).toEqual(['default', 'type']);
+    expect(Object.keys(propsValue['exactTag'] ?? {})).toEqual(['const', 'type']);
+    expect(Object.keys(propsValue['items'] ?? {})).toEqual(['items', 'type']);
+    expect(Object.keys(propsValue['labels'] ?? {})).toEqual(['additionalProperties', 'type']);
+    expect(Object.keys(propsValue['mode'] ?? {})).toEqual(['enum', 'type']);
+    expect(Object.keys(propsValue['pair'] ?? {})).toEqual(['items', 'prefixItems', 'type']);
+    expect(Object.keys(propsValue['zebra'] ?? {})).toEqual(['description', 'type']);
+  });
+
+  it('handles literal null, literal bigint, and numeric nativeEnum without reverse-mapping keys', () => {
+    enum NumericSeverity {
+      Low = 0,
+      Medium = 1,
+      High = 2,
+    }
+    expect(zodToJsonSchema(z.literal(null))).toEqual({ const: null, type: 'null' });
+    expect(zodToJsonSchema(z.literal(42n))).toEqual({ const: 42, type: 'integer' });
+    expect(zodToJsonSchema(z.nativeEnum(NumericSeverity))).toEqual({ enum: [0, 1, 2] });
   });
 
   it('converts discriminated unions, intersections, and effects deterministically', () => {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { InterruptNode } from '../ast/interrupt-node.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
-import type { ConfigurableInterruptBuilder } from './interrupt-payload-builder.js';
+import type { InterruptPayloadBuilder as ConfigurableInterruptBuilder } from './interrupt-payload-builder.js';
 
 /**
  * Creates a copy-on-write immutable `ConfigurableInterruptBuilder` for `H.interrupt(id)`.

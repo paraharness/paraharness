@@ -31,5 +31,3 @@ export interface CreateSkillBuilderState<THandle = unknown> {
   /** Lease lifecycle mode. */
   readonly leaseMode?: 'until-completed-or-fork-exit';
 }
-
-export type { CreateSkillBuilderState as CreateSkillBuilderOptions };

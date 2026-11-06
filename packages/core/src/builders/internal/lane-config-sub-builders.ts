@@ -1,11 +1,7 @@
 import type { TrackerASTNode } from '../../ast/domain-ast.types.js';
 import type { LaneTrackerConfig } from '../../ast/lane-node.js';
-import type { LaneTrackerBuilder } from '../lane-tracker-config-builder.js';
-import { createLaneRetryFromState } from './create-lane-retry-from-state.js';
-import { createLaneSignalHandlerFromState } from './create-lane-signal-handler-from-state.js';
+import type { LaneTrackerConfigBuilder as LaneTrackerBuilder } from '../lane-tracker-config-builder.js';
 import { deepFreeze } from './deep-freeze.js';
-
-export { createLaneRetryFromState, createLaneSignalHandlerFromState };
 
 /**
  * Creates an immutable `LaneTrackerBuilder` from an internal state snapshot.

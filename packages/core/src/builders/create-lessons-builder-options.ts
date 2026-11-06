@@ -31,5 +31,3 @@ export interface CreateLessonsBuilderOptions<TIn = unknown> {
   /** Registered promotion signal triggers. */
   readonly emitSignalTriggers?: readonly LessonEmitSignalTrigger[];
 }
-
-export type { CreateLessonsBuilderOptions as CreateLessonsBuilderState };

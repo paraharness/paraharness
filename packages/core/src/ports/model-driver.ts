@@ -5,12 +5,6 @@ import type { ModelTurnResponse } from './model-turn-response.js';
 import type { PrepareForkTarget } from './prepare-fork-target.js';
 import type { WireFrameRecord } from './wire-frame-record.js';
 
-export type { AppendToolResultNotesOptions } from './append-tool-result-notes-options.js';
-export type { ModelForkTarget } from './model-fork-target.js';
-export type { ModelTurnRequest } from './model-turn-request.js';
-export type { ModelTurnResponse, ModelTurnUsage, ModelUsageMetrics } from './model-turn-response.js';
-export type { PrepareForkTarget } from './prepare-fork-target.js';
-
 /**
  * Runtime port for LLM provider protocol drivers (`@harness-dsl/claude`, `@harness-dsl/openai`, `@harness-dsl/gemini`).
  *

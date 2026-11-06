@@ -1,9 +1,7 @@
 import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { AstBuilder } from '../ast/ast-builder.js';
-import type {
-  AdjudicateInterruptHandlerNode,
-  InterruptHandlerNode,
-} from '../ast/interrupt-handler-node.types.js';
+import type { AdjudicateInterruptHandlerNode } from '../ast/adjudicate-interrupt-handler-node.js';
+import type { InterruptHandlerNode } from '../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../ast/interrupt-node.js';
 import type { LeaseDelta } from '../ports/lease-delta.js';
 import type { InterruptEdgeBuilder } from './interrupt-edge-builder.js';
@@ -72,5 +70,3 @@ export interface AdjudicateInterruptBuilder<
     formatter: (input: TIn, payload: TPayload, verdict: TVerdict) => string,
   ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>;
 }
-
-export type { AdjudicateInterruptBuilder as AdjudicateInterruptEdgeBuilder };

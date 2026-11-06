@@ -2,21 +2,18 @@ import type { z } from 'zod';
 import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { LessonStoreASTNode, ModelASTNode } from '../ast/domain-ast.types.js';
 import { extractAST } from '../ast/extract-ast.js';
-import type {
-  LessonEmitSignalTrigger,
-  LessonsNode,
-} from '../ast/lessons-node.js';
+import type { LessonEmitSignalTrigger, LessonsNode } from '../ast/lessons-node.js';
 import type { PoolNode } from '../ast/pool-node.js';
 import type { SignalNode } from '../ast/signal-node.js';
 import type { LessonRecord } from '../ports/lesson-record.js';
 import type { CreateLessonsBuilderOptions } from './create-lessons-builder-options.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
+import { DEFAULT_LESSON_SCORING } from './internal/lesson-scoring.constants.js';
 import {
   createLessonDistillationBuilder,
   createLessonRetirementBuilder,
   createLessonScoringBuilder,
   createLessonSignalTriggerBuilder,
-  DEFAULT_LESSON_SCORING,
 } from './internal/lessons-sub-builders.js';
 import type { LessonDistillationBuilder } from './lesson-distillation-builder.js';
 import type { LessonRetirementBuilder } from './lesson-retirement-builder.js';
@@ -47,14 +44,10 @@ export function createLessonsBuilder<TIn = unknown>(
 
   return Object.freeze<LessonsBuilder<TIn>>({
     id,
-    store(lessonStore: MaybeBuilder<LessonStoreASTNode>): LessonsBuilder<TIn> {
-      return createLessonsBuilder<TIn>(id, { ...options, store: extractAST(lessonStore) });
-    },
-    queryFrom<TNextIn>(
-      schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
-      mapper: (input: TNextIn) => string,
-    ): LessonsBuilder<TNextIn> {
-      return createLessonsBuilder<TNextIn>(id, {
+    store: (lessonStore: MaybeBuilder<LessonStoreASTNode>) =>
+      createLessonsBuilder<TIn>(id, { ...options, store: extractAST(lessonStore) }),
+    queryFrom: <TNextIn>(schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>, mapper: (input: TNextIn) => string) =>
+      createLessonsBuilder<TNextIn>(id, {
         store: options?.store,
         querySchema: schema,
         queryMapper: mapper,
@@ -62,36 +55,29 @@ export function createLessonsBuilder<TIn = unknown>(
         scoring: currentScoring,
         retireAfter: options?.retireAfter,
         emitSignalTriggers: currentTriggers,
-      });
-    },
-    distillWith(
+      }),
+    distillWith: (
       model: MaybeBuilder<ModelASTNode | PoolNode<ModelASTNode>>,
       configure: ($d: LessonDistillationBuilder) => LessonDistillationBuilder,
-    ): LessonsBuilder<TIn> {
+    ) => {
       const built = configure(createLessonDistillationBuilder(extractAST(model))).build();
       return createLessonsBuilder<TIn>(id, { ...options, distillation: built });
     },
-    scoring(
-      configure: ($s: LessonScoringBuilder) => LessonScoringBuilder,
-    ): LessonsBuilder<TIn> {
+    scoring: (configure: ($s: LessonScoringBuilder) => LessonScoringBuilder) => {
       const built = configure(createLessonScoringBuilder(currentScoring)).build();
       return createLessonsBuilder<TIn>(id, { ...options, scoring: built });
     },
-    retireAfter(
-      configure: ($r: LessonRetirementBuilder) => LessonRetirementBuilder,
-    ): LessonsBuilder<TIn> {
+    retireAfter: (configure: ($r: LessonRetirementBuilder) => LessonRetirementBuilder) => {
       const built = configure(createLessonRetirementBuilder(options?.retireAfter ?? {})).build();
       return createLessonsBuilder<TIn>(id, { ...options, retireAfter: built });
     },
-    emitSignalWhen<TPayload>(
+    emitSignalWhen: <TPayload>(
       signal: MaybeBuilder<SignalNode<TPayload>>,
       configure: ($t: LessonSignalTriggerBuilder) => LessonSignalTriggerBuilder,
       mapPayload: (lesson: LessonRecord) => TPayload,
-    ): LessonsBuilder<TIn> {
+    ) => {
       const thresholds = configure(createLessonSignalTriggerBuilder()).build();
-      const trigger: LessonEmitSignalTrigger<TPayload> = deepFreeze<
-        LessonEmitSignalTrigger<TPayload>
-      >({
+      const trigger = deepFreeze<LessonEmitSignalTrigger<TPayload>>({
         signal: extractAST(signal),
         minCleanPasses: thresholds.minCleanPasses,
         maxViolations: thresholds.maxViolations,

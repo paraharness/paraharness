@@ -9,8 +9,6 @@ import type { PolicyNode } from '../ast/policy-node.js';
 import type { ExtractEvalScopeReceipt } from './flow-extraction.types.js';
 import type { LoopEvaluateOptions } from './loop-evaluate-options.js';
 
-export type { ExtractEvalScopeReceipt } from './flow-extraction.types.js';
-
 /**
  * Fluent builder for an iterative action-and-evaluation refinement loop (`H.loop(id)`).
  *

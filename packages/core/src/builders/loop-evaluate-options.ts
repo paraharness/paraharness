@@ -1,7 +1,5 @@
 import type { ExtractEvalScopeReceipt } from './flow-extraction.types.js';
 
-export type { ExtractEvalScopeReceipt } from './flow-extraction.types.js';
-
 /**
  * Configuration options passed to `LoopBuilder.evaluate(stepId, evaluator, options)`.
  *

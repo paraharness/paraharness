@@ -6,8 +6,6 @@ import { createForkModelRoutingFromState } from './create-fork-model-routing-fro
 import { deepFreeze } from './deep-freeze.js';
 import type { ForkCapabilityBuilderState } from './fork-capability-builder-state.js';
 
-export { createForkModelRoutingFromState };
-
 /**
  * Creates a copy-on-write immutable `ForkCapabilityBuilder` from an internal state snapshot.
  *

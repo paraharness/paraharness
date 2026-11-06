@@ -18,11 +18,9 @@ import type {
 } from '../flow-extraction.types.js';
 import type { FlowStepConfigBuilder } from '../flow-step-config-builder.js';
 import { compileFlowStateToNode } from './compile-flow-state-to-node.js';
+import { createFlowStepConfigFromState } from './create-flow-step-config-from-state.js';
 import { assertNonEmptyIdentifier } from './deep-freeze.js';
-import {
-  createFlowBranchFromState,
-  createFlowStepConfigFromState,
-} from './flow-branch-sub-builders.js';
+import { createFlowBranchFromState } from './flow-branch-sub-builders.js';
 import type { FlowBuilderState } from './flow-builder-state.js';
 
 /**
@@ -43,98 +41,31 @@ import type { FlowBuilderState } from './flow-builder-state.js';
  * @returns {FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>} Frozen flow builder.
  */
 export function createFlowFromState<
-  TIn = unknown,
-  THandle = unknown,
-  TStepIds extends string = never,
-  TReceipt = unknown,
+  TIn = unknown, THandle = unknown, TStepIds extends string = never, TReceipt = unknown,
   TCustomMetrics extends Record<string, unknown> = Record<string, unknown>,
   TStepOutputs extends Record<string, unknown> = Record<string, never>,
 >(
   state: FlowBuilderState<TIn, THandle, TStepIds>,
 ): FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs> {
-  return Object.freeze<
-    FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>
-  >({
+  return Object.freeze<FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>>({
     id: state.id,
     input: <TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>) =>
-      createFlowFromState<TNewIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>({
-        ...state,
-        inputSchema: schema,
-        nodes: [],
-      }),
+      createFlowFromState<TNewIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>({ ...state, inputSchema: schema, nodes: [] }),
     scope: <TScope extends IsolationScopeASTNode>(scope: MaybeBuilder<TScope>) =>
-      createFlowFromState<
-        TIn,
-        ExtractScopeHandle<TScope>,
-        TStepIds,
-        ExtractScopeReceipt<TScope>,
-        TCustomMetrics,
-        TStepOutputs
-      >({
-        ...state,
-        scope: extractAST(scope),
-        nodes: [],
-      }),
-    telemetry: <TCollector extends TelemetryCollectorASTNode>(
-      collector: MaybeBuilder<TCollector>,
-    ) =>
-      createFlowFromState<
-        TIn,
-        THandle,
-        TStepIds,
-        TReceipt,
-        ExtractTelemetryMetrics<TCollector>,
-        TStepOutputs
-      >({
-        ...state,
-        telemetry: extractAST(collector),
-      }),
+      createFlowFromState<TIn, ExtractScopeHandle<TScope>, TStepIds, ExtractScopeReceipt<TScope>, TCustomMetrics, TStepOutputs>({ ...state, scope: extractAST(scope), nodes: [] }),
+    telemetry: <TCollector extends TelemetryCollectorASTNode>(collector: MaybeBuilder<TCollector>) =>
+      createFlowFromState<TIn, THandle, TStepIds, TReceipt, ExtractTelemetryMetrics<TCollector>, TStepOutputs>({ ...state, telemetry: extractAST(collector) }),
     step: <TStepId extends string, TStep extends StepASTNode>(
       id: TStepId,
       step: MaybeBuilder<TStep>,
       configure?: (
-        $s: FlowStepConfigBuilder<
-          TIn,
-          ExtractStepInput<TStep>,
-          THandle,
-          TReceipt,
-          TCustomMetrics,
-          TStepOutputs,
-          TStepId
-        >,
-      ) => FlowStepConfigBuilder<
-        TIn,
-        ExtractStepInput<TStep>,
-        THandle,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs,
-        TStepId
-      >,
+        $s: FlowStepConfigBuilder<TIn, ExtractStepInput<TStep>, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>,
+      ) => FlowStepConfigBuilder<TIn, ExtractStepInput<TStep>, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>,
     ) => {
       assertNonEmptyIdentifier('H.flow.step', id);
-      const baseConfig = createFlowStepConfigFromState<
-        TIn,
-        ExtractStepInput<TStep>,
-        THandle,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs,
-        TStepId
-      >({
-        id,
-        step: extractAST(step),
-        onInterruptHandlers: [],
-      });
+      const baseConfig = createFlowStepConfigFromState<TIn, ExtractStepInput<TStep>, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>({ id, step: extractAST(step), onInterruptHandlers: [] });
       const compiledStep = (configure !== undefined ? configure(baseConfig) : baseConfig).toAST();
-      return createFlowFromState<
-        TIn,
-        THandle,
-        TStepIds | TStepId,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs & { readonly [K in TStepId]: ExtractStepOutput<TStep> }
-      >({
+      return createFlowFromState<TIn, THandle, TStepIds | TStepId, TReceipt, TCustomMetrics, TStepOutputs & { readonly [K in TStepId]: ExtractStepOutput<TStep> }>({
         ...state,
         nodes: [...state.nodes, compiledStep],
       });
@@ -142,60 +73,21 @@ export function createFlowFromState<
     branch: <TBranchId extends string, TBranchOut>(
       id: TBranchId,
       configure: (
-        $b: FlowBranchBuilder<
-          TIn,
-          unknown,
-          THandle,
-          TBranchId,
-          TReceipt,
-          TCustomMetrics,
-          TStepOutputs
-        >,
-      ) => FlowBranchBuilder<
-        TIn,
-        TBranchOut,
-        THandle,
-        TBranchId,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs
-      >,
+        $b: FlowBranchBuilder<TIn, unknown, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>,
+      ) => FlowBranchBuilder<TIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>,
     ) => {
       assertNonEmptyIdentifier('H.flow.branch', id);
       const branchNode = configure(
-        createFlowBranchFromState<
-          TIn,
-          unknown,
-          THandle,
-          TBranchId,
-          TReceipt,
-          TCustomMetrics,
-          TStepOutputs
-        >({
-          id,
-          outputSchema: undefined,
-          cases: [],
-          otherwiseSteps: [],
-        }),
+        createFlowBranchFromState<TIn, unknown, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>({ id, outputSchema: undefined, cases: [], otherwiseSteps: [] }),
       ).toAST();
-      return createFlowFromState<
-        TIn,
-        THandle,
-        TStepIds | TBranchId,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs & { readonly [K in TBranchId]: TBranchOut }
-      >({
+      return createFlowFromState<TIn, THandle, TStepIds | TBranchId, TReceipt, TCustomMetrics, TStepOutputs & { readonly [K in TBranchId]: TBranchOut }>({
         ...state,
         nodes: [...state.nodes, branchNode],
       });
     },
     exit: (exitState: string) => {
       assertNonEmptyIdentifier('H.flow.exit', exitState);
-      return createFlowFromState<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>({
-        ...state,
-        exitState,
-      });
+      return createFlowFromState<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>({ ...state, exitState });
     },
     toAST: (): FlowNode<TIn, THandle, TStepIds> => compileFlowStateToNode(state),
   });

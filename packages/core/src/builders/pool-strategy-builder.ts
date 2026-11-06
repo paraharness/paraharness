@@ -34,5 +34,3 @@ export interface PoolStrategyBuilder<TItem = unknown> {
     selectorOrNode: PoolSelectorFn<TItem> | PoolStrategyNode<TItem>,
   ): AstBuilder<PoolStrategyNode<TItem>>;
 }
-
-export type { PoolStrategyBuilder as PoolStrategyConfigurator };

@@ -28,8 +28,6 @@ import type { ToolEffect } from './tool-effect.js';
 import type { TopologyStore } from './topology-store.js';
 import type { TrackerAdapter } from './tracker-adapter.js';
 
-export type { RuntimeExecutorRegistrySlice } from './runtime-executor-registry-slice.js';
-
 /**
  * Resolved artifact returned by a `SourceASTNode` executor in `RuntimeExecutorRegistry.sources`.
  *

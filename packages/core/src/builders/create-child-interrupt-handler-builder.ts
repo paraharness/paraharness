@@ -25,5 +25,3 @@ export function createChildInterruptHandlerBuilder<TPayload = unknown>(
     suspended: false,
   });
 }
-
-export { createChildInterruptHandlerBuilder as createChildInterruptBuilder };

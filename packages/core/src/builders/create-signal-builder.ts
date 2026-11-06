@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { SignalNode } from '../ast/signal-node.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
-import type { ConfigurableSignalBuilder } from './signal-payload-builder.js';
+import type { SignalPayloadBuilder as ConfigurableSignalBuilder } from './signal-payload-builder.js';
 
 /**
  * Creates a copy-on-write immutable `ConfigurableSignalBuilder` for `H.signal(id)`.

@@ -2,12 +2,10 @@ import type { MaybeBuilder, MaybeSource, SourceValue } from '../ast/ast-foundati
 import { extractAST } from '../ast/extract-ast.js';
 import type { PrefixGroupNode } from '../ast/prefix-group-node.js';
 import type { RulesNode } from '../ast/rules-node.js';
-import type { CreatePrefixGroupBuilderOptions } from './create-prefix-group-builder-state.js';
+import type { CreatePrefixGroupBuilderState as CreatePrefixGroupBuilderOptions } from './create-prefix-group-builder-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
 import { normalizeMaybeSource } from './internal/normalize-maybe-source.js';
 import type { PrefixGroupBuilder } from './prefix-group-builder.js';
-
-export { normalizeMaybeSource };
 
 /**
  * Creates a fluent `PrefixGroupBuilder` for `H.prefixGroup(id)`.

@@ -23,9 +23,7 @@ import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js'
  */
 export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = unknown>(
   id: string,
-  optionsOrState?:
-    | CommandConfigOptions<TIn, TOut, THandle>
-    | CreateCommandBuilderState<TIn, TOut, THandle>,
+  optionsOrState?: CommandConfigOptions<TIn, TOut, THandle> | CreateCommandBuilderState<TIn, TOut, THandle>,
 ): CommandBuilder<TIn, TOut, THandle> {
   assertNonEmptyIdentifier('H.command', id);
   const state: CreateCommandBuilderState<TIn, TOut, THandle> =
@@ -45,9 +43,7 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
 
   return Object.freeze<CommandBuilder<TIn, TOut, THandle>>({
     id,
-    input<TNewIn>(
-      schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>,
-    ): CommandBuilder<TNewIn, TOut, THandle> {
+    input<TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>): CommandBuilder<TNewIn, TOut, THandle> {
       return createCommandBuilder<TNewIn, TOut, THandle>(id, {
         inputSchema: schema,
         outputSchema: state.outputSchema,
@@ -55,9 +51,7 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
         fn: undefined,
       });
     },
-    output<TNewOut>(
-      schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>,
-    ): CommandBuilder<TIn, TNewOut, THandle> {
+    output<TNewOut>(schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>): CommandBuilder<TIn, TNewOut, THandle> {
       return createCommandBuilder<TIn, TNewOut, THandle>(id, {
         inputSchema: state.inputSchema,
         outputSchema: schema,
@@ -66,10 +60,7 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
       });
     },
     partitions(extractor: (input: TIn) => readonly string[]): CommandBuilder<TIn, TOut, THandle> {
-      return createCommandBuilder<TIn, TOut, THandle>(id, {
-        ...state,
-        extractPartitions: extractor,
-      });
+      return createCommandBuilder<TIn, TOut, THandle>(id, { ...state, extractPartitions: extractor });
     },
     run<TNewHandle = THandle>(
       fn: (input: TIn, ctx: ExecutionContext<TNewHandle>) => Promise<TOut>,
@@ -82,14 +73,8 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
       });
     },
     toAST(): CommandNode<TIn, TOut, THandle> {
-      if (
-        state.inputSchema === undefined ||
-        state.outputSchema === undefined ||
-        state.fn === undefined
-      ) {
-        throw new Error(
-          `Command '${id}' is missing required .input(schema), .output(schema), or .run(fn) configuration.`,
-        );
+      if (state.inputSchema === undefined || state.outputSchema === undefined || state.fn === undefined) {
+        throw new Error(`Command '${id}' is missing required .input(schema), .output(schema), or .run(fn) configuration.`);
       }
       return deepFreeze<CommandNode<TIn, TOut, THandle>>({
         type: 'harness:command',

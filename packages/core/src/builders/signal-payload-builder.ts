@@ -28,5 +28,3 @@ export interface SignalPayloadBuilder<TPayload = unknown> extends SignalBuilder<
     schema: z.ZodType<TNext, z.ZodTypeDef, unknown>,
   ): SignalPayloadBuilder<TNext>;
 }
-
-export type { SignalPayloadBuilder as ConfigurableSignalBuilder };

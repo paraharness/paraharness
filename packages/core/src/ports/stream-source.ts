@@ -1,7 +1,5 @@
 import type { StreamSubscriptionHandle } from './stream-subscription-handle.js';
 
-export type { StreamSubscriptionHandle } from './stream-subscription-handle.js';
-
 /**
  * Runtime port for asynchronous event stream sources (`@harness-dsl/github`).
  *

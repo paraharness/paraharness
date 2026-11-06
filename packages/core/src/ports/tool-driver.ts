@@ -4,8 +4,6 @@ import type { StepExecutionContext } from './step-execution-context.js';
 import type { ToolEffect } from './tool-effect.js';
 import type { ToolExecutionResult } from './tool-execution-result.js';
 
-export type { ToolExecutionResult } from './tool-execution-result.js';
-
 /**
  * Runtime port for executing a `ToolASTNode` and optionally predicting its pre-flight `ToolEffect` list.
  *

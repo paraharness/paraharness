@@ -1,9 +1,7 @@
-import type {
-  BaseIsolationScopeASTNode,
-  GitScopeReceipt,
-  GitSyncReceipt,
-  GitWorktreeHandle,
-} from '../../src/index.js';
+import type { BaseIsolationScopeASTNode } from '../../src/ast/base/base-isolation-scope-ast-node.js';
+import type { GitScopeReceipt } from '../../src/ast/domain/git-scope-receipt.js';
+import type { GitSyncReceipt } from '../../src/ast/domain/git-sync-receipt.js';
+import type { GitWorktreeHandle } from '../../src/ast/domain/git-worktree-handle.js';
 
 /**
  * Custom Tier-2 (`capabilityTier: 'checkpointable'`) isolation scope AST node registered via namespaced key `'scope:tier2'`.

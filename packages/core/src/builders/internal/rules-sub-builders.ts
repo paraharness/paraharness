@@ -3,18 +3,15 @@ import type { CheckASTNode, SourceASTNode } from '../../ast/domain-ast.types.js'
 import { extractAST } from '../../ast/extract-ast.js';
 import type { ScopedRuleNode } from '../../ast/scoped-rule-node.types.js';
 import type { ScopedRule } from '../../schemas/core-rules.schema.js';
-import type { CreateScopedRuleBuilderOptions } from '../create-scoped-rule-builder-state.js';
+import type { CreateScopedRuleBuilderState as CreateScopedRuleBuilderOptions } from '../create-scoped-rule-builder-state.js';
 import type { ScopePredicateInput } from '../scope-predicate-input.js';
 import type { ScopedRuleBuilder } from '../scoped-rule-builder.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './deep-freeze.js';
 import { normalizeMaybeSource } from './normalize-maybe-source.js';
 import {
-  hasToAstMethod,
   normalizeScopePredicateInput,
   resolveSourceRuleId,
 } from './normalize-scope-predicate-input.js';
-
-export { hasToAstMethod, normalizeScopePredicateInput, resolveSourceRuleId };
 
 /**
  * Creates a fluent `ScopedRuleBuilder` from an identifier or source node and optional state.

@@ -3,10 +3,8 @@ import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { AstBuilder } from '../ast/ast-builder.js';
 import type { AbortHookASTNode, StepASTNode } from '../ast/domain-ast.types.js';
 import type { HumanNode } from '../ast/human-node.js';
-import type {
-  InterruptHandlerNode,
-  ReplaceInterruptHandlerNode,
-} from '../ast/interrupt-handler-node.types.js';
+import type { InterruptHandlerNode } from '../ast/interrupt-handler-node.types.js';
+import type { ReplaceInterruptHandlerNode } from '../ast/replace-interrupt-handler-node.js';
 import type { UniversalStepTelemetry } from '../ports/universal-step-telemetry.js';
 import type { AdjudicateInterruptBuilder } from './adjudicate-interrupt-builder.js';
 import type { AskInterruptBuilder } from './ask-interrupt-builder.js';

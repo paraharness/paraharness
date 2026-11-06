@@ -118,5 +118,3 @@ export interface LaneTrackerConfigBuilder<
    */
   toAST(): LaneTrackerConfig<TIn, TExternal>;
 }
-
-export type { LaneTrackerConfigBuilder as LaneTrackerBuilder };

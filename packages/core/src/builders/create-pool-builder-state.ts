@@ -17,5 +17,3 @@ export interface CreatePoolBuilderState<TItem extends ASTNode = ASTNode> {
   /** Optional fallback item when primary items are exhausted. */
   readonly fallbackItem?: TItem;
 }
-
-export type { CreatePoolBuilderState as CreatePoolBuilderOptions };

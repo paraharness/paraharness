@@ -37,5 +37,3 @@ export interface ForkCapabilityBuilderState<
   /** Optional conditional model routing configuration for the child session. */
   readonly modelRouting: ForkModelRoutingConfig<TParentIn, TReq> | undefined;
 }
-
-export type { ForkCapabilityBuilderState as ForkCapabilityState };

@@ -1,5 +1,5 @@
 import type { AstBuilder } from '../ast/ast-builder.js';
-import type { EscalateOnRetryPoolStrategyNode } from '../ast/pool-strategy.types.js';
+import type { EscalateOnRetryPoolStrategyNode } from '../ast/escalate-on-retry-pool-strategy-node.js';
 
 /**
  * Fluent configurator for `'escalate-on-retry'` pool strategies (`$.escalateOnRetry()`).

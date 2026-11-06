@@ -6,11 +6,25 @@ import type { SignalNode } from '../../ast/signal-node.js';
 import type { TopologyNode } from '../../ast/topology-node.js';
 import type { MutatePlanCapabilityBuilder } from '../mutate-plan-capability-builder.js';
 import type { SpawnTasksBuilderOptions } from '../spawn-tasks-builder-options.js';
-import { createEscalateFromState } from './create-escalate-from-state.js';
 import { deepFreeze } from './deep-freeze.js';
 import type { MutatePlanCapabilityBuilderState } from './mutate-plan-capability-builder-state.js';
 
-export { createEscalateFromState };
+/**
+ * Validates that a numeric option is a strictly positive integer (`>= 1`).
+ *
+ * Throws an actionable error naming the builder construct and option when a non-integer
+ * or non-positive number is supplied.
+ *
+ * @param {string} constructLabel - Construct and option label for error reporting.
+ * @param {number} value          - Numeric value to validate.
+ *
+ * @throws {Error} If `value` is not a positive integer `>= 1`.
+ */
+export function assertPositiveInteger(constructLabel: string, value: number): void {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${constructLabel} requires a positive integer >= 1 (received ${value}).`);
+  }
+}
 
 /**
  * Creates a copy-on-write immutable `MutatePlanCapabilityBuilder` from an internal state snapshot.
@@ -32,18 +46,18 @@ export function createMutatePlanFromState<TItem = unknown>(
       itemSchema: z.ZodType<TNewItem, z.ZodTypeDef, unknown>,
       options: SpawnTasksBuilderOptions<TNewItem, TSig>,
     ): MutatePlanCapabilityBuilder<TNewItem> {
+      const maxPrerequisiteDepth = options.maxPrerequisiteDepth ?? 3;
+      assertPositiveInteger('$cap.mutatePlan.canSpawnTasks(maxSpawnedPerRun)', options.maxSpawnedPerRun);
+      assertPositiveInteger('$cap.mutatePlan.canSpawnTasks(maxPrerequisiteDepth)', maxPrerequisiteDepth);
       const resumeWhen =
         options.resumeWhen === undefined || options.resumeWhen === 'prerequisite-exit'
           ? ('prerequisite-exit' as const)
-          : {
-              signal: extractAST<SignalNode<TSig>>(options.resumeWhen.signal),
-              correlateBy: options.resumeWhen.correlateBy,
-            };
+          : { signal: extractAST<SignalNode<TSig>>(options.resumeWhen.signal), correlateBy: options.resumeWhen.correlateBy };
       return createMutatePlanFromState<TNewItem>({
         spawnTasks: {
           itemSchema,
           maxSpawnedPerRun: options.maxSpawnedPerRun,
-          maxPrerequisiteDepth: options.maxPrerequisiteDepth ?? 3,
+          maxPrerequisiteDepth,
           enforcePatch: options.enforcePatch,
           onPrerequisiteSpawned: options.onPrerequisiteSpawned ?? 'suspend-and-yield-slot',
           priorityStrategy: options.priorityStrategy ?? 'inherit-parent-with-boost',
@@ -53,24 +67,10 @@ export function createMutatePlanFromState<TItem = unknown>(
         topologyToUpdate: state.topologyToUpdate,
       });
     },
-    canAddDependencies(enabled = true): MutatePlanCapabilityBuilder<TItem> {
-      return createMutatePlanFromState<TItem>({ ...state, canAddDependencies: enabled });
-    },
-    canUpdateTopologyContracts<TPart extends string = string>(
-      topology: MaybeBuilder<TopologyNode<TPart>>,
-    ): MutatePlanCapabilityBuilder<TItem> {
-      return createMutatePlanFromState<TItem>({
-        ...state,
-        topologyToUpdate: extractAST(topology),
-      });
-    },
-    toAST(): MutatePlanCapabilityNode<TItem> {
-      return deepFreeze<MutatePlanCapabilityNode<TItem>>({
-        type: 'harness:mutate-plan-capability',
-        spawnTasks: state.spawnTasks,
-        canAddDependencies: state.canAddDependencies,
-        topologyToUpdate: state.topologyToUpdate,
-      });
-    },
+    canAddDependencies: (enabled = true) => createMutatePlanFromState<TItem>({ ...state, canAddDependencies: enabled }),
+    canUpdateTopologyContracts: <TPart extends string = string>(topology: MaybeBuilder<TopologyNode<TPart>>) =>
+      createMutatePlanFromState<TItem>({ ...state, topologyToUpdate: extractAST(topology) }),
+    toAST: (): MutatePlanCapabilityNode<TItem> =>
+      deepFreeze<MutatePlanCapabilityNode<TItem>>({ ...state, type: 'harness:mutate-plan-capability' }),
   });
 }

@@ -1,8 +1,11 @@
 import type { z } from 'zod';
+import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { ASTNode } from '../ast/ast-node.js';
+import type { SourceASTNode } from '../ast/domain-ast.types.js';
 import type { EnvRef } from '../ast/env-ref.js';
 import type { InterruptBuilder } from '../ast/interrupt-builder.js';
 import type { SignalBuilder } from '../ast/signal-builder.js';
+import type { SkillNode } from '../ast/skill-node.types.js';
 import type {
   BudgetApprovalSchema,
   DistilledLessonCandidateSchema,
@@ -11,6 +14,7 @@ import type {
 import type {
   GlobalRuleSchema,
   ScopePredicateSchema,
+  ScopedRule,
   ScopedRuleSchema,
 } from '../schemas/core-rules.schema.js';
 import type {
@@ -121,22 +125,24 @@ export interface HarnessNamespace {
    */
   rules(id: string): RulesBuilder;
   /**
-   * Creates a fluent `ScopedRuleBuilder` for a path/partition-activated rule (`H.scopedRule(id)`).
+   * Creates a fluent `ScopedRuleBuilder` for a path/partition-activated rule (`H.scopedRule(idOrSource)`).
    *
    * Binds activation predicates, directives, and optional `beforeStop` check gates.
-   * @param {string} id - Unique identifier of the scoped rule.
+   * @param {string | MaybeBuilder<SourceASTNode<ScopedRule>>} idOrSource - Unique identifier or frontmatter rule source.
    * @returns {ScopedRuleBuilder} Frozen `ScopedRuleBuilder` instance.
    */
-  scopedRule(id: string): ScopedRuleBuilder;
+  scopedRule(idOrSource: string | MaybeBuilder<SourceASTNode<ScopedRule>>): ScopedRuleBuilder;
   /**
-   * Creates a fluent `SkillBuilder` for a dynamically unlocked skill (`H.skill(id)`).
+   * Creates a fluent `SkillBuilder` for a dynamically unlocked skill (`H.skill(idOrSource)`).
    *
    * Configures pull-based instructions, unlocked tools, and background daemon services.
    * @template THandle Isolation scope handle type.
-   * @param {string} id - Unique identifier of the skill.
+   * @param {string | MaybeBuilder<SourceASTNode<SkillNode<THandle>>>} idOrSource - Unique identifier or frontmatter skill source.
    * @returns {SkillBuilder<THandle>} Frozen `SkillBuilder` instance.
    */
-  skill<THandle = unknown>(id: string): SkillBuilder<THandle>;
+  skill<THandle = unknown>(
+    idOrSource: string | MaybeBuilder<SourceASTNode<SkillNode<THandle>>>,
+  ): SkillBuilder<THandle>;
   /**
    * Creates a fluent `LessonsBuilder` for empirical lesson recall, distillation, and scoring (`H.lessons(id)`).
    *

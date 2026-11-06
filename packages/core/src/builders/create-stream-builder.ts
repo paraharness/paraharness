@@ -3,7 +3,7 @@ import type { StreamSourceASTNode } from '../ast/domain-ast.types.js';
 import { extractAST } from '../ast/extract-ast.js';
 import type { SignalNode } from '../ast/signal-node.js';
 import type { StreamNode } from '../ast/stream-node.js';
-import type { CreateStreamBuilderOptions } from './create-stream-builder-state.js';
+import type { CreateStreamBuilderState as CreateStreamBuilderOptions } from './create-stream-builder-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
 import type { StreamBuilder } from './stream-builder.js';
 

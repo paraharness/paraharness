@@ -1,5 +1,5 @@
 import type { LaneNode, LaneRetryConfig } from '../../ast/lane-node.js';
-import type { LaneRetryBuilder } from '../lane-retry-config-builder.js';
+import type { LaneRetryConfigBuilder as LaneRetryBuilder } from '../lane-retry-config-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 import type { LaneBuilderState } from './lane-builder-state.js';
 

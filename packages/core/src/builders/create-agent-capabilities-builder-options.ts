@@ -30,5 +30,3 @@ export interface CreateAgentCapabilitiesBuilderOptions<TParentIn = unknown, THan
   /** Registered escalate capabilities. */
   readonly escalations?: readonly EscalateCapabilityNode<unknown, unknown>[];
 }
-
-export type { CreateAgentCapabilitiesBuilderOptions as CreateAgentCapabilitiesBuilderState };

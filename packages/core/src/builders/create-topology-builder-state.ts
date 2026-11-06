@@ -20,5 +20,3 @@ export interface CreateTopologyBuilderState<TPartition extends string = string> 
   /** Optional overlay commit and discard configuration. */
   readonly commitOverlayWhen?: TopologyCommitOverlayConfig;
 }
-
-export type { CreateTopologyBuilderState as CreateTopologyBuilderOptions };

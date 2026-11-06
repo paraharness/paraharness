@@ -4,11 +4,11 @@ import { extractAST } from '../ast/extract-ast.js';
 import type { PoolNode } from '../ast/pool-node.js';
 import type { PoolStrategyNode } from '../ast/pool-strategy.types.js';
 import type { PoolSelectorFn } from '../ast/pool-strategy.types.js';
-import type { CreatePoolBuilderOptions } from './create-pool-builder-state.js';
+import type { CreatePoolBuilderState as CreatePoolBuilderOptions } from './create-pool-builder-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
 import { resolvePoolStrategy } from './internal/resolve-pool-strategy.js';
 import type { PoolBuilder } from './pool-builder.js';
-import type { PoolStrategyConfigurator } from './pool-strategy-builder.js';
+import type { PoolStrategyBuilder as PoolStrategyConfigurator } from './pool-strategy-builder.js';
 
 /**
  * Creates a fluent `PoolBuilder` for `H.pool(id)`.

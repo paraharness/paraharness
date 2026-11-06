@@ -3,11 +3,8 @@ import type { FlowBranchCase, FlowBranchNode } from '../../ast/flow-branch-node.
 import type { FlowStepNode } from '../../ast/flow-step-node.js';
 import type { FlowBranchBuilder } from '../flow-branch-builder.js';
 import type { FlowSubBranchBuilder } from '../flow-sub-branch-builder.js';
-import { createFlowStepConfigFromState } from './create-flow-step-config-from-state.js';
 import { createFlowSubBranchFromState } from './create-flow-sub-branch-from-state.js';
 import { deepFreeze } from './deep-freeze.js';
-
-export { createFlowStepConfigFromState, createFlowSubBranchFromState };
 
 /**
  * Creates a copy-on-write immutable `FlowBranchBuilder` from an internal state snapshot.
@@ -39,39 +36,11 @@ export function createFlowBranchFromState<
   readonly id: TBranchId;
   readonly outputSchema?: z.ZodType<TBranchOut, z.ZodTypeDef, unknown>;
   readonly cases: readonly FlowBranchCase<TFlowIn, THandle>[];
-  readonly otherwiseSteps: ReadonlyArray<
-    FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<unknown, unknown, THandle>
-  >;
-}): FlowBranchBuilder<
-  TFlowIn,
-  TBranchOut,
-  THandle,
-  TBranchId,
-  TReceipt,
-  TCustomMetrics,
-  TStepOutputs
-> {
-  return Object.freeze<
-    FlowBranchBuilder<
-      TFlowIn,
-      TBranchOut,
-      THandle,
-      TBranchId,
-      TReceipt,
-      TCustomMetrics,
-      TStepOutputs
-    >
-  >({
+  readonly otherwiseSteps: ReadonlyArray<FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<unknown, unknown, THandle>>;
+}): FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs> {
+  return Object.freeze<FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>>({
     output: <TNewBranchOut>(schema: z.ZodType<TNewBranchOut, z.ZodTypeDef, unknown>) =>
-      createFlowBranchFromState<
-        TFlowIn,
-        TNewBranchOut,
-        THandle,
-        TBranchId,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs
-      >({
+      createFlowBranchFromState<TFlowIn, TNewBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>({
         id: state.id,
         outputSchema: schema,
         cases: state.cases,
@@ -80,70 +49,32 @@ export function createFlowBranchFromState<
     when: <TNextOutputs extends Record<string, unknown> = TStepOutputs>(
       predicate: (input: TFlowIn) => boolean,
       configure: (
-        $sub: FlowSubBranchBuilder<
-          TFlowIn,
-          TBranchOut,
-          THandle,
-          TReceipt,
-          TCustomMetrics,
-          TStepOutputs
-        >,
+        $sub: FlowSubBranchBuilder<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>,
       ) => FlowSubBranchBuilder<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TNextOutputs>,
     ) => {
       const subBranch = configure(
-        createFlowSubBranchFromState<
-          TFlowIn,
-          TBranchOut,
-          THandle,
-          TReceipt,
-          TCustomMetrics,
-          TStepOutputs
-        >([]),
+        createFlowSubBranchFromState<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>([]),
       );
-      return createFlowBranchFromState<
-        TFlowIn,
-        TBranchOut,
-        THandle,
-        TBranchId,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs
-      >({
+      if (subBranch.steps.length === 0) {
+        throw new Error(`Flow branch '${state.id}' .when() sub-branch must declare at least one step.`);
+      }
+      return createFlowBranchFromState<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>({
         ...state,
         cases: [...state.cases, { predicate, steps: subBranch.steps }],
       });
     },
     otherwise: <TNextOutputs extends Record<string, unknown> = TStepOutputs>(
       configure: (
-        $sub: FlowSubBranchBuilder<
-          TFlowIn,
-          TBranchOut,
-          THandle,
-          TReceipt,
-          TCustomMetrics,
-          TStepOutputs
-        >,
+        $sub: FlowSubBranchBuilder<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>,
       ) => FlowSubBranchBuilder<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TNextOutputs>,
     ) => {
       const subBranch = configure(
-        createFlowSubBranchFromState<
-          TFlowIn,
-          TBranchOut,
-          THandle,
-          TReceipt,
-          TCustomMetrics,
-          TStepOutputs
-        >([]),
+        createFlowSubBranchFromState<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>([]),
       );
-      return createFlowBranchFromState<
-        TFlowIn,
-        TBranchOut,
-        THandle,
-        TBranchId,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs
-      >({
+      if (subBranch.steps.length === 0) {
+        throw new Error(`Flow branch '${state.id}' .otherwise() sub-branch must declare at least one step.`);
+      }
+      return createFlowBranchFromState<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>({
         ...state,
         otherwiseSteps: subBranch.steps,
       });
@@ -151,6 +82,9 @@ export function createFlowBranchFromState<
     toAST: (): FlowBranchNode<TFlowIn, TBranchOut, THandle, TBranchId> => {
       if (state.outputSchema === undefined) {
         throw new Error(`Flow branch '${state.id}' requires .output(schema).`);
+      }
+      if (state.cases.length === 0 || state.otherwiseSteps.length === 0) {
+        throw new Error(`Flow branch '${state.id}' requires at least one .when(...) case and an .otherwise(...) fallback.`);
       }
       return deepFreeze<FlowBranchNode<TFlowIn, TBranchOut, THandle, TBranchId>>({
         type: 'harness:flow-branch',

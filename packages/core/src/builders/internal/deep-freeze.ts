@@ -1,5 +1,3 @@
-export { deriveCanonicalRoleKey } from './derive-canonical-role-key.js';
-
 /**
  * Checks whether a value is a plain JavaScript object or array that should be recursively frozen.
  *

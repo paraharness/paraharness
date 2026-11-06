@@ -1,36 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BudgetApprovalSchema,
-  type GitAbortMeta,
-  type GitScopeReceipt,
-  type GitWorktreeHandle,
-  H,
-  type LaneBuilder,
-  type LeaseDelta,
-  type LoopBuilder,
-  SpeculationInputSchema,
-  type UniversalStepTelemetry,
-  z,
+  BudgetApprovalSchema, type GitAbortMeta, type GitScopeReceipt, type GitWorktreeHandle, H,
+  type LaneBuilder, type LeaseDelta, type LoopBuilder, SpeculationInputSchema,
+  type UniversalStepTelemetry, z,
 } from '../src/index.js';
 import {
-  BidirectionalHumanChannelNode,
-  DeclaredToolNode,
-  ExtraCompareToolNode,
-  NotifyOnlyHumanChannelNode,
-  PostFlightSubprocessToolNode,
-  SampleAbortHookNode,
-  SampleCrossReportSchema,
-  SampleCrossVerifierNode,
-  SampleGuardNode,
-  SampleLedgerNode,
-  SampleModelNode,
-  SampleRunnerNode,
-  SampleScopeReceiptSchema,
-  SampleTelemetryCollectorNode,
-  SampleTrackerNode,
-  Tier1ScopeNode,
-  Tier2ScopeNode,
-  Tier3ScopeNode,
+  SAMPLE_ABORT_HOOK_NODE, SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_CROSS_REPORT_SCHEMA,
+  SAMPLE_CROSS_VERIFIER_NODE, SAMPLE_DECLARED_TOOL_NODE, SAMPLE_EXTRA_COMPARE_TOOL_NODE,
+  SAMPLE_GUARD_NODE, SAMPLE_LEDGER_NODE, SAMPLE_MODEL_NODE, SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE,
+  SAMPLE_POST_FLIGHT_SUBPROCESS_TOOL_NODE, SAMPLE_RUNNER_NODE, SAMPLE_SCOPE_RECEIPT_SCHEMA,
+  SAMPLE_TELEMETRY_COLLECTOR_NODE, SAMPLE_TIER1_SCOPE_NODE, SAMPLE_TIER2_SCOPE_NODE,
+  SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TRACKER_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 
 const FlowInputSchema = z.object({
@@ -46,41 +26,36 @@ const RewindSignal = H.signal('ci-failed').payload(z.object({ runId: z.string(),
 
 describe('H.flow, H.lane, and H.harness end-to-end compilation and generic inference', () => {
   it('propagates TReceipt, TCustomMetrics, TAbortMeta, and TStepOutputs across H.flow, H.lane, and H.harness', () => {
-    const bidirectionalHuman = H.human('tech-lead').notify(BidirectionalHumanChannelNode);
+    const bidirectionalHuman = H.human('tech-lead').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
     const budgetHuman = bidirectionalHuman.withName('budget-owner').output(BudgetApprovalSchema);
-
     const baseWorker = H.agent<GitWorktreeHandle>('worker')
-      .model(SampleModelNode)
-      .tools(DeclaredToolNode)
+      .model(SAMPLE_MODEL_NODE)
+      .tools(SAMPLE_DECLARED_TOOL_NODE)
       .input(FlowInputSchema)
       .output(StepOutputSchema);
-
     const adjudicator = H.agent<GitWorktreeHandle>('lease-adjudicator')
-      .model(SampleModelNode)
+      .model(SAMPLE_MODEL_NODE)
       .input(z.object({ partition: z.string(), glob: z.string() }))
       .output(z.object({ grant: z.boolean(), rationale: z.string() }));
-
     const arbiterVerdictSchema = z.object({
       action: z.enum(['winner', 'unpark', 'reject']),
       branchIndex: z.number().default(0),
       rationale: z.string().default('ok'),
       needsRefinement: z.boolean().default(false),
     });
-
     const arbiterInputSchema = SpeculationInputSchema(
       FlowInputSchema,
       StepOutputSchema,
-      SampleScopeReceiptSchema,
-      SampleCrossReportSchema,
+      SAMPLE_SCOPE_RECEIPT_SCHEMA,
+      SAMPLE_CROSS_REPORT_SCHEMA,
     );
-
     const arbiterAgent = H.agent<GitWorktreeHandle>('arbiter')
-      .model(SampleModelNode)
+      .model(SAMPLE_MODEL_NODE)
       .input(arbiterInputSchema)
       .output(arbiterVerdictSchema);
 
     const orchestrator = H.agent<GitWorktreeHandle>('orchestrator')
-      .model(SampleModelNode)
+      .model(SAMPLE_MODEL_NODE)
       .input(FlowInputSchema)
       .output(StepOutputSchema)
       .canRaise(LeaseRequestInterrupt, EscalationInterrupt)
@@ -99,7 +74,7 @@ describe('H.flow, H.lane, and H.harness end-to-end compilation and generic infer
                   .inheritParentWithEffort('high', {
                     when: (parentIn: z.output<typeof FlowInputSchema>) => parentIn.mode === 'deep',
                   })
-                  .otherwisePool(SampleModelNode),
+                  .otherwisePool(SAMPLE_MODEL_NODE),
               ),
           )
           .speculate('raceCandidates', ($s) =>
@@ -109,7 +84,7 @@ describe('H.flow, H.lane, and H.harness end-to-end compilation and generic infer
               .branches(2, (parentIn: z.output<typeof FlowInputSchema>, req: { readonly strategies: string[] }) =>
                 req.strategies.map((s: string) => ({ ...parentIn, title: `${parentIn.title}:${s}` })),
               )
-              .crossVerifyWith(SampleCrossVerifierNode)
+              .crossVerifyWith(SAMPLE_CROSS_VERIFIER_NODE)
               .arbiter(arbiterAgent, {
                 resolveDecision: (verdict: z.output<typeof arbiterVerdictSchema>) =>
                   verdict.action === 'winner'
@@ -151,8 +126,8 @@ describe('H.flow, H.lane, and H.harness end-to-end compilation and generic infer
 
     const flow = H.flow('engineering-flow')
       .input(FlowInputSchema)
-      .scope(Tier3ScopeNode)
-      .telemetry(SampleTelemetryCollectorNode)
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .telemetry(SAMPLE_TELEMETRY_COLLECTOR_NODE)
       .branch('execute-work', ($b) =>
         $b
           .output(StepOutputSchema)
@@ -184,7 +159,7 @@ describe('H.flow, H.lane, and H.harness end-to-end compilation and generic infer
                       ),
                   )
                   .onInterrupt(EscalationInterrupt, ($i) =>
-                    $i.onAbort(SampleAbortHookNode).replaceWith(
+                    $i.onAbort(SAMPLE_ABORT_HOOK_NODE).replaceWith(
                       baseWorker,
                       (
                         flowIn: z.output<typeof FlowInputSchema>,
@@ -217,7 +192,7 @@ describe('H.flow, H.lane, and H.harness end-to-end compilation and generic infer
     const lane = H.lane('default-lane')
       .input(FlowInputSchema)
       .key((item: z.output<typeof FlowInputSchema>) => item.id)
-      .tracker(SampleTrackerNode, ($t) =>
+      .tracker(SAMPLE_TRACKER_NODE, ($t) =>
         $t
           .everySeconds(15)
           .from((issue: { readonly id: string; readonly title: string; readonly ready: boolean }) =>
@@ -246,8 +221,7 @@ describe('H.flow, H.lane, and H.harness end-to-end compilation and generic infer
           .rewindTo('execute-work'),
       );
 
-    const harnessNode = H.harness('meta-harness').ledger(SampleLedgerNode).pools(SampleRunnerNode).lanes(lane).toAST();
-
+    const harnessNode = H.harness('meta-harness').ledger(SAMPLE_LEDGER_NODE).pools(SAMPLE_RUNNER_NODE).lanes(lane).toAST();
     expect(Object.isFrozen(harnessNode)).toBe(true);
     expect(harnessNode.lanes[0]?.tracker?.stateMappings).toEqual({
       queued: 'queued',
@@ -262,7 +236,7 @@ describe('H.flow, H.lane, and H.harness end-to-end compilation and generic infer
 
 describe('Static build-time validation rejections', () => {
   const SimpleSchema = z.object({ id: z.string() });
-  const SimpleAgent = H.agent('simple-agent').model(SampleModelNode).input(SimpleSchema).output(SimpleSchema);
+  const SimpleAgent = H.agent('simple-agent').model(SAMPLE_MODEL_NODE).input(SimpleSchema).output(SimpleSchema);
 
   it('rejects .fork(), .speculate(), and .mutatePlan() on Tier-1 or Tier-2 non-branchable scopes', () => {
     const forkingAgent = SimpleAgent.capabilities(($c) =>
@@ -270,43 +244,53 @@ describe('Static build-time validation rejections', () => {
         $f.requestSchema(SimpleSchema).mapInput((_p: { readonly id: string }, r: { readonly id: string }) => r),
       ),
     );
-
-    expect(() =>
-      H.flow('tier1-fork-flow').input(SimpleSchema).scope(Tier1ScopeNode).step('run', forkingAgent).exit('done').toAST(),
-    ).toThrowError(
-      "Flow 'tier1-fork-flow' scope 'sample:tier1-scope' has capabilityTier 'scope', but actor 'simple-agent' declares branching capabilities (.fork, .speculate, or .mutatePlan) requiring capabilityTier 'branchable'.",
+    const speculatingAgent = SimpleAgent.capabilities(($c) =>
+      $c.speculate('raceChild', ($s) =>
+        $s
+          .requestSchema(SimpleSchema)
+          .worker(SimpleAgent)
+          .branches(2, (p: { readonly id: string }) => [p, p])
+          .arbiter(SimpleAgent, { resolveDecision: () => ({ decision: 'select-winner', winnerBranchIndex: 0 }) }),
+      ),
+    );
+    const mutatingAgent = SimpleAgent.capabilities(($c) =>
+      $c.mutatePlan(($m) => $m.canSpawnTasks(SimpleSchema, { maxSpawnedPerRun: 2 })),
     );
 
-    expect(() =>
-      H.flow('tier2-fork-flow').input(SimpleSchema).scope(Tier2ScopeNode).step('run', forkingAgent).exit('done').toAST(),
-    ).toThrowError(
-      "Flow 'tier2-fork-flow' scope 'sample:tier2-scope' has capabilityTier 'checkpointable', but actor 'simple-agent' declares branching capabilities (.fork, .speculate, or .mutatePlan) requiring capabilityTier 'branchable'.",
-    );
+    for (const actor of [forkingAgent, speculatingAgent, mutatingAgent]) {
+      expect(() =>
+        H.flow('tier1-branch-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('run', actor).exit('done').toAST(),
+      ).toThrowError(
+        "Flow 'tier1-branch-flow' scope 'sample:tier1-scope' has capabilityTier 'scope', but actor 'simple-agent' declares branching capabilities (.fork, .speculate, or .mutatePlan) requiring capabilityTier 'branchable'.",
+      );
+      expect(() =>
+        H.flow('tier2-branch-flow').input(SimpleSchema).scope(SAMPLE_TIER2_SCOPE_NODE).step('run', actor).exit('done').toAST(),
+      ).toThrowError(
+        "Flow 'tier2-branch-flow' scope 'sample:tier2-scope' has capabilityTier 'checkpointable', but actor 'simple-agent' declares branching capabilities (.fork, .speculate, or .mutatePlan) requiring capabilityTier 'branchable'.",
+      );
+    }
   });
 
   it('rejects subprocess-post-flight tools under policy guards and unhooked .replaceWith() on Tier-1 scopes', () => {
-    const guardedPolicy = H.policy<GitWorktreeHandle>('guarded').guard(SampleGuardNode).onViolation('deny-with-error');
+    const guardedPolicy = H.policy<GitWorktreeHandle>('guarded').guard(SAMPLE_GUARD_NODE).onViolation('deny-with-error');
     const postFlightAgent = H.agent<GitWorktreeHandle>('post-flight-agent')
-      .model(SampleModelNode)
+      .model(SAMPLE_MODEL_NODE)
       .policy(guardedPolicy)
-      .tools(PostFlightSubprocessToolNode)
+      .tools(SAMPLE_POST_FLIGHT_SUBPROCESS_TOOL_NODE)
       .input(SimpleSchema)
       .output(SimpleSchema);
 
     expect(() =>
-      H.flow('tier1-postflight-flow').input(SimpleSchema).scope(Tier1ScopeNode).step('run', postFlightAgent).exit('done').toAST(),
+      H.flow('tier1-postflight-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('run', postFlightAgent).exit('done').toAST(),
     ).toThrowError(
       "Flow 'tier1-postflight-flow' scope 'sample:tier1-scope' has capabilityTier 'scope', but actor 'post-flight-agent' mounts subprocess-post-flight tool 'shell_exec' under policy 'guarded' requiring capabilityTier 'checkpointable' or 'branchable'.",
     );
-
     expect(() =>
       H.flow('tier1-replace-flow')
         .input(SimpleSchema)
-        .scope(Tier1ScopeNode)
+        .scope(SAMPLE_TIER1_SCOPE_NODE)
         .step('run', SimpleAgent, ($s) =>
-          $s.onInterrupt(EscalationInterrupt, ($i) =>
-            $i.replaceWith(SimpleAgent, (flowIn: { readonly id: string }) => flowIn),
-          ),
+          $s.onInterrupt(EscalationInterrupt, ($i) => $i.replaceWith(SimpleAgent, (flowIn: { readonly id: string }) => flowIn)),
         )
         .exit('done')
         .toAST(),
@@ -317,16 +301,13 @@ describe('Static build-time validation rejections', () => {
 
   it('rejects clone-transcript forks across distinct roleKeys when prefixGroup uses role-scoped toolsMode', () => {
     const roleScopedPrefix = H.prefixGroup('role-scoped-group').toolsMode('role-scoped');
-    const childWithExtraTools = SimpleAgent.withTools(ExtraCompareToolNode);
+    const childWithExtraTools = SimpleAgent.withTools(SAMPLE_EXTRA_COMPARE_TOOL_NODE);
 
     expect(() =>
       SimpleAgent.prefixGroup(roleScopedPrefix)
         .capabilities(($c) =>
           $c.fork('cloneChild', childWithExtraTools, ($f) =>
-            $f
-              .historyMode('clone-transcript')
-              .requestSchema(SimpleSchema)
-              .mapInput((_p: { readonly id: string }, r: { readonly id: string }) => r),
+            $f.historyMode('clone-transcript').requestSchema(SimpleSchema).mapInput((_p: { readonly id: string }, r: { readonly id: string }) => r),
           ),
         )
         .toAST(),
@@ -335,32 +316,52 @@ describe('Static build-time validation rejections', () => {
     );
   });
 
-  it('rejects notify-only human channels on .ask(), .escalate(), and human.withName().output()', () => {
-    const notifyOnlyHuman = H.human('pager').notify(NotifyOnlyHumanChannelNode);
-
+  it('rejects notify-only human channels on .ask(), .escalate(), human.withName().output(), and H.lane.maxCostUsd()', () => {
+    const notifyOnlyHuman = H.human('pager').notify(SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE);
     expect(() => notifyOnlyHuman.withName('approver').output(BudgetApprovalSchema)).toThrowError(
       "Invalid human channel on 'pager' in H.human.withName().output(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
     );
-
     expect(() =>
-      SimpleAgent.onInterrupt(EscalationInterrupt, ($i) =>
-        $i.ask(notifyOnlyHuman, BudgetApprovalSchema).resumeWith(() => 'ok'),
-      ),
+      SimpleAgent.onInterrupt(EscalationInterrupt, ($i) => $i.ask(notifyOnlyHuman, BudgetApprovalSchema).resumeWith(() => 'ok')),
     ).toThrowError(
       "Invalid human channel on 'pager' in .ask(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
     );
-
     expect(() =>
-      SimpleAgent.capabilities(($c) =>
-        $c.escalate(EscalationInterrupt, ($e) => $e.to(notifyOnlyHuman).response(BudgetApprovalSchema)),
-      ),
+      SimpleAgent.capabilities(($c) => $c.escalate(EscalationInterrupt, ($e) => $e.to(notifyOnlyHuman).response(BudgetApprovalSchema))),
     ).toThrowError(
       "Invalid human channel on 'pager' in .escalate(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
     );
+    expect(() =>
+      H.lane('bad-cost-lane').maxCostUsd(25, notifyOnlyHuman.withName('ops').output(BudgetApprovalSchema)),
+    ).toThrowError(
+      "Invalid human channel on 'pager' in H.human.withName().output(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
+    );
   });
 
-  it('rejects mismatched .returnOutputFrom() step IDs on H.loop and unknown .rewindTo() step IDs on H.lane', () => {
-    const evaluator = H.agent('eval').model(SampleModelNode).input(SimpleSchema).output(z.object({ ok: z.boolean() }));
+  it('rejects incomplete FlowBranchBuilder, ChildInterruptBuilder, LoopBuilder.returnOutputFrom(), and LaneBuilder.rewindTo()', () => {
+    expect(() =>
+      H.flow('empty-when')
+        .input(SimpleSchema)
+        .scope(SAMPLE_TIER1_SCOPE_NODE)
+        .branch('b', ($b) => $b.output(SimpleSchema).when(() => true, ($sub) => $sub).otherwise(($sub) => $sub.step('s', SimpleAgent))),
+    ).toThrowError("Flow branch 'b' .when() sub-branch must declare at least one step.");
+
+    expect(() =>
+      H.flow('empty-otherwise')
+        .input(SimpleSchema)
+        .scope(SAMPLE_TIER1_SCOPE_NODE)
+        .branch('b', ($b) => $b.output(SimpleSchema).when(() => true, ($sub) => $sub.step('s', SimpleAgent)).otherwise(($sub) => $sub)),
+    ).toThrowError("Flow branch 'b' .otherwise() sub-branch must declare at least one step.");
+
+    expect(() =>
+      H.flow('incomplete-branch').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).branch('b', ($b) => $b.output(SimpleSchema)),
+    ).toThrowError("Flow branch 'b' requires at least one .when(...) case and an .otherwise(...) fallback.");
+
+    expect(() =>
+      SimpleAgent.onChildInterrupt(EscalationInterrupt, ($ci) => $ci.pauseSiblingForksInPartitions(() => ['db'])),
+    ).toThrowError("Child interrupt handler for 'normative-esc' requires .suspendAndReturnToParent().");
+
+    const evaluator = H.agent('eval').model(SAMPLE_MODEL_NODE).input(SimpleSchema).output(z.object({ ok: z.boolean() }));
     const untypedLoop: LoopBuilder<{ readonly id: string }, { readonly id: string }, unknown, string> = H.loop('bad-loop')
       .input(SimpleSchema)
       .output(SimpleSchema)
@@ -370,21 +371,17 @@ describe('Static build-time validation rejections', () => {
         acceptWhen: (outVal: { readonly ok: boolean }) => outVal.ok,
         feedbackMapper: () => 'retry',
       });
-
     expect(() => untypedLoop.returnOutputFrom('wrong-step')).toThrowError(
       "Loop 'bad-loop' returnOutputFrom('wrong-step') must match the .act() step ID ('act-step').",
     );
 
-    const validFlow = H.flow('valid-flow').input(SimpleSchema).scope(Tier1ScopeNode).step('step-one', SimpleAgent).exit('done');
+    const validFlow = H.flow('valid-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('step-one', SimpleAgent).exit('done');
     const untypedLane: LaneBuilder<{ readonly id: string }, string> = H.lane('bad-rewind-lane')
       .input(SimpleSchema)
       .key((item: { readonly id: string }) => item.id)
       .runs(validFlow);
-
     expect(() =>
-      untypedLane.onSignal(RewindSignal, ($s) =>
-        $s.update((cur: { readonly id: string }) => cur).rewindTo('non-existent-step'),
-      ),
+      untypedLane.onSignal(RewindSignal, ($s) => $s.update((cur: { readonly id: string }) => cur).rewindTo('non-existent-step')),
     ).toThrowError(
       "Lane 'bad-rewind-lane' signal handler on 'ci-failed' rewinds to unknown step ID 'non-existent-step' not present in flow 'valid-flow'.",
     );

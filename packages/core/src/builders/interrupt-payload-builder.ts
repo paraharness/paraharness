@@ -29,5 +29,3 @@ export interface InterruptPayloadBuilder<TPayload = unknown>
     schema: z.ZodType<TNext, z.ZodTypeDef, unknown>,
   ): InterruptPayloadBuilder<TNext>;
 }
-
-export type { InterruptPayloadBuilder as ConfigurableInterruptBuilder };

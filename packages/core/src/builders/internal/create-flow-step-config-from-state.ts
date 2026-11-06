@@ -1,14 +1,15 @@
 import type { AstBuilder } from '../../ast/ast-builder.js';
 import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type { StepASTNode } from '../../ast/domain-ast.types.js';
+import { extractAST } from '../../ast/extract-ast.js';
 import type { FlowStepInputMapper } from '../../ast/flow-step-input-mapper.types.js';
 import type { FlowStepNode } from '../../ast/flow-step-node.js';
 import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../../ast/interrupt-node.js';
-import { createInterruptEdgeBuilder } from '../create-interrupt-edge-builder.js';
 import type { FlowStepConfigBuilder } from '../flow-step-config-builder.js';
 import type { InterruptEdgeBuilder } from '../interrupt-edge-builder.js';
 import { deepFreeze } from './deep-freeze.js';
+import { createInterruptEdgeFromState } from './interrupt-edge-sub-builders.js';
 
 /**
  * Creates a copy-on-write immutable `FlowStepConfigBuilder` from an internal state snapshot.
@@ -41,75 +42,28 @@ export function createFlowStepConfigFromState<
   readonly step: StepASTNode;
   readonly inputFrom?: FlowStepInputMapper<TStepIn, TFlowIn, TReceipt>;
   readonly onInterruptHandlers: readonly InterruptHandlerNode<TFlowIn, unknown, THandle>[];
-}): FlowStepConfigBuilder<
-  TFlowIn,
-  TStepIn,
-  THandle,
-  TReceipt,
-  TCustomMetrics,
-  TStepOutputs,
-  TStepId
-> {
-  return Object.freeze<
-    FlowStepConfigBuilder<
-      TFlowIn,
-      TStepIn,
-      THandle,
-      TReceipt,
-      TCustomMetrics,
-      TStepOutputs,
-      TStepId
-    >
-  >({
+}): FlowStepConfigBuilder<TFlowIn, TStepIn, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId> {
+  return Object.freeze<FlowStepConfigBuilder<TFlowIn, TStepIn, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>>({
     inputFrom: (
-      mapper: (
-        flowInput: TFlowIn,
-        priorSteps: Readonly<TStepOutputs>,
-        scopeReceipt: TReceipt,
-      ) => TStepIn,
+      mapper: (flowInput: TFlowIn, priorSteps: Readonly<TStepOutputs>, scopeReceipt: TReceipt) => TStepIn,
     ) =>
-      createFlowStepConfigFromState<
-        TFlowIn,
-        TStepIn,
-        THandle,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs,
-        TStepId
-      >({
+      createFlowStepConfigFromState<TFlowIn, TStepIn, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>({
         ...state,
         inputFrom: mapper,
       }),
     onInterrupt: <TPayload>(
       interrupt: MaybeBuilder<InterruptNode<TPayload>>,
       configure: (
-        $intr: InterruptEdgeBuilder<
-          TFlowIn,
-          TPayload,
-          THandle,
-          TCustomMetrics,
-          Record<string, unknown>
-        >,
+        $intr: InterruptEdgeBuilder<TFlowIn, TPayload, THandle, TCustomMetrics, Record<string, unknown>>,
       ) => AstBuilder<InterruptHandlerNode<TFlowIn, TPayload, THandle>>,
     ) => {
       const handlerNode = configure(
-        createInterruptEdgeBuilder<
-          TFlowIn,
-          TPayload,
-          THandle,
-          TCustomMetrics,
-          Record<string, unknown>
-        >(interrupt),
+        createInterruptEdgeFromState<TFlowIn, TPayload, THandle, TCustomMetrics, Record<string, unknown>>({
+          interrupt: extractAST(interrupt),
+          abortHook: undefined,
+        }),
       ).toAST();
-      return createFlowStepConfigFromState<
-        TFlowIn,
-        TStepIn,
-        THandle,
-        TReceipt,
-        TCustomMetrics,
-        TStepOutputs,
-        TStepId
-      >({
+      return createFlowStepConfigFromState<TFlowIn, TStepIn, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>({
         ...state,
         onInterruptHandlers: [...state.onInterruptHandlers, handlerNode],
       });

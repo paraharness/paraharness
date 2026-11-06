@@ -1,4 +1,4 @@
-import type { BaseIsolationScopeASTNode } from '../../src/index.js';
+import type { BaseIsolationScopeASTNode } from '../../src/ast/base/base-isolation-scope-ast-node.js';
 
 /**
  * Custom Tier-1 (`capabilityTier: 'scope'`) isolation scope AST node registered via exact key `'scope'`.

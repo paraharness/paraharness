@@ -9,19 +9,6 @@ import type { RunTerminalReceiptRecord } from './run-terminal-receipt-record.js'
 import type { SuspendedForkRecord } from './suspended-fork-record.js';
 import type { WireFrameRecord } from './wire-frame-record.js';
 
-export type { CreateOrResumeRunInput } from './create-or-resume-run-input.js';
-export type { CreateOrResumeRunRequest } from './create-or-resume-run-request.js';
-export type { CreateOrResumeRunResult } from './create-or-resume-run-result.js';
-export type { InterruptedStepBootRecord } from './interrupted-step-boot-record.js';
-export type { InterruptedStepRecord } from './interrupted-step-record.js';
-export type { MutateLanePlanRequest, MutateLanePlanSpawnedItem } from './mutate-lane-plan-request.js';
-export type { RecordStepStartInput } from './record-step-start-input.js';
-export type { RecordStepTransitionInput } from './record-step-transition-input.js';
-export type { RunTerminalReceipt } from './run-terminal-receipt.js';
-export type { RunTerminalReceiptRecord } from './run-terminal-receipt-record.js';
-export type { StepStartRecord } from './step-start-record.js';
-export type { StepTransitionRecord } from './step-transition-record.js';
-
 /**
  * Durable runtime storage port for flow runs, continuation call stacks, wire frames,
  * suspended child forks, and lane DAG mutations.

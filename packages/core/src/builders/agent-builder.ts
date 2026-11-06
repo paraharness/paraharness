@@ -13,7 +13,7 @@ import type { RulesNode } from '../ast/rules-node.js';
 import type { SkillNode } from '../ast/skill-node.types.js';
 import type { TopologyNode } from '../ast/topology-node.js';
 import type { AgentCapabilitiesBuilder } from './agent-capabilities-builder.js';
-import type { ChildInterruptBuilder } from './child-interrupt-handler-builder.js';
+import type { ChildInterruptHandlerBuilder as ChildInterruptBuilder } from './child-interrupt-handler-builder.js';
 import type { InterruptEdgeBuilder } from './interrupt-edge-builder.js';
 
 /**

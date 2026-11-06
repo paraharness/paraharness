@@ -8,8 +8,6 @@ import type { SpeculateArbiterDecision } from '../ast/speculate-arbiter-decision
 import type { SpeculateCapabilityNode } from '../ast/speculate-capability-node.js';
 import type { ExtractSpeculationCandidate } from './flow-extraction.types.js';
 
-export type { ExtractSpeculationCandidate } from './flow-extraction.types.js';
-
 /**
  * Fluent sub-builder for a parallel speculative tournament capability (`$cap.speculate(toolName, $s => ...)`).
  *

@@ -78,3 +78,29 @@ export function unwrapZodModifiers(schema: z.ZodTypeAny): UnwrappedZodField {
   }
   return { innerSchema: current, isOptional, hasDefault, defaultValue, isNullable, description };
 }
+
+/**
+ * Recursively sorts all plain-object property keys in alphabetical order across a JSON Schema tree.
+ *
+ * Ensures canonical key ordering for deterministic wire serialization and KV cache prefix stability.
+ *
+ * @template T JSON Schema value or nested container type.
+ *
+ * @param {T} value - Input JSON Schema value to canonicalize.
+ *
+ * @returns {T} Canonicalized JSON Schema value with alphabetically sorted object keys.
+ */
+export function sortJsonSchemaKeysCanonical<T>(value: T): T {
+  if (typeof value !== 'object' || value === null) return value;
+  if (Array.isArray(value)) {
+    const out: unknown[] = [];
+    for (const item of value) out.push(sortJsonSchemaKeysCanonical(item));
+    return out as T;
+  }
+  const record = value as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    sorted[key] = sortJsonSchemaKeysCanonical(record[key]);
+  }
+  return sorted as T;
+}

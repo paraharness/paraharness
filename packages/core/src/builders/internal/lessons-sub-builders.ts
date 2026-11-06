@@ -12,11 +12,7 @@ import type { LessonScoringBuilder } from '../lesson-scoring-builder.js';
 import type { LessonSignalTriggerBuilder } from '../lesson-signal-trigger-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 import type { LessonDistillationBuilderState } from './lesson-distillation-builder-state.js';
-import { DEFAULT_LESSON_SCORING } from './lesson-scoring.constants.js';
 import { normalizeMaybeSource } from './normalize-maybe-source.js';
-
-export { DEFAULT_LESSON_SCORING };
-export type { LessonDistillationBuilderState };
 
 /**
  * Creates a fluent `LessonDistillationBuilder` instance.

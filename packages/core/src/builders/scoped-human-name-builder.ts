@@ -25,5 +25,3 @@ export interface ScopedHumanNameBuilder {
     responseSchema: z.ZodType<TResponse, z.ZodTypeDef, unknown>,
   ): ScopedHumanTargetBuilder<TResponse>;
 }
-
-export type { ScopedHumanNameBuilder as ScopedHumanAliasBuilder };

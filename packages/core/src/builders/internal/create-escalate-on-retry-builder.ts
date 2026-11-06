@@ -1,4 +1,4 @@
-import type { EscalateOnRetryPoolStrategyNode } from '../../ast/pool-strategy.types.js';
+import type { EscalateOnRetryPoolStrategyNode } from '../../ast/escalate-on-retry-pool-strategy-node.js';
 import type { EscalateOnRetryStrategyBuilder } from '../escalate-on-retry-strategy-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 

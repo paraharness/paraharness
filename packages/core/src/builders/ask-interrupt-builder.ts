@@ -1,5 +1,5 @@
 import type { AstBuilder } from '../ast/ast-builder.js';
-import type { AskInterruptHandlerNode } from '../ast/interrupt-handler-node.types.js';
+import type { AskInterruptHandlerNode } from '../ast/ask-interrupt-handler-node.js';
 import type { LeaseDelta } from '../ports/lease-delta.js';
 
 /**
@@ -41,5 +41,3 @@ export interface AskInterruptBuilder<TPayload = unknown, TDecision = unknown>
     formatter: (decision: TDecision) => string,
   ): AskInterruptBuilder<TPayload, TDecision>;
 }
-
-export type { AskInterruptBuilder as AskInterruptEdgeBuilder };

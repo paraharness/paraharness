@@ -16,5 +16,3 @@ export interface CreateRulesBuilderState {
     ScopedRuleNode | SourceValue<ScopedRule | readonly ScopedRule[]>
   >;
 }
-
-export type { CreateRulesBuilderState as CreateRulesBuilderOptions };

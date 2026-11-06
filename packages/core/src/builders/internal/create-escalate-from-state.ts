@@ -7,7 +7,7 @@ import type { LeaseDelta } from '../../ports/lease-delta.js';
 import type { EscalateCapabilityBuilder } from '../escalate-capability-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 import type { EscalateCapabilityBuilderState } from './escalate-capability-builder-state.js';
-import { validateBidirectionalHumanChannel } from './validate-flow-capabilities.js';
+import { validateBidirectionalHumanChannel } from './validate-agent-and-human-capabilities.js';
 
 /**
  * Creates a copy-on-write immutable `EscalateCapabilityBuilder` from an internal state snapshot.

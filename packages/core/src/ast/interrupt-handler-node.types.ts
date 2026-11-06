@@ -2,16 +2,6 @@ import type { AdjudicateInterruptHandlerNode } from './adjudicate-interrupt-hand
 import type { AskInterruptHandlerNode } from './ask-interrupt-handler-node.js';
 import type { ReplaceInterruptHandlerNode } from './replace-interrupt-handler-node.js';
 
-export type {
-  AdjudicateInterruptHandlerNode,
-  AdjudicateLeaseElevationConfig,
-} from './adjudicate-interrupt-handler-node.js';
-export type {
-  AskInterruptHandlerNode,
-  AskLeaseElevationConfig,
-} from './ask-interrupt-handler-node.js';
-export type { ReplaceInterruptHandlerNode } from './replace-interrupt-handler-node.js';
-
 /**
  * Passive AST node representing an actor-level or step-level `.onInterrupt(interrupt, $intr => ...)` edge.
  *

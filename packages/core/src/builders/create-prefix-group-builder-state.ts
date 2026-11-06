@@ -17,5 +17,3 @@ export interface CreatePrefixGroupBuilderState {
   /** Optional shared rules registry node. */
   readonly sharedRules?: RulesNode;
 }
-
-export type { CreatePrefixGroupBuilderState as CreatePrefixGroupBuilderOptions };

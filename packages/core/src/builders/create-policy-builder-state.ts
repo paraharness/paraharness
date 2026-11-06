@@ -29,5 +29,3 @@ export interface CreatePolicyBuilderState<THandle = unknown> {
   /** Optional limit-exceeded configuration. */
   readonly onLimitExceeded?: PolicyLimitExceededConfig<THandle>;
 }
-
-export type { CreatePolicyBuilderState as CreatePolicyBuilderOptions };

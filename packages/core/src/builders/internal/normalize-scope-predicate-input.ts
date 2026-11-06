@@ -25,20 +25,34 @@ export function normalizeScopePredicateInput(input: ScopePredicateInput): ScopeP
 }
 
 /**
- * Extracts a string identifier from a `SourceASTNode<ScopedRule>` when present, or returns `'sourced-scoped-rule'`.
+ * Extracts a string identifier from a `SourceASTNode<unknown>` when present, or returns `fallbackId`.
  *
- * Inspects `sourceNode.path` when available so sourced scoped rules inherit a deterministic
- * diagnostic identifier.
+ * Inspects `sourceNode.path`, `sourceNode.pathOrGlob`, and `sourceNode.id` in precedence order
+ * so sourced scoped rules and skills inherit a deterministic diagnostic identifier.
  *
- * @param {SourceASTNode<ScopedRule>} sourceNode - Source AST node to inspect.
+ * @param {SourceASTNode<unknown>} sourceNode                         - Source AST node to inspect.
+ * @param {string}                 [fallbackId='sourced-scoped-rule'] - Fallback identifier when no path or id is present.
  *
  * @returns {string} Derived identifier string.
  */
-export function resolveSourceRuleId(sourceNode: SourceASTNode<ScopedRule>): string {
-  if ('path' in sourceNode && typeof sourceNode.path === 'string') {
+export function resolveSourceRuleId(
+  sourceNode: SourceASTNode<unknown>,
+  fallbackId = 'sourced-scoped-rule',
+): string {
+  if ('path' in sourceNode && typeof sourceNode.path === 'string' && sourceNode.path.trim().length > 0) {
     return sourceNode.path;
   }
-  return 'sourced-scoped-rule';
+  if (
+    'pathOrGlob' in sourceNode &&
+    typeof sourceNode.pathOrGlob === 'string' &&
+    sourceNode.pathOrGlob.trim().length > 0
+  ) {
+    return sourceNode.pathOrGlob;
+  }
+  if (typeof sourceNode.id === 'string' && sourceNode.id.trim().length > 0) {
+    return sourceNode.id;
+  }
+  return fallbackId;
 }
 
 /**

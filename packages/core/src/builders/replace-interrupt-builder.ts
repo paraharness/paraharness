@@ -1,5 +1,5 @@
 import type { AstBuilder } from '../ast/ast-builder.js';
-import type { ReplaceInterruptHandlerNode } from '../ast/interrupt-handler-node.types.js';
+import type { ReplaceInterruptHandlerNode } from '../ast/replace-interrupt-handler-node.js';
 
 /**
  * Compiled builder returned by `InterruptEdgeBuilder.replaceWith(replacementExecutable, mapReplacementInput)`.

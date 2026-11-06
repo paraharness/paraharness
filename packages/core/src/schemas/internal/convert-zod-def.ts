@@ -1,6 +1,10 @@
 import type { z } from 'zod';
 import type { InternalZodDef } from './internal-zod-def.js';
-import { getZodDef, unwrapZodModifiers } from './unwrap-zod-field.js';
+import {
+  getZodDef,
+  sortJsonSchemaKeysCanonical,
+  unwrapZodModifiers,
+} from './unwrap-zod-field.js';
 
 /**
  * Converts a `ZodObject` shape dictionary into JSON Schema `properties`, `required`, and `additionalProperties` fields.
@@ -103,12 +107,20 @@ function convertCoreTypeName(def: InternalZodDef): Record<string, unknown> {
       return { type: 'null' };
     case 'ZodDate':
       return { type: 'string', format: 'date-time' };
-    case 'ZodLiteral':
+    case 'ZodLiteral': {
+      if (def.value === null) return { const: null, type: 'null' };
+      if (typeof def.value === 'bigint') return { const: Number(def.value), type: 'integer' };
       return { const: def.value, type: typeof def.value };
+    }
     case 'ZodEnum':
       return { type: 'string', enum: Array.isArray(def.values) ? [...def.values] : [] };
     case 'ZodNativeEnum': {
-      const rawValues = def.values !== undefined && !Array.isArray(def.values) ? Object.values(def.values) : [];
+      const entries = Object.entries(def.values ?? {});
+      const enumMap = new Map<string, unknown>(entries);
+      const rawValues: unknown[] = [];
+      for (const [, val] of entries) {
+        if (typeof enumMap.get(String(val)) !== 'number') rawValues.push(val);
+      }
       return { enum: rawValues };
     }
     case 'ZodNever':
@@ -121,8 +133,8 @@ function convertCoreTypeName(def: InternalZodDef): Record<string, unknown> {
 /**
  * Recursively converts any `z.ZodTypeAny` schema (including modifiers) into a plain JSON Schema object.
  *
- * Unwraps outer modifiers via `unwrapZodModifiers`, converts the core definition, and attaches
- * nullable `anyOf`, `default`, and `description` attributes when present.
+ * Unwraps outer modifiers via `unwrapZodModifiers`, converts the core definition, attaches
+ * nullable `anyOf`, `default`, and `description` attributes, and sorts keys alphabetically.
  *
  * @param {z.ZodTypeAny} schema - Input Zod schema to convert.
  *
@@ -136,5 +148,5 @@ export function convertZodDefToJsonSchema(schema: z.ZodTypeAny): Record<string, 
     : { ...coreSchema };
   if (unwrapped.hasDefault) finalSchema.default = unwrapped.defaultValue;
   if (unwrapped.description !== undefined) finalSchema.description = unwrapped.description;
-  return finalSchema;
+  return sortJsonSchemaKeysCanonical(finalSchema);
 }

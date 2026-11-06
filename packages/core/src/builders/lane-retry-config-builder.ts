@@ -49,5 +49,3 @@ export interface LaneRetryConfigBuilder {
    */
   toAST(): LaneRetryConfig;
 }
-
-export type { LaneRetryConfigBuilder as LaneRetryBuilder };

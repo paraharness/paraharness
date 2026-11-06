@@ -18,5 +18,3 @@ export interface CreateScopedRuleBuilderState {
   /** Attached `beforeStop` check AST nodes. */
   readonly enforceBeforeStopChecks?: readonly CheckASTNode<unknown>[];
 }
-
-export type { CreateScopedRuleBuilderState as CreateScopedRuleBuilderOptions };

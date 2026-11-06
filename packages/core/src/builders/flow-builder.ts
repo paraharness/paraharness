@@ -17,14 +17,6 @@ import type {
 } from './flow-extraction.types.js';
 import type { FlowStepConfigBuilder } from './flow-step-config-builder.js';
 
-export type {
-  ExtractScopeHandle,
-  ExtractScopeReceipt,
-  ExtractStepInput,
-  ExtractStepOutput,
-  ExtractTelemetryMetrics,
-} from './flow-extraction.types.js';
-
 /**
  * Fluent builder for a declarative multi-step workflow (`H.flow(id)`).
  *

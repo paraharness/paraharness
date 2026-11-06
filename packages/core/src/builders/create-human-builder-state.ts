@@ -15,5 +15,3 @@ export interface CreateHumanBuilderState<
   /** Bound human channel AST node. */
   readonly channel?: HumanChannelASTNode<TMode>;
 }
-
-export type { CreateHumanBuilderState as CreateHumanBuilderOptions };

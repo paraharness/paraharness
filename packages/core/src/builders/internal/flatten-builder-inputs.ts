@@ -4,7 +4,7 @@ import type { ASTNode } from '../../ast/ast-node.js';
 import { extractAST } from '../../ast/extract-ast.js';
 import type { AgentBuilderState } from './agent-builder-state.js';
 import { deepFreeze } from './deep-freeze.js';
-import { validatePrefixGroupCloneTranscriptMode } from './validate-flow-capabilities.js';
+import { validatePrefixGroupCloneTranscriptMode } from './validate-agent-and-human-capabilities.js';
 
 /**
  * Type guard narrowing a single value or readonly array union to a `ReadonlyArray`.

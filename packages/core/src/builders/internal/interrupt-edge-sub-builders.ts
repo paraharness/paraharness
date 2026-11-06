@@ -1,32 +1,21 @@
 import type { z } from 'zod';
-import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type { AstBuilder } from '../../ast/ast-builder.js';
+import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type { AbortHookASTNode, StepASTNode } from '../../ast/domain-ast.types.js';
 import { extractAST } from '../../ast/extract-ast.js';
 import type { HumanNode } from '../../ast/human-node.js';
-import type {
-  InterruptHandlerNode,
-  ReplaceInterruptHandlerNode,
-} from '../../ast/interrupt-handler-node.types.js';
+import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../../ast/interrupt-node.js';
+import type { ReplaceInterruptHandlerNode } from '../../ast/replace-interrupt-handler-node.js';
 import type { UniversalStepTelemetry } from '../../ports/universal-step-telemetry.js';
-import type { AdjudicateInterruptEdgeBuilder } from '../adjudicate-interrupt-builder.js';
-import type { AskInterruptEdgeBuilder } from '../ask-interrupt-builder.js';
+import type { AdjudicateInterruptBuilder } from '../adjudicate-interrupt-builder.js';
+import type { AskInterruptBuilder } from '../ask-interrupt-builder.js';
 import type { ExtractAbortMeta } from '../flow-extraction.types.js';
 import type { InterruptEdgeBuilder } from '../interrupt-edge-builder.js';
 import { createAdjudicateEdgeFromState } from './create-adjudicate-edge-from-state.js';
-import {
-  createAskEdgeFromState,
-  createChildInterruptFromState,
-} from './create-ask-and-child-interrupt-from-state.js';
+import { createAskEdgeFromState } from './create-ask-and-child-interrupt-from-state.js';
 import { deepFreeze } from './deep-freeze.js';
-import { validateBidirectionalHumanChannel } from './validate-flow-capabilities.js';
-
-export {
-  createAdjudicateEdgeFromState,
-  createAskEdgeFromState,
-  createChildInterruptFromState,
-};
+import { validateBidirectionalHumanChannel } from './validate-agent-and-human-capabilities.js';
 
 /**
  * Creates an immutable `InterruptEdgeBuilder` from an internal state snapshot.
@@ -58,20 +47,27 @@ export function createInterruptEdgeFromState<
     adjudicateWith<TAdjIn, TVerdict>(
       adjudicator: MaybeBuilder<StepASTNode<TAdjIn, TVerdict, THandle>>,
       mapInput: (input: TIn, payload: TPayload) => TAdjIn,
-    ): AdjudicateInterruptEdgeBuilder<TIn, TPayload, THandle, TVerdict> {
-      return createAdjudicateEdgeFromState({
-        interrupt: state.interrupt,
-        adjudicator: extractAST(adjudicator),
-        mapInput,
-        onInterruptHandlers: [],
-        elevateLeaseWhen: undefined,
-        resumeWith: undefined,
-      });
+    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict> {
+      return createAdjudicateEdgeFromState(
+        {
+          interrupt: state.interrupt,
+          adjudicator: extractAST(adjudicator),
+          mapInput,
+          onInterruptHandlers: [],
+          elevateLeaseWhen: undefined,
+          resumeWith: undefined,
+        },
+        <TSubPayload>(subInterrupt: InterruptNode<TSubPayload>) =>
+          createInterruptEdgeFromState<unknown, TSubPayload, THandle>({
+            interrupt: subInterrupt,
+            abortHook: undefined,
+          }),
+      );
     },
     ask<TDecision, TMode extends 'bidirectional' | 'notify-only' = 'bidirectional' | 'notify-only'>(
       human: MaybeBuilder<HumanNode<TMode>>,
       responseSchema: z.ZodType<TDecision, z.ZodTypeDef, unknown>,
-    ): AskInterruptEdgeBuilder<TPayload, TDecision> {
+    ): AskInterruptBuilder<TPayload, TDecision> {
       const humanNode = validateBidirectionalHumanChannel(extractAST(human), '.ask()');
       return createAskEdgeFromState({
         interrupt: state.interrupt,

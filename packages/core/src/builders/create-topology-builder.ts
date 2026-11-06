@@ -10,10 +10,10 @@ import {
   computeTransitiveDependents,
   validateTopologyDAG,
 } from '../topology/internal/validate-topology-dag.js';
-import type { CreateTopologyBuilderOptions } from './create-topology-builder-state.js';
+import type { CreateTopologyBuilderState as CreateTopologyBuilderOptions } from './create-topology-builder-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
 import type { TopologyCommitOverlayBuilderInput } from './topology-commit-overlay-builder-input.js';
-import type { ConfigurableTopologyBuilder } from './topology-config-builder.js';
+import type { TopologyConfigBuilder as ConfigurableTopologyBuilder } from './topology-config-builder.js';
 
 /**
  * Creates a fluent `ConfigurableTopologyBuilder` for `H.topology(id)`.
@@ -33,9 +33,7 @@ export function createTopologyBuilder<TPartition extends string = string>(
   options?: CreateTopologyBuilderOptions<TPartition>,
 ): ConfigurableTopologyBuilder<TPartition> {
   assertNonEmptyIdentifier('H.topology', id);
-  const ensurePartitions = (): Readonly<
-    Record<TPartition, TopologyPartitionConstraint<TPartition>>
-  > => {
+  const ensurePartitions = (): Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>> => {
     if (options?.partitions === undefined) {
       throw new Error(`Topology '${id}' is missing required .partitions(...) configuration.`);
     }
@@ -44,19 +42,11 @@ export function createTopologyBuilder<TPartition extends string = string>(
 
   return Object.freeze<ConfigurableTopologyBuilder<TPartition>>({
     id,
-    store(
-      topologyStore: MaybeBuilder<TopologyStoreASTNode>,
-    ): ConfigurableTopologyBuilder<TPartition> {
-      return createTopologyBuilder<TPartition>(id, {
-        ...options,
-        store: extractAST(topologyStore),
-      });
-    },
-    partitions<TNextPartition extends string>(
-      partitionMap: Readonly<
-        Record<TNextPartition, TopologyPartitionConstraint<NoInfer<TNextPartition>>>
-      >,
-    ): ConfigurableTopologyBuilder<TNextPartition> {
+    store: (topologyStore: MaybeBuilder<TopologyStoreASTNode>) =>
+      createTopologyBuilder<TPartition>(id, { ...options, store: extractAST(topologyStore) }),
+    partitions: <TNextPartition extends string>(
+      partitionMap: Readonly<Record<TNextPartition, TopologyPartitionConstraint<NoInfer<TNextPartition>>>>,
+    ) => {
       validateTopologyDAG(id, partitionMap);
       return createTopologyBuilder<TNextPartition>(id, {
         store: options?.store,
@@ -64,10 +54,10 @@ export function createTopologyBuilder<TPartition extends string = string>(
         commitOverlayWhen: options?.commitOverlayWhen,
       });
     },
-    commitOverlayWhen<TOnSig = unknown, TDiscardSig = unknown>(
+    commitOverlayWhen: <TOnSig = unknown, TDiscardSig = unknown>(
       config: TopologyCommitOverlayBuilderInput<TOnSig, TDiscardSig>,
-    ): ConfigurableTopologyBuilder<TPartition> {
-      const normalized: TopologyCommitOverlayConfig = deepFreeze<TopologyCommitOverlayConfig>({
+    ) => {
+      const normalized = deepFreeze<TopologyCommitOverlayConfig>({
         onSignal:
           config.onSignal !== undefined
             ? {
@@ -85,18 +75,11 @@ export function createTopologyBuilder<TPartition extends string = string>(
             : undefined,
         maxSealedAgeHours: config.maxSealedAgeHours,
       });
-      return createTopologyBuilder<TPartition>(id, {
-        ...options,
-        commitOverlayWhen: normalized,
-      });
+      return createTopologyBuilder<TPartition>(id, { ...options, commitOverlayWhen: normalized });
     },
-    dependentsOf(partitionId: TPartition): readonly TPartition[] {
-      return computeTransitiveDependents(id, ensurePartitions(), partitionId);
-    },
-    affectedBy(partitionId: TPartition): readonly TPartition[] {
-      const strictDeps = computeTransitiveDependents(id, ensurePartitions(), partitionId);
-      return Object.freeze([partitionId, ...strictDeps]);
-    },
+    dependentsOf: (partitionId: TPartition) => computeTransitiveDependents(id, ensurePartitions(), partitionId),
+    affectedBy: (partitionId: TPartition) =>
+      Object.freeze([partitionId, ...computeTransitiveDependents(id, ensurePartitions(), partitionId)]),
     toAST(): TopologyNode<TPartition> {
       if (options?.store === undefined) {
         throw new Error(`Topology '${id}' is missing required .store(...) configuration.`);

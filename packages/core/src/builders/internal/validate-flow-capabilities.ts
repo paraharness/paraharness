@@ -7,11 +7,8 @@ import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.type
 import {
   agentRequiresBranchableScope,
   findPostFlightSubprocessTool,
-  validateBidirectionalHumanChannel,
   validatePrefixGroupCloneTranscriptMode,
 } from './validate-agent-and-human-capabilities.js';
-
-export { validateBidirectionalHumanChannel, validatePrefixGroupCloneTranscriptMode };
 
 /**
  * Validates that every `'replace'` interrupt handler has either an explicit `abortHook` or a checkpointable/branchable scope.

@@ -20,5 +20,3 @@ export interface CreateStreamBuilderState<TEvent = unknown, TPayload = unknown> 
   /** Synchronous event-to-signal payload mapper. */
   readonly mapPayload?: (event: TEvent) => TPayload;
 }
-
-export type { CreateStreamBuilderState as CreateStreamBuilderOptions };

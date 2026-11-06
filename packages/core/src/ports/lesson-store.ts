@@ -1,10 +1,6 @@
 import type { LessonOutcome } from './lesson-outcome.types.js';
 import type { LessonRecord } from './lesson-record.js';
 
-export type { DistilledLessonCandidate } from './distilled-lesson-candidate.js';
-export type { LessonOutcome } from './lesson-outcome.types.js';
-export type { LessonRecord } from './lesson-record.js';
-
 /**
  * Runtime storage port for querying, admitting, scoring, and retiring empirical lessons.
  *

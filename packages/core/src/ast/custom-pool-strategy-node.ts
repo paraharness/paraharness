@@ -20,5 +20,5 @@ export interface CustomPoolStrategyNode<TItem = unknown> extends ASTNode {
   readonly selectFn: (
     candidates: readonly PoolCandidateState<TItem>[],
     ctx: PoolSelectionContext,
-  ) => TItem;
+  ) => TItem | undefined;
 }

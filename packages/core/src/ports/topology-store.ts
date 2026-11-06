@@ -1,9 +1,6 @@
 import type { CommitRunOverlayResult } from './commit-run-overlay-result.js';
 import type { TopologyPartitionState } from './topology-partition-state.js';
 
-export type { CommitRunOverlayResult } from './commit-run-overlay-result.js';
-export type { TopologyPartitionState } from './topology-partition-state.js';
-
 /**
  * Runtime storage port for run-isolated Copy-on-Write partition contract overlays and 3-way commits.
  *

@@ -1,7 +1,5 @@
 import type { HumanDecisionRequest } from './human-decision-request.js';
 
-export type { HumanDecisionRequest } from './human-decision-request.js';
-
 /**
  * Runtime port for outbound human notifications and bidirectional human-in-the-loop adjudications.
  *

@@ -62,5 +62,3 @@ export interface TopologyConfigBuilder<TPartition extends string = string>
     config: TopologyCommitOverlayBuilderInput<TOnSig, TDiscardSig>,
   ): TopologyConfigBuilder<TPartition>;
 }
-
-export type { TopologyConfigBuilder as ConfigurableTopologyBuilder };

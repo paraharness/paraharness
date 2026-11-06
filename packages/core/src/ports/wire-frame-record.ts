@@ -1,7 +1,5 @@
 import type { CanonicalMessage } from './canonical-message.js';
 
-export type { CanonicalMessage, CanonicalToolCall, CanonicalToolResult } from './canonical-message.js';
-
 /**
  * Immutable ledger record capturing both the exact vendor wire payload (`rawWireFrame`)
  * and its vendor-neutral `CanonicalMessage` projection.

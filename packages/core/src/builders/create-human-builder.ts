@@ -4,11 +4,11 @@ import type { HumanChannelASTNode } from '../ast/domain-ast.types.js';
 import { extractAST } from '../ast/extract-ast.js';
 import type { HumanNode } from '../ast/human-node.js';
 import type { ScopedHumanTargetNode } from '../ast/scoped-human-target-node.js';
-import type { CreateHumanBuilderOptions } from './create-human-builder-state.js';
+import type { CreateHumanBuilderState as CreateHumanBuilderOptions } from './create-human-builder-state.js';
 import type { HumanBuilder } from './human-builder.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
-import { validateBidirectionalHumanChannel } from './internal/validate-flow-capabilities.js';
-import type { ScopedHumanAliasBuilder } from './scoped-human-name-builder.js';
+import { validateBidirectionalHumanChannel } from './internal/validate-agent-and-human-capabilities.js';
+import type { ScopedHumanNameBuilder as ScopedHumanAliasBuilder } from './scoped-human-name-builder.js';
 import type { ScopedHumanTargetBuilder } from './scoped-human-target-builder.js';
 
 /**

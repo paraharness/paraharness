@@ -33,5 +33,3 @@ export interface ChildInterruptHandlerBuilder<TPayload = unknown>
    */
   suspendAndReturnToParent(): ChildInterruptHandlerBuilder<TPayload>;
 }
-
-export type { ChildInterruptHandlerBuilder as ChildInterruptBuilder };

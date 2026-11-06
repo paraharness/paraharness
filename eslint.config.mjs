@@ -65,26 +65,11 @@ function verifySingleRootInterface(interfaces, filename, context) {
     for (const target of targets) inDegree.set(target, (inDegree.get(target) ?? 0) + 1);
   }
   const baseStem = (filename.split('/').pop() ?? '').replace(/\.[^.]+$/, '').replace(/-/g, '').toLowerCase();
-  const root =
-    interfaces.find((i) => i.name.toLowerCase() === baseStem && (inDegree.get(i.name) ?? 0) === 0) ??
-    interfaces.find((i) => i.name.toLowerCase() === baseStem) ??
-    interfaces.filter((i) => (inDegree.get(i.name) ?? 0) === 0).pop() ??
-    interfaces[interfaces.length - 1];
+  const root = interfaces.find((i) => i.name.toLowerCase() === baseStem && (inDegree.get(i.name) ?? 0) === 0) ?? interfaces.find((i) => i.name.toLowerCase() === baseStem) ?? interfaces.filter((i) => (inDegree.get(i.name) ?? 0) === 0).pop() ?? interfaces[interfaces.length - 1];
   const reachable = new Set([root.name]);
   const queue = [root.name];
-  while (queue.length > 0) {
-    for (const next of edges.get(queue.shift()) ?? []) {
-      if (!reachable.has(next)) {
-        reachable.add(next);
-        queue.push(next);
-      }
-    }
-  }
-  for (const item of interfaces) {
-    if (!reachable.has(item.name)) {
-      context.report({ node: item.node, message: `Interface '${item.name}' is not a property sub-interface of '${root.name}'. Top-level interfaces must live one per file (only sub-interfaces referenced by the parent interface's properties may share a file).` });
-    }
-  }
+  while (queue.length > 0) for (const next of edges.get(queue.shift()) ?? []) if (!reachable.has(next)) { reachable.add(next); queue.push(next); }
+  for (const item of interfaces) if (!reachable.has(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' is not a property sub-interface of '${root.name}'. Top-level interfaces must live one per file (only sub-interfaces referenced by the parent interface's properties may share a file).` });
 }
 
 /**
@@ -186,6 +171,11 @@ export default [
                     }
                     return;
                   }
+                  for (const stmt of program.body) {
+                    if (stmt.type === 'ExportAllDeclaration' || (stmt.type === 'ExportNamedDeclaration' && (stmt.source !== null || (stmt.declaration === null && stmt.specifiers.length > 0)))) {
+                      context.report({ node: stmt, message: "Re-export statements ('export { ... }' / 'export *') are only allowed in barrel index.ts files (Rule 1.7)." });
+                    }
+                  }
                   const entities = program.body.map(classifyTopLevelEntity).filter(Boolean);
                   if (filename.endsWith('.schema.ts')) {
                     for (const e of entities.filter((x) => x.kind === 'interface' || x.kind === 'class')) context.report({ node: e.node, message: `Schema file may not declare ${e.kind} '${e.name}' (Rule 1.1).` });
@@ -199,6 +189,10 @@ export default [
                   for (const cls of entities.filter((e) => e.kind === 'class').slice(1)) context.report({ node: cls.node, message: `Class '${cls.name}' exceeds 1 class per file (Rule 1.3).` });
                   verifySingleRootInterface(entities.filter((e) => e.kind === 'interface'), filename, context);
                   const funcs = entities.filter((e) => e.kind === 'function');
+                  for (const fn of funcs) {
+                    const lines = fn.node.loc.end.line - fn.node.loc.start.line + 1;
+                    if (lines > 80) context.report({ node: fn.node, message: `Function exceeds 80 lines (${lines} lines). Decompose into smaller internal/ helpers (Rule 3.1).` });
+                  }
                   const singleFn = (!filename.includes('/internal/') && (filename.includes('/builders/') || /\/create-[^/]+\.ts$/.test(filename))) || funcs.some((f) => f.node.loc.end.line - f.node.loc.start.line + 1 > 40);
                   for (const fn of funcs.slice(singleFn ? 1 : 4)) context.report({ node: fn.node, message: `Function '${fn.name}' exceeds maximum of ${singleFn ? 1 : 4} function(s) in this file (Rule 1.6).` });
                 },

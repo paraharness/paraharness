@@ -11,17 +11,9 @@ import type {
   ExtractTrackerExternal,
   ExtractTrackerState,
 } from './flow-extraction.types.js';
-import type { LaneRetryBuilder } from './lane-retry-config-builder.js';
+import type { LaneRetryConfigBuilder as LaneRetryBuilder } from './lane-retry-config-builder.js';
 import type { LaneSignalHandlerBuilder } from './lane-signal-handler-builder.js';
-import type { LaneTrackerBuilder } from './lane-tracker-config-builder.js';
-
-export type {
-  ExtractTrackerExternal,
-  ExtractTrackerState,
-} from './flow-extraction.types.js';
-export type { LaneRetryBuilder } from './lane-retry-config-builder.js';
-export type { LaneSignalHandlerBuilder } from './lane-signal-handler-builder.js';
-export type { LaneTrackerBuilder } from './lane-tracker-config-builder.js';
+import type { LaneTrackerConfigBuilder as LaneTrackerBuilder } from './lane-tracker-config-builder.js';
 
 /**
  * Fluent builder for a concurrent work execution lane (`H.lane(id)`).

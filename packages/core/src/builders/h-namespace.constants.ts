@@ -1,8 +1,11 @@
 import type { z } from 'zod';
+import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { ASTNode } from '../ast/ast-node.js';
+import type { SourceASTNode } from '../ast/domain-ast.types.js';
 import type { EnvRef } from '../ast/env-ref.js';
 import type { InterruptBuilder } from '../ast/interrupt-builder.js';
 import type { SignalBuilder } from '../ast/signal-builder.js';
+import type { SkillNode } from '../ast/skill-node.types.js';
 import {
   BudgetApprovalSchema,
   DistilledLessonCandidateSchema,
@@ -11,6 +14,7 @@ import {
 import {
   GlobalRuleSchema,
   ScopePredicateSchema,
+  type ScopedRule,
   ScopedRuleSchema,
 } from '../schemas/core-rules.schema.js';
 import {
@@ -92,11 +96,13 @@ export const H: HarnessNamespace = Object.freeze<HarnessNamespace>({
   rules(id: string): RulesBuilder {
     return createRulesBuilder(id);
   },
-  scopedRule(id: string): ScopedRuleBuilder {
-    return createScopedRuleBuilder(id);
+  scopedRule(idOrSource: string | MaybeBuilder<SourceASTNode<ScopedRule>>): ScopedRuleBuilder {
+    return createScopedRuleBuilder(idOrSource);
   },
-  skill<THandle = unknown>(id: string): SkillBuilder<THandle> {
-    return createSkillBuilder<THandle>(id);
+  skill<THandle = unknown>(
+    idOrSource: string | MaybeBuilder<SourceASTNode<SkillNode<THandle>>>,
+  ): SkillBuilder<THandle> {
+    return createSkillBuilder<THandle>(idOrSource);
   },
   lessons<TIn = unknown>(id: string): LessonsBuilder<TIn> {
     return createLessonsBuilder<TIn>(id);

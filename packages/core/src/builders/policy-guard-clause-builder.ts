@@ -46,5 +46,3 @@ export interface PolicyGuardClauseBuilder<THandle = unknown> {
     mapViolation: (violation: PolicyViolation) => TPayload,
   ): PolicyBuilder<THandle>;
 }
-
-export type { PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder };

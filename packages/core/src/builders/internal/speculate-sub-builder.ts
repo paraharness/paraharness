@@ -11,8 +11,6 @@ import type { SpeculateCapabilityBuilder } from '../speculate-capability-builder
 import { deepFreeze } from './deep-freeze.js';
 import type { SpeculateCapabilityState } from './speculate-capability-state.js';
 
-export type { SpeculateCapabilityState } from './speculate-capability-state.js';
-
 /**
  * Creates an immutable `SpeculateCapabilityBuilder` from an internal state snapshot.
  *
@@ -34,60 +32,33 @@ export type { SpeculateCapabilityState } from './speculate-capability-state.js';
  * @returns {SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>} Frozen speculate builder.
  */
 export function createSpeculateFromState<
-  TParentIn = unknown,
-  TReq = unknown,
-  TChildIn = unknown,
-  TChildOut = unknown,
-  THandle = unknown,
-  TCrossReport = unknown,
-  TVerdict = unknown,
-  TCandidate = unknown,
+  TParentIn = unknown, TReq = unknown, TChildIn = unknown, TChildOut = unknown,
+  THandle = unknown, TCrossReport = unknown, TVerdict = unknown, TCandidate = unknown,
 >(
   state: SpeculateCapabilityState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict>,
 ): SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate> {
-  return Object.freeze<
-    SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>
-  >({
+  return Object.freeze<SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>>({
     requestSchema: <TNewReq>(schema: z.ZodType<TNewReq, z.ZodTypeDef, unknown>) =>
-      createSpeculateFromState<TParentIn, TNewReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({
-        ...state,
-        requestSchema: schema,
-        mapBranches: undefined,
-      }),
+      createSpeculateFromState({ ...state, requestSchema: schema, mapBranches: undefined }),
     worker: <TNewChildIn, TNewChildOut>(
-      workerExecutable: MaybeBuilder<
-        AgentNode<TNewChildIn, TNewChildOut, THandle> | LoopNode<TNewChildIn, TNewChildOut, THandle, string>
-      >,
+      workerExecutable: MaybeBuilder<AgentNode<TNewChildIn, TNewChildOut, THandle> | LoopNode<TNewChildIn, TNewChildOut, THandle, string>>,
     ) =>
-      createSpeculateFromState<TParentIn, TReq, TNewChildIn, TNewChildOut, THandle, TCrossReport, TVerdict, TCandidate>({
+      createSpeculateFromState({
         ...state,
         workerExecutable: extractAST(workerExecutable),
         mapBranches: undefined,
         verifyWinnerWith: undefined,
         refineWinnerWhen: undefined,
       }),
-    branches: (
-      branchCount: number,
-      mapBranches: (parentInput: TParentIn, req: TReq) => readonly TChildIn[],
-    ) => {
+    branches: (branchCount: number, mapBranches: (parentInput: TParentIn, req: TReq) => readonly TChildIn[]) => {
       if (!Number.isInteger(branchCount) || branchCount < 2) {
-        throw new Error(
-          `Speculate capability '${state.toolName}' requires branchCount >= 2 (received ${branchCount}).`,
-        );
+        throw new Error(`Speculate capability '${state.toolName}' requires branchCount >= 2 (received ${branchCount}).`);
       }
-      return createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({
-        ...state,
-        branchCount,
-        mapBranches,
-      });
+      return createSpeculateFromState({ ...state, branchCount, mapBranches });
     },
     crossVerifyWith: <TNewCrossReport>(
       crossVerifier: MaybeBuilder<CrossVerifierASTNode<THandle, Record<string, unknown>, TNewCrossReport>>,
-    ) =>
-      createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TNewCrossReport, TVerdict, TCandidate>({
-        ...state,
-        crossVerifier: extractAST(crossVerifier),
-      }),
+    ) => createSpeculateFromState({ ...state, crossVerifier: extractAST(crossVerifier) }),
     verifyWinnerWith: <TEvalOut, TReceipt = unknown>(
       evaluator: MaybeBuilder<AgentNode<unknown, TEvalOut, THandle>>,
       verifyOptions: {
@@ -95,61 +66,27 @@ export function createSpeculateFromState<
         readonly acceptWhen: (evalOut: TEvalOut) => boolean;
       },
     ) =>
-      createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({
+      createSpeculateFromState({
         ...state,
-        verifyWinnerWith: {
-          evaluator: extractAST(evaluator),
-          mapInput: verifyOptions.mapInput,
-          acceptWhen: verifyOptions.acceptWhen,
-        },
+        verifyWinnerWith: { evaluator: extractAST(evaluator), mapInput: verifyOptions.mapInput, acceptWhen: verifyOptions.acceptWhen },
       }),
     arbiter: <TNewVerdict, TArbiterIn = unknown>(
       arbiterActor: MaybeBuilder<AgentNode<TArbiterIn, TNewVerdict, THandle>>,
       arbiterOptions: { readonly resolveDecision: (verdict: TNewVerdict) => SpeculateArbiterDecision },
     ) =>
-      createSpeculateFromState<
-        TParentIn,
-        TReq,
-        TChildIn,
-        TChildOut,
-        THandle,
-        TCrossReport,
-        TNewVerdict,
-        ExtractSpeculationCandidate<TArbiterIn>
-      >({
+      createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TNewVerdict, ExtractSpeculationCandidate<TArbiterIn>>({
         ...state,
-        arbiter: {
-          actor: extractAST(arbiterActor),
-          resolveDecision: arbiterOptions.resolveDecision,
-        },
+        arbiter: { actor: extractAST(arbiterActor), resolveDecision: arbiterOptions.resolveDecision },
         refineWinnerWhen: undefined,
       }),
     refineWinnerWhen: (
       predicate: (verdict: TVerdict) => boolean,
-      refinementExecutable: MaybeBuilder<
-        AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>
-      >,
+      refinementExecutable: MaybeBuilder<AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>>,
       mapInput: (parentInput: TParentIn, verdict: TVerdict, candidates: readonly TCandidate[]) => TChildIn,
-    ) =>
-      createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({
-        ...state,
-        refineWinnerWhen: {
-          predicate,
-          refinementExecutable: extractAST(refinementExecutable),
-          mapInput,
-        },
-      }),
+    ) => createSpeculateFromState({ ...state, refineWinnerWhen: { predicate, refinementExecutable: extractAST(refinementExecutable), mapInput } }),
     toAST: (): SpeculateCapabilityNode<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict> => {
-      if (
-        state.requestSchema === undefined ||
-        state.workerExecutable === undefined ||
-        state.branchCount === undefined ||
-        state.mapBranches === undefined ||
-        state.arbiter === undefined
-      ) {
-        throw new Error(
-          `Speculate capability '${state.toolName}' is missing required .requestSchema(), .worker(), .branches(), or .arbiter() configuration.`,
-        );
+      if (state.requestSchema === undefined || state.workerExecutable === undefined || state.branchCount === undefined || state.mapBranches === undefined || state.arbiter === undefined) {
+        throw new Error(`Speculate capability '${state.toolName}' is missing required .requestSchema(), .worker(), .branches(), or .arbiter() configuration.`);
       }
       return deepFreeze<SpeculateCapabilityNode<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict>>({
         type: 'harness:speculate-capability',

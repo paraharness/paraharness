@@ -1,9 +1,6 @@
 import type { ReconcileCleanResult } from './reconcile-clean-result.js';
 import type { ReconcileConflictResult } from './reconcile-conflict-result.js';
 
-export type { ReconcileCleanResult } from './reconcile-clean-result.js';
-export type { ReconcileConflictResult } from './reconcile-conflict-result.js';
-
 /**
  * Alias for `ReconcileCleanResult` representing a conflict-free 3-way scope reconciliation result.
  *

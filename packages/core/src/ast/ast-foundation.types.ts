@@ -1,9 +1,6 @@
 import type { AstBuilder } from './ast-builder.js';
 import type { ASTNode } from './ast-node.js';
-import type { ScopeCapabilityTier } from './base/base-domain-ast.types.js';
 import type { SourceASTNode } from './domain-ast.types.js';
-
-export type { ScopeCapabilityTier };
 
 /**
  * Bivariant function type enabling covariance across generic AST node and port collections under `strictFunctionTypes: true` without `any`.
