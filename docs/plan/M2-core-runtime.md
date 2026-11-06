@@ -11,8 +11,9 @@
   - `packages/core/test/runtime-*.test.ts`
 - **`forbidden_dirs`**:
   - `packages/core/src/{ast,ports,schemas,topology,builders}/**`
+  - `packages/core/src/h-namespace-contract.ts`, `packages/core/src/h-namespace.ts`
   - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
-  - Root workspace files (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`), `.agents/**`, `.claude/**`, `docs/**`
+  - Root workspace files (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`), `.agents/**`, `.claude/**`, `docs/**`
 
 ---
 
@@ -35,38 +36,55 @@
 
 ## 3. Planned Module Decomposition & Public Exports (`packages/core/src/runtime/**`)
 
-Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single responsibility, `internal/` phase helpers, zero inline comments, full JSDoc).
+Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file plus `TSPropertySignature` property sub-interfaces only, 1 `class` per file, `internal/` phase helpers, zero inline comments, full 3-part JSDoc on every declaration and `TSMethodSignature`).
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
+| `src/runtime/locks/scope-lock-entry-state.ts` | `interface` | `ScopeLockEntryState` |
 | `src/runtime/locks/scope-lock-manager.ts` | `class` | `ScopeLockManager` (`acquireRead`, `acquireWrite`, `withReadLock`, `withWriteLock`) |
 | `src/runtime/locks/step-continuation-queue.ts` | `class` | `StepContinuationQueue` (`enqueueUpdate`, `clearStep`) |
+| `src/runtime/pools/pool-runtime-state.ts` | `interface` | `PoolRuntimeState` |
 | `src/runtime/pools/pool-manager.ts` | `class` | `PoolManager` (`selectSeat`, `selectModel`, `recordRateLimit429`, `recordModelOutcome`, `releaseRunSeats`) |
+| `src/runtime/prefix/compile-wire-prefix-params.ts` | `interface` | `CompileWirePrefixParams` |
 | `src/runtime/prefix/compile-wire-prefix.ts` | `function` | `compileRunWirePrefixes`, `computeInRunGroundingDiffs`, `buildRoleAndScopeContextFrame` |
 | `src/runtime/prefix/internal/collect-prefix-tools.ts` | `function` | `collectRoleScopedWireTools`, `collectUnionWireTools` |
+| `src/runtime/lessons/lesson-scoring.constants.ts` | `const` | `LESSON_OUTCOME_PRECEDENCE_RANK`, `DEFAULT_LESSON_SCORING_WEIGHTS` |
 | `src/runtime/lessons/lesson-scoring.ts` | `function` | `computeLessonScore`, `shouldRetireLesson`, `selectRecalledLessons`, `mergeLessonOutcomePrecedence` |
+| `src/runtime/lessons/lesson-distillation-params.ts` | `interface` | `LessonDistillationParams` |
 | `src/runtime/lessons/lesson-distiller-runner.ts` | `function` | `runContrastiveLessonDistillation`, `flushStepLessonOutcomes`, `evaluateLessonSignalTriggers` |
+| `src/runtime/services/active-service-entry.ts` | `interface` | `ActiveServiceEntry` |
 | `src/runtime/services/service-session-registry.ts` | `class` | `ServiceSessionRegistry` (`acquireSkillServices`, `releaseSkillServices`, `quiesceScopeServices`, `reacquireActiveSkillServices`) |
+| `src/runtime/policy/policy-evaluation-result.ts` | `interface` | `PolicyEvaluationResult` |
+| `src/runtime/policy/post-flight-sandbox-params.ts` | `interface` | `PostFlightSandboxParams` |
 | `src/runtime/policy/evaluate-policy-guards.ts` | `function` | `evaluatePreFlightToolBatch`, `executePostFlightSandboxedTool`, `evaluateQuotaTripwires` |
 | `src/runtime/policy/internal/match-lease-and-clauses.ts` | `function` | `evaluateSingleGuardClause`, `isEffectCoveredByLeases`, `checkQuantitativeLimits` |
+| `src/runtime/policy/limit-exceeded-flush-params.ts` | `interface` | `LimitExceededFlushParams` |
 | `src/runtime/policy/execute-limit-exceeded-flush.ts` | `function` | `executeLimitExceededSequence` |
+| `src/runtime/agent/agent-turn-session-state.ts` | `interface` | `AgentTurnSessionState` |
 | `src/runtime/agent/execute-agent.ts` | `function` | `executeAgent` |
 | `src/runtime/agent/internal/run-agent-turn-loop.ts` | `function` | `runAgentTurnLoop`, `initializeAgentContinuationFrame`, `invokeModelTurnWithFailover` |
 | `src/runtime/agent/internal/drain-pending-tool-batch.ts` | `function` | `drainPendingToolBatch`, `executeSingleToolInPipeline`, `handleBuiltInSkillAndCapabilityTools` |
 | `src/runtime/agent/internal/evaluate-before-stop-gate.ts` | `function` | `evaluateBeforeStopGate`, `collectTriggeredScopedRuleChecks` |
 | `src/runtime/agent/internal/resolve-interrupt-edge.ts` | `function` | `resolveInterruptEdge`, `runAdjudicatorEdge`, `runHumanAskEdge` |
+| `src/runtime/fork/fork-batch-execution-params.ts` | `interface` | `ForkBatchExecutionParams` |
 | `src/runtime/fork/execute-fork-batch.ts` | `function` | `executeForkBatch`, `executeResumeForkBatch` |
 | `src/runtime/fork/internal/fork-barrier-and-pause.ts` | `function` | `coordinateTurnBatchInterruptBarrier`, `pauseSiblingForkAtBoundary`, `reconcileChildForkWithBounce` |
 | `src/runtime/fork/internal/resume-fork-cases.ts` | `function` | `resumeSuspendedForkEntry`, `injectCaseAResumeFrame`, `injectCaseBResumeFrame`, `injectCaseCResumeFrame` |
+| `src/runtime/speculate/speculate-tournament-params.ts` | `interface` | `SpeculateTournamentParams` |
 | `src/runtime/speculate/execute-speculate-tournament.ts` | `function` | `executeSpeculateTournament` |
 | `src/runtime/speculate/internal/resolve-tournament-race.ts` | `function` | `resolvePostRaceCases`, `runTournamentArbiterWithGate`, `executeWinnerRefinementAndCommit`, `unparkEscalatedTournamentBranch` |
+| `src/runtime/plan/plan-mutation-params.ts` | `interface` | `PlanMutationParams` |
 | `src/runtime/plan/execute-plan-mutation.ts` | `function` | `executeSpawnTasks`, `executeAddDependencies`, `executeUpdatePartitionContract`, `syncSuspendedRunPrerequisites` |
+| `src/runtime/loop/loop-execution-state.ts` | `interface` | `LoopExecutionState` |
 | `src/runtime/loop/execute-loop.ts` | `function` | `executeLoop` |
 | `src/runtime/loop/internal/run-loop-iteration.ts` | `function` | `runLoopActPhase`, `runLoopEvaluatePhase`, `escalateLoopActorModelIfNeeded` |
 | `src/runtime/step/execute-command.ts` | `function` | `executeCommand` |
 | `src/runtime/step/execute-step-node.ts` | `function` | `executeStepNode` |
+| `src/runtime/flow/flow-execution-context.ts` | `interface` | `FlowExecutionContext` |
 | `src/runtime/flow/execute-flow.ts` | `function` | `executeFlow`, `executeFlowStep`, `executeFlowBranch` |
 | `src/runtime/flow/internal/flow-replace-and-rewind.ts` | `function` | `executeReplaceWithPromotion`, `executeHierarchicalRewindDrain`, `recoverInterruptedRunOnBoot` |
+| `src/runtime/lane/lane-priority.constants.ts` | `const` | `LANE_PRIORITY_WEIGHTS`, `DEFAULT_PRIORITY_AGING_INTERVAL_MS`, `PRIORITY_AGING_STEP_WEIGHT`, `DEFAULT_MAX_SEALED_AGE_HOURS` |
+| `src/runtime/lane/lane-queued-item-state.ts` | `interface` | `LaneQueuedItemState` |
 | `src/runtime/lane/lane-scheduler.ts` | `class` | `LaneScheduler` (`enqueueItem`, `computeEffectivePriority`, `scheduleNextReadyRuns`, `handleSignalRewind`, `enforceRunBudget`) |
 | `src/runtime/engine/create-runtime.ts` | `function` | `createRuntime` |
 | `src/runtime/engine/default-execution-engine.constants.ts` | `const` | `defaultExecutionEngine: HarnessExecutionEngine` |
@@ -75,6 +93,13 @@ Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**
 ---
 
 ## 4. Detailed Implementation Requirements
+
+### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
+1. **Zero Co-Location of Entity Kinds**:
+   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/core/src/runtime/**` or `packages/core/test/fixtures/**`.
+   - Every runtime helper `interface` (`*Context`, `*State`, `*Params`, `*Options`, `*Result`) gets its own dedicated file (with only `TSPropertySignature` sub-interfaces sharing that file); every `class` (`ScopeLockManager`, `StepContinuationQueue`, `PoolManager`, `ServiceSessionRegistry`, `LaneScheduler`, and each `test/fixtures/*` class) gets its own file (`1 class per file`); every `const` lives in `*.constants.ts`; every `type` lives in `*.types.ts`.
+2. **Full 3-Part JSDoc Requirement**:
+   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/core lint`.
 
 ### 4.1 `ScopeLockManager` & Serialized Per-Step `StepContinuationQueue` (`SPEC.md` §3.7.2)
 1. **Per-Handle Shared-Read / Exclusive-Write Lock (`ScopeLockManager`)**:
@@ -108,30 +133,55 @@ Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**
 2. **Speculative `.speculate()`**: Parks branches hitting exogenous `H.human` escalations or unhandled upward interrupts as `PARKED_ON_ESCALATION`; enforces Post-Race Cases 1–4 (never short-circuiting when $\ge 1$ branch is parked, $\ge 2$ branches are parked, or `humanRulingsHistory.length > 0`); enforces built-in `beforeStop` candidate index validation on `arbiterAgent`; keeps losing candidate worktrees alive during `refineWinnerWhen` and conflict-bouncing `commitChild`; persists `WINNER_COMMITTED` before flushing `bufferedLessonOutcomes`; and on `'unpark-escalation'`, retains all `COMPLETED` sibling handles alive and persists `humanRequestId` before calling `HumanAdapter.requestDecision` (or returns `ABORTED_ON_CHILD_INTERRUPT` for upward interrupts).
 3. **Dynamic `.mutatePlan()`**: Chains spawned prerequisites linearly ($T_{\text{prevTip}} \leftarrow T_1 \leftarrow \dots \leftarrow T_k \leftarrow T_{\text{parent}}$), runs initial `syncRoot` on `QUEUED -> RUNNING`, suspends parent with `headScopeCheckpoint` and `inherit-parent-with-boost`, and on wakeup restores `headScopeCheckpoint` before `syncRoot` (replay-idempotent), persists `syncedToPrerequisiteCheckpoint` before re-acquiring services and draining `remainingCalls`, and handles `[PREREQUISITE_FAILED]`.
 4. **Upward `.onChildInterrupt()` & `resumeFork`**: Evaluates turn-batch barrier across siblings (cancelling pending sibling human decisions via `HumanAdapter.cancelDecision`, classifying `TOOL_BOUNDARY` Case B vs `BEFORE_STOP_GATE` Case C, rolling evaluator-raised interrupts back to `preservedActLeafMessageId`, and snapshotting `childScopeCheckpoint`); supports multi-ID `resumeFork` wire aggregation, `action: 'abort'`, replay-idempotent `restoreCheckpoint(childScopeCheckpoint)` + `syncChild` + `syncedToParentCheckpoint`, Cases A/B/C (with `neutralSyncContinuation: true` in Case C), and atomic `resolveSuspendedFork("${forkId}#${epoch}", 'RESUMED')`.
+5. **Mixed-Turn Tool Batching (`SPEC.md` §3.7.2)**: When a single model turn emits regular tools `(1..m)`, capability tools `.fork()`/`.speculate()`/`spawnTasks` `(m+1..p)`, and trailing regular tools `(p+1..k)`, executes `(1..m)` first (persisting results in `completedResults`), dispatches `(m+1..p)` (recording outputs in `completedResults`), and drains `(p+1..k)` in declaration order so all `(1..k)` tool results are written into a single `role: 'tool'` wire frame.
+
+### 4.5 `H.rules` & `H.scopedRule`, `H.loop` Isolation, `H.lane.tracker`, and `H.stream` / `H.harness` (`SPEC.md` §3.1, §3.4.1, §3.8, §3.10)
+1. **`H.rules` & `H.scopedRule` (`SPEC.md` §3.4.1)**:
+   - Evaluates `when.partitions` against `ctx.activePartitions` at Turn 0 and injects matching rules into `[ROLE_AND_SCOPE_CONTEXT]`, recording their IDs in `injectedScopedRuleIds`.
+   - Evaluates `when.effects` reactively against each tool call's `ToolEffect[]`; when a rule not yet in `injectedScopedRuleIds` matches `call_i`, appends its directive to `call_i`'s result in `completedResults` and records `rule.id` in `injectedScopedRuleIds` (preserving the injected directive in `completedResults` even if a subsequent `call_2` in the same batch suspends the step).
+   - In `evaluateBeforeStopGate`, runs `rule.enforceBeforeStopChecks` if and only if `rule.id` is in `injectedScopedRuleIds` **and** `observedEffects` contains at least one effect with `mutatesScope === true`.
+2. **`H.loop` Step-Boundary Isolation & `.act()`-Only Quantitative Tripwires (`SPEC.md` §3.8)**:
+   - Quiesces all `'skill'`-scoped `ServiceSession` daemons on every `.act()` $\to$ `.evaluate()` step boundary (`quiesceScopeServices`).
+   - Isolates evaluator `activeSkillIds` ephemerally inside the evaluator's `agent-frame` without polluting `loop-frame.activeSkillIds` or `loop-frame.activeSkillActivations`.
+   - Increments quantitative tripwire counters (`actTurnsTaken`, `actCostUsd`, `actElapsedDurationMs`) strictly during `.act()` turns while tracking cumulative telemetry across both `.act()` and `.evaluate()`.
+3. **`H.lane.tracker` & Canonical `stateMappings` (`SPEC.md` §2.8 & §3.10)**:
+   - `LaneTrackerConfigBuilder` populates `LaneNode.tracker.stateMappings` with canonical keys `'queued'` (`.onQueued`), `'running'` (`.onRunning`), `'waiting'` (`.onWaiting`), `'errored'` (`.onErrored`), `'cancelled'` (`.onCancelled`), and `'exit:${exitState}'` (with fallback `exitState` for `.onExit(exitState, externalState)`).
+   - `LaneScheduler` polls `TrackerAdapter.poll()`, filters and maps items via `fromIssue(raw)` (skipping `undefined`), and looks up the exact canonical keys (`'queued'`, `'running'`, `'waiting'`, `'errored'`, `'cancelled'`, and `` `exit:${exitState}` `` with fallback `exitState`) in `lane.tracker.stateMappings` when invoking `trackerAdapter.setExternalState(itemKey, mappedState)`.
+4. **`H.stream` & `H.harness` Lifecycle (`SPEC.md` §3.1 & §3.10)**:
+   - Subscribes to each declared `StreamSource.subscribe(onEvent)` on `runtime.start()`, evaluates `filterFn(raw)` synchronously, maps matching events via `mapPayload(raw)`, and routes emitted signals through `controller.emitSignal(streamNode.signal.id, payload)`.
+   - Executes `.onSignal(signal).notify(human, mapper)` by invoking `humanAdapter.notify(mapper(payload))`, and manages all `.expose(controlPlane)` adapters by storing the `{ close(): Promise<void> }` handle returned by `await controlPlane.start(controller)` on `runtime.start()` and invoking `await handle.close()` on `runtime.stop()`.
 
 ---
 
 ## 5. Deterministic Test Suite Architecture (`packages/core/test/**`)
 
+All `test/fixtures/**` files strictly obey single-entity-kind file separation (1 `class` or 1 `interface` per file, `<= 250` lines, full 3-part §2 JSDoc):
+
 | File Path | Line Ceiling | Required Deterministic Test Cases |
 | :--- | :--- | :--- |
-| `test/fixtures/in-memory-ledger-store.ts` | `<= 250` | `InMemoryLedgerStore` implementing `LedgerStore` (including `createOrResumeRun`, `updateContinuationStack`, `mutateLanePlan` with linear chaining & cycle/depth checks, `SuspendedForkRecord` epochs, and `getInterruptedStepsOnBoot`). |
-| `test/fixtures/in-memory-topology-store.ts` | `<= 250` | `InMemoryTopologyStore` implementing `TopologyStore` (CoW run overlays, `baseContractTextAtAcquire`, `lastMutatedByRunId`, at-most-once per-run epoch increment, `syncRunOverlays`, `sealRunOverlay`, `commitRunOverlay` 3-way merge, `resetRunOverlay` step/run scopes, `discardRunOverlay`). |
-| `test/fixtures/in-memory-lesson-store.ts` | `<= 250` | `InMemoryLessonStore` implementing `LessonStore` (`queryCandidates`, `admit`, `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire`). |
-| `test/fixtures/scripted-runtime-drivers.ts` | `<= 250` | `ScriptedBranchableScope` (implementing `BranchableScope` with checkpoints, `diffEffects`, `getConflictLease`, and programmable conflicts), `ScriptedModelDriver`, `ScriptedToolDriver`, `ScriptedServiceSession`, and `ScriptedHumanAdapter` (with deterministic barrier latches and `cancelDecision` tracking). |
+| `test/fixtures/in-memory-ledger-store.ts` | `<= 250` | `InMemoryLedgerStore` (`class` only, implementing `LedgerStore`: `createOrResumeRun`, `updateContinuationStack`, `mutateLanePlan` with linear chaining & cycle/depth checks, `SuspendedForkRecord` epochs, and `getInterruptedStepsOnBoot`). |
+| `test/fixtures/in-memory-topology-store.ts` | `<= 250` | `InMemoryTopologyStore` (`class` only, implementing `TopologyStore`: CoW run overlays, `baseContractTextAtAcquire`, `lastMutatedByRunId`, at-most-once per-run epoch increment, `syncRunOverlays`, `sealRunOverlay`, `commitRunOverlay` 3-way merge, `resetRunOverlay` step/run scopes, `discardRunOverlay`). |
+| `test/fixtures/in-memory-lesson-store.ts` | `<= 250` | `InMemoryLessonStore` (`class` only, implementing `LessonStore`: `queryCandidates`, `admit`, `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire`). |
+| `test/fixtures/scripted-branchable-scope.ts` | `<= 250` | `ScriptedBranchableScope` (`class` only, implementing `BranchableScope` with checkpoints, `diffEffects`, `getConflictLease`, and programmable conflicts). |
+| `test/fixtures/scripted-model-driver.ts` | `<= 250` | `ScriptedModelDriver` (`class` only, implementing `ModelDriver` with scripted turn queues, `prepareFork`, and `appendToolResultNotes`). |
+| `test/fixtures/scripted-tool-driver.ts` | `<= 250` | `ScriptedToolDriver` (`class` only, implementing `ToolDriver` with configurable `describeEffects` and post-flight side effects). |
+| `test/fixtures/scripted-service-session.ts` | `<= 250` | `ScriptedServiceSession` (`class` only, implementing `ServiceSession` with start/stop lifecycle counters and `invokeTool` responses). |
+| `test/fixtures/scripted-human-adapter.ts` | `<= 250` | `ScriptedHumanAdapter` (`class` only, implementing `HumanAdapter` with deterministic barrier latches, `notify` log, and `cancelDecision` tracking). |
 | `test/runtime-locks-pools-and-lessons.test.ts` | `<= 400` | 1. `ScopeLockManager` concurrent read sharing vs exclusive write contention (using barrier latches, zero `setTimeout` sleeps) and `StepContinuationQueue` serialization.<br>2. `PoolManager` run-sticky seat affinity, HTTP `429` `resetAtMs` failover, and `escalate-on-retry` model escalation.<br>3. `H.prefixGroup` declaration-order pinning, in-run `updatedGroundingDiffs` without mutating byte 0 of `systemPromptText`, and `'role-scoped'` vs `'union'` `wireToolSchemasByRoleKey`.<br>4. `H.lessons` exact $\text{Score}(L, Q)$ math, 3-way disjunction retirement (verifying $0/0$ protection and high `gate_rejected_recovered` eviction), 4-state outcome precedence deduplication (`1 outcome per (stepExecId, lessonId)`), `_harnessMeta.violatedLessonIds`, `.onLoopRecovery()` / `.onGateRecovery()`, and `.emitSignalWhen()` cooldowns. |
 | `test/runtime-policy-skills-and-loop.test.ts` | `<= 400` | 1. Two-phase policy guard evaluation (`'deny-with-error'` precedence before `'raise-interrupt'`, multi-call pre-flight batching on same clause $C$, declaration-ordered `remainingCalls` replay, nested `.adjudicateWith()` outer lease attachment, and skipping dependent calls on lease denial).<br>2. Post-flight subprocess sandboxing (`effectTracking: 'subprocess-post-flight'`, `inFlightPreToolCheckpoint` persistence, rollback on throw/abort and on unauthorized diff, never re-executing rolled-back subprocess on `.resumeWith()`).<br>3. 4-step `.onLimitExceeded()` sequence (`[Aborted: Limit Exceeded]` trailing wire frame, `toolChoice: 'none'` epistemic flush, daemon quiesce + abortHook + step overlay reset, `.replaceWith()` promotion discarding aborted step lessons).<br>4. `H.skill` activation/completion, reference-counted `ServiceSession` quiescing and pre-drain re-acquisition with `[SERVICE_REACQUIRED]`, and `H.loop` (`preservedActLeafMessageId`, `grantedLoopLeases` inheritance, cross-model `prepareFork` escalation with `substituteTombstones: true` and `activeSkillActivations` messageId remapping). |
 | `test/runtime-fork-and-speculate.test.ts` | `<= 400` | 1. Downward `.fork()` (`'shared-prefix-only'` vs `'clone-transcript'`), `CHILD_COMMITTED` idempotency before lesson flush, and `commitChild` conflict-bounce loop (rolling back to `preservedActLeafMessageId`, attaching `getConflictLease`, arming `conflictCleanCheck`).<br>2. Upward `.onChildInterrupt()` turn-batch barrier (evaluator-raised interrupt rolling back to `.act()` worker, sibling human `cancelDecision`, Case B `TOOL_BOUNDARY` vs Case C `BEFORE_STOP_GATE` classification, built-in open-fork `beforeStop` gate) and `resumeFork` (`action: 'abort'`, multi-ID wire aggregation, replay-idempotent `restoreCheckpoint(childScopeCheckpoint)` + `syncChild`, Cases A/B/C with `neutralSyncContinuation: true`, and recursive epoch resolution `resolveSuspendedFork`).<br>3. `.speculate()` tournament: `PARKED_ON_ESCALATION`, Post-Race Cases 1–4 (refusing to short-circuit when a sibling is parked or after `humanRulingsHistory`), built-in arbiter candidate index gate, `refineWinnerWhen` keeping losing worktrees alive until `commitChild` succeeds, and non-destructive `unpark-escalation` persisting `humanRequestId` before `requestDecision`. |
 | `test/runtime-plan-flow-and-recovery.test.ts` | `<= 400` | 1. `.mutatePlan()` (`spawnTasks` linear prerequisite chaining $T_{\text{prevTip}} \leftarrow T_1 \leftarrow T_2 \leftarrow T_{\text{parent}}$, `QUEUED -> RUNNING` initial `syncRoot`, `suspend-and-yield-slot` with `headScopeCheckpoint` and `inherit-parent-with-boost`, replay-idempotent wakeup restoring `headScopeCheckpoint` before `syncRoot`, and `[PREREQUISITE_FAILED]` wakeup).<br>2. `H.lane` `.maxCostUsd()` budget gate (`increaseLimitToUsd` default `2x`, `approved: false` -> `'cancelled'` via Drain Barrier), `.retry()` step-scoped overlay reset, 4-step Hierarchical Rewind Drain Barrier (and deferred rewind while `'SUSPENDED'`), `commitOverlayWhen` (including stacked PR `baseBranch !== 'main'` folding into prerequisite's `SEALED_UNMERGED` overlay), and `compactWhen`.<br>3. Reboot crash recovery via `getInterruptedStepsOnBoot` + `reattachRoot`/`reattachChild` across mid-tool-batch, mid-subprocess `inFlightPreToolCheckpoint`, mid-`syncChild`, mid-`syncRoot`, and mid-`speculate-frame` states. |
+| `test/runtime-rules-streams-and-lanes.test.ts` | `<= 400` | 1. `H.rules` & `H.scopedRule`: `when.partitions` Turn-0 injection, deduplicated reactive `when.effects` injection on `call_i` in `completedResults` preserved when `call_2` suspends the step, and `enforceBeforeStopChecks` running in `beforeStop` iff `rule.id` is in `injectedScopedRuleIds` and `observedEffects` contains `mutatesScope === true`.<br>2. `H.stream` & `H.harness`: `StreamSource.subscribe` + `filterFn` + `mapPayload` $\to$ `emitSignal`, `.onSignal().notify(human, mapper)`, and `.expose(controlPlane)` `start`/`close`.<br>3. `H.lane.tracker`: `TrackerAdapter.poll()`, `fromIssue` filtering (`undefined` skip vs mapped input), and `TrackerAdapter.setExternalState` across canonical `stateMappings` keys (`'queued'`, `'running'`, `'waiting'`, `'errored'`, `'cancelled'`, and `'exit:${exitState}'`).<br>4. Mixed-turn tool batching: `(1..m)` regular calls + `.fork()`/`.speculate()`/`spawnTasks` `(m+1..p)` + trailing `(p+1..k)` calls draining in declaration order into a single `role: 'tool'` wire frame.<br>5. `H.loop` step-boundary isolation: `.act()` $\to$ `.evaluate()` daemon quiescing, ephemeral evaluator `activeSkillIds` isolation from `loop-frame`, and `.act()`-only quantitative tripwire counters (`actTurnsTaken`, `actCostUsd`, `actElapsedDurationMs`). |
 
 ---
 
 ## 6. Verification Gate Commands
 
-Run from workspace root:
+Run from workspace root (plus the `IMPL_LOOP.md` `baseline_dirty` diff check against `<non_sibling_forbidden_dirs_excluding_upstream_patches>`):
 
 ```bash
+pnpm --filter @harness-dsl/core lint
 pnpm --filter @harness-dsl/core typecheck
 pnpm --filter @harness-dsl/core test -- --reporter=verbose
-test -z "$(git status --porcelain -- packages/core/src/ast packages/core/src/ports packages/core/src/schemas packages/core/src/topology packages/core/src/builders packages/sqlite packages/postgres packages/fs packages/markdown packages/node packages/git packages/claude packages/openai packages/gemini packages/github packages/slack packages/stripe packages/netsuite packages/integration)"
+test -z "$(git status --porcelain -- docs .agents .claude package.json tsconfig.base.json vitest.config.ts)"
 ```

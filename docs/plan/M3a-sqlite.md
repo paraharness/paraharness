@@ -12,9 +12,9 @@
 - **`forbidden_dirs`**:
   - `packages/core/**`
   - `packages/{fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
-  - Root workspace configs (`package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
+  - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@harness-dsl/sqlite` and `@harness-dsl/postgres` must have **zero runtime or type imports** from each other or from any other M3 adapter package. Both depend exclusively on `@harness-dsl/core` (`workspace:*`), `zod`, and their storage drivers (`better-sqlite3` for `@harness-dsl/sqlite`, `pg` for `@harness-dsl/postgres`).
+  - `@harness-dsl/sqlite` and `@harness-dsl/postgres` must have **zero runtime or type imports** from each other or from any other M3 adapter package. `@harness-dsl/sqlite` depends exclusively on `@harness-dsl/core` (`workspace:*`), `zod`, and `better-sqlite3`; `@harness-dsl/postgres` has zero external `pg` npm dependency and depends exclusively on `@harness-dsl/core` (`workspace:*`) and `zod`, operating against its exported `PostgresQueryClient` / `PostgresPoolFactory` driver contracts (`packages/postgres/src/ddl/postgres-query-client.ts` and `packages/postgres/src/ddl/postgres-pool-factory.ts`), while `packages/postgres/test/fixtures/sqlite-backed-pg-client.ts` uses `better-sqlite3` in tests.
 
 ---
 
@@ -23,9 +23,9 @@
 | Normative Source | Section & Exact Line Range | Grounded Scope in `M3a` |
 | :--- | :--- | :--- |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`SqliteLedgerNode`, `PostgresLedgerNode`, `SqliteTopologyNode`, `PostgresTopologyNode`, `SqliteLessonsNode`, `PostgresLessonsNode`, `SqliteRulesSourceNode`, `PostgresRulesSourceNode`), zero I/O at builder time, and late-bound `EnvRef` resolution via `ctx.resolveEnv`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.1 (`lines 180–205`, `325–353`) | `CompactionConfigNode` (`onSignal`, `onTerminalExit`, `retainFailedRunsForDays`) and `TopologyNode.commitOverlayWhen`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2 (`lines 928–1092`) | `BaseSourceASTNode`, `BaseLedgerStoreASTNode`, `BaseTopologyStoreASTNode`, `BaseLessonStoreASTNode`, `SourceASTNode`, `LedgerStoreASTNode`, `TopologyStoreASTNode`, `LessonStoreASTNode`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.3 (`lines 1094–1390`) | `NodeExecutor`, `RuntimeDriverContext`, `ResolutionContext`, `RuntimeExecutorRegistry`, `RuntimeExecutorRegistrySlice`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.1 (`lines 172–189`, `325–337`) | `CompactionConfigNode` (`onSignal`, `onTerminalExit`, `retainFailedRunsForDays`) and `TopologyNode.commitOverlayWhen`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2 (`lines 807–840`, `1001–1037`, `1068–1092`) | `BaseSourceASTNode`, `BaseLedgerStoreASTNode`, `BaseTopologyStoreASTNode`, `BaseLessonStoreASTNode`, `SourceASTNode`, `LedgerStoreASTNode`, `TopologyStoreASTNode`, `LessonStoreASTNode`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.3–§2.4 (`lines 1094–1358`) | `NodeExecutor`, `RuntimeDriverContext`, `ResolutionContext`, `RuntimeExecutorRegistry`, `RuntimeExecutorRegistrySlice`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.6–§2.7 (`lines 1510–2086`) | `CanonicalMessage`, `WireFrameRecord`, `CompiledWirePrefix`, `UniversalStepTelemetry`, `PendingToolBatch`, `AgentPauseState`, `ContinuationFrame`, `SuspendedForkRecord`, `LedgerStore` (`lines 1882–1989`), `TopologyPartitionState`, `TopologyStore` (`lines 1991–2037`), `LessonOutcome`, `DistilledLessonCandidate`, `LessonRecord`, `LessonStore` (`lines 2039–2086`). |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.3 (`lines 2194–2205`) | Relational Topology CoW overlay lifecycle (`getPartitions`, `updateContract` with `stepExecId` and at-most-once per-`(runId, partitionId)` epoch increment, `syncRunOverlays`, `resetRunOverlay` for `scope: 'step' \| 'run'`, `sealRunOverlay`, `commitRunOverlay` 3-way merge against `baseContractTextAtAcquire`, `discardRunOverlay`). |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1 & §3.4.3 (`lines 2208–2285`) | `GlobalRuleSchema` validation for `sqlite:global-rules` / `postgres:global-rules`, and `LessonStore` relevance scoring $R(L, Q)$ in `queryCandidates`, `admit`, `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, and `retire`. |
@@ -39,16 +39,25 @@
 
 ## 3. Planned Module Decomposition & Public Exports
 
-Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single primary concept per file, `internal/` helpers, pure `src/index.ts` barrels, complete `/** ... */` JSDoc, and zero inline/non-JSDoc comments).
+Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file plus `TSPropertySignature` property sub-interfaces only, 1 `class` per file, 1 builder factory function per `create-*-builder.ts` file, `internal/` helpers, pure `src/index.ts` barrels, full 3-part `/** ... */` JSDoc on every declaration and `TSMethodSignature`, and zero inline/non-JSDoc comments).
 
 ### 3.1 `packages/sqlite` (`@harness-dsl/sqlite`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/compaction-config-builder.ts` | `interface` | `CompactionConfigBuilder`, `createCompactionConfigBuilder` |
-| `src/builders/sqlite-ledger-builder.ts` | `interface` | `SqliteLedgerBuilder`, `createSqliteLedgerBuilder` |
-| `src/builders/sqlite-builders.ts` | `function` | `createSqliteTopologyBuilder`, `createSqliteLessonsBuilder`, `createSqliteGlobalRulesBuilder`, `SqliteTopologyBuilder`, `SqliteLessonsBuilder`, `SqliteGlobalRulesBuilder` |
-| `src/builders/sqlite-namespace.constants.ts` | `const` | `sqlite`, `SqliteNamespace` |
+| `src/builders/compaction-config-builder.ts` | `interface` | `CompactionConfigBuilder` |
+| `src/builders/create-compaction-config-builder.ts` | `function` | `createCompactionConfigBuilder` |
+| `src/builders/sqlite-ledger-builder.ts` | `interface` | `SqliteLedgerBuilder` |
+| `src/builders/create-sqlite-ledger-builder.ts` | `function` | `createSqliteLedgerBuilder` |
+| `src/builders/sqlite-topology-builder.ts` | `interface` | `SqliteTopologyBuilder` |
+| `src/builders/create-sqlite-topology-builder.ts` | `function` | `createSqliteTopologyBuilder` |
+| `src/builders/sqlite-lessons-builder.ts` | `interface` | `SqliteLessonsBuilder` |
+| `src/builders/create-sqlite-lessons-builder.ts` | `function` | `createSqliteLessonsBuilder` |
+| `src/builders/sqlite-global-rules-options.ts` | `interface` | `SqliteGlobalRulesOptions` |
+| `src/builders/sqlite-global-rules-builder.ts` | `interface` | `SqliteGlobalRulesBuilder` |
+| `src/builders/create-sqlite-global-rules-builder.ts` | `function` | `createSqliteGlobalRulesBuilder` |
+| `src/builders/sqlite-namespace-contract.ts` | `interface` | `SqliteNamespace` |
+| `src/builders/sqlite-namespace.ts` | `const` | `sqlite: SqliteNamespace` |
 | `src/ddl/sqlite-schema.constants.ts` | `const` | `SQLITE_PRAGMA_STATEMENTS`, `SQLITE_DDL_STATEMENTS` |
 | `src/ddl/internal/open-sqlite-connection.ts` | `function` | `openSqliteConnection`, `assertValidSqlIdentifier` |
 | `src/stores/sqlite-ledger-store.ts` | `class` | `SqliteLedgerStore` (implementing `LedgerStore`) |
@@ -60,17 +69,28 @@ Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fi
 | `src/stores/sqlite-lesson-store.ts` | `class` | `SqliteLessonStore` (implementing `LessonStore`) |
 | `src/stores/internal/sqlite-lesson-ops.ts` | `function` | `queryLessonCandidatesInSqlite`, `computeNormalizedRelevance`, `admitLessonInSqlite`, `recordLessonOutcomesInSqlite`, `syncLessonEpochsInSqlite` |
 | `src/executors/sqlite-rules-source-executor.ts` | `function` | `executeSqliteGlobalRulesSource` |
-| `src/executors/sqlite-executors.constants.ts` | `const` | `sqliteExecutors: RuntimeExecutorRegistrySlice`, `createSqliteExecutors` |
-| `src/index.ts` | `barrel` | Pure explicit re-exports of `sqlite`, `sqliteExecutors`, `createSqliteExecutors`, `SqliteLedgerStore`, `SqliteTopologyStore`, `SqliteLessonStore`, `SqliteLedgerBuilder`, `CompactionConfigBuilder`, `SqliteLedgerNode`, `SqliteTopologyNode`, `SqliteLessonsNode`, `SqliteRulesSourceNode` |
+| `src/executors/create-sqlite-executors.ts` | `function` | `createSqliteExecutors` |
+| `src/executors/sqlite-executors.constants.ts` | `const` | `sqliteExecutors: RuntimeExecutorRegistrySlice` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `sqlite`, `SqliteNamespace`, `sqliteExecutors`, `createSqliteExecutors`, `SqliteLedgerStore`, `SqliteTopologyStore`, `SqliteLessonStore`, `SqliteLedgerBuilder`, `SqliteTopologyBuilder`, `SqliteLessonsBuilder`, `SqliteGlobalRulesBuilder`, `SqliteGlobalRulesOptions`, `CompactionConfigBuilder`, `createCompactionConfigBuilder`, `createSqliteLedgerBuilder`, `createSqliteTopologyBuilder`, `createSqliteLessonsBuilder`, `createSqliteGlobalRulesBuilder`, `SqliteLedgerNode`, `SqliteTopologyNode`, `SqliteLessonsNode`, `SqliteRulesSourceNode` |
 
 ### 3.2 `packages/postgres` (`@harness-dsl/postgres`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/postgres-ledger-builder.ts` | `interface` | `PostgresLedgerBuilder`, `createPostgresLedgerBuilder` |
-| `src/builders/postgres-builders.ts` | `function` | `createPostgresTopologyBuilder`, `createPostgresLessonsBuilder`, `createPostgresGlobalRulesBuilder`, `PostgresTopologyBuilder`, `PostgresLessonsBuilder`, `PostgresGlobalRulesBuilder` |
-| `src/builders/postgres-namespace.constants.ts` | `const` | `postgres`, `PostgresNamespace` |
-| `src/ddl/postgres-query-client.ts` | `interface` | `PostgresQueryClient`, `PostgresPoolFactory` |
+| `src/builders/postgres-ledger-builder.ts` | `interface` | `PostgresLedgerBuilder` |
+| `src/builders/create-postgres-ledger-builder.ts` | `function` | `createPostgresLedgerBuilder` |
+| `src/builders/postgres-topology-builder.ts` | `interface` | `PostgresTopologyBuilder` |
+| `src/builders/create-postgres-topology-builder.ts` | `function` | `createPostgresTopologyBuilder` |
+| `src/builders/postgres-lessons-builder.ts` | `interface` | `PostgresLessonsBuilder` |
+| `src/builders/create-postgres-lessons-builder.ts` | `function` | `createPostgresLessonsBuilder` |
+| `src/builders/postgres-global-rules-options.ts` | `interface` | `PostgresGlobalRulesOptions` |
+| `src/builders/postgres-global-rules-builder.ts` | `interface` | `PostgresGlobalRulesBuilder` |
+| `src/builders/create-postgres-global-rules-builder.ts` | `function` | `createPostgresGlobalRulesBuilder` |
+| `src/builders/postgres-namespace-contract.ts` | `interface` | `PostgresNamespace` |
+| `src/builders/postgres-namespace.ts` | `const` | `postgres: PostgresNamespace` |
+| `src/ddl/postgres-query-result.ts` | `interface` | `PostgresQueryResult<TRow>` |
+| `src/ddl/postgres-query-client.ts` | `interface` | `PostgresQueryClient` |
+| `src/ddl/postgres-pool-factory.ts` | `interface` | `PostgresPoolFactory` |
 | `src/ddl/postgres-schema.constants.ts` | `const` | `POSTGRES_DDL_STATEMENTS` |
 | `src/ddl/internal/resolve-postgres-client.ts` | `function` | `resolvePostgresClient`, `assertValidPostgresIdentifier` |
 | `src/stores/postgres-ledger-store.ts` | `class` | `PostgresLedgerStore` (implementing `LedgerStore`) |
@@ -82,12 +102,20 @@ Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fi
 | `src/stores/postgres-lesson-store.ts` | `class` | `PostgresLessonStore` (implementing `LessonStore`) |
 | `src/stores/internal/pg-lesson-ops.ts` | `function` | `queryLessonCandidatesInPg`, `admitLessonInPg`, `recordLessonOutcomesInPg`, `syncLessonEpochsInPg` |
 | `src/executors/postgres-rules-source-executor.ts` | `function` | `executePostgresGlobalRulesSource` |
-| `src/executors/postgres-executors.constants.ts` | `const` | `postgresExecutors: RuntimeExecutorRegistrySlice`, `createPostgresExecutors` |
-| `src/index.ts` | `barrel` | Pure explicit re-exports of `postgres`, `postgresExecutors`, `createPostgresExecutors`, `PostgresLedgerStore`, `PostgresTopologyStore`, `PostgresLessonStore`, `PostgresLedgerBuilder`, `PostgresQueryClient`, `PostgresLedgerNode`, `PostgresTopologyNode`, `PostgresLessonsNode`, `PostgresRulesSourceNode` |
+| `src/executors/create-postgres-executors.ts` | `function` | `createPostgresExecutors` |
+| `src/executors/postgres-executors.constants.ts` | `const` | `postgresExecutors: RuntimeExecutorRegistrySlice` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `postgres`, `PostgresNamespace`, `postgresExecutors`, `createPostgresExecutors`, `PostgresLedgerStore`, `PostgresTopologyStore`, `PostgresLessonStore`, `PostgresLedgerBuilder`, `PostgresTopologyBuilder`, `PostgresLessonsBuilder`, `PostgresGlobalRulesBuilder`, `PostgresGlobalRulesOptions`, `PostgresQueryResult`, `PostgresQueryClient`, `PostgresPoolFactory`, `createPostgresLedgerBuilder`, `createPostgresTopologyBuilder`, `createPostgresLessonsBuilder`, `createPostgresGlobalRulesBuilder`, `PostgresLedgerNode`, `PostgresTopologyNode`, `PostgresLessonsNode`, `PostgresRulesSourceNode` |
 
 ---
 
 ## 4. Detailed Implementation Requirements
+
+### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
+1. **Zero Co-Location of Entity Kinds**:
+   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/{sqlite,postgres}/src/**` or `packages/{sqlite,postgres}/test/fixtures/**`.
+   - Every builder interface (`*-builder.ts`), options/result interface (`*-options.ts`, `postgres-query-result.ts`, `postgres-query-client.ts`, `postgres-pool-factory.ts`), and namespace contract (`*-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*-builder.ts`) gets its own single-function file; every store class gets its own single-class file; every `const` (DDL constants, namespace `const`, executor slice `const`) lives in its own `const`-only file.
+2. **Full 3-Part JSDoc Requirement**:
+   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres lint`.
 
 ### 4.1 Pure AST Builders (`sqlite.*` & `postgres.*`, `SPEC.md` §4.5 & `CODING_SAMPLE.md` §6)
 1. **`sqlite.ledger(uri)` & `postgres.ledger(uri)`**:
@@ -106,10 +134,10 @@ Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fi
    - `createOrResumeRun`: inserts a new run row (`status: 'RUNNING'`) or returns the existing run's persisted `status`, `currentStepId`, `inputJson`, `rewindPendingToStepId`, `compiledPrefixesJson` (pinned at initial run start and never overwritten on resume), `costUsd`, `approvedMaxCostUsd`, and `completedStepOutputsJson` (`ReadonlyMap<string, string>` mapping completed `stepId -> outputJson`).
    - `recordStepStart`, `updateContinuationStack` (updating `continuation_stack_json` and optional `baseScopeCheckpoint`), `updateRunInput` (updating `inputJson` and `rewindPendingToStepId`), `recordStepTransition`, `recordRunTerminalReceipt`, `getRunTerminalReceipts`, and `getInterruptedStepsOnBoot` (returning all runs in `'QUEUED' | 'RUNNING' | 'WAITING' | 'SUSPENDED'` along with their latest step's `stepExecId`, `stepId`, `executableId`, `baseScopeCheckpoint`, `headScopeCheckpoint`, and `continuationStack`).
 2. **Dynamic DAG Mutation (`mutateLanePlan`)**:
-   - Enforces `maxPrerequisiteDepth` and DAG acyclicity across `dependsOn` edges.
+   - Enforces `maxPrerequisiteDepth` and DAG acyclicity across both `spawnedItems` and `addedDependencies` edges (rejecting cycles and prerequisite chains exceeding `maxPrerequisiteDepth` before committing any edge).
    - When `spawnedItems` is provided (`[T_1, ..., T_k]`), chains them linearly onto any previously spawned prerequisite tip $T_{\text{prevTip}}$ of `parentItemKey` ($T_{\text{prevTip}} \leftarrow T_1 \leftarrow \dots \leftarrow T_k \leftarrow T_{\text{parent}}$) inside a single transaction (`SPEC.md` §3.7.2).
 3. **Wire Frame & Compaction Operations**:
-   - `appendMessageFrame`, `replaceMessageFrame` (updating `rawWireFrame` BLOB and `canonical` JSON for `appendToolResultNotes`), `markFrameTombstone` (setting `compactedTombstones[callId] = compactedTombstone` without mutating `rawWireFrame`), `getMessageChain(leafMessageId)` (walking `parentMessageId` links from `leafMessageId` back to root and returning frames in chronological root-to-leaf order), and `compactRunFrames(runId)` (pruning `rawWireFrame` blobs on terminal runs while preserving canonical audit headers).
+   - `appendMessageFrame`, `replaceMessageFrame` (updating `rawWireFrame` BLOB and `canonical` JSON for `appendToolResultNotes`), `markFrameTombstone` (setting `compactedTombstones[callId] = compactedTombstone` without mutating `rawWireFrame`), `getMessageChain(leafMessageId)` (walking `parentMessageId` links from `leafMessageId` back to root and returning frames in chronological root-to-leaf order), and `compactRunFrames(runId)` (pruning `rawWireFrame` blobs strictly for `runId` when `runId` is in a terminal state, and never pruning frames belonging to a new active run for the same `itemKey`, while preserving canonical audit headers).
 4. **Suspended Fork Records (`recordForkSuspension`, `getSuspendedForks`, `resolveSuspendedFork`)**:
    - Stores `SuspendedForkRecord` keyed by `suspendedForkId` (`${forkId}#${suspensionEpoch}`).
    - `getSuspendedForks(runId, opts)` returns only unresolved records matching optional `forkIds` (by `forkId` or `suspendedForkId`) and `parentStepExecId`.
@@ -140,23 +168,26 @@ Every file in `packages/sqlite/src/**`, `packages/postgres/src/**`, and `test/fi
 
 ## 5. Deterministic Test Suite Architecture (`test/**` & `test/fixtures/**`)
 
+All `test/fixtures/**` files strictly obey single-entity-kind file separation (`<= 250` lines per file, full 3-part §2 JSDoc):
+
 | File Path | Line Ceiling | Required Deterministic Test Cases |
 | :--- | :--- | :--- |
-| `packages/sqlite/test/fixtures/temp-sqlite-db.ts` | `<= 250` | Creates and cleans up real temporary SQLite database files in `os.tmpdir()`. |
+| `packages/sqlite/test/fixtures/temp-sqlite-db.ts` | `<= 250` | Pure `function` helper creating and cleaning up real temporary SQLite database files in `os.tmpdir()` (any fixture handle `interface` lives in its own `temp-sqlite-db-handle.ts` file). |
 | `packages/sqlite/test/sqlite-builders-and-rules.test.ts` | `<= 400` | Verifies `sqlite.ledger(uri).compactWhen(...)`, `sqlite.topologyStore(uri)`, `sqlite.lessonStore(uri)`, `sqlite.globalRules(uri, { table })`, `.toAST()` immutability, SQL identifier validation, and `sqlite:global-rules` source execution with `GlobalRuleSchema` validation and SHA-256 digest computation. |
-| `packages/sqlite/test/sqlite-ledger-store.test.ts` | `<= 400` | Verifies `SqliteLedgerStore`: `createOrResumeRun` (pinning `compiledPrefixesJson`), `recordStepStart`, `updateContinuationStack`, `mutateLanePlan` (linear stacking chain $T_{\text{prevTip}} \leftarrow T_1 \leftarrow T_2 \leftarrow T_{\text{parent}}$, depth limit, cycle rejection), `appendMessageFrame`, `replaceMessageFrame`, `markFrameTombstone`, `getMessageChain`, `SuspendedForkRecord` epoch tracking & recursive `resolveSuspendedFork`, `getInterruptedStepsOnBoot`, and `compactRunFrames`. |
+| `packages/sqlite/test/sqlite-ledger-store.test.ts` | `<= 400` | Verifies `SqliteLedgerStore`: `createOrResumeRun` (pinning `compiledPrefixesJson`), `recordStepStart`, `updateContinuationStack`, `mutateLanePlan` (linear stacking chain $T_{\text{prevTip}} \leftarrow T_1 \leftarrow T_2 \leftarrow T_{\text{parent}}$, `addedDependencies` DAG acyclicity and `maxPrerequisiteDepth` validation, depth limit, cycle rejection), `appendMessageFrame`, `replaceMessageFrame`, `markFrameTombstone`, `getMessageChain`, `SuspendedForkRecord` epoch tracking & recursive `resolveSuspendedFork`, `getInterruptedStepsOnBoot`, and `compactRunFrames` (including verifying `compactRunFrames(runId)` never prunes frames of a new active run for the same `itemKey`). |
 | `packages/sqlite/test/sqlite-topology-and-lessons.test.ts` | `<= 400` | Verifies `SqliteTopologyStore` (CoW overlay isolation, at-most-once per-run epoch increment, `syncRunOverlays` stacked-PR baseline advancement, `resetRunOverlay` for `scope: 'step'` vs `'run'`, `sealRunOverlay`, `commitRunOverlay` 3-way merge returning `{ committedRunIds, updatedEpochs }`, `discardRunOverlay`) and `SqliteLessonStore` (`admit`, `queryCandidates` with `relevanceScore`, `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire`). |
-| `packages/postgres/test/fixtures/sqlite-backed-pg-client.ts` | `<= 250` | Deterministic local SQL adapter implementing `PostgresQueryClient` for offline unit testing of `@harness-dsl/postgres`. |
-| `packages/postgres/test/postgres-builders-and-stores.test.ts` | `<= 400` | Verifies `postgres.*` builders (including `H.env('DATABASE_URL')` late-bound resolution), `PostgresLedgerStore`, `PostgresTopologyStore`, `PostgresLessonStore`, and `postgres:global-rules` source executor. |
+| `packages/postgres/test/fixtures/sqlite-backed-pg-client.ts` | `<= 250` | Single `class` (`SqliteBackedPgClient`) backed by `better-sqlite3` implementing `PostgresQueryClient` / `PostgresPoolFactory` for offline unit testing of `@harness-dsl/postgres` with zero external `pg` npm dependency. |
+| `packages/postgres/test/postgres-builders-and-stores.test.ts` | `<= 400` | Verifies `postgres.*` builders (including `H.env('DATABASE_URL')` late-bound resolution), `PostgresLedgerStore` (including `addedDependencies` cycle/depth validation and `compactRunFrames` run isolation), `PostgresTopologyStore`, `PostgresLessonStore`, and `postgres:global-rules` source executor. |
 
 ---
 
 ## 6. Verification Gate Commands
 
-Run from workspace root:
+Run from workspace root (plus the `IMPL_LOOP.md` `baseline_dirty` diff check against `<non_sibling_forbidden_dirs_excluding_upstream_patches>`):
 
 ```bash
+pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres lint
 pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres typecheck
 pnpm --filter @harness-dsl/sqlite --filter @harness-dsl/postgres test -- --reporter=verbose
-test -z "$(git status --porcelain -- packages/core packages/fs packages/markdown packages/node packages/git packages/claude packages/openai packages/gemini packages/github packages/slack packages/stripe packages/netsuite packages/integration)"
+test -z "$(git status --porcelain -- docs .agents .claude package.json tsconfig.base.json vitest.config.ts)"
 ```
