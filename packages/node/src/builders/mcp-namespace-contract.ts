@@ -1,0 +1,50 @@
+import type {
+  AstBuilder,
+  NodeHttpControlPlaneNode,
+  NodeMcpSseNode,
+  NodeMcpStdioNode,
+} from '@harness-dsl/core';
+import type { McpServerOptions } from './mcp-server-options.js';
+
+/**
+ * Public `mcp.*` DSL builder namespace exported by `@harness-dsl/node`.
+ *
+ * Exposes Model Context Protocol (MCP) and HTTP control-plane builders (`mcp.server`,
+ * `mcp.stdio`, `mcp.sse`) for mounting on `H.harness().expose(...)`.
+ */
+export interface McpNamespace {
+  /**
+   * Creates an HTTP / MCP control-plane server descriptor listening on `options.port` (`mcp.server`).
+   *
+   * Compiles to `NodeHttpControlPlaneNode` (`type: 'node:http-control-plane'`).
+   *
+   * @param {McpServerOptions} options - TCP port configuration.
+   *
+   * @returns {AstBuilder<NodeHttpControlPlaneNode> & NodeHttpControlPlaneNode} Frozen control-plane node.
+   */
+  server(
+    options: McpServerOptions,
+  ): AstBuilder<NodeHttpControlPlaneNode> & NodeHttpControlPlaneNode;
+
+  /**
+   * Creates an MCP stdio control-plane server descriptor (`mcp.stdio`).
+   *
+   * Compiles to `NodeMcpStdioNode` (`type: 'node:mcp-stdio'`).
+   *
+   * @param {string} [serverName='metaharness-mcp'] - Logical MCP server name.
+   *
+   * @returns {AstBuilder<NodeMcpStdioNode> & NodeMcpStdioNode} Frozen MCP stdio control-plane node.
+   */
+  stdio(serverName?: string): AstBuilder<NodeMcpStdioNode> & NodeMcpStdioNode;
+
+  /**
+   * Creates an MCP HTTP/SSE control-plane server descriptor (`mcp.sse`).
+   *
+   * Compiles to `NodeMcpSseNode` (`type: 'node:mcp-sse'`).
+   *
+   * @param {McpServerOptions} options - TCP port configuration.
+   *
+   * @returns {AstBuilder<NodeMcpSseNode> & NodeMcpSseNode} Frozen MCP SSE control-plane node.
+   */
+  sse(options: McpServerOptions): AstBuilder<NodeMcpSseNode> & NodeMcpSseNode;
+}
