@@ -1,0 +1,15 @@
+export type { ClaudeAccountSeatNode, ClaudeModelNode } from '@harness-dsl/core';
+export type { ClaudeAccountSeatBuilder } from './builders/claude-account-seat-builder.js';
+export type { ClaudeModelBuilder } from './builders/claude-model-builder.js';
+export type { ClaudeModelOptions } from './builders/claude-model-options.js';
+export type { ClaudeNamespace } from './builders/claude-namespace-contract.js';
+export { claude } from './builders/claude-namespace.js';
+export { createClaudeAccountSeatBuilder } from './builders/create-claude-account-seat-builder.js';
+export { createClaudeModelBuilder } from './builders/create-claude-model-builder.js';
+export { claudeExecutors } from './driver/claude-executors.constants.js';
+export type { ClaudeHttpRequest } from './driver/claude-http-request.js';
+export type { ClaudeHttpResponse } from './driver/claude-http-response.js';
+export type { ClaudeHttpTransport } from './driver/claude-http-transport.js';
+export { ClaudeModelDriver } from './driver/claude-model-driver.js';
+export { createClaudeExecutors } from './driver/create-claude-executors.js';
+export { defaultClaudeHttpTransport } from './driver/default-claude-http-transport.constants.js';
