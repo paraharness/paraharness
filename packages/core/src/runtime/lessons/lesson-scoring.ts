@@ -4,7 +4,7 @@ import type {
 } from '../../ast/lessons-node.js';
 import type { LessonOutcome } from '../../ports/lesson-outcome.types.js';
 import type { LessonRecord } from '../../ports/lesson-record.js';
-import type { LessonScoreContextParams } from './lesson-distillation-params.js';
+import type { LessonScoreContextParams } from './lesson-score-context-params.js';
 import {
   DEFAULT_LESSON_SCORING_WEIGHTS,
   LESSON_OUTCOME_PRECEDENCE_RANK,

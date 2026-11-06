@@ -4,12 +4,10 @@ import type {
   GroundingSnapshotRecord,
   WireToolSchema,
 } from '../../ports/compiled-wire-prefix.js';
-import type {
-  CompileWirePrefixParams,
-  InRunGroundingDiffParams,
-  InRunGroundingDiffRecord,
-  RoleAndScopeContextFrameParams,
-} from './compile-wire-prefix-params.js';
+import type { CompileWirePrefixParams } from './compile-wire-prefix-params.js';
+import type { InRunGroundingDiffParams } from './in-run-grounding-diff-params.js';
+import type { InRunGroundingDiffRecord } from './in-run-grounding-diff-record.js';
+import type { RoleAndScopeContextFrameParams } from './role-and-scope-context-frame-params.js';
 import {
   collectRoleScopedWireTools,
   collectUnionWireTools,
@@ -44,7 +42,11 @@ export async function compileRunWirePrefixes(
     }
     for (const d of await resolveGlobalRuleDirectives(group.sharedRules, params.registry, params.resolutionContext)) systemBlocks.push(d);
     const systemPromptText = systemBlocks.join('\n\n'), groupActors = [];
-    for (const actor of params.actors) if (actor.prefixGroup === undefined || actor.prefixGroup.id === group.id) groupActors.push(actor);
+    for (const actor of params.actors) {
+      if (actor.prefixGroup === undefined || actor.prefixGroup.id === group.id) {
+        groupActors.push(actor);
+      }
+    }
     const wireToolSchemasByRoleKey: Record<string, readonly WireToolSchema[]> = {};
     if (group.toolsMode === 'union') {
       wireToolSchemasByRoleKey['*'] = collectUnionWireTools(groupActors, params.resolvedSkillsByRoleKey);

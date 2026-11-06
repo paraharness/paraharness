@@ -15,6 +15,8 @@ export class InMemoryLessonStore implements LessonStore {
   readonly retiredIds = new Set<string>();
   /** Recorded `recordOutcomes()` batches for test assertions. */
   readonly recordedBatches: Array<ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>> = [];
+  /** Recorded `queryCandidates()` requests for test assertions. */
+  readonly recordedQueries: Array<{ readonly queryText: string; readonly partitions: readonly string[] }> = [];
 
   /**
    * Initializes the in-memory lesson store with optional seed lessons.
@@ -34,11 +36,12 @@ export class InMemoryLessonStore implements LessonStore {
    *
    * Returns all non-retired lessons with their configured `relevanceScore` (defaulting to `1`).
    *
-   * @param {{ readonly queryText: string; readonly partitions: readonly string[] }} _req - Search query and active partitions.
+   * @param {{ readonly queryText: string; readonly partitions: readonly string[] }} req - Search query and active partitions.
    *
    * @returns {Promise<readonly LessonRecord[]>} Non-retired candidate lessons.
    */
-  async queryCandidates(_req: { readonly queryText: string; readonly partitions: readonly string[] }): Promise<readonly LessonRecord[]> {
+  async queryCandidates(req: { readonly queryText: string; readonly partitions: readonly string[] }): Promise<readonly LessonRecord[]> {
+    this.recordedQueries.push(Object.freeze({ queryText: req.queryText, partitions: Object.freeze([...req.partitions]) }));
     const out: LessonRecord[] = [];
     for (const l of this.lessons.values()) {
       if (!this.retiredIds.has(l.id)) out.push(l);

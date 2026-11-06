@@ -4,10 +4,8 @@ import type { AgentContinuationFrame } from '../../../ports/agent-continuation-f
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
 import type { LeaseDelta } from '../../../ports/lease-delta.js';
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
-import type {
-  AgentTurnSessionState,
-  InterruptEdgeResolution,
-} from '../agent-turn-session-state.js';
+import type { AgentTurnSessionState } from '../agent-turn-session-state.js';
+import type { InterruptEdgeResolution } from '../interrupt-edge-resolution.js';
 
 /**
  * Attaches granted `LeaseDelta` entries to the outer actor's `activeLeases` and any enclosing `loop-frame.grantedLoopLeases` (`SPEC.md` §3.5 & §3.8).

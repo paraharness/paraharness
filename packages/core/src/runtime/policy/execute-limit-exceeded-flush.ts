@@ -3,10 +3,8 @@ import type { CanonicalToolResult } from '../../ports/canonical-message.js';
 import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
 import type { WireFrameRecord } from '../../ports/wire-frame-record.js';
-import type {
-  LimitExceededFlushParams,
-  LimitExceededFlushResult,
-} from './limit-exceeded-flush-params.js';
+import type { LimitExceededFlushParams } from './limit-exceeded-flush-params.js';
+import type { LimitExceededFlushResult } from './limit-exceeded-flush-result.js';
 
 /**
  * Executes the 4-step crash-safe `.onLimitExceeded()` epistemic flush and abort sequence (`SPEC.md` §3.5).

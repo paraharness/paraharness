@@ -3,12 +3,12 @@ import type { BranchableScope } from '../../src/ports/branchable-scope.js';
 import type { LeaseDelta } from '../../src/ports/lease-delta.js';
 import type { ReconcileResult } from '../../src/ports/reconcile-result.types.js';
 import type { ToolEffect } from '../../src/ports/tool-effect.js';
+import { commitScriptedChild, syncScriptedChild, syncScriptedRoot } from './internal/reconcile-scripted-scope.js';
 
 /**
  * Deterministic `BranchableScope` test fixture supporting checkpoints, `diffEffects`, child branching, and scripted conflicts (`SPEC.md` §3.5 & §3.7.2).
  *
- * Tracks live handles, serialized checkpoints, reattached handles, and configurable conflict outcomes
- * for `commitChild`, `syncChild`, and `syncRoot`.
+ * Tracks live handles, serialized checkpoints, reattached handles, and configurable conflict outcomes for `commitChild`, `syncChild`, and `syncRoot`.
  */
 export class ScriptedBranchableScope implements BranchableScope<string, Record<string, unknown>, Record<string, unknown>> {
   /** Unique scope driver identifier. */
@@ -55,10 +55,10 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    */
   async acquireRoot(runId: string): Promise<string> {
     const handle = `root:${runId}`;
-    this.handleState.set(handle, { handle, headSha: `sha:${runId}:0` }); this.liveHandles.add(handle);
+    this.handleState.set(handle, { handle, headSha: `sha:${runId}:0` });
+    this.liveHandles.add(handle);
     return handle;
   }
-
   /**
    * Reattaches an existing root scope handle during crash recovery.
    *
@@ -71,11 +71,13 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    */
   async reattachRoot(runId: string, checkpoint?: string): Promise<string> {
     const handle = `root:${runId}`;
-    this.reattachedHandles.push(handle); this.liveHandles.add(handle);
-    if (!this.handleState.has(handle)) this.handleState.set(handle, { handle, checkpoint });
+    this.reattachedHandles.push(handle);
+    this.liveHandles.add(handle);
+    if (!this.handleState.has(handle)) {
+      this.handleState.set(handle, { handle, checkpoint });
+    }
     return handle;
   }
-
   /**
    * Inspects the current state receipt for `handle`.
    *
@@ -85,8 +87,9 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    *
    * @returns {Promise<Record<string, unknown>>} Inspection receipt.
    */
-  async inspect(handle: string): Promise<Record<string, unknown>> { return { ...(this.handleState.get(handle) ?? { handle }) }; }
-
+  async inspect(handle: string): Promise<Record<string, unknown>> {
+    return { ...(this.handleState.get(handle) ?? { handle }) };
+  }
   /**
    * Releases `handle` and removes it from `liveHandles`.
    *
@@ -96,8 +99,9 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    *
    * @returns {Promise<void>} Resolves once removed from `liveHandles`.
    */
-  async release(handle: string): Promise<void> { this.liveHandles.delete(handle); }
-
+  async release(handle: string): Promise<void> {
+    this.liveHandles.delete(handle);
+  }
   /**
    * Serializes the current state of `handle` into a checkpoint token.
    *
@@ -108,12 +112,10 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    * @returns {Promise<string>} Checkpoint token string.
    */
   async serializeCheckpoint(handle: string): Promise<string> {
-    this.ckptSeq += 1;
-    const token = `ckpt:${handle}:${String(this.ckptSeq)}`;
+    const token = `ckpt:${handle}:${String(++this.ckptSeq)}`;
     this.checkpoints.set(token, { ...(this.handleState.get(handle) ?? { handle }) });
     return token;
   }
-
   /**
    * Restores `handle` to the state captured by `checkpoint`.
    *
@@ -127,9 +129,10 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
   async restoreCheckpoint(handle: string, checkpoint: string): Promise<void> {
     this.restoredCheckpoints.push(Object.freeze({ handle, checkpoint }));
     const saved = this.checkpoints.get(checkpoint);
-    if (saved !== undefined) this.handleState.set(handle, { ...saved });
+    if (saved !== undefined) {
+      this.handleState.set(handle, { ...saved });
+    }
   }
-
   /**
    * Returns `scriptedDiffEffects` for post-flight subprocess guard verification.
    *
@@ -140,8 +143,9 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    *
    * @returns {Promise<readonly ToolEffect[]>} Synthesized tool effects.
    */
-  async diffEffects(_fromCheckpoint: string, _handle: string): Promise<readonly ToolEffect[]> { return this.scriptedDiffEffects; }
-
+  async diffEffects(_fromCheckpoint: string, _handle: string): Promise<readonly ToolEffect[]> {
+    return this.scriptedDiffEffects;
+  }
   /**
    * Forks an isolated child scope handle from `parent`.
    *
@@ -154,10 +158,10 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    */
   async forkChild(parent: string, forkId: string): Promise<string> {
     const childHandle = `${parent}/child:${forkId}`;
-    this.handleState.set(childHandle, { ...(this.handleState.get(parent) ?? {}), handle: childHandle }); this.liveHandles.add(childHandle);
+    this.handleState.set(childHandle, { ...(this.handleState.get(parent) ?? {}), handle: childHandle });
+    this.liveHandles.add(childHandle);
     return childHandle;
   }
-
   /**
    * Reattaches a child scope handle during crash recovery.
    *
@@ -171,10 +175,10 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    */
   async reattachChild(parent: string, forkId: string, _checkpoint?: string): Promise<string> {
     const childHandle = `${parent}/child:${forkId}`;
-    this.reattachedHandles.push(childHandle); this.liveHandles.add(childHandle);
+    this.reattachedHandles.push(childHandle);
+    this.liveHandles.add(childHandle);
     return childHandle;
   }
-
   /**
    * Reconciles `child` into `parent`, returning a conflict when `commitConflictRemainingCount > 0`.
    *
@@ -186,15 +190,8 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    * @returns {Promise<ReconcileResult<Record<string, unknown>>>} Clean or conflicted reconciliation result.
    */
   async commitChild(child: string, parent: string): Promise<ReconcileResult<Record<string, unknown>>> {
-    if (this.commitConflictRemainingCount > 0) {
-      this.commitConflictRemainingCount -= 1;
-      return Object.freeze({ status: 'conflict', conflictedSummary: `Conflict merging ${child} into ${parent}`, data: { child, parent, conflictedUnits: ['src/conflicted.ts'] } });
-    }
-    const merged = { ...(this.handleState.get(parent) ?? {}), ...(this.handleState.get(child) ?? {}), handle: parent, lastCommittedChild: child };
-    this.handleState.set(parent, merged);
-    return Object.freeze({ status: 'clean', data: merged });
+    return commitScriptedChild(this, child, parent);
   }
-
   /**
    * Synchronizes `pausedChild` onto `parent`, returning a conflict when `syncChildConflictRemainingCount > 0`.
    *
@@ -206,13 +203,8 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    * @returns {Promise<ReconcileResult<Record<string, unknown>>>} Clean or conflicted sync result.
    */
   async syncChild(parent: string, pausedChild: string): Promise<ReconcileResult<Record<string, unknown>>> {
-    if (this.syncChildConflictRemainingCount > 0) {
-      this.syncChildConflictRemainingCount -= 1;
-      return Object.freeze({ status: 'conflict', conflictedSummary: `Sync conflict on ${pausedChild}`, data: { parent, pausedChild } });
-    }
-    return Object.freeze({ status: 'clean', data: { parent, pausedChild, synced: true } });
+    return syncScriptedChild(this, parent, pausedChild);
   }
-
   /**
    * Synchronizes `rootHandle` onto completed prerequisite receipts.
    *
@@ -224,14 +216,8 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    * @returns {Promise<ReconcileResult<Record<string, unknown>>>} Clean or conflicted sync result.
    */
   async syncRoot(rootHandle: string, prerequisiteReceipts: readonly Record<string, unknown>[]): Promise<ReconcileResult<Record<string, unknown>>> {
-    if (this.syncRootConflictRemainingCount > 0) {
-      this.syncRootConflictRemainingCount -= 1;
-      return Object.freeze({ status: 'conflict', conflictedSummary: `Root sync conflict on ${rootHandle}`, data: { rootHandle } });
-    }
-    this.handleState.set(rootHandle, { ...(this.handleState.get(rootHandle) ?? {}), syncedPrerequisiteCount: prerequisiteReceipts.length });
-    return Object.freeze({ status: 'clean', data: { rootHandle, prerequisiteCount: prerequisiteReceipts.length } });
+    return syncScriptedRoot(this, rootHandle, prerequisiteReceipts);
   }
-
   /**
    * Returns the configured temporary `conflictLease` for `handle`.
    *
@@ -241,5 +227,7 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
    *
    * @returns {LeaseDelta | undefined} Configured conflict lease.
    */
-  getConflictLease(_handle: string): LeaseDelta | undefined { return this.conflictLease; }
+  getConflictLease(_handle: string): LeaseDelta | undefined {
+    return this.conflictLease;
+  }
 }

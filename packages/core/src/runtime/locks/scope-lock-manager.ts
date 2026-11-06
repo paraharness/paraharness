@@ -113,6 +113,19 @@ export class ScopeLockManager {
   }
 
   /**
+   * Checks whether `handle` currently holds an active exclusive write lease.
+   *
+   * Used by runtime invariants and tests to verify exclusive-write serialization on scope handles.
+   *
+   * @param {unknown} handle - Isolation scope handle to inspect.
+   *
+   * @returns {boolean} True when an exclusive writer currently holds `handle`.
+   */
+  isWriteLocked(handle: unknown): boolean {
+    return this.entries.get(handle)?.activeWriter === true;
+  }
+
+  /**
    * Looks up or initializes the mutable lock state entry for `handle`.
    *
    * Creates a fresh unlocked entry when `handle` is not currently tracked in `this.entries`.

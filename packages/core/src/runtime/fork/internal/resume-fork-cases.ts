@@ -4,19 +4,20 @@ import type { ForkBatchEntryRecord } from '../../../ports/fork-batch-continuatio
 import type { LeaseDelta } from '../../../ports/lease-delta.js';
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
-import type { ResumeSuspendedForkEntryParams } from '../fork-batch-execution-params.js';
+import type { ResumeSuspendedForkEntryParams } from '../resume-suspended-fork-entry-params.js';
 import { reconcileChildForkWithBounce } from './fork-barrier-and-pause.js';
+import { executeDefaultForkOrTournamentChild } from './run-single-fork-call.js';
 
 /**
  * Injects the Case A (`INTERRUPT_RAISED`) resumption frame or tool result (`SPEC.md` §3.7.2).
  *
- * Pairs `suspendedAtCallId` in `completedResults` when raised from an `.act()` tool call, or appends
- * a synthetic `user` frame at `preservedActLeafMessageId` when raised by `.evaluate()`.
+ * Pairs `suspendedAtCallId` in `completedResults` with `{ resolutionSummary, parentSyncResult }` when raised from an `.act()` tool call,
+ * or appends `[CONTRACT_VIOLATION_RESOLVED]` + `[TOPOLOGY_SYNC]` at `preservedActLeafMessageId` when raised by `.evaluate()`.
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
  * @param {ResumeSuspendedForkEntryParams<THandle>} params     - Resume parameters and suspended fork record.
- * @param {string}                                  syncDigest - Formatted `[PARENT_SYNC]` note string.
+ * @param {string}                                  syncDigest - Serialized parent sync result JSON string.
  *
  * @returns {Promise<readonly ContinuationFrame[]>} Updated child continuation stack with Case A frame injected.
  */
@@ -25,21 +26,32 @@ export async function injectCaseAResumeFrame<THandle = unknown>(
   syncDigest: string,
 ): Promise<readonly ContinuationFrame[]> {
   const { batchParams, record, resolutionSummary } = params;
-  const noteText = `[INTERRUPT_RESOLVED] ${resolutionSummary}\n${syncDigest}`;
+  const evalNote = `[CONTRACT_VIOLATION_RESOLVED]: Original Deficit: ${record.interruptPayloadJson ?? '{}'}. Parent Resolution: ${resolutionSummary}\n[TOPOLOGY_SYNC]: ${syncDigest}`;
+  const msgId = `msg:${record.suspendedForkId}:case-a`;
+  let frameAppended = false;
   const out: ContinuationFrame[] = [];
   for (const frame of params.entry.continuationStack) {
     if (frame.kind === 'agent-frame') {
       if (record.raisedByPhase !== 'evaluate' && record.suspendedAtCallId !== undefined && frame.pauseState.kind === 'tool-batch') {
         const batch = frame.pauseState.pendingToolBatch;
-        const completed = Object.freeze([...batch.completedResults, Object.freeze({ callId: record.suspendedAtCallId, content: noteText, isError: false })]);
+        const toolContent = JSON.stringify({ resolutionSummary, parentSyncResult: JSON.parse(syncDigest || '{}') });
+        const completed = Object.freeze([...batch.completedResults, Object.freeze({ callId: record.suspendedAtCallId, content: toolContent, isError: false })]);
         const remaining = batch.remainingCalls.filter((c) => c.callId !== record.suspendedAtCallId);
         out.push(Object.freeze<AgentContinuationFrame>({ ...frame, pauseState: Object.freeze({ ...frame.pauseState, pendingToolBatch: Object.freeze({ ...batch, completedResults: completed, activeInterruptCallId: undefined, remainingCalls: Object.freeze(remaining) }) }) }));
       } else {
-        const msgId = `msg:${record.suspendedForkId}:case-a`;
-        await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: msgId, parentMessageId: frame.leafMessageId, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(noteText), canonical: Object.freeze({ role: 'user', visibleText: noteText }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
+        await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: msgId, parentMessageId: frame.leafMessageId, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(evalNote), canonical: Object.freeze({ role: 'user', visibleText: evalNote }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
+        frameAppended = true;
         out.push(Object.freeze<AgentContinuationFrame>({ ...frame, leafMessageId: msgId, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }) }));
       }
-    } else out.push(frame);
+    } else if (frame.kind === 'loop-frame' && record.raisedByPhase === 'evaluate') {
+      if (!frameAppended) {
+        await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: msgId, parentMessageId: frame.preservedActLeafMessageId, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(evalNote), canonical: Object.freeze({ role: 'user', visibleText: evalNote }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
+        frameAppended = true;
+      }
+      out.push(Object.freeze<LoopContinuationFrame>({ ...frame, phase: 'act', preservedActLeafMessageId: msgId }));
+    } else {
+      out.push(frame);
+    }
   }
   return Object.freeze(out);
 }
@@ -47,13 +59,13 @@ export async function injectCaseAResumeFrame<THandle = unknown>(
 /**
  * Injects the Case B (`PAUSED_BY_SIBLING_INTERRUPT` at `TOOL_BOUNDARY`) resumption notes (`SPEC.md` §3.7.2).
  *
- * Appends `[SIBLING_INTERRUPT_RESUME]` and `[PARENT_SYNC]` onto the child's trailing `tool` or `user` frame
- * via `ModelDriver.appendToolResultNotes` (or appends a synthetic user frame when trailing is assistant).
+ * Appends `[TOPOLOGY_SYNC]` onto the child's trailing `tool` or `user` frame via `ModelDriver.appendToolResultNotes`
+ * (or appends a synthetic user frame when trailing is assistant).
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
  * @param {ResumeSuspendedForkEntryParams<THandle>} params     - Resume parameters and suspended fork record.
- * @param {string}                                  syncDigest - Formatted `[PARENT_SYNC]` note string.
+ * @param {string}                                  syncDigest - Serialized parent sync result JSON string.
  *
  * @returns {Promise<readonly ContinuationFrame[]>} Updated child continuation stack with Case B notes injected.
  */
@@ -62,7 +74,7 @@ export async function injectCaseBResumeFrame<THandle = unknown>(
   syncDigest: string,
 ): Promise<readonly ContinuationFrame[]> {
   const { batchParams, record, resolutionSummary } = params;
-  const noteText = `[SIBLING_INTERRUPT_RESUME] ${resolutionSummary}\n${syncDigest}`;
+  const noteText = `[TOPOLOGY_SYNC]: ${resolutionSummary}\n${syncDigest}`;
   const out: ContinuationFrame[] = [];
   for (const frame of params.entry.continuationStack) {
     if (frame.kind === 'agent-frame') {
@@ -71,13 +83,15 @@ export async function injectCaseBResumeFrame<THandle = unknown>(
       if (last !== undefined && batchParams.modelDriver !== undefined && (last.canonical.role === 'tool' || last.canonical.role === 'user')) {
         const updated = await batchParams.modelDriver.appendToolResultNotes(last, [noteText]);
         await batchParams.ledgerStore.replaceMessageFrame(batchParams.ctx.runId, updated);
-        out.push(frame);
+        out.push(Object.freeze<AgentContinuationFrame>({ ...frame, pauseState: Object.freeze({ kind: 'active-turn' }) }));
       } else {
         const msgId = `msg:${record.suspendedForkId}:case-b`;
         await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: msgId, parentMessageId: frame.leafMessageId, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(noteText), canonical: Object.freeze({ role: 'user', visibleText: noteText }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
-        out.push(Object.freeze<AgentContinuationFrame>({ ...frame, leafMessageId: msgId }));
+        out.push(Object.freeze<AgentContinuationFrame>({ ...frame, leafMessageId: msgId, pauseState: Object.freeze({ kind: 'active-turn' }) }));
       }
-    } else out.push(frame);
+    } else {
+      out.push(frame);
+    }
   }
   return Object.freeze(out);
 }
@@ -85,13 +99,13 @@ export async function injectCaseBResumeFrame<THandle = unknown>(
 /**
  * Injects the Case C (`PAUSED_BY_SIBLING_INTERRUPT` at `BEFORE_STOP_GATE`) resumption frame (`SPEC.md` §3.7.2).
  *
- * Appends `[TOPOLOGY_SYNC_REVERIFY]` and `[PARENT_SYNC]` and sets `neutralSyncContinuation: true`
+ * Appends `[TOPOLOGY_SYNC_REVERIFY]: Upstream contract updated (...)` + `[TOPOLOGY_SYNC]` and sets `neutralSyncContinuation: true`
  * on the child's `agent-frame` so `beforeStop` re-verifies against the rebased scope state.
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
  * @param {ResumeSuspendedForkEntryParams<THandle>} params     - Resume parameters and suspended fork record.
- * @param {string}                                  syncDigest - Formatted `[PARENT_SYNC]` note string.
+ * @param {string}                                  syncDigest - Serialized parent sync result JSON string.
  *
  * @returns {Promise<readonly ContinuationFrame[]>} Updated child continuation stack with `neutralSyncContinuation: true`.
  */
@@ -100,22 +114,24 @@ export async function injectCaseCResumeFrame<THandle = unknown>(
   syncDigest: string,
 ): Promise<readonly ContinuationFrame[]> {
   const { batchParams, record, resolutionSummary } = params;
-  const noteText = `[TOPOLOGY_SYNC_REVERIFY] ${resolutionSummary}\n${syncDigest}`;
+  const noteText = `[TOPOLOGY_SYNC_REVERIFY]: Upstream contract updated (${resolutionSummary}). Re-verify output against updated scope before completing.\n[TOPOLOGY_SYNC]: ${syncDigest}`;
   const out: ContinuationFrame[] = [];
   for (const frame of params.entry.continuationStack) {
     if (frame.kind === 'agent-frame') {
       const msgId = `msg:${record.suspendedForkId}:case-c`;
       await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: msgId, parentMessageId: frame.leafMessageId, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(noteText), canonical: Object.freeze({ role: 'user', visibleText: noteText }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
       out.push(Object.freeze<AgentContinuationFrame>({ ...frame, leafMessageId: msgId, neutralSyncContinuation: true, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }) }));
-    } else out.push(frame);
+    } else {
+      out.push(frame);
+    }
   }
   return Object.freeze(out);
 }
 
 /**
- * Resumes a single `SuspendedForkRecord` with replay-idempotent `restoreCheckpoint` + `syncChild`, Case A/B/C injection, and atomic `resolveSuspendedFork` (`SPEC.md` §3.7.2).
+ * Resumes a single `SuspendedForkRecord` with write-locked replay-idempotent `restoreCheckpoint` + `syncChild`, Case A/B/C injection, and atomic `resolveSuspendedFork` (`SPEC.md` §3.7.2).
  *
- * Reattaches the child scope handle, synchronizes against `parentHandle`, runs `executeChildStep` and
+ * Reattaches the child scope handle, synchronizes against `parentHandle` under a write lock, runs `executeChildStep` and
  * `reconcileChildForkWithBounce`, and marks `${forkId}#${suspensionEpoch}` as `'RESUMED'`.
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
@@ -131,26 +147,31 @@ export async function resumeSuspendedForkEntry<THandle = unknown>(
   const forkCap = batchParams.parentNode.capabilities?.forks.find((f) => f.toolName === record.forkToolName);
   if (forkCap === undefined) throw new Error(`Unknown fork tool '${record.forkToolName}' on parent '${batchParams.parentNode.id}'.`);
   const childHandle = await batchParams.lockManager.withReadLock(batchParams.ctx.scopeHandle, () => batchParams.branchableScope.reattachChild(batchParams.ctx.scopeHandle, record.forkId, record.childScopeCheckpoint));
-  let curEntry = params.entry, conflictLease: LeaseDelta | undefined;
+  let curEntry = params.entry;
+  let conflictLease: LeaseDelta | undefined;
   if (curEntry.syncedToParentCheckpoint === undefined) {
-    if (record.childScopeCheckpoint !== undefined) await batchParams.branchableScope.restoreCheckpoint(childHandle, record.childScopeCheckpoint);
-    const syncRes = await batchParams.lockManager.withReadLock(batchParams.ctx.scopeHandle, () => batchParams.branchableScope.syncChild(batchParams.ctx.scopeHandle, childHandle));
-    if (syncRes.status === 'conflict') conflictLease = batchParams.branchableScope.getConflictLease?.(childHandle);
-    const syncedCkpt = await batchParams.branchableScope.serializeCheckpoint(childHandle);
+    const syncOut = await batchParams.lockManager.withWriteLock(batchParams.ctx.scopeHandle, async () => {
+      if (record.childScopeCheckpoint !== undefined) await batchParams.branchableScope.restoreCheckpoint(childHandle, record.childScopeCheckpoint);
+      const syncRes = await batchParams.branchableScope.syncChild(batchParams.ctx.scopeHandle, childHandle);
+      const syncedCkpt = await batchParams.branchableScope.serializeCheckpoint(childHandle);
+      return { syncRes, syncedCkpt };
+    });
+    if (syncOut.syncRes.status === 'conflict') conflictLease = batchParams.branchableScope.getConflictLease?.(childHandle);
     const updatedStack = curEntry.continuationStack.map((f) => f.kind === 'agent-frame' && conflictLease !== undefined ? Object.freeze<AgentContinuationFrame>({ ...f, conflictCheckArmed: true, activeLeases: Object.freeze([...f.activeLeases, conflictLease]) }) : f.kind === 'loop-frame' && conflictLease !== undefined ? Object.freeze<LoopContinuationFrame>({ ...f, conflictCheckArmed: true, grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, conflictLease]) }) : f);
-    curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, conflictCheckArmed: curEntry.conflictCheckArmed || syncRes.status === 'conflict', syncedToParentCheckpoint: syncedCkpt, syncResultJson: JSON.stringify(syncRes), continuationStack: Object.freeze(updatedStack) });
+    curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, conflictCheckArmed: curEntry.conflictCheckArmed || syncOut.syncRes.status === 'conflict', syncedToParentCheckpoint: syncOut.syncedCkpt, syncResultJson: JSON.stringify(syncOut.syncRes), continuationStack: Object.freeze(updatedStack) });
     await params.persistEntryUpdate(curEntry);
   }
   if (curEntry.resumeFrameInjected !== true) {
-    const syncNote = `[PARENT_SYNC] ${curEntry.syncResultJson ?? '{}'}`;
+    const syncJson = curEntry.syncResultJson ?? '{}';
     const innerAgent = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame');
-    const nextStack = record.suspensionReason === 'INTERRUPT_RAISED' ? await injectCaseAResumeFrame({ ...params, entry: curEntry }, syncNote) : innerAgent?.pausedAtPhase === 'BEFORE_STOP_GATE' ? await injectCaseCResumeFrame({ ...params, entry: curEntry }, syncNote) : await injectCaseBResumeFrame({ ...params, entry: curEntry }, syncNote);
+    const nextStack = record.suspensionReason === 'INTERRUPT_RAISED' ? await injectCaseAResumeFrame({ ...params, entry: curEntry }, syncJson) : innerAgent?.pausedAtPhase === 'BEFORE_STOP_GATE' ? await injectCaseCResumeFrame({ ...params, entry: curEntry }, syncJson) : await injectCaseBResumeFrame({ ...params, entry: curEntry }, syncJson);
     curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, resumeFrameInjected: true, continuationStack: nextStack });
     await params.persistEntryUpdate(curEntry);
   }
+  const runStep = batchParams.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: batchParams.ledgerStore, lessonStore: batchParams.lessonStore, lockManager: batchParams.lockManager, continuationQueue: batchParams.continuationQueue, poolManager: batchParams.poolManager, humanAdaptersById: batchParams.humanAdaptersById }));
   const innerInputJson = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.inputJson ?? curEntry.continuationStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')?.loopInputJson ?? 'null';
-  const outcome = await batchParams.executeChildStep(forkCap.childExecutable, JSON.parse(innerInputJson), Object.freeze({ ...batchParams.ctx, scopeHandle: childHandle, activePartitions: curEntry.activePartitions, resumeContinuationStack: curEntry.continuationStack }));
-  const settled = await reconcileChildForkWithBounce({ batchParams, entry: curEntry, childHandle, childNode: forkCap.childExecutable, childInput: JSON.parse(innerInputJson), outcome, persistEntryUpdate: params.persistEntryUpdate });
+  const outcome = await runStep(forkCap.childExecutable, JSON.parse(innerInputJson), Object.freeze({ ...batchParams.ctx, stepExecId: `${batchParams.ctx.stepExecId}:fork:${record.forkId}`, scopeHandle: childHandle, activePartitions: curEntry.activePartitions, resumeContinuationStack: curEntry.continuationStack }));
+  const settled = await reconcileChildForkWithBounce({ batchParams: { ...batchParams, executeChildStep: runStep }, entry: curEntry, childHandle, childNode: forkCap.childExecutable, childInput: JSON.parse(innerInputJson), outcome, persistEntryUpdate: params.persistEntryUpdate });
   await batchParams.ledgerStore.resolveSuspendedFork(record.suspendedForkId, 'RESUMED');
   return settled;
 }

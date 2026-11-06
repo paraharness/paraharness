@@ -8,12 +8,10 @@ import type {
 import type { PolicyGuardEvaluationResult } from '../../../ports/runtime-executor-registry.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { ToolEffect } from '../../../ports/tool-effect.js';
-import type {
-  BatchSameClauseInterruptParams,
-  PolicyEvaluationResult,
-  QuantitativeUsageSnapshot,
-  SingleGuardClauseEvalParams,
-} from '../policy-evaluation-result.js';
+import type { BatchSameClauseInterruptParams } from '../batch-same-clause-interrupt-params.js';
+import type { PolicyEvaluationResult } from '../policy-evaluation-result.js';
+import type { QuantitativeUsageSnapshot } from '../quantitative-usage-snapshot.js';
+import type { SingleGuardClauseEvalParams } from '../single-guard-clause-eval-params.js';
 
 /**
  * Determines whether a single `ToolEffect` is unlocked by any active `LeaseDelta` (`SPEC.md` §3.5).
@@ -124,7 +122,10 @@ export async function batchSameClauseInterrupt<THandle = unknown>(
       const effects = await driver.describeEffects(node as never, JSON.parse(call.argsJson || '{}'), batchParams.ctx.scopeHandle);
       let denied = false;
       for (const c of batchParams.policy.clauses) {
-        if (c.mode === 'deny-with-error' && !(await evaluateSingleGuardClause(c, { toolName: call.toolName, proposedEffects: effects, activeLeases: batchParams.activeLeases, ctx: batchParams.ctx })).allowed) { denied = true; break; }
+        if (c.mode === 'deny-with-error' && !(await evaluateSingleGuardClause(c, { toolName: call.toolName, proposedEffects: effects, activeLeases: batchParams.activeLeases, ctx: batchParams.ctx })).allowed) {
+          denied = true;
+          break;
+        }
       }
       if (!denied) evalRes = await evaluateSingleGuardClause(clause, { toolName: call.toolName, proposedEffects: effects, activeLeases: batchParams.activeLeases, ctx: batchParams.ctx });
     }

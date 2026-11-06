@@ -1,12 +1,10 @@
 import type { AgentContinuationFrame } from '../../ports/agent-continuation-frame.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
 import type { MutateLanePlanSpawnedItem } from '../../ports/mutate-lane-plan-request.js';
-import type {
-  PlanMutationParams,
-  PlanMutationResult,
-  SyncPrerequisitesParams,
-  SyncPrerequisitesResult,
-} from './plan-mutation-params.js';
+import type { PlanMutationParams } from './plan-mutation-params.js';
+import type { PlanMutationResult } from './plan-mutation-result.js';
+import type { SyncPrerequisitesParams } from './sync-prerequisites-params.js';
+import type { SyncPrerequisitesResult } from './sync-prerequisites-result.js';
 
 /**
  * Executes the `spawnTasks` capability tool with linear prerequisite chaining ($T_{\text{prevTip}} \leftarrow T_1 \leftarrow \dots \leftarrow T_k \leftarrow T_{\text{parent}}$) (`SPEC.md` §3.7.2).

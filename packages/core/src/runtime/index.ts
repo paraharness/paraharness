@@ -19,11 +19,7 @@ export type { CreateOrResumeRunRequest } from '../ports/create-or-resume-run-req
 export type { CreateOrResumeRunResult } from '../ports/create-or-resume-run-result.js';
 export type { DistilledLessonCandidate } from '../ports/distilled-lesson-candidate.js';
 export type { ExecutionContext } from '../ports/execution-context.js';
-export type {
-  ForkBatchContinuationFrame,
-  ForkBatchEntryRecord,
-  PendingPauseTriggerRecord,
-} from '../ports/fork-batch-continuation-frame.js';
+export type { ForkBatchContinuationFrame, ForkBatchEntryRecord, PendingPauseTriggerRecord } from '../ports/fork-batch-continuation-frame.js';
 export type { ForkContext, PrecedingCompletedToolResult } from '../ports/fork-context.js';
 export type { HarnessExecutionEngine } from '../ports/harness-execution-engine.js';
 export type { HarnessRuntimeController } from '../ports/harness-runtime-controller.js';
@@ -47,12 +43,7 @@ export type { ModelTurnRequest } from '../ports/model-turn-request.js';
 export type { ModelTurnResponse, ModelTurnUsage, ModelUsageMetrics } from '../ports/model-turn-response.js';
 export type { MutateLanePlanRequest, MutateLanePlanSpawnedItem } from '../ports/mutate-lane-plan-request.js';
 export type { NodeExecutor, NodeExecutorMap } from '../ports/node-executor.types.js';
-export type {
-  CompletedToolBatchResultRecord,
-  PendingPreFlightCall,
-  PendingToolBatch,
-  RemainingToolCallRecord,
-} from '../ports/pending-tool-batch.js';
+export type { CompletedToolBatchResultRecord, PendingPreFlightCall, PendingToolBatch, RemainingToolCallRecord } from '../ports/pending-tool-batch.js';
 export type { PrepareForkTarget } from '../ports/prepare-fork-target.js';
 export type { PrerequisiteWaitPauseState } from '../ports/prerequisite-wait-pause-state.js';
 export type { ReconcileCleanResult } from '../ports/reconcile-clean-result.js';
@@ -67,25 +58,12 @@ export type { RunnerDriver } from '../ports/runner-driver.js';
 export type { RuntimeDriverContext } from '../ports/runtime-driver-context.js';
 export type { RuntimeExecutorRegistrySlice } from '../ports/runtime-executor-registry-slice.js';
 export type {
-  AbortHookExecutionInput,
-  CheckEvaluationResult,
-  CrossVerifierBranchCandidate,
-  PolicyGuardEvaluationInput,
-  PolicyGuardEvaluationResult,
-  QuotaTripwireEvaluationInput,
-  QuotaTripwireEvaluationResult,
-  ResolvedSourceArtifact,
-  RewindHookExecutionInput,
-  RuntimeExecutorRegistry,
-  ServiceStartInput,
+  AbortHookExecutionInput, CheckEvaluationResult, CrossVerifierBranchCandidate, PolicyGuardEvaluationInput,
+  PolicyGuardEvaluationResult, QuotaTripwireEvaluationInput, QuotaTripwireEvaluationResult, ResolvedSourceArtifact,
+  RewindHookExecutionInput, RuntimeExecutorRegistry, ServiceStartInput,
 } from '../ports/runtime-executor-registry.js';
 export type { ServiceSession } from '../ports/service-session.js';
-export type {
-  SpeculateBranchEntryRecord,
-  SpeculateBufferedLessonOutcomeRecord,
-  SpeculateContinuationFrame,
-  SpeculateHumanRulingRecord,
-} from '../ports/speculate-continuation-frame.js';
+export type { SpeculateBranchEntryRecord, SpeculateBufferedLessonOutcomeRecord, SpeculateContinuationFrame, SpeculateHumanRulingRecord } from '../ports/speculate-continuation-frame.js';
 export type { StepExecutionContext } from '../ports/step-execution-context.js';
 export type { StepStartRecord } from '../ports/step-start-record.js';
 export type { StepTransitionRecord } from '../ports/step-transition-record.js';
@@ -101,132 +79,68 @@ export type { TopologyStore } from '../ports/topology-store.js';
 export type { TrackerAdapter } from '../ports/tracker-adapter.js';
 export type { UniversalStepTelemetry } from '../ports/universal-step-telemetry.js';
 export type { WireFrameRecord } from '../ports/wire-frame-record.js';
-export type {
-  AgentTurnSessionState,
-  DrainToolBatchOutcome,
-  InterruptEdgeResolution,
-} from './agent/agent-turn-session-state.js';
+export type { AgentTurnSessionState } from './agent/agent-turn-session-state.js';
+export type { DrainToolBatchOutcome } from './agent/drain-tool-batch-outcome.js';
 export { executeAgent } from './agent/execute-agent.js';
+export type { InterruptEdgeResolution } from './agent/interrupt-edge-resolution.js';
 export { createRuntime } from './engine/create-runtime.js';
 export { defaultExecutionEngine } from './engine/default-execution-engine.constants.js';
 export { executeFlow, executeFlowBranch, executeFlowStep } from './flow/execute-flow.js';
-export type {
-  FlowExecutionContext,
-  FlowRunResult,
-  HierarchicalRewindDrainParams,
-  RecoverInterruptedRunParams,
-  ReplaceWithPromotionParams,
-} from './flow/flow-execution-context.js';
-export {
-  executeHierarchicalRewindDrain,
-  executeReplaceWithPromotion,
-  foldFlowCustomTelemetry,
-  recoverInterruptedRunOnBoot,
-} from './flow/internal/flow-replace-and-rewind.js';
+export type { FlowExecutionContext } from './flow/flow-execution-context.js';
+export type { FlowRunResult } from './flow/flow-run-result.js';
+export type { HierarchicalRewindDrainParams } from './flow/hierarchical-rewind-drain-params.js';
+export { executeHierarchicalRewindDrain, executeReplaceWithPromotion, foldFlowCustomTelemetry, recoverInterruptedRunOnBoot } from './flow/internal/flow-replace-and-rewind.js';
+export type { RecoverInterruptedRunParams } from './flow/recover-interrupted-run-params.js';
+export type { ReplaceWithPromotionParams } from './flow/replace-with-promotion-params.js';
+export type { ChildForkExecutionOutcome } from './fork/child-fork-execution-outcome.js';
 export { executeForkBatch, executeResumeForkBatch } from './fork/execute-fork-batch.js';
-export type {
-  ChildForkExecutionOutcome,
-  ForkBatchExecutionParams,
-  ForkBatchExecutionResult,
-} from './fork/fork-batch-execution-params.js';
-export {
-  DEFAULT_MAX_SEALED_AGE_HOURS,
-  DEFAULT_PRIORITY_AGING_INTERVAL_MS,
-  LANE_PRIORITY_WEIGHTS,
-  PRIORITY_AGING_STEP_WEIGHT,
-} from './lane/lane-priority.constants.js';
-export type {
-  EnqueueLaneItemOptions,
-  LaneQueuedItemState,
-  LaneSchedulerConfig,
-} from './lane/lane-queued-item-state.js';
+export type { ForkBatchExecutionParams } from './fork/fork-batch-execution-params.js';
+export type { ForkBatchExecutionResult } from './fork/fork-batch-execution-result.js';
+export type { EnqueueLaneItemOptions } from './lane/enqueue-lane-item-options.js';
+export { DEFAULT_MAX_SEALED_AGE_HOURS, DEFAULT_PRIORITY_AGING_INTERVAL_MS, LANE_PRIORITY_WEIGHTS, PRIORITY_AGING_STEP_WEIGHT } from './lane/lane-priority.constants.js';
+export type { LaneQueuedItemState } from './lane/lane-queued-item-state.js';
+export type { LaneSchedulerConfig } from './lane/lane-scheduler-config.js';
 export { LaneScheduler } from './lane/lane-scheduler.js';
-export type {
-  ContrastiveDistillationTrajectoryPair,
-  EvaluateLessonSignalTriggersParams,
-  FlushStepLessonOutcomesParams,
-  LessonCreationEpochMetadata,
-  LessonDistillationParams,
-  LessonScoreContextParams,
-} from './lessons/lesson-distillation-params.js';
-export {
-  evaluateLessonSignalTriggers,
-  evaluateLessonSignalTriggers as evaluateLessonRetirementAndSignals,
-  flushStepLessonOutcomes,
-  runContrastiveLessonDistillation,
-} from './lessons/lesson-distiller-runner.js';
-export {
-  DEFAULT_LESSON_SCORING_WEIGHTS,
-  LESSON_OUTCOME_PRECEDENCE_RANK,
-} from './lessons/lesson-scoring.constants.js';
-export {
-  computeLessonScore,
-  mergeLessonOutcomePrecedence,
-  selectRecalledLessons,
-  selectRecalledLessons as scoreAndRecallLessons,
-  shouldRetireLesson,
-} from './lessons/lesson-scoring.js';
+export type { EvaluateLessonSignalTriggersParams } from './lessons/evaluate-lesson-signal-triggers-params.js';
+export type { FlushStepLessonOutcomesParams } from './lessons/flush-step-lesson-outcomes-params.js';
+export type { LessonCreationEpochMetadata } from './lessons/lesson-creation-epoch-metadata.js';
+export type { ContrastiveDistillationTrajectoryPair, LessonDistillationParams } from './lessons/lesson-distillation-params.js';
+export { evaluateLessonSignalTriggers, evaluateLessonSignalTriggers as evaluateLessonRetirementAndSignals, flushStepLessonOutcomes, runContrastiveLessonDistillation } from './lessons/lesson-distiller-runner.js';
+export type { LessonScoreContextParams } from './lessons/lesson-score-context-params.js';
+export { DEFAULT_LESSON_SCORING_WEIGHTS, LESSON_OUTCOME_PRECEDENCE_RANK } from './lessons/lesson-scoring.constants.js';
+export { computeLessonScore, mergeLessonOutcomePrecedence, selectRecalledLessons, selectRecalledLessons as scoreAndRecallLessons, shouldRetireLesson } from './lessons/lesson-scoring.js';
 export type { ScopeLockEntryState, ScopeLockQueueWaiter } from './locks/scope-lock-entry-state.js';
 export { ScopeLockManager } from './locks/scope-lock-manager.js';
 export { StepContinuationQueue } from './locks/step-continuation-queue.js';
 export { executeLoop } from './loop/execute-loop.js';
-export type { LoopEvaluatePhaseResult, LoopExecutionState } from './loop/loop-execution-state.js';
-export {
-  executeAddDependencies,
-  executeSpawnTasks,
-  executeUpdatePartitionContract,
-  syncSuspendedRunPrerequisites,
-} from './plan/execute-plan-mutation.js';
-export type {
-  PlanMutationParams,
-  PlanMutationResult,
-  SpawnTaskInputEntry,
-  SyncPrerequisitesParams,
-} from './plan/plan-mutation-params.js';
+export type { LoopEvaluatePhaseResult } from './loop/loop-evaluate-phase-result.js';
+export type { LoopExecutionState } from './loop/loop-execution-state.js';
+export { executeAddDependencies, executeSpawnTasks, executeUpdatePartitionContract, syncSuspendedRunPrerequisites } from './plan/execute-plan-mutation.js';
+export type { PlanMutationParams, SpawnTaskInputEntry } from './plan/plan-mutation-params.js';
+export type { PlanMutationResult } from './plan/plan-mutation-result.js';
+export type { SyncPrerequisitesParams } from './plan/sync-prerequisites-params.js';
 export { PoolManager } from './pools/pool-manager.js';
 export type { PoolRuntimeState } from './pools/pool-runtime-state.js';
-export {
-  evaluatePreFlightToolBatch,
-  evaluateQuotaTripwires,
-  executePostFlightSandboxedTool,
-} from './policy/evaluate-policy-guards.js';
+export { evaluatePreFlightToolBatch, evaluateQuotaTripwires, executePostFlightSandboxedTool } from './policy/evaluate-policy-guards.js';
 export { executeLimitExceededSequence } from './policy/execute-limit-exceeded-flush.js';
-export type {
-  LimitExceededFlushParams,
-  LimitExceededFlushResult,
-} from './policy/limit-exceeded-flush-params.js';
-export type {
-  PolicyEvaluationResult,
-  PreFlightBatchEvalParams,
-} from './policy/policy-evaluation-result.js';
-export type {
-  PostFlightSandboxParams,
-  PostFlightSandboxResult,
-} from './policy/post-flight-sandbox-params.js';
-export {
-  buildRoleAndScopeContextFrame,
-  compileRunWirePrefixes,
-  compileRunWirePrefixes as compilePrefixGroups,
-  computeInRunGroundingDiffs,
-  computeInRunGroundingDiffs as computeUpdatedGroundingDiffs,
-} from './prefix/compile-wire-prefix.js';
-export type {
-  CompileWirePrefixParams,
-  InRunGroundingDiffParams,
-  RoleAndScopeContextFrameParams,
-} from './prefix/compile-wire-prefix-params.js';
-export type {
-  AcquireSkillServicesParams,
-  ActiveServiceEntry,
-  ReacquireSkillServicesParams,
-} from './services/active-service-entry.js';
+export type { LimitExceededFlushParams } from './policy/limit-exceeded-flush-params.js';
+export type { LimitExceededFlushResult } from './policy/limit-exceeded-flush-result.js';
+export type { PolicyEvaluationResult } from './policy/policy-evaluation-result.js';
+export type { PostFlightSandboxParams } from './policy/post-flight-sandbox-params.js';
+export type { PostFlightSandboxResult } from './policy/post-flight-sandbox-result.js';
+export type { PreFlightBatchEvalParams } from './policy/pre-flight-batch-eval-params.js';
+export { buildRoleAndScopeContextFrame, compileRunWirePrefixes, compileRunWirePrefixes as compilePrefixGroups, computeInRunGroundingDiffs, computeInRunGroundingDiffs as computeUpdatedGroundingDiffs } from './prefix/compile-wire-prefix.js';
+export type { CompileWirePrefixParams } from './prefix/compile-wire-prefix-params.js';
+export type { InRunGroundingDiffParams } from './prefix/in-run-grounding-diff-params.js';
+export type { RoleAndScopeContextFrameParams } from './prefix/role-and-scope-context-frame-params.js';
+export type { AcquireSkillServicesParams } from './services/acquire-skill-services-params.js';
+export type { ActiveServiceEntry } from './services/active-service-entry.js';
+export type { ReacquireSkillServicesParams } from './services/reacquire-skill-services-params.js';
 export { ServiceSessionRegistry } from './services/service-session-registry.js';
 export { executeSpeculateTournament } from './speculate/execute-speculate-tournament.js';
 export { resolvePostRaceCases } from './speculate/internal/resolve-tournament-race.js';
-export type {
-  PostRaceResolution,
-  SpeculateTournamentParams,
-  SpeculateTournamentResult,
-} from './speculate/speculate-tournament-params.js';
+export type { PostRaceResolution } from './speculate/post-race-resolution.js';
+export type { SpeculateTournamentParams } from './speculate/speculate-tournament-params.js';
+export type { SpeculateTournamentResult } from './speculate/speculate-tournament-result.js';
 export { executeCommand } from './step/execute-command.js';
 export { executeStepNode } from './step/execute-step-node.js';

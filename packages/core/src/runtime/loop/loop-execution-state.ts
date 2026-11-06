@@ -15,24 +15,6 @@ import type { PoolManager } from '../pools/pool-manager.js';
 import type { ServiceSessionRegistry } from '../services/service-session-registry.js';
 
 /**
- * Outcome returned by `runLoopEvaluatePhase()` after executing the evaluator agent on an `.act()` output (`SPEC.md` §3.8).
- *
- * Indicates whether the iteration was accepted (`accepted: true`) or rejected with feedback (`accepted: false`).
- *
- * @template TOut Validated `.act()` and loop output payload type.
- */
-export interface LoopEvaluatePhaseResult<TOut = unknown> {
-  /** True when `evaluateStep.acceptWhen(evalOut)` returned `true`. */
-  readonly accepted: boolean;
-  /** Validated `.act()` output accepted or rejected in this iteration. */
-  readonly actOutput: TOut;
-  /** Rejection feedback string produced by `evaluateStep.feedbackMapper(evalOut)` when `accepted` is `false`. */
-  readonly feedback?: string;
-  /** Raw evaluator output payload. */
-  readonly evaluatorOutput: unknown;
-}
-
-/**
  * Mutable execution state passed across `H.loop` iteration phase helpers (`Rule 3.1`).
  *
  * Tracks the active `LoopContinuationFrame`, outer continuation frames, model escalation state,
@@ -75,6 +57,6 @@ export interface LoopExecutionState<TIn = unknown, TOut = unknown, THandle = unk
   readonly wirePrefixesByGroupId: ReadonlyMap<string, CompiledWirePrefix>;
   /** Currently selected `ModelASTNode` for the `.act()` actor. */
   currentActModelNode: ModelASTNode;
-  /** Optional evaluate phase result template for property reachability. */
-  readonly evalResultTemplate?: LoopEvaluatePhaseResult<TOut>;
+  /** Optional phantom reference to `TOut` so the generic parameter is structurally used. */
+  readonly outputTypeMarker?: TOut;
 }

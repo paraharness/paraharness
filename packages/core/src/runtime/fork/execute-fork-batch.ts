@@ -3,15 +3,19 @@ import type {
   ForkBatchEntryRecord,
   PendingPauseTriggerRecord,
 } from '../../ports/fork-batch-continuation-frame.js';
-import type {
-  ForkBatchExecutionParams,
-  ForkBatchExecutionResult,
-} from './fork-batch-execution-params.js';
+import type { ChildForkExecutionOutcome } from './child-fork-execution-outcome.js';
+import type { ForkBatchExecutionParams } from './fork-batch-execution-params.js';
+import type { ForkBatchExecutionResult } from './fork-batch-execution-result.js';
 import {
   coordinateTurnBatchInterruptBarrier,
   reconcileChildForkWithBounce,
 } from './internal/fork-barrier-and-pause.js';
 import { resumeSuspendedForkEntry } from './internal/resume-fork-cases.js';
+import {
+  abortSuspendedForkRecord,
+  executeDefaultForkOrTournamentChild,
+  prepareForkCallContext,
+} from './internal/run-single-fork-call.js';
 
 /**
  * Executes a concurrent batch of downward `.fork()` tool calls with turn-batch sibling barrier and 3-way `commitChild` (`SPEC.md` §3.7.2).
@@ -28,42 +32,42 @@ import { resumeSuspendedForkEntry } from './internal/resume-fork-cases.js';
 export async function executeForkBatch<THandle = unknown>(
   params: ForkBatchExecutionParams<THandle>,
 ): Promise<ForkBatchExecutionResult> {
-  const calls = params.forkCalls ?? [], entriesByForkId = new Map<string, ForkBatchEntryRecord>(), handlesByForkId = new Map<string, THandle>(), triggers: PendingPauseTriggerRecord[] = [...(params.existingBatchFrame?.pendingPauseTriggers ?? [])];
-  for (const existing of params.existingBatchFrame?.forks ?? []) entriesByForkId.set(existing.forkId, existing);
+  const entriesByForkId = new Map<string, ForkBatchEntryRecord>((params.existingBatchFrame?.forks ?? []).map((f) => [f.forkId, f]));
+  const handlesByForkId = new Map<string, THandle>(), triggers: PendingPauseTriggerRecord[] = [...(params.existingBatchFrame?.pendingPauseTriggers ?? [])];
   const persistEntryUpdate = async (updated: ForkBatchEntryRecord): Promise<void> => {
     entriesByForkId.set(updated.forkId, updated);
     const frame: ForkBatchContinuationFrame = Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) });
     await params.continuationQueue.enqueueUpdate(params.ctx.stepExecId, () => params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, Object.freeze([...params.outerFrames, frame])));
   };
-  const resultsMap = new Map<string, { readonly content: string; readonly isError: boolean }>(), outcomesByForkId = new Map<string, Awaited<ReturnType<typeof params.executeChildStep>>>();
+  const prepared: Array<Awaited<ReturnType<typeof prepareForkCallContext<THandle>>>> = [];
+  for (const call of params.forkCalls ?? []) {
+    const prep = await prepareForkCallContext(params, call, entriesByForkId);
+    handlesByForkId.set(call.forkId, prep.childHandle);
+    prepared.push(prep);
+  }
+  const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, poolManager: params.poolManager, humanAdaptersById: params.humanAdaptersById }));
+  const settledOutcomes = await Promise.all(prepared.map((prep) => runStep(prep.call.capability.childExecutable, prep.childInput, prep.childCtx)));
+  const outcomesByForkId = new Map<string, ChildForkExecutionOutcome<unknown>>();
   let batchHasInterrupt = false;
-  for (const call of calls) {
-    const childInput = call.capability.mapInput(params.parentInput, call.capability.requestSchema.parse(JSON.parse(call.argsJson || '{}'))), parts = call.capability.childExecutable.extractPartitions !== undefined ? call.capability.childExecutable.extractPartitions(childInput) : params.ctx.activePartitions;
-    const entry = entriesByForkId.get(call.forkId) ?? Object.freeze<ForkBatchEntryRecord>({ forkId: call.forkId, callId: call.callId, toolName: call.capability.toolName, activePartitions: Object.freeze([...parts]), status: 'RUNNING', conflictRetryCount: 0, conflictCheckArmed: false, suspensionEpoch: 0, continuationStack: Object.freeze([]) });
-    if (params.modelDriver !== undefined && params.parentLeafMessageId !== undefined && params.parentLeafMessageId !== null) { const parentChain = await params.ledgerStore.getMessageChain(params.parentLeafMessageId), rawModel = call.capability.childExecutable.type === 'harness:agent' ? call.capability.childExecutable.model : call.capability.childExecutable.actStep.actor.model, forkedFrames = await params.modelDriver.prepareFork({ historyMode: call.capability.historyMode, parentChain, forkPointMessageId: params.parentLeafMessageId }, { modelId: 'modelId' in rawModel ? rawModel.modelId : 'pool-model', substituteTombstones: true }); for (const ff of forkedFrames) await params.ledgerStore.appendMessageFrame(params.ctx.runId, ff); }
-    const childHandle = await params.lockManager.withReadLock(params.ctx.scopeHandle, () => params.branchableScope.forkChild(params.ctx.scopeHandle, call.forkId)), initLease = params.branchableScope.getConflictLease?.(childHandle);
-    handlesByForkId.set(call.forkId, childHandle);
-    const outcome = await params.executeChildStep(call.capability.childExecutable, childInput, Object.freeze({ ...params.ctx, scopeHandle: childHandle, activePartitions: entry.activePartitions, activeLeases: initLease !== undefined ? Object.freeze([...params.ctx.activeLeases, initLease]) : params.ctx.activeLeases, resumeContinuationStack: entry.continuationStack.length > 0 ? entry.continuationStack : undefined }));
-    outcomesByForkId.set(call.forkId, outcome);
-    entriesByForkId.set(call.forkId, Object.freeze<ForkBatchEntryRecord>({ ...entry, continuationStack: outcome.continuationStack }));
+  for (let idx = 0; idx < prepared.length; idx += 1) {
+    const prep = prepared[idx] as NonNullable<(typeof prepared)[number]>, outcome = settledOutcomes[idx] as ChildForkExecutionOutcome<unknown>;
+    outcomesByForkId.set(prep.call.forkId, outcome);
+    entriesByForkId.set(prep.call.forkId, Object.freeze<ForkBatchEntryRecord>({ ...prep.entry, continuationStack: outcome.continuationStack }));
     if (outcome.status === 'interrupt-raised') batchHasInterrupt = true;
   }
-  for (const call of calls) {
-    const entry = entriesByForkId.get(call.forkId), outcome = outcomesByForkId.get(call.forkId), childHandle = handlesByForkId.get(call.forkId);
-    if (entry === undefined || outcome === undefined || childHandle === undefined || outcome.status === 'interrupt-raised' || (batchHasInterrupt && outcome.continuationStack.length > 0)) continue;
-    await reconcileChildForkWithBounce({ batchParams: params, entry, childHandle, childNode: call.capability.childExecutable, childInput: call.capability.mapInput(params.parentInput, call.capability.requestSchema.parse(JSON.parse(call.argsJson || '{}'))), outcome, persistEntryUpdate });
+  for (const prep of prepared) {
+    const entry = entriesByForkId.get(prep.call.forkId), outcome = outcomesByForkId.get(prep.call.forkId);
+    if (entry !== undefined && outcome !== undefined && outcome.status !== 'interrupt-raised' && !(batchHasInterrupt && outcome.continuationStack.length > 0)) {
+      await reconcileChildForkWithBounce({ batchParams: { ...params, executeChildStep: runStep }, entry, childHandle: prep.childHandle, childNode: prep.call.capability.childExecutable, childInput: prep.childInput, outcome, persistEntryUpdate });
+    } else if (entry !== undefined && outcome?.status === 'interrupt-raised') {
+      const barrier = await coordinateTurnBatchInterruptBarrier(params, entry, { ...outcome, childHandle: prep.childHandle, siblingEntries: Array.from(entriesByForkId.values()), handlesByForkId });
+      triggers.push(barrier.trigger);
+      await persistEntryUpdate(barrier.updatedRaisingEntry);
+      for (const paused of barrier.pausedSiblings) await persistEntryUpdate(paused);
+    }
   }
-  for (const call of calls) {
-    const entry = entriesByForkId.get(call.forkId), outcome = outcomesByForkId.get(call.forkId), childHandle = handlesByForkId.get(call.forkId);
-    if (entry === undefined || outcome === undefined || childHandle === undefined || outcome.status !== 'interrupt-raised') continue;
-    const barrier = await coordinateTurnBatchInterruptBarrier(params, entry, { ...outcome, childHandle, siblingEntries: Array.from(entriesByForkId.values()), handlesByForkId });
-    triggers.push(barrier.trigger);
-    await persistEntryUpdate(barrier.updatedRaisingEntry);
-    for (const paused of barrier.pausedSiblings) await persistEntryUpdate(paused);
-  }
-  for (const settled of entriesByForkId.values()) resultsMap.set(settled.callId, { content: settled.toolResultJson ?? '{}', isError: settled.status === 'FAILED' });
-  const finalFrame: ForkBatchContinuationFrame = Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) });
-  return Object.freeze<ForkBatchExecutionResult>({ toolResultsByCallId: resultsMap, batchFrame: finalFrame, pauseTriggers: Object.freeze(triggers) });
+  const resultsMap = new Map<string, { readonly content: string; readonly isError: boolean }>(Array.from(entriesByForkId.values()).map((s) => [s.callId, { content: s.toolResultJson ?? '{}', isError: s.status === 'FAILED' }]));
+  return Object.freeze<ForkBatchExecutionResult>({ toolResultsByCallId: resultsMap, batchFrame: Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) }), pauseTriggers: Object.freeze(triggers) });
 }
 
 /**
@@ -84,26 +88,30 @@ export async function executeResumeForkBatch<THandle = unknown>(
   const req = params.resumeRequest;
   if (req === undefined) throw new Error(`executeResumeForkBatch requires resumeRequest in run '${params.ctx.runId}'.`);
   const suspendedRecords = await params.ledgerStore.getSuspendedForks(params.ctx.runId, { forkIds: req.suspendedForkIds, parentStepExecId: params.ctx.stepExecId });
-  const entriesByForkId = new Map<string, ForkBatchEntryRecord>();
+  const entriesByForkId = new Map<string, ForkBatchEntryRecord>(), perForkOutputs: unknown[] = [];
   const persistEntryUpdate = async (updated: ForkBatchEntryRecord): Promise<void> => {
     entriesByForkId.set(updated.forkId, updated);
     const frame: ForkBatchContinuationFrame = Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, forks: Object.freeze(Array.from(entriesByForkId.values())) });
     await params.continuationQueue.enqueueUpdate(params.ctx.stepExecId, () => params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, Object.freeze([...params.outerFrames, frame])));
   };
-  const perForkOutputs: unknown[] = [];
+  const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, poolManager: params.poolManager, humanAdaptersById: params.humanAdaptersById }));
   for (const record of suspendedRecords) {
     if (req.action === 'abort') {
-      await params.ledgerStore.resolveSuspendedFork(record.suspendedForkId, 'ABORTED');
-      const aborted = Object.freeze<ForkBatchEntryRecord>({ forkId: record.forkId, suspendedForkId: record.suspendedForkId, callId: req.callId, toolName: 'resumeFork', activePartitions: record.activePartitions, status: 'ABORTED', conflictRetryCount: record.conflictRetryCount, conflictCheckArmed: record.conflictCheckArmed, suspensionEpoch: record.suspensionEpoch, continuationStack: record.continuationStack, toolResultJson: JSON.stringify({ suspendedForkId: record.suspendedForkId, forkId: record.forkId, status: 'ABORTED' }) });
-      await persistEntryUpdate(aborted);
-      perForkOutputs.push({ suspendedForkId: record.suspendedForkId, forkId: record.forkId, status: 'ABORTED' });
+      perForkOutputs.push(await abortSuspendedForkRecord(params, record, persistEntryUpdate));
       continue;
     }
-    const initialEntry: ForkBatchEntryRecord = params.existingBatchFrame?.forks.find((f) => f.suspendedForkId === record.suspendedForkId) ?? Object.freeze<ForkBatchEntryRecord>({ forkId: record.forkId, suspendedForkId: record.suspendedForkId, callId: req.callId, toolName: record.forkToolName, activePartitions: record.activePartitions, status: 'RUNNING', conflictRetryCount: record.conflictRetryCount, conflictCheckArmed: record.conflictCheckArmed, suspensionEpoch: record.suspensionEpoch, syncedToParentCheckpoint: record.syncedToParentCheckpoint, syncResultJson: record.syncResultJson, resumeFrameInjected: record.resumeFrameInjected, childScopeCheckpoint: record.childScopeCheckpoint, continuationStack: record.continuationStack });
-    const settled = await resumeSuspendedForkEntry({ batchParams: params, record, entry: initialEntry, resolutionSummary: req.resolutionSummary, persistEntryUpdate });
+    const initialEntry: ForkBatchEntryRecord = params.existingBatchFrame?.forks.find((f) => f.suspendedForkId === record.suspendedForkId) ?? Object.freeze<ForkBatchEntryRecord>({
+      forkId: record.forkId, suspendedForkId: record.suspendedForkId, callId: req.callId, toolName: record.forkToolName,
+      activePartitions: record.activePartitions, status: 'RUNNING', conflictRetryCount: record.conflictRetryCount,
+      conflictCheckArmed: record.conflictCheckArmed, suspensionEpoch: record.suspensionEpoch,
+      syncedToParentCheckpoint: record.syncedToParentCheckpoint, syncResultJson: record.syncResultJson,
+      resumeFrameInjected: record.resumeFrameInjected, childScopeCheckpoint: record.childScopeCheckpoint, continuationStack: record.continuationStack,
+    });
+    const settled = await resumeSuspendedForkEntry({ batchParams: { ...params, executeChildStep: runStep }, record, entry: initialEntry, resolutionSummary: req.resolutionSummary, persistEntryUpdate });
     perForkOutputs.push(JSON.parse(settled.toolResultJson ?? '{}'));
   }
-  const resultsMap = new Map<string, { readonly content: string; readonly isError: boolean }>([[req.callId, { content: JSON.stringify({ action: req.action, results: perForkOutputs }), isError: false }]]);
+  const resultPayload = req.suspendedForkIds.length === 1 && perForkOutputs.length === 1 ? perForkOutputs[0] : { action: req.action, results: perForkOutputs };
+  const resultsMap = new Map<string, { readonly content: string; readonly isError: boolean }>([[req.callId, { content: JSON.stringify(resultPayload), isError: false }]]);
   const finalFrame: ForkBatchContinuationFrame = Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, forks: Object.freeze(Array.from(entriesByForkId.values())) });
   return Object.freeze<ForkBatchExecutionResult>({ toolResultsByCallId: resultsMap, batchFrame: finalFrame, pauseTriggers: Object.freeze([]) });
 }

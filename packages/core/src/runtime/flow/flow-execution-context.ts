@@ -1,10 +1,9 @@
-import type { ScopeRewindHookASTNode, StepASTNode } from '../../ast/domain-ast.types.js';
+import type { StepASTNode } from '../../ast/domain-ast.types.js';
 import type { FlowNode } from '../../ast/flow-node.js';
 import type { PrefixGroupNode } from '../../ast/prefix-group-node.js';
 import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
 import type { HumanAdapter } from '../../ports/human-adapter.js';
-import type { InterruptedStepRecord } from '../../ports/interrupted-step-record.js';
 import type { IsolationScope } from '../../ports/isolation-scope.js';
 import type { LedgerStore } from '../../ports/ledger-store.js';
 import type { LessonStore } from '../../ports/lesson-store.js';
@@ -15,91 +14,6 @@ import type { ScopeLockManager } from '../locks/scope-lock-manager.js';
 import type { StepContinuationQueue } from '../locks/step-continuation-queue.js';
 import type { PoolManager } from '../pools/pool-manager.js';
 import type { ServiceSessionRegistry } from '../services/service-session-registry.js';
-
-/**
- * Parameters for promoting an interrupted step to a `.replaceWith()` replacement executable (`SPEC.md` §3.6 & §3.9).
- *
- * Supplies the flow execution context, interrupted step coordinates, replacement executable AST node,
- * and replacement flow input.
- *
- * @template TIn     Validated flow input payload type.
- * @template THandle Runtime handle type of the active isolation scope.
- */
-export interface ReplaceWithPromotionParams<TIn = unknown, THandle = unknown> {
-  /** Active flow execution context. */
-  readonly flowCtx: FlowExecutionContext<TIn, THandle>;
-  /** Interrupted `stepExecId` being replaced. */
-  readonly stepExecId: string;
-  /** Enclosing `FlowStepNode.id` being replaced. */
-  readonly stepId: string;
-  /** Base scope checkpoint serialized when the step started, if any. */
-  readonly baseScopeCheckpoint?: string;
-  /** Replacement executable AST node (`AgentNode`, `LoopNode`, `CommandNode`, or domain step). */
-  readonly replacementExecutable: StepASTNode<unknown, unknown, THandle>;
-  /** Updated flow input payload produced by `replaceWith.mapInput`. */
-  readonly replacementInput: TIn;
-  /** Optional abort hook metadata JSON persisted during `.onLimitExceeded()` or `.replaceWith()`. */
-  readonly abortMetaJson?: string;
-}
-
-/**
- * Parameters for executing the 4-step Hierarchical Rewind Drain Barrier (`SPEC.md` §3.10).
- *
- * Supplies the flow execution context, target `rewindToStepId`, updated flow input, and optional
- * `onRewind` scope hook.
- *
- * @template TIn     Validated flow input payload type.
- * @template THandle Runtime handle type of the active isolation scope.
- */
-export interface HierarchicalRewindDrainParams<TIn = unknown, THandle = unknown> {
-  /** Active flow execution context. */
-  readonly flowCtx: FlowExecutionContext<TIn, THandle>;
-  /** Target step or branch ID in `flow.nodes` to rewind execution to (or `null` when cancelling). */
-  readonly rewindToStepId: string | null;
-  /** Updated flow input payload produced by `onSignal.updateMapper`. */
-  readonly updatedInput: TIn;
-  /** Optional scope rewind hook executed during Step 4 of the drain barrier. */
-  readonly onRewindHook?: ScopeRewindHookASTNode<THandle>;
-  /** Terminal status recorded on the interrupted active step (`'INTERRUPTED'` or `'CANCELLED'`). */
-  readonly stepTerminalStatus?: 'INTERRUPTED' | 'CANCELLED';
-}
-
-/**
- * Parameters for recovering a non-terminal run returned by `LedgerStore.getInterruptedStepsOnBoot()` (`SPEC.md` §3.10).
- *
- * Supplies the boot record, bound `FlowNode`, and runtime stores/managers needed to reattach
- * root and child scopes and resume mid-step state machines.
- *
- * @template TIn     Validated flow input payload type.
- * @template THandle Runtime handle type of the active isolation scope.
- */
-export interface RecoverInterruptedRunParams<TIn = unknown, THandle = unknown> {
-  /** Non-terminal step boot record loaded from `LedgerStore.getInterruptedStepsOnBoot()`. */
-  readonly bootRecord: InterruptedStepRecord;
-  /** Bound `FlowNode` definition for the run's lane. */
-  readonly flow: FlowNode<TIn, THandle>;
-  /** Active flow execution context configured for the recovered run. */
-  readonly flowCtx: FlowExecutionContext<TIn, THandle>;
-}
-
-/**
- * Terminal outcome returned by `executeFlow()` (`SPEC.md` §3.9).
- *
- * Captures the terminal exit state, final scope receipt, completed step outputs, and folded
- * custom telemetry metrics.
- */
-export interface FlowRunResult {
-  /** Identifier of the flow run. */
-  readonly runId: string;
-  /** Terminal exit state string (`flow.exitState`, `'SUSPENDED'`, or failure state). */
-  readonly exitState: string;
-  /** Final scope receipt (`TReceipt`) inspected before releasing the root scope. */
-  readonly scopeReceipt: Record<string, unknown>;
-  /** Map of completed `stepId` (or outer `branchStepId`) to its validated output value. */
-  readonly stepOutputs: Readonly<Record<string, unknown>>;
-  /** Custom telemetry metrics folded by `flow.telemetry`, if configured. */
-  readonly customTelemetry?: Readonly<Record<string, unknown>>;
-}
 
 /**
  * Mutable runtime state and dependency context for executing a single `FlowNode` run (`SPEC.md` §3.9).
@@ -169,12 +83,4 @@ export interface FlowExecutionContext<TIn = unknown, THandle = unknown> {
     readonly exponentialBaseMs: number;
     readonly orFailState: string;
   };
-  /** Optional reference to replace-with promotion parameters for property reachability. */
-  readonly replacePromotionTemplate?: ReplaceWithPromotionParams<TIn, THandle>;
-  /** Optional reference to hierarchical rewind drain parameters for property reachability. */
-  readonly rewindDrainTemplate?: HierarchicalRewindDrainParams<TIn, THandle>;
-  /** Optional reference to crash recovery parameters for property reachability. */
-  readonly recoveryTemplate?: RecoverInterruptedRunParams<TIn, THandle>;
-  /** Optional reference to flow run result for property reachability. */
-  readonly runResultTemplate?: FlowRunResult;
 }

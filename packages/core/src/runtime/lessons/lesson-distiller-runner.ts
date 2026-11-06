@@ -1,8 +1,6 @@
-import type {
-  EvaluateLessonSignalTriggersParams,
-  FlushStepLessonOutcomesParams,
-  LessonDistillationParams,
-} from './lesson-distillation-params.js';
+import type { EvaluateLessonSignalTriggersParams } from './evaluate-lesson-signal-triggers-params.js';
+import type { FlushStepLessonOutcomesParams } from './flush-step-lesson-outcomes-params.js';
+import type { LessonDistillationParams } from './lesson-distillation-params.js';
 import { invokeDistillerAndAdmit } from './internal/invoke-distiller-and-admit.js';
 import { shouldRetireLesson } from './lesson-scoring.js';
 import { DEFAULT_LESSON_SCORING_WEIGHTS } from './lesson-scoring.constants.js';

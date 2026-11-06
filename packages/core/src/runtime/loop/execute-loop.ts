@@ -42,45 +42,62 @@ export async function executeLoop<TIn = unknown, TOut = unknown, THandle = unkno
   const validatedInput = node.inputSchema.parse(input);
   const rtEnv = (ctx as StepExecutionContext<THandle> & {
     readonly _runtime?: {
-      readonly ledgerStore?: LedgerStore;
-      readonly topologyStore?: TopologyStore;
-      readonly lessonStore?: LessonStore;
-      readonly lockManager?: ScopeLockManager;
-      readonly continuationQueue?: StepContinuationQueue;
-      readonly poolManager?: PoolManager;
-      readonly serviceRegistry?: ServiceSessionRegistry;
-      readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
-      readonly wirePrefixesByGroupId?: ReadonlyMap<string, CompiledWirePrefix>;
-      readonly outerFrames?: ContinuationFrame[];
+      readonly ledgerStore?: LedgerStore; readonly topologyStore?: TopologyStore; readonly lessonStore?: LessonStore;
+      readonly lockManager?: ScopeLockManager; readonly continuationQueue?: StepContinuationQueue; readonly poolManager?: PoolManager;
+      readonly serviceRegistry?: ServiceSessionRegistry; readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
+      readonly wirePrefixesByGroupId?: ReadonlyMap<string, CompiledWirePrefix>; readonly outerFrames?: ContinuationFrame[];
       readonly existingLoopFrame?: LoopContinuationFrame;
+      readonly childOutcomeSink?: { continuationStack?: readonly ContinuationFrame[]; leafMessageId?: string | null; accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>; raisedByPhase?: 'act' | 'evaluate' };
     };
   })._runtime;
-  const poolManager = rtEnv?.poolManager ?? new PoolManager();
-  const actor = node.actStep.actor;
-  const initialActModel: ModelASTNode = poolManager.selectModel(actor.model, ctx.runId, rtEnv?.existingLoopFrame?.iteration ?? 0);
+  const poolManager = rtEnv?.poolManager ?? new PoolManager(), actor = node.actStep.actor;
+  const resumedLoopFrame = rtEnv?.existingLoopFrame ?? ctx.resumeContinuationStack?.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame');
+  const initialActModel: ModelASTNode = poolManager.selectModel(actor.model, ctx.runId, resumedLoopFrame?.iteration ?? 0);
   const lessonsNode = node.distillLessons ?? actor.lessons?.node;
-  let recalledLessons: readonly RecalledLoopLessonRecord[] = rtEnv?.existingLoopFrame?.recalledLessons ?? [];
+  let recalledLessons: readonly RecalledLoopLessonRecord[] = resumedLoopFrame?.recalledLessons ?? [];
   if (recalledLessons.length === 0 && lessonsNode !== undefined && rtEnv?.lessonStore !== undefined) {
-    const candidates = await rtEnv.lessonStore.queryCandidates({ queryText: JSON.stringify(validatedInput), partitions: ctx.activePartitions });
+    const queryText = lessonsNode.queryMapper !== undefined ? lessonsNode.queryMapper(validatedInput) : JSON.stringify(validatedInput);
+    const candidates = await rtEnv.lessonStore.queryCandidates({ queryText, partitions: ctx.activePartitions });
     recalledLessons = selectRecalledLessons(candidates, lessonsNode.scoring, ctx.activePartitions).map((l) => Object.freeze({ id: l.id, partition: l.partition, directive: l.directive }));
   }
-  const accumulatedLessonOutcomes: Record<string, LessonOutcome> = { ...(rtEnv?.existingLoopFrame?.accumulatedLessonOutcomes ?? {}) };
-  const loopFrame: LoopContinuationFrame = rtEnv?.existingLoopFrame ?? Object.freeze<LoopContinuationFrame>({ kind: 'loop-frame', loopId: node.id, roleKey: node.roleKey, lastActModelId: initialActModel.modelId, stepExecId: ctx.stepExecId, loopInputJson: JSON.stringify(validatedInput), iteration: 0, phase: 'act', preservedActLeafMessageId: null, turnsTaken: 0, costUsd: 0, elapsedDurationMs: 0, actTurnsTaken: 0, actCostUsd: 0, actElapsedDurationMs: 0, grantedLoopLeases: Object.freeze([]), activeSkillIds: Object.freeze([]), activeSkillActivations: Object.freeze({}), observedEffects: Object.freeze([]), injectedScopedRuleIds: Object.freeze([]), recalledLessons, accumulatedLessonOutcomes: Object.freeze({}) });
+  const accumulatedLessonOutcomes: Record<string, LessonOutcome> = { ...(resumedLoopFrame?.accumulatedLessonOutcomes ?? {}) };
+  const initialLeases = Object.freeze([...ctx.activeLeases, ...(resumedLoopFrame?.grantedLoopLeases ?? [])]);
+  const loopFrame: LoopContinuationFrame = resumedLoopFrame !== undefined
+    ? Object.freeze<LoopContinuationFrame>({ ...resumedLoopFrame, grantedLoopLeases: initialLeases })
+    : Object.freeze<LoopContinuationFrame>({
+      kind: 'loop-frame', loopId: node.id, roleKey: node.roleKey, lastActModelId: initialActModel.modelId, stepExecId: ctx.stepExecId,
+      loopInputJson: JSON.stringify(validatedInput), iteration: 0, phase: 'act', preservedActLeafMessageId: null,
+      turnsTaken: 0, costUsd: 0, elapsedDurationMs: 0, actTurnsTaken: 0, actCostUsd: 0, actElapsedDurationMs: 0,
+      grantedLoopLeases: initialLeases, activeSkillIds: Object.freeze([]), activeSkillActivations: Object.freeze({}),
+      observedEffects: Object.freeze([]), injectedScopedRuleIds: Object.freeze([]), recalledLessons, accumulatedLessonOutcomes: Object.freeze({}),
+    });
   const outerFrames: ContinuationFrame[] = rtEnv?.outerFrames !== undefined ? [...rtEnv.outerFrames] : [];
-  const state: LoopExecutionState<TIn, TOut, THandle> = { node, validatedInput, ctx, loopFrame, outerFrames, accumulatedLessonOutcomes, ledgerStore: rtEnv?.ledgerStore, topologyStore: rtEnv?.topologyStore, lessonStore: rtEnv?.lessonStore, lockManager: rtEnv?.lockManager ?? new ScopeLockManager(), continuationQueue: rtEnv?.continuationQueue ?? new StepContinuationQueue(), poolManager, serviceRegistry: rtEnv?.serviceRegistry ?? new ServiceSessionRegistry(), humanAdaptersById: rtEnv?.humanAdaptersById ?? new Map(), wirePrefixesByGroupId: rtEnv?.wirePrefixesByGroupId ?? new Map(), currentActModelNode: initialActModel };
+  const state: LoopExecutionState<TIn, TOut, THandle> = {
+    node, validatedInput, ctx, loopFrame, outerFrames, accumulatedLessonOutcomes,
+    ledgerStore: rtEnv?.ledgerStore, topologyStore: rtEnv?.topologyStore, lessonStore: rtEnv?.lessonStore,
+    lockManager: rtEnv?.lockManager ?? new ScopeLockManager(), continuationQueue: rtEnv?.continuationQueue ?? new StepContinuationQueue(),
+    poolManager, serviceRegistry: rtEnv?.serviceRegistry ?? new ServiceSessionRegistry(),
+    humanAdaptersById: rtEnv?.humanAdaptersById ?? new Map(), wirePrefixesByGroupId: rtEnv?.wirePrefixesByGroupId ?? new Map(),
+    currentActModelNode: initialActModel,
+  };
   const isSpeculative = outerFrames.some((f) => f.kind === 'speculate-frame');
-  while (state.loopFrame.iteration < node.maxIterations) {
-    if (state.loopFrame.phase === 'act') await runLoopActPhase(state);
-    const evalRes = await runLoopEvaluatePhase(state);
-    if (evalRes.accepted) {
-      if (!isSpeculative && state.lessonStore !== undefined && lessonsNode !== undefined) {
-        await flushStepLessonOutcomes({ lessonsNode, lessonStore: state.lessonStore, accumulatedOutcomes: state.accumulatedLessonOutcomes });
+  try {
+    while (state.loopFrame.iteration < node.maxIterations) {
+      if (state.loopFrame.phase === 'act') await runLoopActPhase(state);
+      const evalRes = await runLoopEvaluatePhase(state);
+      if (evalRes.accepted) {
+        if (!isSpeculative && state.lessonStore !== undefined && lessonsNode !== undefined) await flushStepLessonOutcomes({ lessonsNode, lessonStore: state.lessonStore, accumulatedOutcomes: state.accumulatedLessonOutcomes });
+        return node.outputSchema.parse(evalRes.actOutput);
       }
-      return node.outputSchema.parse(evalRes.actOutput);
+    }
+    if (!isSpeculative && state.lessonStore !== undefined && lessonsNode !== undefined) await flushStepLessonOutcomes({ lessonsNode, lessonStore: state.lessonStore, accumulatedOutcomes: state.accumulatedLessonOutcomes });
+    throw new Error(`LoopNode '${node.id}' exhausted maxIterations (${String(node.maxIterations)}) in run '${ctx.runId}'.`);
+  } finally {
+    if (rtEnv?.childOutcomeSink !== undefined) {
+      rtEnv.childOutcomeSink.continuationStack = Object.freeze([state.loopFrame]);
+      rtEnv.childOutcomeSink.leafMessageId = state.loopFrame.preservedActLeafMessageId;
+      rtEnv.childOutcomeSink.accumulatedLessonOutcomes = Object.freeze({ ...state.accumulatedLessonOutcomes });
+      rtEnv.childOutcomeSink.raisedByPhase = state.loopFrame.phase;
     }
   }
-  if (!isSpeculative && state.lessonStore !== undefined && lessonsNode !== undefined) {
-    await flushStepLessonOutcomes({ lessonsNode, lessonStore: state.lessonStore, accumulatedOutcomes: state.accumulatedLessonOutcomes });
-  }
-  throw new Error(`LoopNode '${node.id}' exhausted maxIterations (${String(node.maxIterations)}) in run '${ctx.runId}'.`);
 }

@@ -28,8 +28,8 @@ export const DEFAULT_PRIORITY_AGING_INTERVAL_MS = 60_000;
 export const PRIORITY_AGING_STEP_WEIGHT = 5;
 
 /**
- * Default maximum age in hours (`24` hours) for `SEALED_UNMERGED` topology overlays before eviction (`SPEC.md` §3.4.4).
+ * Default maximum age in hours (`168` hours) for `SEALED_UNMERGED` topology overlays before eviction (`SPEC.md` §3.3).
  *
  * Used by background topology GC sweeps when no explicit `maxSealedAgeHours` is specified.
  */
-export const DEFAULT_MAX_SEALED_AGE_HOURS = 24;
+export const DEFAULT_MAX_SEALED_AGE_HOURS = 168;

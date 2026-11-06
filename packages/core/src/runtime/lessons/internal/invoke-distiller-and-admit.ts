@@ -6,10 +6,8 @@ import type { RuntimeDriverContext } from '../../../ports/runtime-driver-context
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
 import { DistilledLessonCandidateSchema } from '../../../schemas/budget-and-lesson.schema.js';
 import { resolveSourceStringValue } from '../../prefix/internal/collect-prefix-tools.js';
-import type {
-  LessonCreationEpochMetadata,
-  LessonDistillationParams,
-} from '../lesson-distillation-params.js';
+import type { LessonCreationEpochMetadata } from '../lesson-creation-epoch-metadata.js';
+import type { LessonDistillationParams } from '../lesson-distillation-params.js';
 
 /**
  * Resolves the concrete `ModelASTNode` configured on a `LessonsNode.distillation` block.

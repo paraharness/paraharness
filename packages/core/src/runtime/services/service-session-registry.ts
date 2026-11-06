@@ -1,11 +1,9 @@
 import type { ServiceASTNode } from '../../ast/domain-ast.types.js';
 import type { ServiceStartInput } from '../../ports/runtime-executor-registry.js';
 import type { ServiceSession } from '../../ports/service-session.js';
-import type {
-  AcquireSkillServicesParams,
-  ActiveServiceEntry,
-  ReacquireSkillServicesParams,
-} from './active-service-entry.js';
+import type { AcquireSkillServicesParams } from './acquire-skill-services-params.js';
+import type { ActiveServiceEntry } from './active-service-entry.js';
+import type { ReacquireSkillServicesParams } from './reacquire-skill-services-params.js';
 
 /**
  * Reference-counted registry of active `ServiceSession` daemons keyed by `(scopeKey, serviceNode.id)` (`SPEC.md` §3.4.2).

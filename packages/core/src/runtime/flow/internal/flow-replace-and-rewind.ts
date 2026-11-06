@@ -4,18 +4,16 @@ import type { ContinuationFrame } from '../../../ports/continuation-frame.types.
 import type { ForkBatchContinuationFrame } from '../../../ports/fork-batch-continuation-frame.js';
 import type { SpeculateContinuationFrame } from '../../../ports/speculate-continuation-frame.js';
 import { syncSuspendedRunPrerequisites } from '../../plan/execute-plan-mutation.js';
-import type {
-  FlowExecutionContext,
-  HierarchicalRewindDrainParams,
-  RecoverInterruptedRunParams,
-  ReplaceWithPromotionParams,
-} from '../flow-execution-context.js';
+import type { FlowExecutionContext } from '../flow-execution-context.js';
+import type { HierarchicalRewindDrainParams } from '../hierarchical-rewind-drain-params.js';
+import type { RecoverInterruptedRunParams } from '../recover-interrupted-run-params.js';
+import type { ReplaceWithPromotionParams } from '../replace-with-promotion-params.js';
 
 /**
  * Promotes a `.replaceWith(replacementActor, mapInput)` handler by resetting step overlays and atomically recording replacement step start (`SPEC.md` §3.6 & §3.9).
  *
- * Discards aborted step lesson outcomes, updates persisted `run.inputJson` with `replacementInput`,
- * and sets `flowCtx.activeReplacementExecutable` so the flow step loop immediately executes the replacement.
+ * Executes `abortHook` when defined or restores `baseScopeCheckpoint` via `restoreCheckpoint`, updates persisted
+ * `run.inputJson` with `replacementInput`, and sets `flowCtx.activeReplacementExecutable`.
  *
  * @template TIn     Validated flow input payload type.
  * @template THandle Runtime handle type of the active isolation scope.
@@ -27,28 +25,20 @@ import type {
 export async function executeReplaceWithPromotion<TIn = unknown, THandle = unknown>(
   params: ReplaceWithPromotionParams<TIn, THandle>,
 ): Promise<string> {
-  const { flowCtx, stepExecId, stepId, baseScopeCheckpoint, replacementExecutable, replacementInput } = params;
+  const { flowCtx, stepExecId, stepId, baseScopeCheckpoint, replacementExecutable, replacementInput, abortHook } = params;
   await flowCtx.serviceRegistry.quiesceScopeServices(stepExecId);
-  if (flowCtx.topologyStore !== undefined) {
-    await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'step', stepExecId });
+  if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'step', stepExecId });
+  if (abortHook !== undefined) {
+    const abortExec = flowCtx.registry.abortHooks[abortHook.type as keyof typeof flowCtx.registry.abortHooks];
+    if (abortExec !== undefined) await abortExec(abortHook as never, { handle: flowCtx.scopeHandle, runId: flowCtx.runId, stepExecId } as never, undefined as never);
+  } else if (baseScopeCheckpoint !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) {
+    await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, baseScopeCheckpoint);
   }
-  await flowCtx.ledgerStore.recordStepTransition({
-    stepExecId,
-    status: 'INTERRUPTED',
-    telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }),
-  });
+  await flowCtx.ledgerStore.recordStepTransition({ stepExecId, status: 'INTERRUPTED', telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }) });
   flowCtx.currentInput = replacementInput;
   await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(replacementInput) });
   const replacementExecId = `${flowCtx.runId}:${stepId}:replace:${replacementExecutable.id}`;
-  await flowCtx.ledgerStore.recordStepStart({
-    runId: flowCtx.runId,
-    stepExecId: replacementExecId,
-    stepId,
-    executableId: replacementExecutable.id,
-    inputMsgId: null,
-    baseScopeCheckpoint,
-    continuationStack: Object.freeze([]),
-  });
+  await flowCtx.ledgerStore.recordStepStart({ runId: flowCtx.runId, stepExecId: replacementExecId, stepId, executableId: replacementExecutable.id, inputMsgId: null, baseScopeCheckpoint, continuationStack: Object.freeze([]) });
   flowCtx.activeStepExecId = replacementExecId;
   flowCtx.activeReplacementExecutable = replacementExecutable;
   return replacementExecId;
@@ -72,25 +62,30 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
 ): Promise<{ readonly deferredWhileSuspended: boolean }> {
   const { flowCtx, rewindToStepId, updatedInput, onRewindHook, stepTerminalStatus } = params;
   flowCtx.currentInput = updatedInput;
+  await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(updatedInput), rewindPendingToStepId: rewindToStepId ?? undefined });
   const runState = await flowCtx.ledgerStore.createOrResumeRun({ runId: flowCtx.runId, laneId: flowCtx.laneId, itemKey: flowCtx.itemKey, inputJson: JSON.stringify(updatedInput) });
   if (runState.status === 'SUSPENDED' && rewindToStepId !== null) {
-    await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(updatedInput), rewindPendingToStepId: rewindToStepId });
     flowCtx.pendingRewindToStepId = rewindToStepId;
     return Object.freeze({ deferredWhileSuspended: true });
   }
-  flowCtx.activeStepAbortController.abort(new Error(`Rewind drain barrier triggered for run '${flowCtx.runId}'.`));
-  flowCtx.activeStepAbortController = new AbortController();
-  for (const humanAdapter of flowCtx.humanAdaptersById.values()) await humanAdapter.cancelDecision?.(flowCtx.runId, flowCtx.activeStepExecId ?? flowCtx.runId);
-  if (flowCtx.activeStepExecId !== null) {
-    await flowCtx.serviceRegistry.quiesceScopeServices(flowCtx.activeStepExecId);
-    await flowCtx.ledgerStore.recordStepTransition({ stepExecId: flowCtx.activeStepExecId, status: stepTerminalStatus === 'CANCELLED' ? 'FAILED' : 'INTERRUPTED', telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }) });
-  }
-  if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'run' });
-  if (onRewindHook !== undefined) {
-    const hookExec = flowCtx.registry.rewindHooks[onRewindHook.type];
-    if (hookExec !== undefined) await hookExec(onRewindHook as never, { handle: flowCtx.scopeHandle } as never, undefined as never);
-  }
-  await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(updatedInput), rewindPendingToStepId: rewindToStepId ?? undefined });
+  await flowCtx.lockManager.withWriteLock(flowCtx.scopeHandle, async () => {
+    flowCtx.activeStepAbortController.abort(new Error(`Rewind drain barrier triggered for run '${flowCtx.runId}'.`));
+    flowCtx.activeStepAbortController = new AbortController();
+    for (const humanAdapter of flowCtx.humanAdaptersById.values()) await humanAdapter.cancelDecision?.(flowCtx.runId, flowCtx.activeStepExecId ?? flowCtx.runId);
+    const suspendedForks = await flowCtx.ledgerStore.getSuspendedForks(flowCtx.runId);
+    for (const sf of suspendedForks) await flowCtx.ledgerStore.resolveSuspendedFork(sf.suspendedForkId, 'ABORTED');
+    if (flowCtx.activeStepExecId !== null) {
+      await flowCtx.serviceRegistry.quiesceScopeServices(flowCtx.activeStepExecId);
+      await flowCtx.ledgerStore.recordStepTransition({ stepExecId: flowCtx.activeStepExecId, status: stepTerminalStatus === 'CANCELLED' ? 'FAILED' : 'INTERRUPTED', telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }) });
+    }
+    const shouldResetOverlay = (onRewindHook as { readonly resetsRunOverlay?: boolean } | undefined)?.resetsRunOverlay !== false;
+    if (flowCtx.topologyStore !== undefined && shouldResetOverlay) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'run' });
+    if (onRewindHook !== undefined) {
+      const hookExec = flowCtx.registry.rewindHooks[onRewindHook.type];
+      if (hookExec !== undefined) await hookExec(onRewindHook as never, { handle: flowCtx.scopeHandle } as never, undefined as never);
+    }
+    await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(updatedInput), rewindPendingToStepId: undefined });
+  });
   if (rewindToStepId !== null) flowCtx.pendingRewindToStepId = rewindToStepId;
   return Object.freeze({ deferredWhileSuspended: false });
 }

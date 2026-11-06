@@ -10,14 +10,10 @@ import {
   batchSameClauseInterrupt,
   evaluateSingleGuardClause,
 } from './internal/match-lease-and-clauses.js';
-import type {
-  PolicyEvaluationResult,
-  PreFlightBatchEvalParams,
-} from './policy-evaluation-result.js';
-import type {
-  PostFlightSandboxParams,
-  PostFlightSandboxResult,
-} from './post-flight-sandbox-params.js';
+import type { PolicyEvaluationResult } from './policy-evaluation-result.js';
+import type { PostFlightSandboxParams } from './post-flight-sandbox-params.js';
+import type { PostFlightSandboxResult } from './post-flight-sandbox-result.js';
+import type { PreFlightBatchEvalParams } from './pre-flight-batch-eval-params.js';
 
 /**
  * Evaluates two-phase policy guards (`'deny-with-error'` before `'raise-interrupt'`) across `remainingCalls` (`SPEC.md` §3.5).

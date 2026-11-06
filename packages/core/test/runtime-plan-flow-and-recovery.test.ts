@@ -1,26 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type AgentContinuationFrame, BudgetApprovalSchema, type ForkBatchContinuationFrame, type GitKeepWorktreeNode,
-  type GitWorktreeHandle, H, type InlineSkillNode, LaneScheduler, type LocalServiceNode, ScopeLockManager,
-  ServiceSessionRegistry, type SpeculateContinuationFrame, type SqliteLedgerNode, StepContinuationQueue,
-  type StepExecutionContext, createExecutorRegistry, createRuntime, executeAddDependencies,
-  executeHierarchicalRewindDrain, executeSpawnTasks, executeUpdatePartitionContract, recoverInterruptedRunOnBoot,
-  syncSuspendedRunPrerequisites, z,
+  type AgentContinuationFrame, BudgetApprovalSchema, type FlowExecutionContext,
+  type ForkBatchContinuationFrame, type GitKeepWorktreeNode, type GitWorktreeHandle, H,
+  type InlineSkillNode, LaneScheduler, type LocalServiceNode, ScopeLockManager,
+  ServiceSessionRegistry, type SpeculateContinuationFrame, type SqliteLedgerNode,
+  StepContinuationQueue, type StepExecutionContext, createExecutorRegistry, createRuntime,
+  executeAddDependencies, executeHierarchicalRewindDrain, executeSpawnTasks,
+  executeUpdatePartitionContract, recoverInterruptedRunOnBoot, syncSuspendedRunPrerequisites, z,
 } from '../src/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import { InMemoryLessonStore } from './fixtures/in-memory-lesson-store.js';
 import { InMemoryTopologyStore } from './fixtures/in-memory-topology-store.js';
 import {
-  SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_MODEL_NODE, SAMPLE_RUNNER_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TOPOLOGY_STORE_NODE,
+  SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_DECLARED_TOOL_NODE, SAMPLE_MODEL_NODE,
+  SAMPLE_RUNNER_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TOPOLOGY_STORE_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 import { ScriptedBranchableScope } from './fixtures/scripted-branchable-scope.js';
 import { ScriptedHumanAdapter } from './fixtures/scripted-human-adapter.js';
+import { ScriptedModelDriver } from './fixtures/scripted-model-driver.js';
 import { ScriptedServiceSession } from './fixtures/scripted-service-session.js';
 
 const SAMPLE_SERVICE_NODE: LocalServiceNode = Object.freeze({
   type: 'node:service', id: 'db-daemon', lifecycle: 'skill', toolSchemas: Object.freeze([]),
   runner: SAMPLE_RUNNER_NODE, ports: Object.freeze([]), startArgv: () => Object.freeze(['node', 'db.js']), interactions: Object.freeze([]),
 });
+
+function throwUnusedRunner(): never {
+  throw new Error('unused');
+}
 
 function createBaseAgentFrame(stepExecId: string): AgentContinuationFrame {
   return Object.freeze<AgentContinuationFrame>({
@@ -31,10 +38,7 @@ function createBaseAgentFrame(stepExecId: string): AgentContinuationFrame {
     pausedAtPhase: 'TOOL_BOUNDARY',
     pauseState: Object.freeze({
       kind: 'active-turn',
-      pendingToolBatch: Object.freeze({
-        completedResults: Object.freeze([]), blockedCalls: Object.freeze([]),
-        remainingCalls: Object.freeze([{ callId: 'call-after', toolName: 'finish', argsJson: '{}' }]),
-      }),
+      pendingToolBatch: Object.freeze({ completedResults: Object.freeze([]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([{ callId: 'call-after', toolName: 'finish', argsJson: '{}' }]) }),
     }),
   });
 }
@@ -54,7 +58,7 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
     });
     await serviceRegistry.acquireSkillServices({
       runId: 'run-parent', scopeKey: 'step-parent-1', scopeHandle: parentHandle, skill: dbSkill,
-      driverContext: { registry, resolveEnv: () => '', getRunner: () => { throw new Error('unused'); } },
+      driverContext: { registry, resolveEnv: () => '', getRunner: throwUnusedRunner },
     });
     expect(daemonSession.running).toBe(true);
 
@@ -64,17 +68,13 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
       .model(SAMPLE_MODEL_NODE).input(taskSchema).output(taskSchema)
       .capabilities(($c) =>
         $c.mutatePlan(($m) =>
-          $m
-            .canSpawnTasks(taskSchema, {
-              maxSpawnedPerRun: 3, maxPrerequisiteDepth: 4, priorityStrategy: 'inherit-parent-with-boost',
-              enforcePatch: { tag: 'enforced-patch' }, onPrerequisiteSpawned: 'suspend-and-yield-slot', resumeWhen: 'prerequisite-exit',
-            })
-            .canAddDependencies()
-            .canUpdateTopologyContracts(topologyBuilder),
+          $m.canSpawnTasks(taskSchema, { maxSpawnedPerRun: 3, maxPrerequisiteDepth: 4, priorityStrategy: 'inherit-parent-with-boost', enforcePatch: { tag: 'enforced-patch' }, onPrerequisiteSpawned: 'suspend-and-yield-slot', resumeWhen: 'prerequisite-exit' })
+            .canAddDependencies().canUpdateTopologyContracts(topologyBuilder),
         ),
-      )
-      .toAST().capabilities?.mutatePlan;
-    if (mutatePlanCap === undefined) throw new Error('Expected mutatePlan capability node.');
+      ).toAST().capabilities?.mutatePlan;
+    if (mutatePlanCap === undefined) {
+      throw new Error('Expected mutatePlan capability node.');
+    }
 
     await ledgerStore.createOrResumeRun({ runId: 'run-parent', laneId: 'lane-main', itemKey: 'T_parent', inputJson: JSON.stringify({ id: 'T_parent' }) });
     const initialFrame = createBaseAgentFrame('step-parent-1');
@@ -82,7 +82,7 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
 
     const stepCtx: StepExecutionContext<string> = {
       runId: 'run-parent', stepExecId: 'step-parent-1', scopeHandle: parentHandle, activePartitions: ['core'],
-      activeLeases: [], observedEffects: [], registry, resolveEnv: () => '', getRunner: () => { throw new Error('unused'); }, recordEffects: () => undefined,
+      activeLeases: [], observedEffects: [], registry, resolveEnv: () => '', getRunner: throwUnusedRunner, recordEffects: () => undefined,
     };
 
     const spawnRes = await executeSpawnTasks({
@@ -160,8 +160,8 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
   });
 });
 
-describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, .maxCostUsd, .retry, Hierarchical Rewind Drain, commitOverlayWhen & compactWhen)', () => {
-  it('runs initial syncRoot on QUEUED->RUNNING, enforces .maxCostUsd (2x default approval and denial drain), resets step overlay on .retry, and defers rewind while SUSPENDED', async () => {
+describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors, .maxCostUsd, .retry restoreCheckpoint, Hierarchical Rewind Drain, commitOverlayWhen & compactWhen)', () => {
+  it('runs initial syncRoot, collects flow actors for prefixGroups, validates nextLimit > costUsd on budget approval, restores checkpoint on .retry, and preserves overlay on rewind when resetsRunOverlay is false', async () => {
     const ledgerStore = new InMemoryLedgerStore();
     const topologyStore = new InMemoryTopologyStore({ api: { contractText: 'v1', epoch: 1 } });
     const lessonStore = new InMemoryLessonStore();
@@ -173,27 +173,30 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, .maxCostUsd, .retr
     const compactSignal = H.signal('sig-compact', z.object({ itemKey: z.string() }));
     const rewoundHandles: string[] = [];
     const rewindHook: GitKeepWorktreeNode = Object.freeze({ type: 'git:keep-worktree', id: 'git-keep-hook', resetsRunOverlay: false });
+    const unionGroup = H.prefixGroup('pg-flow-union').toolsMode('union');
 
     const itemSchema = z.object({ id: z.string(), deps: z.array(z.string()).default([]), failStep2: z.boolean().optional(), note: z.string().optional() });
     let step2Attempts = 0;
-    const step1Cmd = H.command('cmd-step-1', {
-      input: itemSchema, output: z.object({ step1Done: z.boolean(), note: z.string() }),
-      fn: async (input: z.output<typeof itemSchema>) => {
-        await topologyStore.updateContract(`run:lane-1:${input.id}`, 'api', 'v2-step1', `run:lane-1:${input.id}:step-1:1`);
-        return { step1Done: true, note: input.note ?? 'initial' };
-      },
-    });
+    const step1Agent = H.agent<GitWorktreeHandle>('agent-step-1')
+      .model(SAMPLE_MODEL_NODE).prefixGroup(unionGroup).tools(SAMPLE_DECLARED_TOOL_NODE)
+      .input(itemSchema).output(z.object({ step1Done: z.boolean(), note: z.string() }));
     const step2Cmd = H.command('cmd-step-2', {
       input: itemSchema, output: z.object({ attempts: z.number() }),
       fn: async (input: z.output<typeof itemSchema>) => {
-        step2Attempts += 1;
-        await topologyStore.updateContract(`run:lane-1:${input.id}`, 'api', `v3-step2-try-${String(step2Attempts)}`, `run:lane-1:${input.id}:step-2:${String(step2Attempts)}`);
-        if (input.failStep2 === true && step2Attempts === 1) throw new Error('Transient step-2 failure');
+        if (input.failStep2 === true) {
+          step2Attempts += 1;
+          await topologyStore.updateContract(`run:lane-1:${input.id}`, 'api', `v3-step2-try-${String(step2Attempts)}`, `run:lane-1:${input.id}:step-2:${String(step2Attempts)}`);
+          if (step2Attempts === 1) throw new Error('Transient step-2 failure');
+        }
         return { attempts: step2Attempts };
       },
     });
 
-    const flow = H.flow('flow-lane-1').input(itemSchema).scope(SAMPLE_TIER3_SCOPE_NODE).step('step-1', step1Cmd).step('step-2', step2Cmd).exit('merged');
+    const flow = H.flow('flow-lane-1')
+      .input(itemSchema).scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('step-1', step1Agent)
+      .step('step-2', step2Cmd)
+      .exit('merged');
     const lane = H.lane('lane-1')
       .input(itemSchema).key((i: z.output<typeof itemSchema>) => i.id).runs(flow).concurrency(2).priority('normal').agingMinutes(10)
       .waitFor((i: z.output<typeof itemSchema>) => i.deps, 'abandoned').maxCostUsd(1.0, budgetHuman)
@@ -202,9 +205,16 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, .maxCostUsd, .retr
         $s.update((prev: z.output<typeof itemSchema>, sig: { readonly id: string; readonly note: string }) => ({ ...prev, note: sig.note })).rewindTo('step-1', { onRewind: rewindHook }),
       );
 
+    const modelDriver = new ScriptedModelDriver([
+      { wireFrame: new Uint8Array(), canonical: { role: 'assistant', visibleText: '{"step1Done":true,"note":"initial"}', toolCalls: [] }, structuredOutput: { step1Done: true, note: 'initial' }, usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 } },
+      { wireFrame: new Uint8Array(), canonical: { role: 'assistant', visibleText: '{"step1Done":true,"note":"initial"}', toolCalls: [] }, structuredOutput: { step1Done: true, note: 'initial' }, usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 } },
+    ]);
     const registry = createExecutorRegistry({
+      models: { 'claude:model': () => modelDriver },
       scopes: { 'git:cow-worktree': () => scope as never },
-      rewindHooks: { 'git:keep-worktree': async (_node, target) => { rewoundHandles.push(String((target as { readonly handle: string }).handle)); } },
+      rewindHooks: { 'git:keep-worktree': async (_node, target) => {
+        rewoundHandles.push(String((target as { readonly handle: string }).handle));
+      } },
       ledgers: { 'sqlite:ledger': () => ledgerStore },
     });
 
@@ -218,27 +228,39 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, .maxCostUsd, .retr
 
     const pass1 = await scheduler.scheduleNextReadyRuns(1_000 + 20 * 60_000);
     expect(pass1[0]?.runId).toBe('run:lane-1:item-prereq');
+    const compiledGroupJson = ledgerStore.runs.get('run:lane-1:item-prereq')?.compiledPrefixesJson?.['pg-flow-union'];
+    expect(compiledGroupJson).toContain('fs_read');
 
+    const restoresBeforeChild = scope.restoredCheckpoints.length;
     const pass2 = await scheduler.scheduleNextReadyRuns(1_000 + 20 * 60_000);
     expect(pass2[0]?.runId).toBe('run:lane-1:item-child');
     expect(step2Attempts).toBe(2);
+    expect(scope.restoredCheckpoints.length).toBeGreaterThan(restoresBeforeChild);
     expect(scope.handleState.get('root:run:lane-1:item-child')?.['syncedPrerequisiteCount']).toBe(1);
     expect((await topologyStore.getPartitions('run:lane-1:item-child')).get('api')?.contractText).toBe('v3-step2-try-2');
 
     humanAdapter.enqueueDecision({ approved: true });
     expect(await scheduler.enforceRunBudget('run:lane-1:item-child', 1.5)).toEqual({ allowed: true, newLimitUsd: 2.0 });
 
-    humanAdapter.enqueueDecision({ approved: false });
-    expect(await scheduler.enforceRunBudget('run:lane-1:item-child', 1.0)).toEqual({ allowed: false });
+    humanAdapter.enqueueDecision({ approved: true, increaseLimitToUsd: 1.2 });
+    expect(await scheduler.enforceRunBudget('run:lane-1:item-child', 1.5)).toEqual({ allowed: false });
     expect(scheduler.getItemsByKey().get('item-child')?.status).toBe('CANCELLED');
 
     await ledgerStore.createOrResumeRun({ runId: 'run:lane-1:item-susp', laneId: 'lane-1', itemKey: 'item-susp', inputJson: JSON.stringify({ id: 'item-susp', deps: [] }) });
+    await ledgerStore.recordForkSuspension({
+      suspendedForkId: 'f-rew#1', forkId: 'f-rew', suspensionEpoch: 1, runId: 'run:lane-1:item-susp',
+      parentStepExecId: 'step-susp-1', forkToolName: 'fork', activePartitions: ['api'], suspensionReason: 'INTERRUPT_RAISED',
+      conflictRetryCount: 0, conflictCheckArmed: false, continuationStack: [],
+    });
+    await topologyStore.updateContract('run:lane-1:item-susp', 'api', 'v2-kept-on-rewind', 'step-susp-1');
     const suspRun = ledgerStore.runs.get('run:lane-1:item-susp');
-    if (suspRun !== undefined) suspRun.status = 'SUSPENDED';
+    if (suspRun !== undefined) {
+      suspRun.status = 'SUSPENDED';
+    }
 
-    const suspFlowCtx = {
-      runId: 'run:lane-1:item-susp', laneId: 'lane-1', itemKey: 'item-susp', flow: flow.toAST(), currentInput: { id: 'item-susp', deps: [] },
-      scopeHandle: 'root:run:lane-1:item-susp' as unknown as GitWorktreeHandle, scopeDriver: scope as never, registry, env: {}, ledgerStore, topologyStore, lessonStore,
+    const suspFlowCtx: FlowExecutionContext<unknown, unknown> = {
+      runId: 'run:lane-1:item-susp', laneId: 'lane-1', itemKey: 'item-susp', flow: flow.toAST() as never, currentInput: { id: 'item-susp', deps: [] },
+      scopeHandle: 'root:run:lane-1:item-susp', scopeDriver: scope as never, registry, env: {}, ledgerStore, topologyStore, lessonStore,
       lockManager: new ScopeLockManager(), continuationQueue: new StepContinuationQueue(), poolManager: undefined as never,
       serviceRegistry: new ServiceSessionRegistry(), humanAdaptersById: new Map([['budget-human', humanAdapter]]),
       wirePrefixesByGroupId: new Map(), completedStepOutputs: new Map(), observedRunEffects: [],
@@ -251,12 +273,17 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, .maxCostUsd, .retr
     expect(rewoundHandles).toHaveLength(0);
     expect(ledgerStore.runs.get('run:lane-1:item-susp')?.rewindPendingToStepId).toBe('step-1');
 
-    if (suspRun !== undefined) suspRun.status = 'RUNNING';
+    if (suspRun !== undefined) {
+      suspRun.status = 'RUNNING';
+    }
     const liveRewind = await executeHierarchicalRewindDrain({
       flowCtx: suspFlowCtx, rewindToStepId: 'step-1', updatedInput: { id: 'item-susp', deps: [], note: 'live-rewind' }, onRewindHook: rewindHook,
     });
     expect(liveRewind.deferredWhileSuspended).toBe(false);
     expect(rewoundHandles).toEqual(['root:run:lane-1:item-susp']);
+    expect(ledgerStore.resolvedSuspendedForks.get('f-rew#1')).toBe('ABORTED');
+    expect((await topologyStore.getPartitions('run:lane-1:item-susp')).get('api')?.contractText).toBe('v2-kept-on-rewind');
+    expect(ledgerStore.runs.get('run:lane-1:item-susp')?.rewindPendingToStepId).toBeUndefined();
 
     const topologyNode = H.topology('topo-1')
       .store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ api: { dependsOn: [] } })
@@ -280,7 +307,16 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, .maxCostUsd, .retr
     await ledgerStore.recordRunTerminalReceipt('run-base-pr', 'item-base', 'merged', JSON.stringify({ baseBranch: 'main' }));
     await lessonStore.admit({ partition: 'api', directive: 'Lesson from stacked PR', epochAtCreation: 0, createdByRunId: 'run-base-pr' });
 
+    let bootQueryCalled = false;
+    const origGetBoot = ledgerStore.getInterruptedStepsOnBoot.bind(ledgerStore);
+    ledgerStore.getInterruptedStepsOnBoot = async () => {
+      bootQueryCalled = true;
+      return origGetBoot();
+    };
     const runtime = createRuntime(harnessNode, { registry, topologyNode, topologyStore, lessonStore, humanAdaptersById: new Map([['budget-human', humanAdapter]]) });
+    await runtime.start();
+    expect(bootQueryCalled).toBe(true);
+    await runtime.stop();
 
     await runtime.controller.emitSignal('sig-pr-merged', { itemKey: 'item-stacked', baseBranch: 'feature/base-pr', prerequisiteRunId: 'run-base-pr' });
     expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe('v1');
@@ -335,26 +371,28 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
     const bootRecords = await ledgerStore.getInterruptedStepsOnBoot();
     expect(bootRecords).toHaveLength(1);
     const bootRecord = bootRecords[0];
-    if (bootRecord === undefined) throw new Error('Expected boot record.');
+    if (bootRecord === undefined) {
+      throw new Error('Expected boot record.');
+    }
 
     const dummyCmd = H.command('c-noop', { input: z.object({ id: z.string() }), output: z.object({ id: z.string() }), fn: async (i) => i });
     const dummyFlow = H.flow('f-crash').input(z.object({ id: z.string() })).scope(SAMPLE_TIER3_SCOPE_NODE).step('step-1', dummyCmd).exit('done').toAST();
-    const flowCtx = {
-      runId: 'run-crash-1', laneId: 'lane-1', itemKey: 'item-crash-1', flow: dummyFlow, currentInput: { id: 'item-crash-1' },
-      scopeHandle: '' as unknown as GitWorktreeHandle, scopeDriver: scope as never, registry, env: {}, ledgerStore, lockManager: new ScopeLockManager(),
+    const flowCtx: FlowExecutionContext<unknown, unknown> = {
+      runId: 'run-crash-1', laneId: 'lane-1', itemKey: 'item-crash-1', flow: dummyFlow as never, currentInput: { id: 'item-crash-1' },
+      scopeHandle: '', scopeDriver: scope as never, registry, env: {}, ledgerStore, lockManager: new ScopeLockManager(),
       continuationQueue: new StepContinuationQueue(), poolManager: undefined as never, serviceRegistry: new ServiceSessionRegistry(),
       humanAdaptersById: new Map(), wirePrefixesByGroupId: new Map(), completedStepOutputs: new Map(), observedRunEffects: [],
       activeStepId: 'step-1', activeStepExecId: 'step-crash-1', activeStepAbortController: new AbortController(),
     };
 
-    const recoveryRes = await recoverInterruptedRunOnBoot({ bootRecord, flow: dummyFlow, flowCtx });
+    const recoveryRes = await recoverInterruptedRunOnBoot({ bootRecord, flow: dummyFlow as never, flowCtx });
     expect(recoveryRes.readyToResume).toBe(true);
     expect(scope.restoredCheckpoints).toEqual([{ handle: 'root:run-crash-1', checkpoint: preToolCkpt }]);
     expect(scope.handleState.get('root:run-crash-1')?.['cleanState']).toBe(true);
     expect([...recoveryRes.reattachedChildHandles.keys()]).toEqual(['fork-open', 'spec-open']);
 
     const suspBootRecord = Object.freeze({ ...bootRecord, status: 'SUSPENDED' as const, dependsOn: Object.freeze(['dep-missing']) });
-    const notReadyRes = await recoverInterruptedRunOnBoot({ bootRecord: suspBootRecord, flow: dummyFlow, flowCtx });
+    const notReadyRes = await recoverInterruptedRunOnBoot({ bootRecord: suspBootRecord, flow: dummyFlow as never, flowCtx });
     expect(notReadyRes.readyToResume).toBe(false);
   });
 });

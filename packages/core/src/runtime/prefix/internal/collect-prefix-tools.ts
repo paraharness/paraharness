@@ -38,22 +38,11 @@ export async function resolveSourceStringValue(
     return Object.freeze<GroundingSnapshotRecord>({ sourceId: 'inline', text: source, digest });
   }
   const sourceExec = registry.sources[source.type];
-  if (sourceExec === undefined) {
-    throw new Error(`No SourceExecutor registered for '${source.type}' in run '${ctx.runId}'.`);
-  }
+  if (sourceExec === undefined) throw new Error(`No SourceExecutor registered for '${source.type}' in run '${ctx.runId}'.`);
   const artifact = await sourceExec(source as never, undefined, ctx);
   const obj: object = source;
-  const sourceId =
-    'id' in obj && typeof obj.id === 'string'
-      ? obj.id
-      : 'path' in obj && typeof obj.path === 'string'
-        ? obj.path
-        : source.type;
-  return Object.freeze<GroundingSnapshotRecord>({
-    sourceId,
-    text: String(artifact.content),
-    digest: artifact.digest,
-  });
+  const sourceId = 'id' in obj && typeof obj.id === 'string' ? obj.id : ('path' in obj && typeof obj.path === 'string' ? obj.path : source.type);
+  return Object.freeze<GroundingSnapshotRecord>({ sourceId, text: String(artifact.content), digest: artifact.digest });
 }
 
 /**
@@ -82,9 +71,7 @@ export async function resolveGlobalRuleDirectives(
       if (sourceExec === undefined) throw new Error(`No SourceExecutor registered for global rule source '${sourceNode.type}'.`);
       const artifact = await sourceExec(sourceNode as never, undefined, ctx);
       loaded = artifact.content as GlobalRule | readonly GlobalRule[];
-    } else {
-      loaded = entry as GlobalRule | readonly GlobalRule[];
-    }
+    } else loaded = entry as GlobalRule | readonly GlobalRule[];
     const ruleList = Array.isArray(loaded) ? loaded : [loaded];
     for (const rule of ruleList as readonly GlobalRule[]) lines.push(`[Rule: ${rule.id}] ${rule.directive}`);
   }
@@ -159,9 +146,8 @@ export function collectUnionWireTools(
     const tools = collectRoleScopedWireTools(actor, skillsByRoleKey?.get(actor.roleKey));
     for (const tool of tools) {
       const existing = byName.get(tool.name);
-      if (existing === undefined) {
-        byName.set(tool.name, { schema: tool, owners: new Set([actor.id]), ownerList: [actor.id] });
-      } else if (!existing.owners.has(actor.id)) {
+      if (existing === undefined) byName.set(tool.name, { schema: tool, owners: new Set([actor.id]), ownerList: [actor.id] });
+      else if (!existing.owners.has(actor.id)) {
         existing.owners.add(actor.id);
         existing.ownerList.push(actor.id);
       }
@@ -170,16 +156,8 @@ export function collectUnionWireTools(
   const unionSchemas: WireToolSchema[] = [];
   for (const entry of byName.values()) {
     const roleTag = `[Role: ${entry.ownerList.join(', ')}]`;
-    const description = entry.schema.description.includes('[Role:')
-      ? entry.schema.description
-      : `${entry.schema.description} ${roleTag}`;
-    unionSchemas.push(
-      Object.freeze<WireToolSchema>({
-        name: entry.schema.name,
-        description,
-        inputJsonSchema: entry.schema.inputJsonSchema,
-      }),
-    );
+    const description = entry.schema.description.includes('[Role:') ? entry.schema.description : `${entry.schema.description} ${roleTag}`;
+    unionSchemas.push(Object.freeze<WireToolSchema>({ name: entry.schema.name, description, inputJsonSchema: entry.schema.inputJsonSchema }));
   }
   return Object.freeze(unionSchemas);
 }

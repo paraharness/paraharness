@@ -4,50 +4,17 @@ import type { ForkCapabilityNode } from '../../ast/fork-capability-node.js';
 import type { BranchableScope } from '../../ports/branchable-scope.js';
 import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
-import type {
-  ForkBatchContinuationFrame,
-  ForkBatchEntryRecord,
-  PendingPauseTriggerRecord,
-} from '../../ports/fork-batch-continuation-frame.js';
+import type { ForkBatchContinuationFrame } from '../../ports/fork-batch-continuation-frame.js';
+import type { PrecedingCompletedToolResult } from '../../ports/fork-context.js';
 import type { HumanAdapter } from '../../ports/human-adapter.js';
-import type { LeaseDelta } from '../../ports/lease-delta.js';
 import type { LedgerStore } from '../../ports/ledger-store.js';
-import type { LessonOutcome } from '../../ports/lesson-outcome.types.js';
 import type { LessonStore } from '../../ports/lesson-store.js';
 import type { ModelDriver } from '../../ports/model-driver.js';
 import type { StepExecutionContext } from '../../ports/step-execution-context.js';
-import type { SuspendedForkRecord } from '../../ports/suspended-fork-record.js';
 import type { ScopeLockManager } from '../locks/scope-lock-manager.js';
 import type { StepContinuationQueue } from '../locks/step-continuation-queue.js';
 import type { PoolManager } from '../pools/pool-manager.js';
-
-/**
- * Outcome returned by a child step execution inside a downward `.fork()` or `resumeFork` batch.
- *
- * Distinguishes normal completion (`status: 'completed'`) from an upward interrupt raised to the parent (`status: 'interrupt-raised'`).
- *
- * @template TOut Validated output payload type of the child executable.
- */
-export interface ChildForkExecutionOutcome<TOut = unknown> {
-  /** Discriminant indicating whether the child completed or raised an upward interrupt. */
-  readonly status: 'completed' | 'interrupt-raised';
-  /** Validated output payload when `status === 'completed'`. */
-  readonly output?: TOut;
-  /** Final leaf message ID of the child transcript. */
-  readonly leafMessageId?: string | null;
-  /** Deduplicated lesson outcomes accumulated during child execution. */
-  readonly accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>;
-  /** Raised interrupt identifier when `status === 'interrupt-raised'`. */
-  readonly interruptId?: string;
-  /** Validated interrupt payload when `status === 'interrupt-raised'`. */
-  readonly interruptPayload?: unknown;
-  /** Phase that raised the interrupt (`'act'` vs `'evaluate'`). */
-  readonly raisedByPhase?: 'act' | 'evaluate';
-  /** Tool call ID that raised the interrupt when raised from an `.act()` tool call. */
-  readonly suspendedAtCallId?: string;
-  /** Serialized child continuation stack at the moment of suspension or completion. */
-  readonly continuationStack: readonly ContinuationFrame[];
-}
+import type { ChildForkExecutionOutcome } from './child-fork-execution-outcome.js';
 
 /**
  * Single downward fork dispatch descriptor inside a parent assistant turn batch.
@@ -65,107 +32,6 @@ export interface ForkDispatchCallItem<THandle = unknown> {
   readonly capability: ForkCapabilityNode<unknown, unknown, unknown, unknown, THandle>;
   /** Raw JSON arguments passed to the `.fork()` tool call. */
   readonly argsJson: string;
-}
-
-/**
- * Parameters for pausing a sibling fork at its turn or tool boundary during a turn-batch interrupt barrier.
- *
- * Carries the pause trigger metadata and the sibling fork's isolated scope handle.
- *
- * @template THandle Runtime handle type of the active `BranchableScope`.
- */
-export interface PauseSiblingBarrierContext<THandle = unknown> extends PendingPauseTriggerRecord {
-  /** Isolated scope handle of the sibling fork being paused. */
-  readonly siblingHandle: THandle;
-}
-
-/**
- * Context supplied to `coordinateTurnBatchInterruptBarrier()` when a child fork raises an upward interrupt.
- *
- * Combines the raising child's execution outcome, child scope handle, sibling entries, and sibling handles map.
- *
- * @template THandle Runtime handle type of the active `BranchableScope`.
- */
-export interface TurnBatchBarrierContext<THandle = unknown> extends ChildForkExecutionOutcome<unknown> {
-  /** Isolated scope handle of the child fork that raised the interrupt. */
-  readonly childHandle: THandle;
-  /** All fork entries in the current batch. */
-  readonly siblingEntries: readonly ForkBatchEntryRecord[];
-  /** Map of `forkId` to live child scope handle for active siblings. */
-  readonly handlesByForkId: ReadonlyMap<string, THandle>;
-}
-
-/**
- * Result returned by `coordinateTurnBatchInterruptBarrier()` after persisting the raising and paused sibling forks.
- *
- * Provides the updated raising fork entry, the pause trigger record, and all newly paused sibling entries.
- */
-export interface TurnBatchBarrierResult {
-  /** Updated `ForkBatchEntryRecord` for the raising child fork. */
-  readonly updatedRaisingEntry: ForkBatchEntryRecord;
-  /** Recorded pause trigger metadata. */
-  readonly trigger: PendingPauseTriggerRecord;
-  /** Sibling fork entries transitioned to `'SUSPENDED'`. */
-  readonly pausedSiblings: readonly ForkBatchEntryRecord[];
-}
-
-/**
- * Parameters for reconciling a completed child fork via 3-way `commitChild` with conflict-bounce retries.
- *
- * Supplies the batch execution context, child entry, isolated `childHandle`, child AST node, and outcome.
- *
- * @template THandle Runtime handle type of the active `BranchableScope`.
- */
-export interface ReconcileChildForkParams<THandle = unknown> {
-  /** Enclosing fork batch execution parameters. */
-  readonly batchParams: ForkBatchExecutionParams<THandle>;
-  /** Current `ForkBatchEntryRecord` for the child fork. */
-  readonly entry: ForkBatchEntryRecord;
-  /** Isolated child scope handle. */
-  readonly childHandle: THandle;
-  /** Child `AgentNode` or `LoopNode` executable. */
-  readonly childNode: StepASTNode<unknown, unknown, THandle>;
-  /** Validated child input payload. */
-  readonly childInput: unknown;
-  /** Completed child execution outcome. */
-  readonly outcome: ChildForkExecutionOutcome<unknown>;
-  /** Callback persisting an updated `ForkBatchEntryRecord` into `LedgerStore`. */
-  readonly persistEntryUpdate: (updatedEntry: ForkBatchEntryRecord) => Promise<void>;
-}
-
-/**
- * Parameters for resuming a single `SuspendedForkRecord` via `resumeSuspendedForkEntry()`.
- *
- * Supplies the batch execution context, persisted `SuspendedForkRecord`, current `ForkBatchEntryRecord`,
- * resolution summary text, and entry persistence callback.
- *
- * @template THandle Runtime handle type of the active `BranchableScope`.
- */
-export interface ResumeSuspendedForkEntryParams<THandle = unknown> {
-  /** Enclosing fork batch execution parameters. */
-  readonly batchParams: ForkBatchExecutionParams<THandle>;
-  /** Persisted `SuspendedForkRecord` being resumed. */
-  readonly record: SuspendedForkRecord;
-  /** Current `ForkBatchEntryRecord` in the `resumeFork` batch. */
-  readonly entry: ForkBatchEntryRecord;
-  /** Parent resolution summary text from `resumeFork`. */
-  readonly resolutionSummary: string;
-  /** Callback persisting an updated `ForkBatchEntryRecord` into `LedgerStore`. */
-  readonly persistEntryUpdate: (updatedEntry: ForkBatchEntryRecord) => Promise<void>;
-}
-
-/**
- * Outcome returned by `executeForkBatch()` or `executeResumeForkBatch()` for the parent turn batch.
- *
- * Provides per-`callId` serialized `tool_result` strings and the final `ForkBatchContinuationFrame`.
- */
-export interface ForkBatchExecutionResult {
-  /** Map of parent tool `callId` to its serialized `tool_result` JSON string. */
-  readonly toolResultsByCallId: ReadonlyMap<string, { readonly content: string; readonly isError: boolean }>;
-  /** Final settled `ForkBatchContinuationFrame`. */
-  readonly batchFrame: ForkBatchContinuationFrame;
-  /** Any new upward pause triggers captured at the turn-batch barrier. */
-  readonly pauseTriggers: readonly PendingPauseTriggerRecord[];
 }
 
 /**
@@ -189,6 +55,10 @@ export interface ForkBatchExecutionParams<THandle = unknown> {
   readonly existingBatchFrame?: ForkBatchContinuationFrame;
   /** Dispatched `.fork()` call items for `executeForkBatch`. */
   readonly forkCalls?: readonly ForkDispatchCallItem<THandle>[];
+  /** Preceding completed tool results in the same assistant turn batch forwarded to `prepareFork`. */
+  readonly precedingCompletedResults?: readonly PrecedingCompletedToolResult[];
+  /** Sibling fork `callId`s in the same assistant turn batch forwarded to `prepareFork`. */
+  readonly siblingForkCallIds?: readonly string[];
   /** Dispatched `resumeFork` request for `executeResumeForkBatch`. */
   readonly resumeRequest?: {
     readonly callId: string;
@@ -216,28 +86,10 @@ export interface ForkBatchExecutionParams<THandle = unknown> {
   readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
   /** Step execution context of the parent actor (`ctx.scopeHandle` is `parentHandle`). */
   readonly ctx: StepExecutionContext<THandle>;
-  /** Callback executing a child `AgentNode` or `LoopNode` on an isolated `childHandle`. */
-  readonly executeChildStep: (
+  /** Optional callback executing a child `AgentNode` or `LoopNode` on an isolated `childHandle`. */
+  readonly executeChildStep?: (
     childNode: StepASTNode<unknown, unknown, THandle>,
     childInput: unknown,
     childCtx: StepExecutionContext<THandle>,
   ) => Promise<ChildForkExecutionOutcome<unknown>>;
-  /** Optional reference to result type for property reachability. */
-  readonly resultTemplate?: ForkBatchExecutionResult;
-  /** Optional reference to entry record for property reachability. */
-  readonly entryTemplate?: ForkBatchEntryRecord;
-  /** Optional reference to suspended fork record for property reachability. */
-  readonly suspendedRecordTemplate?: SuspendedForkRecord;
-  /** Optional reference to lease delta for property reachability. */
-  readonly leaseTemplate?: LeaseDelta;
-  /** Optional reference to reconcile params for property reachability. */
-  readonly reconcileTemplate?: ReconcileChildForkParams<THandle>;
-  /** Optional reference to pause sibling barrier context for property reachability. */
-  readonly pauseSiblingTemplate?: PauseSiblingBarrierContext<THandle>;
-  /** Optional reference to turn-batch barrier context for property reachability. */
-  readonly barrierContextTemplate?: TurnBatchBarrierContext<THandle>;
-  /** Optional reference to turn-batch barrier result for property reachability. */
-  readonly barrierResultTemplate?: TurnBatchBarrierResult;
-  /** Optional reference to resume entry params for property reachability. */
-  readonly resumeEntryTemplate?: ResumeSuspendedForkEntryParams<THandle>;
 }

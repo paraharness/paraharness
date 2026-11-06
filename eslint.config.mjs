@@ -32,15 +32,21 @@ function classifyTopLevelEntity(rawNode) {
  * Validates that multiple interfaces in a single file are property-referenced sub-interfaces of one root.
  *
  * Builds the directed graph of `TSPropertySignature`, `TSIndexSignature`, and `extends` references
- * across interfaces in the file and reports any interface not reachable from the root interface.
- *
+ * across interfaces in the file, rejects fake `*Template` properties, and reports any interface
+ * not reachable from the root interface.
  * @param {object[]} interfaces - Array of classified interface descriptors in the file.
  * @param {string}   filename   - Normalized file path of the current module.
  * @param {object}   context    - ESLint rule execution context.
- *
  * @returns {void}
  */
 function verifySingleRootInterface(interfaces, filename, context) {
+  for (const item of interfaces) {
+    for (const member of item.node.body?.body ?? []) {
+      if (member.type === 'TSPropertySignature' && member.key?.type === 'Identifier' && member.key.name.endsWith('Template')) {
+        context.report({ node: member, message: `Fake '*Template' property '${member.key.name}' on '${item.name}' is forbidden (Rule 1.2 & Rule 3.4).` });
+      }
+    }
+  }
   if (interfaces.length <= 1) return;
   const collectRefs = (astNode, out) => {
     if (!astNode || typeof astNode !== 'object' || astNode.type === 'TSMethodSignature') return;
@@ -58,6 +64,7 @@ function verifySingleRootInterface(interfaces, filename, context) {
     const refs = new Set();
     for (const heritage of item.node.extends ?? []) collectRefs(heritage, refs);
     for (const member of item.node.body?.body ?? []) {
+      if (member.type === 'TSPropertySignature' && member.key?.type === 'Identifier' && member.key.name.endsWith('Template')) continue;
       if (member.type === 'TSPropertySignature' || member.type === 'TSIndexSignature') collectRefs(member.typeAnnotation ?? member, refs);
     }
     const targets = [...refs].filter((ref) => ref !== item.name && byName.has(ref));
@@ -69,7 +76,7 @@ function verifySingleRootInterface(interfaces, filename, context) {
   const reachable = new Set([root.name]);
   const queue = [root.name];
   while (queue.length > 0) for (const next of edges.get(queue.shift()) ?? []) if (!reachable.has(next)) { reachable.add(next); queue.push(next); }
-  for (const item of interfaces) if (!reachable.has(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' is not a property sub-interface of '${root.name}'. Top-level interfaces must live one per file (only sub-interfaces referenced by the parent interface's properties may share a file).` });
+  for (const item of interfaces) if (!reachable.has(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' is not a property sub-interface of '${root.name}'. Top-level interfaces must live one per file (Rule 1.2).` });
 }
 
 /**
@@ -162,7 +169,14 @@ export default [
             create(context) {
               const filename = context.filename.replace(/\\/g, '/');
               return {
+                TSAsExpression(node) {
+                  if (node.typeAnnotation?.type === 'TSUnknownKeyword' || node.typeAnnotation?.type === 'TSAnyKeyword') context.report({ node, message: "Unsound 'as unknown' or 'as any' type assertion is forbidden (Rule 5.1)." });
+                },
                 Program(program) {
+                  const totalLines = context.sourceCode.lines.length;
+                  const maxLines = filename.endsWith('.test.ts') ? 400 : 250;
+                  if (totalLines > maxLines) context.report({ node: program, message: `File has ${totalLines} lines (max ${maxLines}, Rule 1.1).` });
+                  if (filename.endsWith('.test.ts')) return;
                   if (filename.endsWith('/index.ts')) {
                     for (const stmt of program.body) {
                       if (stmt.type !== 'ExportAllDeclaration' && !(stmt.type === 'ExportNamedDeclaration' && stmt.declaration === null && stmt.source !== null)) {
@@ -227,14 +241,8 @@ export default [
         },
       },
     },
-    rules: { 'harness/no-inline-comments': 'error', '@typescript-eslint/no-explicit-any': 'error', '@typescript-eslint/no-non-null-assertion': 'error', '@typescript-eslint/ban-ts-comment': 'error' },
+    rules: { 'harness/no-inline-comments': 'error', 'harness/file-separation': 'error', 'max-statements-per-line': ['error', { max: 1 }], '@typescript-eslint/no-explicit-any': 'error', '@typescript-eslint/no-non-null-assertion': 'error', '@typescript-eslint/ban-ts-comment': 'error' },
   },
-  {
-    files: ['packages/*/src/**/*.ts', 'packages/*/test/fixtures/**/*.ts'],
-    rules: { 'harness/file-separation': 'error', 'harness/require-complete-jsdoc': 'error', 'max-lines': ['error', { max: 250, skipBlankLines: false, skipComments: false }] },
-  },
-  {
-    files: ['packages/*/test/**/*.test.ts'],
-    rules: { 'max-lines': ['error', { max: 400, skipBlankLines: false, skipComments: false }] },
-  },
+  { files: ['packages/*/src/**/*.ts', 'packages/*/test/fixtures/**/*.ts'], rules: { 'harness/require-complete-jsdoc': 'error', 'max-lines': ['error', { max: 250, skipBlankLines: false, skipComments: false }] } },
+  { files: ['packages/*/test/**/*.test.ts'], rules: { 'max-lines': ['error', { max: 400, skipBlankLines: false, skipComments: false }] } },
 ];

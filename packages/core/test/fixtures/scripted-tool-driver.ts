@@ -11,7 +11,7 @@ import type { ToolExecutionResult } from '../../src/ports/tool-execution-result.
  *
  * @template THandle Runtime handle type of the active isolation scope.
  */
-export class ScriptedToolDriver<THandle = unknown> implements ToolDriver<ToolASTNode<THandle>, THandle> {
+export class ScriptedToolDriver<THandle = unknown> implements ToolDriver<ToolASTNode<unknown>, unknown> {
   /** Recorded tool invocations `(toolName, args, scopeHandle)`. */
   readonly invocations: Array<{ readonly toolName: string; readonly args: unknown; readonly scopeHandle: THandle }> = [];
   /** Optional pre-flight effect predictor callback. */
@@ -19,7 +19,7 @@ export class ScriptedToolDriver<THandle = unknown> implements ToolDriver<ToolAST
   /** Custom tool execution callback. */
   private readonly handler: (node: ToolASTNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>) => ToolExecutionResult | Promise<ToolExecutionResult>;
   /** Bound `execute` function satisfying `ToolDriver.execute`. */
-  readonly execute: (node: ToolASTNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>) => Promise<ToolExecutionResult>;
+  readonly execute: (node: ToolASTNode<unknown>, args: unknown, ctx: StepExecutionContext<unknown>) => Promise<ToolExecutionResult>;
 
   /**
    * Creates a `ScriptedToolDriver` with optional `describeEffects` and `handler` callbacks.
@@ -34,9 +34,11 @@ export class ScriptedToolDriver<THandle = unknown> implements ToolDriver<ToolAST
   }) {
     this.effectPredictor = options?.describeEffects;
     this.handler = options?.handler ?? ((node, args) => Object.freeze({ content: `executed:${node.name}:${JSON.stringify(args)}`, isError: false }));
-    this.execute = async (node: ToolASTNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> => {
-      this.invocations.push(Object.freeze({ toolName: node.name, args, scopeHandle: ctx.scopeHandle }));
-      return await this.handler(node, args, ctx);
+    this.execute = async (node: ToolASTNode<unknown>, args: unknown, ctx: StepExecutionContext<unknown>): Promise<ToolExecutionResult> => {
+      const typedNode = node as ToolASTNode<THandle>;
+      const typedCtx = ctx as StepExecutionContext<THandle>;
+      this.invocations.push(Object.freeze({ toolName: typedNode.name, args, scopeHandle: typedCtx.scopeHandle }));
+      return await this.handler(typedNode, args, typedCtx);
     };
   }
 
@@ -45,13 +47,15 @@ export class ScriptedToolDriver<THandle = unknown> implements ToolDriver<ToolAST
    *
    * Returns an empty list if no `effectPredictor` was provided.
    *
-   * @param {ToolASTNode<THandle>} node        - Passive tool AST node.
+   * @param {ToolASTNode<unknown>} node        - Passive tool AST node.
    * @param {unknown}              args        - Validated tool arguments.
-   * @param {THandle}              scopeHandle - Active scope handle.
+   * @param {unknown}              scopeHandle - Active scope handle.
    *
    * @returns {readonly ToolEffect[]} Predicted tool effects.
    */
-  describeEffects(node: ToolASTNode<THandle>, args: unknown, scopeHandle: THandle): readonly ToolEffect[] {
-    return this.effectPredictor !== undefined ? this.effectPredictor(node, args, scopeHandle) : Object.freeze([]);
+  describeEffects(node: ToolASTNode<unknown>, args: unknown, scopeHandle: unknown): readonly ToolEffect[] {
+    return this.effectPredictor !== undefined
+      ? this.effectPredictor(node as ToolASTNode<THandle>, args, scopeHandle as THandle)
+      : Object.freeze([]);
   }
 }

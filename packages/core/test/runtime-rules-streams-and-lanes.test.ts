@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type AgentContinuationFrame, BudgetApprovalSchema, type ControlPlaneAdapter, type FsGlobMatcherNode,
-  type GitWorktreeHandle, H, LaneScheduler, type LocalServiceNode, type LoopContinuationFrame,
-  type NodeHttpControlPlaneNode, ServiceSessionRegistry, type StepExecutionContext, type StreamSource,
-  type ToolEffect, type TrackerAdapter, createExecutorRegistry, createRuntime, executeAgent, executeLoop, z,
+  type AgentContinuationFrame, BudgetApprovalSchema, type ControlPlaneAdapter,
+  DEFAULT_MAX_SEALED_AGE_HOURS, type FsGlobMatcherNode, type GitWorktreeHandle, H, LaneScheduler,
+  type LocalServiceNode, type LoopContinuationFrame, type NodeHttpControlPlaneNode,
+  ServiceSessionRegistry, type StepExecutionContext, type StreamSource, type ToolEffect,
+  type TrackerAdapter, createExecutorRegistry, createRuntime, executeAgent, executeLoop, z,
 } from '../src/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import {
@@ -17,6 +18,8 @@ import { ScriptedModelDriver } from './fixtures/scripted-model-driver.js';
 import { ScriptedServiceSession } from './fixtures/scripted-service-session.js';
 import { ScriptedToolDriver } from './fixtures/scripted-tool-driver.js';
 
+type RuntimeStepContext = StepExecutionContext<GitWorktreeHandle> & { readonly _runtime: unknown };
+
 const SAMPLE_HANDLE: GitWorktreeHandle = Object.freeze({
   worktreePath: '/tmp/wt', gitDirPath: '/tmp/wt/.git', branchName: 'b1', baseRef: 'HEAD', baseBranch: 'main', unresolvedConflictPaths: Object.freeze({}),
 });
@@ -24,26 +27,25 @@ const WRITE_EFFECT_MATCHER: FsGlobMatcherNode = Object.freeze({
   type: 'fs:match-globs', id: 'match-db-writes', globs: Object.freeze(['db/**']), mode: 'any',
 });
 const SAMPLE_SERVICE_NODE: LocalServiceNode = Object.freeze({
-  type: 'node:service', id: 'act-daemon', lifecycle: 'skill', toolSchemas: Object.freeze([]),
+  type: 'node:service', id: 'act-daemon', lifecycle: 'skill',
+  toolSchemas: Object.freeze([SAMPLE_EXTRA_COMPARE_TOOL_NODE]),
   runner: SAMPLE_RUNNER_NODE, ports: Object.freeze([]), startArgv: () => Object.freeze(['node', 'daemon.js']), interactions: Object.freeze([]),
 });
 
-function makeTurn(
-  visibleText: string,
-  toolCalls: ReadonlyArray<{ id: string; name: string; argsJson: string }> = [],
-  structuredOutput?: unknown,
-  costUsd = 0.05,
-) {
+function throwUnusedRunner(): never {
+  throw new Error('unused');
+}
+
+function makeTurn(visibleText: string, toolCalls: ReadonlyArray<{ id: string; name: string; argsJson: string }> = [], structuredOutput?: unknown, costUsd = 0.05) {
   return Object.freeze({
-    wireFrame: new Uint8Array(),
-    canonical: Object.freeze({ role: 'assistant' as const, visibleText, toolCalls: Object.freeze([...toolCalls]) }),
-    structuredOutput,
-    usage: Object.freeze({ inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd }),
+    wireFrame: new Uint8Array(), canonical: Object.freeze({ role: 'assistant' as const, visibleText, toolCalls: Object.freeze([...toolCalls]) }),
+    structuredOutput, usage: Object.freeze({ inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd }),
   });
 }
 
 describe('M2 Runtime — H.rules & H.scopedRule (when.partitions, reactive when.effects, enforceBeforeStopChecks)', () => {
   it('injects when.partitions at Turn 0, deduplicates reactive when.effects in completedResults across suspension, and runs enforceBeforeStopChecks iff rule is injected and mutatesScope is true', async () => {
+    expect(DEFAULT_MAX_SEALED_AGE_HOURS).toBe(168);
     const partRule = H.scopedRule('rule-part-db').when({ partitions: ['db'] }).directive('Partition DB rule directive.').enforceBeforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE);
     const effectRule = H.scopedRule('rule-eff-write').when({ effects: WRITE_EFFECT_MATCHER }).directive('Reactive write rule directive.');
     const rulesNode = H.rules('repo-rules').global({ id: 'g1', directive: 'Global rule.' }).scoped(partRule, effectRule);
@@ -65,7 +67,7 @@ describe('M2 Runtime — H.rules & H.scopedRule (when.partitions, reactive when.
       ]),
     ]);
     let mutatesFlag = false;
-    const toolDriver = new ScriptedToolDriver({
+    const toolDriver = new ScriptedToolDriver<GitWorktreeHandle>({
       describeEffects: (_node, args) => [Object.freeze<ToolEffect>({ kind: 'fs:read', mutatesScope: mutatesFlag, attributes: { path: (args as { readonly path: string }).path } })],
       handler: () => ({ content: 'read-ok', isError: false }),
     });
@@ -74,14 +76,19 @@ describe('M2 Runtime — H.rules & H.scopedRule (when.partitions, reactive when.
       models: { 'claude:model': () => modelSusp },
       tools: { 'fs:read': toolDriver },
       effectMatchers: { 'fs:match-globs': (_m, eff) => String(eff.attributes?.['path'] ?? '').startsWith('db/') },
-      checks: { 'git:clean-working-tree': async () => { cleanCheckCalls += 1; return { ok: true, deficits: [] }; } },
+      checks: {
+        'git:clean-working-tree': async () => {
+          cleanCheckCalls += 1;
+          return { ok: true, deficits: [] };
+        },
+      },
     });
 
-    const ctxSusp = Object.freeze({
+    const ctxSusp: RuntimeStepContext = Object.freeze({
       runId: 'r-rules', stepExecId: 's-susp', scopeHandle: SAMPLE_HANDLE, activePartitions: ['db'],
-      activeLeases: [], observedEffects: [], registry, resolveEnv: () => '', getRunner: () => { throw new Error('unused'); },
+      activeLeases: [], observedEffects: [], registry, resolveEnv: () => '', getRunner: throwUnusedRunner,
       recordEffects: () => undefined, _runtime: { ledgerStore },
-    }) as unknown as StepExecutionContext<GitWorktreeHandle>;
+    });
 
     await expect(executeAgent(agent, { id: 'k1', title: 'Test' }, ctxSusp)).rejects.toThrow(/suspended on prerequisites/);
 
@@ -89,7 +96,9 @@ describe('M2 Runtime — H.rules & H.scopedRule (when.partitions, reactive when.
     expect(turn0Frame?.canonical.visibleText).toContain('Partition DB rule directive.');
     const suspAgentFrame = ledgerStore.steps.get('s-susp')?.continuationStack[0] as AgentContinuationFrame | undefined;
     expect(suspAgentFrame?.injectedScopedRuleIds).toEqual(['rule-part-db', 'rule-eff-write']);
-    if (suspAgentFrame?.pauseState.kind !== 'prerequisite-wait') throw new Error('Expected prerequisite-wait pauseState');
+    if (suspAgentFrame?.pauseState.kind !== 'prerequisite-wait') {
+      throw new Error('Expected prerequisite-wait pauseState');
+    }
     expect(suspAgentFrame.pauseState.pendingToolBatch.completedResults).toEqual([
       { callId: 'c1', content: 'read-ok\n[SCOPED_RULE: rule-eff-write]\nReactive write rule directive.', isError: false },
     ]);
@@ -101,10 +110,10 @@ describe('M2 Runtime — H.rules & H.scopedRule (when.partitions, reactive when.
       ]),
       makeTurn(JSON.stringify({ done: true }), [], { done: true }),
     ]);
-    const ctxReadOnly = Object.freeze({
+    const ctxReadOnly: RuntimeStepContext = Object.freeze({
       ...ctxSusp, stepExecId: 's-readonly',
       registry: createExecutorRegistry(registry, { models: { 'claude:model': () => modelReadOnly } }), _runtime: { ledgerStore },
-    }) as unknown as StepExecutionContext<GitWorktreeHandle>;
+    });
 
     const outReadOnly = await executeAgent(agent, { id: 'k2', title: 'Readonly' }, ctxReadOnly);
     expect(outReadOnly).toEqual({ done: true });
@@ -118,10 +127,10 @@ describe('M2 Runtime — H.rules & H.scopedRule (when.partitions, reactive when.
       makeTurn('mutating call', [{ id: 'm1', name: 'fs_read', argsJson: JSON.stringify({ path: 'db/mut.sql' }) }]),
       makeTurn(JSON.stringify({ done: true }), [], { done: true }),
     ]);
-    const ctxMutating = Object.freeze({
+    const ctxMutating: RuntimeStepContext = Object.freeze({
       ...ctxSusp, stepExecId: 's-mutating',
       registry: createExecutorRegistry(registry, { models: { 'claude:model': () => modelMutating } }), _runtime: { ledgerStore },
-    }) as unknown as StepExecutionContext<GitWorktreeHandle>;
+    });
 
     await executeAgent(agent, { id: 'k3', title: 'Mutating' }, ctxMutating);
     expect(cleanCheckCalls).toBe(1);
@@ -141,22 +150,39 @@ describe('M2 Runtime — H.stream, H.harness (.onSignal().notify, .expose) & H.l
       .emitSignal(webhookSig, (ev: unknown) => ({ pr: (ev as { readonly prNumber: number }).prNumber }));
 
     const controlPlaneNode: NodeHttpControlPlaneNode = Object.freeze({ type: 'node:http-control-plane', id: 'http-cp', port: 0 });
-    let streamClosed = false, cpClosed = false;
+    let streamClosed = false;
+    let cpClosed = false;
     let pushedEventHandler: ((raw: { readonly prNumber: number; readonly merged: boolean }) => Promise<void>) | undefined;
 
     const streamSourceDriver: StreamSource<{ readonly prNumber: number; readonly merged: boolean }> = {
-      async subscribe(onEvent) { pushedEventHandler = onEvent; return { async close() { streamClosed = true; } }; },
+      async subscribe(onEvent) {
+        pushedEventHandler = onEvent;
+        return { async close() {
+          streamClosed = true;
+        } };
+      },
     };
     const cpAdapter: ControlPlaneAdapter = {
-      async start(controller) { await controller.getActiveRuns(); return { async close() { cpClosed = true; } }; },
+      async start(controller) {
+        await controller.getActiveRuns();
+        return { async close() {
+          cpClosed = true;
+        } };
+      },
     };
 
     const itemSchema = z.object({ id: z.string(), title: z.string(), deps: z.array(z.string()).default([]), shouldFail: z.boolean().optional(), shouldSuspend: z.boolean().optional() });
     const stepCmd = H.command('tracker-step', {
       input: itemSchema, output: z.object({ ok: z.boolean() }),
       fn: async (input: z.output<typeof itemSchema>) => {
-        if (input.shouldFail === true) throw new Error('Step failed');
-        if (input.shouldSuspend === true) { const e = new Error('Suspended') as Error & { code?: string }; e.code = 'HARNESS_STEP_SUSPENDED'; throw e; }
+        if (input.shouldFail === true) {
+          throw new Error('Step failed');
+        }
+        if (input.shouldSuspend === true) {
+          const err = new Error('Suspended') as Error & { code?: string };
+          err.code = 'HARNESS_STEP_SUSPENDED';
+          throw err;
+        }
         return { ok: true };
       },
     });
@@ -174,27 +200,26 @@ describe('M2 Runtime — H.stream, H.harness (.onSignal().notify, .expose) & H.l
 
     const externalTransitions: Array<{ readonly itemKey: string; readonly state: string }> = [];
     const trackerAdapter: TrackerAdapter<{ readonly id: string; readonly title: string; readonly ready: boolean }, string> = {
-      async poll() { return [{ id: 'iss-skip', title: 'Draft', ready: false }, { id: 'iss-1', title: 'Ready Issue', ready: true }]; },
-      async setExternalState(itemKey, state) { externalTransitions.push({ itemKey, state }); },
+      async poll() {
+        return [{ id: 'iss-skip', title: 'Draft', ready: false }, { id: 'iss-1', title: 'Ready Issue', ready: true }];
+      },
+      async setExternalState(itemKey, state) {
+        externalTransitions.push({ itemKey, state });
+      },
     };
 
     const scope = new ScriptedBranchableScope();
     const registry = createExecutorRegistry({
-      ledgers: { 'sqlite:ledger': () => ledgerStore },
-      scopes: { 'git:cow-worktree': () => scope as never },
-      streamSources: { 'github:webhook-stream': () => streamSourceDriver },
-      controlPlanes: { 'node:http-control-plane': () => cpAdapter },
+      ledgers: { 'sqlite:ledger': () => ledgerStore }, scopes: { 'git:cow-worktree': () => scope as never },
+      streamSources: { 'github:webhook-stream': () => streamSourceDriver }, controlPlanes: { 'node:http-control-plane': () => cpAdapter },
       trackers: { 'github:issues': () => trackerAdapter as never },
     });
 
     const harness = H.harness('stream-harness')
       .ledger(SAMPLE_LEDGER_NODE).streams(stream.toAST()).lanes(lane)
-      .onSignal(webhookSig, ($s) => $s.notify(notifyHuman.toAST(), (p: { readonly pr: number }) => `PR #${String(p.pr)} merged`))
-      .expose(controlPlaneNode);
+      .onSignal(webhookSig, ($s) => $s.notify(notifyHuman.toAST(), (p: { readonly pr: number }) => `PR #${String(p.pr)} merged`)).expose(controlPlaneNode);
 
-    const runtime = createRuntime(harness, {
-      registry, humanAdaptersById: new Map([['ops-pager', humanAdapter], ['budget-owner', humanAdapter]]),
-    });
+    const runtime = createRuntime(harness, { registry, humanAdaptersById: new Map([['ops-pager', humanAdapter], ['budget-owner', humanAdapter]]) });
 
     await runtime.start();
     await pushedEventHandler?.({ prNumber: 10, merged: false });
@@ -205,49 +230,35 @@ describe('M2 Runtime — H.stream, H.harness (.onSignal().notify, .expose) & H.l
     expect(streamClosed).toBe(true);
     expect(cpClosed).toBe(true);
 
-    const scheduler = new LaneScheduler({
-      lane: lane.toAST(), registry, env: {}, ledgerStore, humanAdaptersById: new Map([['budget-owner', humanAdapter]]),
-    });
-
-    const polled = await scheduler.pollTrackerOnce();
-    expect(polled.map((p) => p.itemKey)).toEqual(['iss-1']);
+    const scheduler = new LaneScheduler({ lane: lane.toAST(), registry, env: {}, ledgerStore, humanAdaptersById: new Map([['budget-owner', humanAdapter]]) });
+    expect((await scheduler.pollTrackerOnce()).map((p) => p.itemKey)).toEqual(['iss-1']);
     await scheduler.enqueueItem({ input: { id: 'iss-wait', title: 'Waiter', deps: ['iss-fail'] } });
     await scheduler.enqueueItem({ input: { id: 'iss-fail', title: 'Failing', deps: [], shouldFail: true } });
-
     await scheduler.scheduleNextReadyRuns();
     await scheduler.enqueueItem({ input: { id: 'iss-susp', title: 'Suspending', deps: [], shouldSuspend: true } });
     await scheduler.scheduleNextReadyRuns();
-
     humanAdapter.enqueueDecision({ approved: false });
     await scheduler.enforceRunBudget('run:tracker-lane:iss-susp', 5.0);
 
     expect(externalTransitions).toEqual([
-      { itemKey: 'iss-1', state: 'queued' },
-      { itemKey: 'iss-wait', state: 'needs-human' },
-      { itemKey: 'iss-fail', state: 'queued' },
-      { itemKey: 'iss-1', state: 'in-progress' },
-      { itemKey: 'iss-1', state: 'pr-open' },
-      { itemKey: 'iss-fail', state: 'in-progress' },
-      { itemKey: 'iss-fail', state: 'errored' },
-      { itemKey: 'iss-fail', state: 'abandoned' },
-      { itemKey: 'iss-susp', state: 'queued' },
-      { itemKey: 'iss-wait', state: 'abandoned' },
-      { itemKey: 'iss-susp', state: 'in-progress' },
-      { itemKey: 'iss-susp', state: 'needs-human' },
+      { itemKey: 'iss-1', state: 'queued' }, { itemKey: 'iss-wait', state: 'needs-human' }, { itemKey: 'iss-fail', state: 'queued' },
+      { itemKey: 'iss-1', state: 'in-progress' }, { itemKey: 'iss-1', state: 'pr-open' }, { itemKey: 'iss-fail', state: 'in-progress' },
+      { itemKey: 'iss-fail', state: 'errored' }, { itemKey: 'iss-fail', state: 'abandoned' }, { itemKey: 'iss-susp', state: 'queued' },
+      { itemKey: 'iss-wait', state: 'abandoned' }, { itemKey: 'iss-susp', state: 'in-progress' }, { itemKey: 'iss-susp', state: 'needs-human' },
       { itemKey: 'iss-susp', state: 'cancelled' },
     ]);
   });
 });
 
 describe('M2 Runtime — Mixed-Turn Tool Batching & H.loop Step-Boundary Isolation', () => {
-  it('drains (1..m) regular tools, capability .fork() (m+1..p), and trailing (p+1..k) tools into a single role: tool wire frame', async () => {
+  it('drains (1..m) regular tools, contiguous capability .fork() (m+1..p) with precedingCompletedResults & siblingForkCallIds, and trailing (p+1..k) tools into a single role: tool wire frame', async () => {
     const childWorker = H.agent<GitWorktreeHandle>('mixed-child').model(SAMPLE_MODEL_NODE).input(z.object({ task: z.string() })).output(z.object({ childResult: z.string() }));
     const parentAgent = H.agent<GitWorktreeHandle>('mixed-parent')
       .model(SAMPLE_MODEL_NODE).tools(SAMPLE_DECLARED_TOOL_NODE, SAMPLE_EXTRA_COMPARE_TOOL_NODE)
       .input(z.object({ goal: z.string() })).output(z.object({ summary: z.string() }))
       .capabilities(($c) =>
         $c.fork('runSubtask', childWorker, ($f) =>
-          $f.requestSchema(z.object({ task: z.string() })).mapInput((_p: { readonly goal: string }, r: { readonly task: string }) => r),
+          $f.requestSchema(z.object({ task: z.string() })).mapInput((_p: { readonly goal: string }, r: { readonly task: string }) => r).historyMode('clone-transcript'),
         ),
       )
       .toAST();
@@ -257,19 +268,23 @@ describe('M2 Runtime — Mixed-Turn Tool Batching & H.loop Step-Boundary Isolati
     await ledgerStore.recordStepStart({ runId: 'r-mixed', stepExecId: 's-mixed', stepId: 'step-1', inputMsgId: null, continuationStack: [] });
 
     const scope = new ScriptedBranchableScope();
-    const rootHandle = await scope.acquireRoot('r-mixed');
+    await scope.acquireRoot('r-mixed');
     const executionOrder: string[] = [];
     const modelDriver = new ScriptedModelDriver([
       makeTurn('mixed batch turn', [
         { id: 'call-1-pre', name: 'fs_read', argsJson: JSON.stringify({ path: 'a.txt' }) },
-        { id: 'call-2-fork', name: 'runSubtask', argsJson: JSON.stringify({ forkId: 'f-mid', task: 'middle' }) },
+        { id: 'call-2a-fork', name: 'runSubtask', argsJson: JSON.stringify({ forkId: 'f-mid-1', task: 'middle-1' }) },
+        { id: 'call-2b-fork', name: 'runSubtask', argsJson: JSON.stringify({ forkId: 'f-mid-2', task: 'middle-2' }) },
         { id: 'call-3-post', name: 'git_compare', argsJson: JSON.stringify({ left: 'main', right: 'HEAD' }) },
       ]),
-      makeTurn(JSON.stringify({ summary: 'all-three-done' }), [], { summary: 'all-three-done' }),
+      makeTurn(JSON.stringify({ summary: 'all-four-done' }), [], { summary: 'all-four-done' }),
     ]);
 
-    const toolDriver = new ScriptedToolDriver({
-      handler: (node) => { executionOrder.push(`tool:${node.name}`); return { content: `out:${node.name}`, isError: false }; },
+    const toolDriver = new ScriptedToolDriver<GitWorktreeHandle>({
+      handler: (node) => {
+        executionOrder.push(`tool:${node.name}`);
+        return { content: `out:${node.name}`, isError: false };
+      },
     });
     const registry = createExecutorRegistry({
       models: { 'claude:model': () => modelDriver },
@@ -277,29 +292,36 @@ describe('M2 Runtime — Mixed-Turn Tool Batching & H.loop Step-Boundary Isolati
       scopes: { 'git:cow-worktree': () => scope as never },
     });
 
-    const ctx = Object.freeze({
-      runId: 'r-mixed', stepExecId: 's-mixed', scopeHandle: rootHandle as unknown as GitWorktreeHandle,
+    const ctx: RuntimeStepContext = Object.freeze({
+      runId: 'r-mixed', stepExecId: 's-mixed', scopeHandle: SAMPLE_HANDLE,
       scopeNode: SAMPLE_TIER3_SCOPE_NODE, activePartitions: [], activeLeases: [], observedEffects: [],
-      registry, resolveEnv: () => '', getRunner: () => { throw new Error('unused'); }, recordEffects: () => undefined,
+      registry, resolveEnv: () => '', getRunner: throwUnusedRunner, recordEffects: () => undefined,
       _runtime: {
         ledgerStore,
-        executeChildStep: async () => { executionOrder.push('fork:runSubtask'); return { status: 'completed' as const, output: { childResult: 'fork-ok' }, continuationStack: [] }; },
+        executeChildStep: async () => {
+          executionOrder.push('fork:runSubtask');
+          return { status: 'completed' as const, output: { childResult: 'fork-ok' }, continuationStack: [] };
+        },
       },
-    }) as unknown as StepExecutionContext<GitWorktreeHandle>;
+    });
 
     const out = await executeAgent(parentAgent, { goal: 'ship' }, ctx);
-    expect(out).toEqual({ summary: 'all-three-done' });
-    expect(executionOrder).toEqual(['tool:fs_read', 'fork:runSubtask', 'tool:git_compare']);
+    expect(out).toEqual({ summary: 'all-four-done' });
+    expect(executionOrder).toEqual(['tool:fs_read', 'fork:runSubtask', 'fork:runSubtask', 'tool:git_compare']);
+    expect(modelDriver.recordedForks[0]?.ctx.precedingCompletedResults).toEqual([
+      { callId: 'call-1-pre', content: 'out:fs_read', isError: false },
+    ]);
+    expect(modelDriver.recordedForks[0]?.ctx.siblingForkCallIds).toEqual(['call-2a-fork', 'call-2b-fork']);
 
     const toolFrame = ledgerStore.frames.get('msg:s-mixed:tools:1');
     expect(toolFrame?.canonical.role).toBe('tool');
-    expect(toolFrame?.canonical.toolResults?.map((r) => r.callId)).toEqual(['call-1-pre', 'call-2-fork', 'call-3-post']);
+    expect(toolFrame?.canonical.toolResults?.map((r) => r.callId)).toEqual(['call-1-pre', 'call-2a-fork', 'call-2b-fork', 'call-3-post']);
   });
 
-  it('quiesces skill daemons on .act() -> .evaluate() boundary, isolates evaluator activeSkillIds from loop-frame, and counts quantitative tripwires strictly on .act() turns', async () => {
+  it('registers static Turn-0 skill/service tools, dispatches unlocked service tools, quiesces daemons on .act() -> .evaluate(), and counts quantitative tripwires strictly on .act() turns', async () => {
     const actSkill = H.skill('act-skill').description('Act daemon skill').instructions('Use daemon').unlocksServices(SAMPLE_SERVICE_NODE);
     const evalSkill = H.skill('eval-skill').description('Evaluator skill').instructions('Eval only').unlocksTools(SAMPLE_DECLARED_TOOL_NODE);
-    const strictActPolicy = H.policy<GitWorktreeHandle>('act-policy').maxTurns(2);
+    const strictActPolicy = H.policy<GitWorktreeHandle>('act-policy').maxTurns(3);
 
     const actAgent = H.agent<GitWorktreeHandle>('loop-worker').model(SAMPLE_MODEL_NODE).policy(strictActPolicy).skills(actSkill).input(z.object({ id: z.string() })).output(z.object({ code: z.string() }));
     const evalAgent = H.agent<GitWorktreeHandle>('loop-evaluator').model(SAMPLE_MODEL_NODE).skills(evalSkill).input(z.object({ code: z.string() })).output(z.object({ passed: z.boolean() }));
@@ -315,18 +337,24 @@ describe('M2 Runtime — Mixed-Turn Tool Batching & H.loop Step-Boundary Isolati
       .returnOutputFrom('act-step')
       .toAST();
 
-    const daemonSession = new ScriptedServiceSession('act-daemon');
+    const daemonSession = new ScriptedServiceSession('act-daemon', [SAMPLE_EXTRA_COMPARE_TOOL_NODE as never]);
     let daemonRunningAtEvalStart: boolean | undefined;
     const modelDriver = new ScriptedModelDriver([
-      makeTurn('activate act skill', [{ id: 'a1', name: 'activateSkill', argsJson: JSON.stringify({ skillId: 'act-skill' }) }], undefined, 0.1),
+      makeTurn('activate act skill and invoke service tool', [
+        { id: 'a1', name: 'activateSkill', argsJson: JSON.stringify({ skillId: 'act-skill' }) },
+        { id: 'a2', name: 'git_compare', argsJson: JSON.stringify({ left: 'main', right: 'HEAD' }) },
+      ], undefined, 0.1),
       makeTurn(JSON.stringify({ code: 'v1' }), [], { code: 'v1' }, 0.1),
       makeTurn('activate eval skill', [{ id: 'e1', name: 'activateSkill', argsJson: JSON.stringify({ skillId: 'eval-skill' }) }], undefined, 0.2),
       makeTurn('use eval tool', [{ id: 'e2', name: 'fs_read', argsJson: JSON.stringify({ path: 'check.ts' }) }], undefined, 0.2),
       makeTurn(JSON.stringify({ passed: true }), [], { passed: true }, 0.2),
     ]);
 
-    const toolDriver = new ScriptedToolDriver({
-      handler: () => { daemonRunningAtEvalStart = daemonSession.running; return { content: 'checked', isError: false }; },
+    const toolDriver = new ScriptedToolDriver<GitWorktreeHandle>({
+      handler: () => {
+        daemonRunningAtEvalStart = daemonSession.running;
+        return { content: 'checked', isError: false };
+      },
     });
     const serviceRegistry = new ServiceSessionRegistry();
     const ledgerStore = new InMemoryLedgerStore();
@@ -336,17 +364,20 @@ describe('M2 Runtime — Mixed-Turn Tool Batching & H.loop Step-Boundary Isolati
     const registry = createExecutorRegistry({
       models: { 'claude:model': () => modelDriver },
       tools: { 'fs:read': toolDriver },
-      services: { 'node:service': async () => daemonSession },
+      services: { 'node:service': async () => daemonSession as never },
     });
 
-    const ctx = Object.freeze({
+    const ctx: RuntimeStepContext = Object.freeze({
       runId: 'r-loop', stepExecId: 's-loop', scopeHandle: SAMPLE_HANDLE, activePartitions: [], activeLeases: [], observedEffects: [],
-      registry, resolveEnv: () => '', getRunner: () => { throw new Error('unused'); }, recordEffects: () => undefined,
+      registry, resolveEnv: () => '', getRunner: throwUnusedRunner, recordEffects: () => undefined,
       _runtime: { ledgerStore, serviceRegistry },
-    }) as unknown as StepExecutionContext<GitWorktreeHandle>;
+    });
 
     const result = await executeLoop(loopNode, { id: 'item-1' }, ctx);
     expect(result).toEqual({ code: 'v1' });
+    expect(modelDriver.recordedRequests[0]?.wireToolSchemas?.map((t) => t.name)).toEqual(['activateSkill', 'completeSkill', 'git_compare']);
+    expect(modelDriver.recordedRequests[0]?.wireToolSchemas?.find((t) => t.name === 'git_compare')?.description).toContain('[Requires active skill: act-skill]');
+    expect(daemonSession.toolCalls).toEqual([{ toolName: 'git_compare', args: { left: 'main', right: 'HEAD' } }]);
     expect(daemonRunningAtEvalStart).toBe(false);
     expect(daemonSession.stopCount).toBe(1);
 
