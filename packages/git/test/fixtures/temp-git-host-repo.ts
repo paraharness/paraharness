@@ -2,7 +2,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runGitCommand } from '../../src/executors/internal/git-cli-runner.js';
-import type { TempGitHostRepoHandle } from './temp-git-host-repo-handle.js';
+import type {
+  TempGitCommitOptions,
+  TempGitHostRepoHandle,
+} from './temp-git-host-repo-handle.js';
 
 /**
  * Creates a real local Git repository (`main` branch) paired with a local bare `origin` remote.
@@ -40,7 +43,7 @@ export async function createTempGitHostRepo(
   const commitFiles = async (
     files: Readonly<Record<string, string>>,
     message: string,
-    pushOrigin = false,
+    options?: TempGitCommitOptions,
   ): Promise<string> => {
     for (const [relPath, content] of Object.entries(files)) {
       const absPath = path.join(repoPath, relPath);
@@ -50,7 +53,7 @@ export async function createTempGitHostRepo(
     await runGitCommand({ cwd: repoPath, args: ['add', '-A'] });
     await runGitCommand({ cwd: repoPath, args: ['commit', '-m', message] });
     const sha = (await runGitCommand({ cwd: repoPath, args: ['rev-parse', 'HEAD'] })).stdout.trim();
-    if (pushOrigin) {
+    if (options?.pushOrigin) {
       const branch = (await runGitCommand({ cwd: repoPath, args: ['symbolic-ref', '--short', 'HEAD'] })).stdout.trim();
       await runGitCommand({ cwd: repoPath, args: ['push', '-u', 'origin', `${branch}:refs/heads/${branch}`] });
       await runGitCommand({ cwd: repoPath, args: ['fetch', 'origin'] });
@@ -58,7 +61,7 @@ export async function createTempGitHostRepo(
     return sha;
   };
 
-  const initialCommitSha = await commitFiles(defaultSeed, 'chore: initial commit', true);
+  const initialCommitSha = await commitFiles(defaultSeed, 'chore: initial commit', { pushOrigin: true });
 
   return Object.freeze<TempGitHostRepoHandle>({
     rootTmpDir,

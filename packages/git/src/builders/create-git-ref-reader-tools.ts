@@ -1,11 +1,15 @@
 import {
   extractAST,
-  z,
   type GitRefReaderToolNode,
   type GitWorktreeHandle,
   type MaybeBuilder,
   type NodeRunnerNode,
 } from '@harness-dsl/core';
+import {
+  DiffRefsInputSchema,
+  ListRefFilesInputSchema,
+  ReadRefFileInputSchema,
+} from '../schemas/git-receipts.schema.js';
 
 /**
  * Creates the read-only git object store inspection tool bundle (`git.refReaderTools(runner)`).
@@ -25,10 +29,7 @@ export function createGitRefReaderTools(
     type: 'git:ref-reader-tool',
     name: 'readRefFile',
     description: 'Reads the contents of a repository-relative file at a specified git ref or commit SHA.',
-    inputSchema: z.object({
-      ref: z.string(),
-      path: z.string(),
-    }),
+    inputSchema: ReadRefFileInputSchema,
     effectTracking: 'declared',
     runner: runnerNode,
   });
@@ -36,11 +37,7 @@ export function createGitRefReaderTools(
     type: 'git:ref-reader-tool',
     name: 'diffRefs',
     description: 'Computes the unified git diff between two git refs or commit SHAs.',
-    inputSchema: z.object({
-      fromRef: z.string(),
-      toRef: z.string(),
-      paths: z.array(z.string()).optional(),
-    }),
+    inputSchema: DiffRefsInputSchema,
     effectTracking: 'declared',
     runner: runnerNode,
   });
@@ -48,10 +45,7 @@ export function createGitRefReaderTools(
     type: 'git:ref-reader-tool',
     name: 'listRefFiles',
     description: 'Lists tracked file paths inside the tree of a specified git ref or commit SHA.',
-    inputSchema: z.object({
-      ref: z.string(),
-      prefix: z.string().optional(),
-    }),
+    inputSchema: ListRefFilesInputSchema,
     effectTracking: 'declared',
     runner: runnerNode,
   });

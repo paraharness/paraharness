@@ -6,6 +6,7 @@ import { copyFileCowOrValue } from './file-digest-and-globs.js';
 import {
   readHarnessMeta,
   runGitCommand,
+  withHostWorktreeLock,
   writeHarnessMeta,
 } from './git-cli-runner.js';
 import { synthesizeWorkingTreeCommitOverBase } from './git-worktree-materialize-merge.js';
@@ -71,11 +72,6 @@ export async function gitWorktreeForkChild(
   const safeForkId = forkId.replace(/[^a-zA-Z0-9._-]/g, '_');
   const worktreePath = path.join(baseDir, 'forks', runId, safeForkId);
   await rm(worktreePath, { recursive: true, force: true });
-  await runGitCommand({
-    cwd: parent.worktreePath,
-    args: ['worktree', 'prune'],
-    allowNonZeroExit: true,
-  });
   await mkdir(path.dirname(worktreePath), { recursive: true });
   const parentHeadResult = await runGitCommand({
     cwd: parent.worktreePath,
@@ -83,16 +79,23 @@ export async function gitWorktreeForkChild(
   });
   const parentHeadSha = parentHeadResult.stdout.trim();
   const parentMeta = await readHarnessMeta(parent.gitDirPath);
-  await runGitCommand({
-    cwd: parent.worktreePath,
-    args: [
-      'worktree',
-      'add',
-      '--detach',
-      '--force',
-      worktreePath,
-      parentHeadSha,
-    ],
+  await withHostWorktreeLock(parent.worktreePath, async (): Promise<void> => {
+    await runGitCommand({
+      cwd: parent.worktreePath,
+      args: ['worktree', 'prune'],
+      allowNonZeroExit: true,
+    });
+    await runGitCommand({
+      cwd: parent.worktreePath,
+      args: [
+        'worktree',
+        'add',
+        '--detach',
+        '--force',
+        worktreePath,
+        parentHeadSha,
+      ],
+    });
   });
   const gitDirResult = await runGitCommand({
     cwd: worktreePath,
@@ -170,22 +173,24 @@ export async function gitWorktreeReleaseAndPinRef(
     recursive: true,
     force: true,
   });
-  await runGitCommand({
-    cwd: commonGitDir,
-    args: [
-      '--git-dir',
-      commonGitDir,
-      'worktree',
-      'remove',
-      '--force',
-      handle.worktreePath,
-    ],
-    allowNonZeroExit: true,
-  });
-  await rm(handle.worktreePath, { recursive: true, force: true });
-  await runGitCommand({
-    cwd: commonGitDir,
-    args: ['--git-dir', commonGitDir, 'worktree', 'prune'],
-    allowNonZeroExit: true,
+  await withHostWorktreeLock(commonGitDir, async (): Promise<void> => {
+    await runGitCommand({
+      cwd: commonGitDir,
+      args: [
+        '--git-dir',
+        commonGitDir,
+        'worktree',
+        'remove',
+        '--force',
+        handle.worktreePath,
+      ],
+      allowNonZeroExit: true,
+    });
+    await rm(handle.worktreePath, { recursive: true, force: true });
+    await runGitCommand({
+      cwd: commonGitDir,
+      args: ['--git-dir', commonGitDir, 'worktree', 'prune'],
+      allowNonZeroExit: true,
+    });
   });
 }

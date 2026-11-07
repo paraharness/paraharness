@@ -116,12 +116,14 @@ export async function collectCandidateBoundaryTests(
  *
  * @param {CrossVerifierBranchCandidate<GitWorktreeHandle>} target     - Target candidate branch receiving tests.
  * @param {ReadonlyMap<string, string>}                     testsToRun - Boundary test files mapped to source content.
+ * @param {AbortSignal}                                     [signal]   - Optional cancellation signal forwarded to child processes.
  *
  * @returns {Promise<Record<string, unknown>>} Cross-test report for `target`.
  */
 export async function runTransplantedTestsOnTarget(
   target: CrossVerifierBranchCandidate<GitWorktreeHandle>,
   testsToRun: ReadonlyMap<string, string>,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   if (testsToRun.size === 0) {
     return { passedCrossTests: 0, failedCrossTests: 0, crossTestDeficits: [], transplantedTestFiles: [] };
@@ -134,6 +136,7 @@ export async function runTransplantedTestsOnTarget(
   const transplantedTestFiles: string[] = [];
   try {
     for (const [relPath, content] of testsToRun) {
+      signal?.throwIfAborted();
       transplantedTestFiles.push(relPath);
       const absPath = path.join(handle.worktreePath, relPath);
       await mkdir(path.dirname(absPath), { recursive: true });
@@ -141,7 +144,7 @@ export async function runTransplantedTestsOnTarget(
       const nodeArgs = relPath.endsWith('.ts') ? ['--experimental-strip-types', absPath] : [absPath];
       const env = buildIsolatedWorktreeGitEnv(handle.worktreePath);
       const errMsg = await new Promise<string | undefined>((resolve) => {
-        execFile(process.execPath, nodeArgs, { cwd: handle.worktreePath, env }, (err, stdout, stderr) => {
+        execFile(process.execPath, nodeArgs, { cwd: handle.worktreePath, env, signal }, (err, stdout, stderr) => {
           resolve(err === null ? undefined : (stderr || stdout || err.message).trim());
         });
       });
@@ -164,12 +167,14 @@ export async function runTransplantedTestsOnTarget(
  *
  * @param {GitPublicSurfaceCrossTesterNode<unknown>}                       node       - Public-surface cross-tester AST node.
  * @param {ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>} candidates - Surviving speculative candidate branches.
+ * @param {AbortSignal}                                                    [signal]   - Optional cancellation signal forwarded to child processes.
  *
  * @returns {Promise<Readonly<Record<number, unknown>>>} Validated per-branch cross-testing report indexed by `branchIndex`.
  */
 export async function runPublicSurfaceCrossVerification(
   node: GitPublicSurfaceCrossTesterNode<unknown>,
   candidates: ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>,
+  signal?: AbortSignal,
 ): Promise<Readonly<Record<number, unknown>>> {
   const isBoundaryPath = compileBoundaryGlobMatcher(node);
   const testsByBranch = new Map<number, ReadonlyMap<string, string>>();
@@ -183,7 +188,7 @@ export async function runPublicSurfaceCrossVerification(
       if (sourceIdx === target.branchIndex) continue;
       for (const [relPath, content] of testMap) mergedTests.set(relPath, content);
     }
-    const rawReport = await runTransplantedTestsOnTarget(target, mergedTests);
+    const rawReport = await runTransplantedTestsOnTarget(target, mergedTests, signal);
     reports[target.branchIndex] = node.reportSchema.parse(rawReport);
   }
   return Object.freeze(reports);
@@ -232,7 +237,7 @@ export async function runEvalCommandInSandboxedCandidate(
     const bin = typeof command === 'string' ? 'sh' : (command[0] ?? 'true');
     const args = typeof command === 'string' ? ['-c', command] : command.slice(1);
     return await new Promise<Record<string, unknown>>((resolve) => {
-      execFile(bin, args, { cwd, env }, (err, stdout, stderr) => {
+      execFile(bin, args, { cwd, env, signal: ctx.signal }, (err, stdout, stderr) => {
         const exitCode = resolveExecFileExitCode(err);
         resolve({ exitCode, stdout, stderr });
       });

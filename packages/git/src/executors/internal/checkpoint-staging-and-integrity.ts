@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { lstat, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { GitWorktreeHandle } from '@harness-dsl/core';
+import type { HarnessMetaRecord } from '../../schemas/git-receipts.schema.js';
 import type {
   GitCheckpointPayload,
   OversizedUntrackedBlobRecord,
@@ -31,7 +33,7 @@ export async function stageCheckpointTreeAndOversizedBlobs(
   maxUntrackedBytes: number,
 ): Promise<StagedCheckpointTreeResult> {
   const headSha = (await runGitCommand({ cwd: handle.worktreePath, args: ['rev-parse', 'HEAD'] })).stdout.trim();
-  const tmpIndex = path.join(handle.gitDirPath, `harness-ckpt-idx.${process.pid}.${Date.now()}`);
+  const tmpIndex = path.join(handle.gitDirPath, `harness-ckpt-idx.${process.pid}.${randomUUID()}`);
   const toAdd: string[] = [];
   const toRemove: string[] = [];
   const oversized: Record<string, OversizedUntrackedBlobRecord> = {};
@@ -62,6 +64,79 @@ export async function stageCheckpointTreeAndOversizedBlobs(
 }
 
 /**
+ * Compares two `Readonly<Record<string, string>>` maps for exact key and value equality.
+ *
+ * @param {Readonly<Record<string, string>>} left  - First string map.
+ * @param {Readonly<Record<string, string>>} right - Second string map.
+ *
+ * @returns {boolean} `true` when both maps contain the exact same keys and values.
+ */
+function isStringRecordEqual(
+  left: Readonly<Record<string, string>>,
+  right: Readonly<Record<string, string>>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
+}
+
+/**
+ * Compares two `HarnessMetaRecord` instances for structural equality without `JSON.stringify` key-order sensitivity.
+ *
+ * @param {HarnessMetaRecord} left  - Current metadata record read from disk.
+ * @param {HarnessMetaRecord} right - Baseline metadata record stored in the checkpoint.
+ *
+ * @returns {boolean} `true` when both metadata records are structurally identical.
+ */
+function isHarnessMetaEqual(
+  left: HarnessMetaRecord,
+  right: HarnessMetaRecord,
+): boolean {
+  if (
+    left.baseRef !== right.baseRef ||
+    left.baseBranch !== right.baseBranch ||
+    left.branchName !== right.branchName ||
+    left.pendingParentHeadSha !== right.pendingParentHeadSha
+  ) {
+    return false;
+  }
+  if (!isStringRecordEqual(left.unresolvedConflictPaths, right.unresolvedConflictPaths)) {
+    return false;
+  }
+  if ((left.inFlightMerge === undefined) !== (right.inFlightMerge === undefined)) {
+    return false;
+  }
+  if (left.inFlightMerge !== undefined && right.inFlightMerge !== undefined) {
+    if (
+      left.inFlightMerge.targetHeadSha !== right.inFlightMerge.targetHeadSha ||
+      left.inFlightMerge.mergedTreeSha !== right.inFlightMerge.mergedTreeSha ||
+      left.inFlightMerge.priorTreeSha !== right.inFlightMerge.priorTreeSha ||
+      !isStringRecordEqual(
+        left.inFlightMerge.unresolvedConflictPaths,
+        right.inFlightMerge.unresolvedConflictPaths,
+      )
+    ) {
+      return false;
+    }
+  }
+  if ((left.inFlightCommitAndPush === undefined) !== (right.inFlightCommitAndPush === undefined)) {
+    return false;
+  }
+  if (left.inFlightCommitAndPush !== undefined && right.inFlightCommitAndPush !== undefined) {
+    return (
+      left.inFlightCommitAndPush.preStepHeadSha === right.inFlightCommitAndPush.preStepHeadSha &&
+      left.inFlightCommitAndPush.preStepBaseRef === right.inFlightCommitAndPush.preStepBaseRef &&
+      left.inFlightCommitAndPush.targetBranch === right.inFlightCommitAndPush.targetBranch
+    );
+  }
+  return true;
+}
+
+/**
  * Verifies worktree-local `.git` metadata (`HEAD`, `indexTreeSha`, `info/exclude`, `harness-meta.json`) and `node_modules` integrity.
  *
  * Returns `{ intact: false, reason }` if any worktree-local metadata or `node_modules` tree was mutated by a subprocess.
@@ -85,7 +160,7 @@ export async function verifyWorktreeLocalGitIntegrity(
     const infoExclude = await readFile(path.join(handle.gitDirPath, 'info', 'exclude'), 'utf8').catch(() => null);
     if (infoExclude !== fromCheckpoint.infoExcludeContent) return { intact: false, reason: '<gitdir>/info/exclude was mutated' };
     const meta = await readHarnessMeta(handle.gitDirPath);
-    if (JSON.stringify(meta) !== JSON.stringify(fromCheckpoint.meta)) return { intact: false, reason: '<gitdir>/harness-meta.json was mutated' };
+    if (!isHarnessMetaEqual(meta, fromCheckpoint.meta)) return { intact: false, reason: '<gitdir>/harness-meta.json was mutated' };
     const nmDigest = await computeNodeModulesDigest(handle.worktreePath);
     if (nmDigest !== fromCheckpoint.nodeModulesDigest) return { intact: false, reason: 'node_modules tree was mutated' };
     return { intact: true };

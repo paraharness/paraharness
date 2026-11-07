@@ -10,6 +10,7 @@ import { gitCheckpointStatusMap } from './git-checkpoint-status-map.js';
 import {
   readHarnessMeta,
   runGitCommand,
+  updateWorktreeHandleInPlace,
   writeHarnessMeta,
 } from './git-cli-runner.js';
 import {
@@ -78,11 +79,9 @@ export async function gitWorktreePruneResolvedConflicts(
     ...meta,
     unresolvedConflictPaths: frozenRemaining,
   });
-  try {
-    Object.assign(handle, { unresolvedConflictPaths: frozenRemaining });
-  } catch {
-    void 0;
-  }
+  updateWorktreeHandleInPlace(handle, {
+    unresolvedConflictPaths: frozenRemaining,
+  });
   return frozenRemaining;
 }
 
@@ -162,11 +161,7 @@ export async function gitWorktreeFlushCleanParentChanges(
     cwd: parentHandle.worktreePath,
     args: ['update-ref', 'HEAD', commitSha, headSha],
   });
-  try {
-    Object.assign(parentHandle, { headRef: commitSha });
-  } catch {
-    void 0;
-  }
+  updateWorktreeHandleInPlace(parentHandle, { headRef: commitSha });
   return commitSha;
 }
 

@@ -32,7 +32,7 @@ export async function executeGitPublicSurfaceCrossTester(
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<Readonly<Record<number, unknown>>> {
   const runVerifier = (): Promise<Readonly<Record<number, unknown>>> =>
-    runPublicSurfaceCrossVerification(node, candidates);
+    runPublicSurfaceCrossVerification(node, candidates, ctx.signal);
   if (node.runner !== undefined && typeof ctx.getRunner === 'function') {
     return ctx.getRunner(node.runner).withSlot(runVerifier, ctx.signal);
   }

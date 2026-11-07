@@ -8,7 +8,11 @@ import {
   executeGitMergeQueueStep, executeGitPatchEquivalence, executeGitPublicSurfaceCrossTester,
   executeGitSnapshotAndResetHook, git, gitExecutors,
 } from '../src/index.js';
-import { readHarnessMeta, writeHarnessMeta } from '../src/executors/internal/git-cli-runner.js';
+import {
+  readHarnessMeta,
+  runGitCommand,
+  writeHarnessMeta,
+} from '../src/executors/internal/git-cli-runner.js';
 import { createTempGitHostRepo } from './fixtures/temp-git-host-repo.js';
 import type { TempGitHostRepoHandle } from './fixtures/temp-git-host-repo-handle.js';
 
@@ -56,15 +60,25 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
   it('executes snapshotAndReset idempotently, keepWorktree, resetWorktree/discardBranch, and refReaderTools', async () => {
     const scopeNode = git
       .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .excludeFromCloneGlobs(['custom-cache/**'])
       .toAST();
     const scope = new GitCowWorktreeScopeDriver(scopeNode);
     const handle = await scope.acquireRoot('run-abort-rewind');
-    const ctx = buildStepCtx(handle, scope);
+    const ctx: StepExecutionContext<GitWorktreeHandle> = {
+      ...buildStepCtx(handle, scope),
+      scopeNode,
+    };
 
     const baseCkpt = await scope.serializeCheckpoint(handle);
     await writeFile(
       path.join(handle.worktreePath, 'src/aborted-work.ts'),
       'export const DRAFT = "saved-before-reset";\n',
+      'utf8',
+    );
+    await mkdir(path.join(handle.worktreePath, 'custom-cache'), { recursive: true });
+    await writeFile(
+      path.join(handle.worktreePath, 'custom-cache/ephemeral.txt'),
+      'should-be-excluded\n',
       'utf8',
     );
 
@@ -104,6 +118,7 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       ctx,
     );
     expect(diffRes.content).toContain('src/aborted-work.ts');
+    expect(diffRes.content).not.toContain('custom-cache/ephemeral.txt');
 
     const listRes = await refDriver.execute(
       listRefFilesTool,
@@ -273,6 +288,7 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
   it('executes commitAndPush (rolling back to preStepHeadSha on failure) and mergeQueue cumulative bisection', async () => {
     const scopeNode = git
       .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .excludeFromCloneGlobs(['custom-cache/**'])
       .toAST();
     const scope = new GitCowWorktreeScopeDriver(scopeNode);
     const root = await scope.acquireRoot('run-commit-push');
@@ -280,6 +296,12 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     await writeFile(
       path.join(root.worktreePath, 'src/feature.ts'),
       'export const FEATURE = "ready";\n',
+      'utf8',
+    );
+    await mkdir(path.join(root.worktreePath, 'custom-cache'), { recursive: true });
+    await writeFile(
+      path.join(root.worktreePath, 'custom-cache/build-cache.txt'),
+      'excluded-from-push\n',
       'utf8',
     );
 
@@ -292,6 +314,7 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     };
     const failingScopeNode = git
       .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .excludeFromCloneGlobs(['custom-cache/**'])
       .reconcileStrategy('rebase-onto-base', {
         verifyWith: failVerifyCheck,
       })
@@ -329,6 +352,14 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     };
     await executeGitCommitAndPushStep(commitPushNode, { branch: 'feat/landed-1' }, passCtx);
     expect(root.branchName).toBe('feat/landed-1');
+    const pushedTreeFiles = (
+      await runGitCommand({
+        cwd: hostRepo.originPath,
+        args: ['ls-tree', '-r', '--name-only', 'refs/heads/feat/landed-1'],
+      })
+    ).stdout;
+    expect(pushedTreeFiles).toContain('src/feature.ts');
+    expect(pushedTreeFiles).not.toContain('custom-cache/build-cache.txt');
 
     const makeCandidateCommit = async (fileRel: string, content: string): Promise<string> => {
       const wt = await scope.acquireRoot(`cand-${path.basename(fileRel, '.ts')}`);
@@ -369,12 +400,26 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       },
       buildStepCtx(mqWorktree, scope),
     )) as {
+      readonly targetBranch: string;
+      readonly headRef: string;
       readonly landedBranches: readonly string[];
       readonly evictedBranches: readonly string[];
+      readonly verificationRuns: number;
     };
 
-    expect(mqResult.landedBranches).toEqual(['feat/m1', 'feat/m3']);
-    expect(mqResult.evictedBranches).toEqual(['feat/bad2']);
+    const originMainSha = (
+      await runGitCommand({
+        cwd: hostRepo.originPath,
+        args: ['rev-parse', 'refs/heads/main'],
+      })
+    ).stdout.trim();
+    expect(mqResult).toEqual({
+      targetBranch: 'main',
+      headRef: originMainSha,
+      landedBranches: ['feat/m1', 'feat/m3'],
+      evictedBranches: ['feat/bad2'],
+      verificationRuns: 4,
+    });
 
     await writeHarnessMeta(mqWorktree.gitDirPath, {
       baseRef: hostRepo.initialCommitSha,

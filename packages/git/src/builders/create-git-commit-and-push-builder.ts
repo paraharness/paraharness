@@ -31,12 +31,12 @@ export function createGitCommitAndPushBuilder<TIn = unknown>(
     throw new Error("git.commitAndPush: 'id' must be a non-empty string.");
   }
   return Object.freeze<GitCommitAndPushBuilder<TIn>>({
-    input<TNextIn>(
+    input<TNextIn extends TIn = TIn>(
       schema: z.ZodType<TNextIn>,
     ): GitCommitAndPushBuilder<TNextIn> {
       return createGitCommitAndPushBuilder<TNextIn>(id, {
-        branch: (nextIn: TNextIn): string => options.branch(nextIn as never),
-        message: (nextIn: TNextIn): string => options.message(nextIn as never),
+        branch: options.branch,
+        message: options.message,
         inputSchema: schema,
         runner: options.runner,
         env: options.env,

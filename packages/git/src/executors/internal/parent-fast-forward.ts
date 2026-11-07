@@ -2,13 +2,14 @@ import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { GitScopeReceipt, GitWorktreeHandle } from '@harness-dsl/core';
 import { listTreePaths } from './checkpoint-staging-and-integrity.js';
-import { hasPairedConflictMarkers } from './conflict-pruning-and-parent-flush.js';
+import { gitCheckpointStatusMap } from './git-checkpoint-status-map.js';
 import {
   readHarnessMeta,
   runGitCommand,
+  updateWorktreeHandleInPlace,
   writeHarnessMeta,
 } from './git-cli-runner.js';
-import { computeWorktreeStatusMap } from './porcelain-v2-and-checkpoints.js';
+import { hasPairedConflictMarkers } from './git-worktree-flush-and-prune.js';
 
 /**
  * Advances `parent` from `c1Sha` to `cTargetSha` using crash-safe `pendingParentHeadSha` and `git read-tree -u -m`.
@@ -54,11 +55,10 @@ export async function fastForwardParentToTargetCommit(
     pendingParentHeadSha: undefined,
     unresolvedConflictPaths: frozenConflicts,
   });
-  try {
-    Object.assign(parent, { headRef: cTargetSha, unresolvedConflictPaths: frozenConflicts });
-  } catch {
-    void 0;
-  }
+  updateWorktreeHandleInPlace(parent, {
+    headRef: cTargetSha,
+    unresolvedConflictPaths: frozenConflicts,
+  });
 }
 
 /**
@@ -108,7 +108,7 @@ export async function findWorktreeConflictMarkerPaths(
   handle: GitWorktreeHandle,
   excludeGlobs?: readonly string[],
 ): Promise<readonly string[]> {
-  const snap = await computeWorktreeStatusMap(handle.worktreePath, { excludeGlobs });
+  const snap = await gitCheckpointStatusMap(handle.worktreePath, { excludeGlobs });
   const diffRes = await runGitCommand({
     cwd: handle.worktreePath,
     args: ['diff', '--name-only', '-z', handle.baseRef, 'HEAD'],

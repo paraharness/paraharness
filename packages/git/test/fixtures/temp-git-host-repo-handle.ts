@@ -1,4 +1,12 @@
 /**
+ * Options for `TempGitHostRepoHandle.commitFiles`.
+ */
+export interface TempGitCommitOptions {
+  /** Whether to push the newly created commit to the bare `origin` remote. */
+  readonly pushOrigin?: boolean;
+}
+
+/**
  * Handle managing an isolated temporary Git host repository and bare `origin` remote for deterministic tests.
  *
  * Provides paths to the host repository, bare `origin` remote, and disjoint worktree base directory,
@@ -27,16 +35,16 @@ export interface TempGitHostRepoHandle {
    *
    * Creates parent directories automatically and returns the newly created commit SHA.
    *
-   * @param {Readonly<Record<string, string>>} files        - Map of repository-relative paths to UTF-8 contents.
-   * @param {string}                           message      - Git commit message.
-   * @param {boolean}                          [pushOrigin] - Whether to push the new commit to `origin`.
+   * @param {Readonly<Record<string, string>>} files     - Map of repository-relative paths to UTF-8 contents.
+   * @param {string}                           message   - Git commit message.
+   * @param {TempGitCommitOptions}             [options] - Optional commit behavior flags (such as `pushOrigin`).
    *
    * @returns {Promise<string>} Commit SHA of the newly created commit.
    */
   commitFiles(
     files: Readonly<Record<string, string>>,
     message: string,
-    pushOrigin?: boolean,
+    options?: TempGitCommitOptions,
   ): Promise<string>;
 
   /**

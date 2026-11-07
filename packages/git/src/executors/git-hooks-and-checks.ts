@@ -10,15 +10,46 @@ import type {
   RewindHookExecutionInput,
   StepExecutionContext,
 } from '@harness-dsl/core';
-import { pruneResolvedConflictPaths } from './internal/conflict-pruning-and-parent-flush.js';
+import { gitCheckpointRestore } from './internal/git-checkpoint-restore.js';
 import {
   readHarnessMeta,
   runGitCommand,
+  updateWorktreeHandleInPlace,
   writeHarnessMeta,
 } from './internal/git-cli-runner.js';
-import { synthesizeWorkingTreeCommitOverBase } from './internal/merge-tree-materializer.js';
+import { gitWorktreePruneResolvedConflicts } from './internal/git-worktree-flush-and-prune.js';
+import { synthesizeWorkingTreeCommitOverBase } from './internal/git-worktree-materialize-merge.js';
+import { resolveEffectiveCheckpointPolicy } from './internal/git-worktree-reattach.js';
 import { findWorktreeConflictMarkerPaths } from './internal/parent-fast-forward.js';
-import { restoreGitWorktreeCheckpoint } from './internal/porcelain-v2-and-checkpoints.js';
+
+/**
+ * Hard-resets `handle` to `handle.baseRef`, cleans untracked files (preserving `node_modules`),
+ * and clears `unresolvedConflictPaths` in `harness-meta.json` and `handle`.
+ *
+ * @param {GitWorktreeHandle} handle - Worktree handle to reset.
+ *
+ * @returns {Promise<void>} Resolves once the worktree and conflict metadata are reset.
+ */
+async function resetWorktreeToBaseRefAndClearConflicts(
+  handle: GitWorktreeHandle,
+): Promise<void> {
+  const cwd = handle.worktreePath;
+  await runGitCommand({ cwd, args: ['reset', '--hard', handle.baseRef] });
+  await runGitCommand({
+    cwd,
+    args: ['clean', '-fd', '-e', 'node_modules', '-e', '**/node_modules'],
+  });
+  const meta = await readHarnessMeta(handle.gitDirPath);
+  const emptyConflicts: Readonly<Record<string, string>> = Object.freeze({});
+  await writeHarnessMeta(handle.gitDirPath, {
+    ...meta,
+    unresolvedConflictPaths: emptyConflicts,
+  });
+  updateWorktreeHandleInPlace(handle, {
+    headRef: handle.baseRef,
+    unresolvedConflictPaths: emptyConflicts,
+  });
+}
 
 /**
  * Evaluates a `GitCleanWorkingTreeNode` (`git:clean-working-tree`) conflict-clean check on `ctx.scopeHandle`.
@@ -37,17 +68,30 @@ export async function executeGitCleanWorkingTreeCheck(
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<CheckEvaluationResult> {
   const handle = ctx.scopeHandle;
-  const scopeNode = ctx.scopeNode?.type === 'git:cow-worktree' ? ctx.scopeNode : undefined;
-  const remaining = await pruneResolvedConflictPaths(handle);
-  const markerPaths = await findWorktreeConflictMarkerPaths(handle, scopeNode?.checkpointPolicy?.excludeGlobs);
-  const unresolvedSet = new Set<string>([...Object.keys(remaining), ...markerPaths]);
+  const scopeNode =
+    ctx.scopeNode?.type === 'git:cow-worktree' ? ctx.scopeNode : undefined;
+  const effectivePolicy =
+    scopeNode !== undefined
+      ? resolveEffectiveCheckpointPolicy(scopeNode)
+      : undefined;
+  const remaining = await gitWorktreePruneResolvedConflicts(handle);
+  const markerPaths = await findWorktreeConflictMarkerPaths(
+    handle,
+    effectivePolicy?.excludeGlobs,
+  );
+  const unresolvedSet = new Set<string>([
+    ...Object.keys(remaining),
+    ...markerPaths,
+  ]);
   if (unresolvedSet.size === 0) {
     return { ok: true, deficits: [] };
   }
   const sorted = [...unresolvedSet].sort();
   return {
     ok: false,
-    deficits: sorted.map((relPath) => `Unresolved git merge conflict in '${relPath}'.`),
+    deficits: sorted.map(
+      (relPath) => `Unresolved git merge conflict in '${relPath}'.`,
+    ),
   };
 }
 
@@ -70,21 +114,34 @@ export async function executeGitSnapshotAndResetHook(
 ): Promise<GitAbortMeta> {
   const handle = input.handle;
   const cwd = handle.worktreePath;
-  const scopeNode = ctx.scopeNode?.type === 'git:cow-worktree' ? ctx.scopeNode : undefined;
+  const scopeNode =
+    ctx.scopeNode?.type === 'git:cow-worktree' ? ctx.scopeNode : undefined;
+  const effectivePolicy =
+    scopeNode !== undefined
+      ? resolveEffectiveCheckpointPolicy(scopeNode)
+      : undefined;
   const sanitizedStepExecId = input.stepExecId.replace(/[:~^?*[\\\s]+/g, '-');
   const abortedSnapshotRef = `refs/harness/aborted/${input.runId}/${sanitizedStepExecId}`;
-  const synth = await synthesizeWorkingTreeCommitOverBase(handle, handle.baseRef, scopeNode?.checkpointPolicy?.excludeGlobs);
-  const baseTreeSha = (await runGitCommand({ cwd, args: ['rev-parse', `${handle.baseRef}^{tree}`] })).stdout.trim();
-  const existingRef = await runGitCommand({ cwd, args: ['rev-parse', '--verify', abortedSnapshotRef], allowNonZeroExit: true });
+  const synth = await synthesizeWorkingTreeCommitOverBase(
+    handle,
+    handle.baseRef,
+    effectivePolicy?.excludeGlobs,
+  );
+  const baseTreeSha = (
+    await runGitCommand({ cwd, args: ['rev-parse', `${handle.baseRef}^{tree}`] })
+  ).stdout.trim();
+  const existingRef = await runGitCommand({
+    cwd,
+    args: ['rev-parse', '--verify', abortedSnapshotRef],
+    allowNonZeroExit: true,
+  });
   if (synth.treeSha !== baseTreeSha || existingRef.exitCode !== 0) {
-    await runGitCommand({ cwd, args: ['update-ref', abortedSnapshotRef, synth.commitSha] });
+    await runGitCommand({
+      cwd,
+      args: ['update-ref', abortedSnapshotRef, synth.commitSha],
+    });
   }
-  await runGitCommand({ cwd, args: ['reset', '--hard', handle.baseRef] });
-  await runGitCommand({ cwd, args: ['clean', '-fd', '-e', 'node_modules', '-e', '**/node_modules'] });
-  const meta = await readHarnessMeta(handle.gitDirPath);
-  const emptyConflicts: Readonly<Record<string, string>> = Object.freeze({});
-  await writeHarnessMeta(handle.gitDirPath, { ...meta, unresolvedConflictPaths: emptyConflicts });
-  Object.assign(handle, { headRef: handle.baseRef, unresolvedConflictPaths: emptyConflicts });
+  await resetWorktreeToBaseRefAndClearConflicts(handle);
   return { abortedSnapshotRef, resetToRef: handle.baseRef };
 }
 
@@ -124,15 +181,19 @@ export async function executeGitDiscardBranchHook(
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<void> {
   const handle = input.handle;
-  const scopeNode = ctx.scopeNode?.type === 'git:cow-worktree' ? ctx.scopeNode : undefined;
+  const scopeNode =
+    ctx.scopeNode?.type === 'git:cow-worktree' ? ctx.scopeNode : undefined;
+  const effectivePolicy =
+    scopeNode !== undefined
+      ? resolveEffectiveCheckpointPolicy(scopeNode)
+      : undefined;
   if (input.targetStepBaseScopeCheckpoint !== undefined) {
-    await restoreGitWorktreeCheckpoint(handle, input.targetStepBaseScopeCheckpoint, scopeNode?.checkpointPolicy);
+    await gitCheckpointRestore(
+      handle,
+      input.targetStepBaseScopeCheckpoint,
+      effectivePolicy,
+    );
     return;
   }
-  await runGitCommand({ cwd: handle.worktreePath, args: ['reset', '--hard', handle.baseRef] });
-  await runGitCommand({ cwd: handle.worktreePath, args: ['clean', '-fd', '-e', 'node_modules', '-e', '**/node_modules'] });
-  const meta = await readHarnessMeta(handle.gitDirPath);
-  const emptyConflicts: Readonly<Record<string, string>> = Object.freeze({});
-  await writeHarnessMeta(handle.gitDirPath, { ...meta, unresolvedConflictPaths: emptyConflicts });
-  Object.assign(handle, { headRef: handle.baseRef, unresolvedConflictPaths: emptyConflicts });
+  await resetWorktreeToBaseRefAndClearConflicts(handle);
 }

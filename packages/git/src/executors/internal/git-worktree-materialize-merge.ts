@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { GitWorktreeHandle } from '@harness-dsl/core';
@@ -7,6 +8,7 @@ import { gitCheckpointStatusMap } from './git-checkpoint-status-map.js';
 import {
   readHarnessMeta,
   runGitCommand,
+  updateWorktreeHandleInPlace,
   writeHarnessMeta,
 } from './git-cli-runner.js';
 import type { MaterializeInFlightMergeParams } from './merge-tree-materializer-params.js';
@@ -31,7 +33,7 @@ export async function synthesizeWorkingTreeCommitOverBase(
 ): Promise<SynthesizedWorkingTreeCommit> {
   const headSha = (await runGitCommand({ cwd: handle.worktreePath, args: ['rev-parse', 'HEAD'] })).stdout.trim();
   const snap = await gitCheckpointStatusMap(handle.worktreePath, { excludeGlobs });
-  const tmpIndex = path.join(handle.gitDirPath, `harness-synth-idx.${process.pid}.${Date.now()}`);
+  const tmpIndex = path.join(handle.gitDirPath, `harness-synth-idx.${process.pid}.${randomUUID()}`);
   const toAdd: string[] = [];
   const toRemove: string[] = [];
   for (const [relPath, digest] of Object.entries(snap.statusMap)) {
@@ -121,7 +123,7 @@ export async function gitWorktreeMaterializeMerge(
   const basePaths = await listTreePaths(handle.worktreePath, handle.baseRef);
   const priorPaths = await listTreePaths(handle.worktreePath, mergeParams.priorTreeSha);
   const mergedPaths = await listTreePaths(handle.worktreePath, mergeParams.mergedTreeSha);
-  const tmpIndex = path.join(handle.gitDirPath, `harness-merge-idx.${process.pid}.${Date.now()}`);
+  const tmpIndex = path.join(handle.gitDirPath, `harness-merge-idx.${process.pid}.${randomUUID()}`);
   try {
     await runGitCommand({ cwd: handle.worktreePath, args: ['read-tree', mergeParams.mergedTreeSha], env: { GIT_INDEX_FILE: tmpIndex } });
     await runGitCommand({ cwd: handle.worktreePath, args: ['checkout-index', '-f', '-a'], env: { GIT_INDEX_FILE: tmpIndex } });
@@ -167,15 +169,11 @@ export async function finalizeMaterializedMergeMetadata(
     inFlightMerge: undefined,
     inFlightCommitAndPush: meta.inFlightCommitAndPush,
   });
-  try {
-    Object.assign(handle, {
-      baseRef: mergeParams.targetHeadSha,
-      baseBranch: nextBaseBranch,
-      headRef: mergeParams.targetHeadSha,
-      unresolvedConflictPaths: frozenConflicts,
-    });
-  } catch {
-    void 0;
-  }
+  updateWorktreeHandleInPlace(handle, {
+    baseRef: mergeParams.targetHeadSha,
+    baseBranch: nextBaseBranch,
+    headRef: mergeParams.targetHeadSha,
+    unresolvedConflictPaths: frozenConflicts,
+  });
   return frozenConflicts;
 }

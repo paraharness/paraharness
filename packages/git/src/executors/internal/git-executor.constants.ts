@@ -38,3 +38,12 @@ export const HARNESS_GIT_IDENTITY_ENV: Readonly<Record<string, string>> = Object
   GIT_AUTHOR_DATE: '1700000000 +0000',
   GIT_COMMITTER_DATE: '1700000000 +0000',
 });
+
+/**
+ * Memoized cache of compiled `picomatch` exclusion predicates keyed by null-delimited glob patterns.
+ */
+export const COMPILED_EXCLUDE_MATCHER_CACHE: Map<string, (relPath: string) => boolean> = new Map<
+  string,
+  (relPath: string) => boolean
+>();
+

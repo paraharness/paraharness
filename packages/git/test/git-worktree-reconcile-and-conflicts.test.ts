@@ -310,6 +310,50 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
       'LOCAL = 42',
     );
 
+    const conflictedContent = [
+      '<<<<<<< HEAD',
+      'export const LOCAL = 1;',
+      '=======',
+      'export const LOCAL = 42;',
+      '>>>>>>> child',
+      '',
+    ].join('\n');
+    await writeFile(
+      path.join(pausedChild.worktreePath, 'src/child-local.ts'),
+      conflictedContent,
+      'utf8',
+    );
+    const conflictedReceipt = await scope.inspect(pausedChild);
+    const mergedTreeSha = (
+      await runGitCommand({
+        cwd: pausedChild.worktreePath,
+        args: ['rev-parse', `${conflictedReceipt.headRef}^{tree}`],
+      })
+    ).stdout.trim();
+    await scope.restoreCheckpoint(pausedChild, childCkpt);
+
+    const childMetaBeforeMergeCrash = await readHarnessMeta(pausedChild.gitDirPath);
+    await writeHarnessMeta(pausedChild.gitDirPath, {
+      ...childMetaBeforeMergeCrash,
+      inFlightMerge: {
+        targetHeadSha: prereqReceipt.headRef,
+        mergedTreeSha,
+        priorTreeSha: pausedChild.baseRef,
+        unresolvedConflictPaths: { 'src/child-local.ts': 'PENDING' },
+      },
+    });
+    const recoveredInFlightChild = await scope.reattachChild(reattachedRoot, 'child-sync');
+    const childMetaAfterMergeCrash = await readHarnessMeta(recoveredInFlightChild.gitDirPath);
+    expect(childMetaAfterMergeCrash.inFlightMerge).toBeUndefined();
+    expect(recoveredInFlightChild.baseRef).toBe(prereqReceipt.headRef);
+    expect(recoveredInFlightChild.headRef).toBe(prereqReceipt.headRef);
+    expect(
+      await readFile(path.join(recoveredInFlightChild.worktreePath, 'src/child-local.ts'), 'utf8'),
+    ).toBe(conflictedContent);
+    expect(recoveredInFlightChild.unresolvedConflictPaths['src/child-local.ts']).toMatch(
+      /^100644:[0-9a-f]{64}$/,
+    );
+
     await rm(pausedChild.worktreePath, { recursive: true, force: true });
     const recreatedChild = await scope.reattachChild(reattachedRoot, 'child-sync', childCkpt);
     expect(await readFile(path.join(recreatedChild.worktreePath, 'src/child-local.ts'), 'utf8')).toContain(

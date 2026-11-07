@@ -2,7 +2,11 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { GitCowWorktreeNode, GitWorktreeHandle } from '@harness-dsl/core';
 import { hydrateWorktreeDependencies } from './cow-worktree-hydrator.js';
-import { runGitCommand, writeHarnessMeta } from './git-cli-runner.js';
+import {
+  runGitCommand,
+  withHostWorktreeLock,
+  writeHarnessMeta,
+} from './git-cli-runner.js';
 import type { HostRepositoryHeadState } from './host-repository-head-state.js';
 
 /**
@@ -45,10 +49,23 @@ export async function gitWorktreeAcquireRoot(
   const safeRunId = runId.replace(/[^a-zA-Z0-9._-]/g, '_');
   const worktreePath = path.join(baseDir, 'roots', safeRunId);
   await rm(worktreePath, { recursive: true, force: true });
-  await runGitCommand({ cwd: repoPath, args: ['worktree', 'prune'], allowNonZeroExit: true });
   await mkdir(path.dirname(worktreePath), { recursive: true });
-  const { baseRef, baseBranch } = await resolveHostRepositoryHeadState(repoPath);
-  await runGitCommand({ cwd: repoPath, args: ['worktree', 'add', '--detach', '--force', worktreePath, baseRef] });
+  const { baseRef, baseBranch } = await withHostWorktreeLock(
+    repoPath,
+    async (): Promise<HostRepositoryHeadState> => {
+      await runGitCommand({
+        cwd: repoPath,
+        args: ['worktree', 'prune'],
+        allowNonZeroExit: true,
+      });
+      const headState = await resolveHostRepositoryHeadState(repoPath);
+      await runGitCommand({
+        cwd: repoPath,
+        args: ['worktree', 'add', '--detach', '--force', worktreePath, headState.baseRef],
+      });
+      return headState;
+    },
+  );
   const rawGitDir = (await runGitCommand({ cwd: worktreePath, args: ['rev-parse', '--git-dir'] })).stdout.trim();
   const gitDirPath = path.resolve(worktreePath, rawGitDir);
   await hydrateWorktreeDependencies(node, repoPath, worktreePath);

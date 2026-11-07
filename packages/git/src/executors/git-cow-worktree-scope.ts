@@ -217,17 +217,17 @@ export class GitCowWorktreeScopeDriver
    *
    * @returns {Promise<GitWorktreeHandle>} Newly provisioned child worktree handle.
    */
-  forkChild(parent: GitWorktreeHandle, forkId: string): Promise<GitWorktreeHandle> {
+  async forkChild(parent: GitWorktreeHandle, forkId: string): Promise<GitWorktreeHandle> {
     const excludeGlobs = this.effectiveExcludeGlobs;
     const activeQueue = this.getOrCreateParentFlushQueue(parent.worktreePath);
-    return activeQueue
-      .add(async (): Promise<GitWorktreeHandle> => {
+    try {
+      await activeQueue.add(async (): Promise<void> => {
         await gitWorktreeFlushCleanParentChanges(parent, excludeGlobs);
-        return gitWorktreeForkChild(this.node, parent, forkId);
-      })
-      .finally(() => {
-        this.pruneIdleParentFlushQueue(parent.worktreePath, activeQueue);
       });
+    } finally {
+      this.pruneIdleParentFlushQueue(parent.worktreePath, activeQueue);
+    }
+    return gitWorktreeForkChild(this.node, parent, forkId);
   }
 
   /**
@@ -242,7 +242,12 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<GitWorktreeHandle>} Reattached child worktree handle.
    */
   reattachChild(parent: GitWorktreeHandle, forkId: string, checkpoint?: string): Promise<GitWorktreeHandle> {
-    return gitWorktreeReattachChild(this.node, parent, forkId, checkpoint);
+    return gitWorktreeReattachChild({
+      node: this.node,
+      parent,
+      forkId,
+      checkpoint,
+    });
   }
 
   /**

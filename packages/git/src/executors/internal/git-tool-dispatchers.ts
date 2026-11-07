@@ -5,6 +5,15 @@ import type {
   StepExecutionContext,
   ToolExecutionResult,
 } from '@harness-dsl/core';
+import {
+  DiffCandidatesInputSchema,
+  DiffRefsInputSchema,
+  EvalInCandidatesInputSchema,
+  ListRefFilesInputSchema,
+  ReadCandidateFileInputSchema,
+  ReadRefFileInputSchema,
+  type EvalInCandidatesInput,
+} from '../../schemas/git-receipts.schema.js';
 import { runGitCommand } from './git-cli-runner.js';
 import { runEvalCommandInSandboxedCandidate } from './git-cross-test-import-scanner.js';
 
@@ -39,20 +48,20 @@ async function resolveCandidateBranchRef(
 /**
  * Resolves the list of candidate branch indices targeted by an `evalInCandidates` tool invocation.
  *
- * @param {Record<string, unknown>}                 parsed - Validated tool input payload.
+ * @param {EvalInCandidatesInput}                   parsed - Validated `evalInCandidates` input payload.
  * @param {StepExecutionContext<GitWorktreeHandle>} ctx    - Active step execution context.
  *
  * @returns {readonly number[]} Target zero-based candidate branch indices.
  */
 function resolveEvalCandidateBranchIndices(
-  parsed: Record<string, unknown>,
+  parsed: EvalInCandidatesInput,
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): readonly number[] {
-  if (Array.isArray(parsed['branchIndices'])) {
-    return parsed['branchIndices'] as number[];
+  if (parsed.branchIndices !== undefined) {
+    return parsed.branchIndices;
   }
-  if (typeof parsed['branchIndex'] === 'number') {
-    return [parsed['branchIndex']];
+  if (parsed.branchIndex !== undefined) {
+    return [parsed.branchIndex];
   }
   if (ctx.candidateHandles !== undefined) {
     return [...ctx.candidateHandles.keys()];
@@ -63,29 +72,49 @@ function resolveEvalCandidateBranchIndices(
 /**
  * Executes the underlying Git CLI command for a `GitRefReaderToolNode` tool call.
  *
- * @param {GitRefReaderToolNode<GitWorktreeHandle>} node   - Ref-reader tool AST node.
- * @param {Record<string, unknown>}                 parsed - Validated tool input arguments.
- * @param {string}                                  cwd    - Worktree directory path.
+ * @param {GitRefReaderToolNode<GitWorktreeHandle>} node      - Ref-reader tool AST node.
+ * @param {unknown}                                 validated - Schema-validated tool input arguments.
+ * @param {string}                                  cwd       - Worktree directory path.
  *
  * @returns {Promise<ToolExecutionResult>} Serialized git command output.
  */
 async function executeRefReaderGitCommand(
   node: GitRefReaderToolNode<GitWorktreeHandle>,
-  parsed: Record<string, unknown>,
+  validated: unknown,
   cwd: string,
 ): Promise<ToolExecutionResult> {
   if (node.name === 'readRefFile') {
-    const showOutput = await runGitCommand({ cwd, args: ['show', `${String(parsed['ref'])}:${String(parsed['path'])}`] });
+    const parsed = ReadRefFileInputSchema.parse(validated);
+    const showOutput = await runGitCommand({
+      cwd,
+      args: ['show', `${parsed.ref}:${parsed.path}`],
+    });
     return { content: showOutput.stdout };
   }
   if (node.name === 'diffRefs') {
-    const paths = Array.isArray(parsed['paths']) ? (parsed['paths'] as string[]) : [];
-    const args = ['diff', String(parsed['fromRef']), String(parsed['toRef']), ...(paths.length > 0 ? ['--', ...paths] : [])];
+    const parsed = DiffRefsInputSchema.parse(validated);
+    const paths = parsed.paths ?? [];
+    const args = [
+      'diff',
+      parsed.fromRef,
+      parsed.toRef,
+      ...(paths.length > 0 ? ['--', ...paths] : []),
+    ];
     const diffOutput = await runGitCommand({ cwd, args });
     return { content: diffOutput.stdout };
   }
-  const prefix = typeof parsed['prefix'] === 'string' && parsed['prefix'].length > 0 ? parsed['prefix'] : undefined;
-  const args = ['ls-tree', '-r', '--name-only', String(parsed['ref']), ...(prefix !== undefined ? ['--', prefix] : [])];
+  const parsed = ListRefFilesInputSchema.parse(validated);
+  const prefix =
+    parsed.prefix !== undefined && parsed.prefix.length > 0
+      ? parsed.prefix
+      : undefined;
+  const args = [
+    'ls-tree',
+    '-r',
+    '--name-only',
+    parsed.ref,
+    ...(prefix !== undefined ? ['--', prefix] : []),
+  ];
   const lsTreeOutput = await runGitCommand({ cwd, args });
   return { content: lsTreeOutput.stdout };
 }
@@ -106,9 +135,10 @@ export async function dispatchRefReaderToolCall(
   rawArgs: unknown,
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<ToolExecutionResult> {
-  const parsed = node.inputSchema.parse(rawArgs) as Record<string, unknown>;
+  const validated = node.inputSchema.parse(rawArgs);
   const cwd = ctx.scopeHandle.worktreePath;
-  const runCmd = (): Promise<ToolExecutionResult> => executeRefReaderGitCommand(node, parsed, cwd);
+  const runCmd = (): Promise<ToolExecutionResult> =>
+    executeRefReaderGitCommand(node, validated, cwd);
   if (node.runner !== undefined && typeof ctx.getRunner === 'function') {
     return ctx.getRunner(node.runner).withSlot(runCmd, ctx.signal);
   }
@@ -118,36 +148,53 @@ export async function dispatchRefReaderToolCall(
 /**
  * Executes the underlying Git CLI or sandboxed evaluation command for a `GitCandidateComparisonToolNode`.
  *
- * @param {GitCandidateComparisonToolNode<GitWorktreeHandle>} node   - Candidate comparison tool AST node.
- * @param {Record<string, unknown>}                           parsed - Validated tool input arguments.
- * @param {StepExecutionContext<GitWorktreeHandle>}           ctx    - Active step execution context.
+ * @param {GitCandidateComparisonToolNode<GitWorktreeHandle>} node      - Candidate comparison tool AST node.
+ * @param {unknown}                                           validated - Schema-validated tool input arguments.
+ * @param {StepExecutionContext<GitWorktreeHandle>}           ctx       - Active step execution context.
  *
  * @returns {Promise<ToolExecutionResult>} Serialized candidate comparison or benchmark output.
  */
 async function executeCandidateComparisonGitCommand(
   node: GitCandidateComparisonToolNode<GitWorktreeHandle>,
-  parsed: Record<string, unknown>,
+  validated: unknown,
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<ToolExecutionResult> {
   const cwd = ctx.scopeHandle.worktreePath;
   if (node.name === 'diffCandidates') {
-    const leftRef = await resolveCandidateBranchRef(Number(parsed['fromBranchIndex']), ctx);
-    const rightRef = await resolveCandidateBranchRef(Number(parsed['toBranchIndex']), ctx);
-    const paths = Array.isArray(parsed['paths']) ? (parsed['paths'] as string[]) : [];
-    const args = ['diff', leftRef, rightRef, ...(paths.length > 0 ? ['--', ...paths] : [])];
+    const parsed = DiffCandidatesInputSchema.parse(validated);
+    const leftRef = await resolveCandidateBranchRef(parsed.fromBranchIndex, ctx);
+    const rightRef = await resolveCandidateBranchRef(parsed.toBranchIndex, ctx);
+    const paths = parsed.paths ?? [];
+    const args = [
+      'diff',
+      leftRef,
+      rightRef,
+      ...(paths.length > 0 ? ['--', ...paths] : []),
+    ];
     return { content: (await runGitCommand({ cwd, args })).stdout };
   }
   if (node.name === 'readCandidateFile') {
-    const ref = await resolveCandidateBranchRef(Number(parsed['branchIndex']), ctx);
-    return { content: (await runGitCommand({ cwd, args: ['show', `${ref}:${String(parsed['path'])}`] })).stdout };
+    const parsed = ReadCandidateFileInputSchema.parse(validated);
+    const ref = await resolveCandidateBranchRef(parsed.branchIndex, ctx);
+    return {
+      content: (
+        await runGitCommand({ cwd, args: ['show', `${ref}:${parsed.path}`] })
+      ).stdout,
+    };
   }
+  const parsed = EvalInCandidatesInputSchema.parse(validated);
   const branchIndices = resolveEvalCandidateBranchIndices(parsed, ctx);
-  const rawCmd = parsed['argv'] ?? parsed['command'];
-  const command: string | readonly string[] = Array.isArray(rawCmd) ? (rawCmd as string[]) : String(rawCmd ?? '');
+  const command: string | readonly string[] =
+    parsed.argv ?? parsed.command ?? '';
   const outcomes: Array<Record<string, unknown>> = [];
   for (const branchIndex of branchIndices) {
-    const candidateHandle = ctx.candidateHandles?.get(branchIndex) ?? ctx.scopeHandle;
-    const evalOutcome = await runEvalCommandInSandboxedCandidate(candidateHandle, command, ctx);
+    const candidateHandle =
+      ctx.candidateHandles?.get(branchIndex) ?? ctx.scopeHandle;
+    const evalOutcome = await runEvalCommandInSandboxedCandidate(
+      candidateHandle,
+      command,
+      ctx,
+    );
     outcomes.push({ branchIndex, ...evalOutcome });
   }
   return { content: JSON.stringify(outcomes) };
@@ -169,8 +216,9 @@ export async function dispatchCandidateComparisonToolCall(
   rawArgs: unknown,
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<ToolExecutionResult> {
-  const parsed = node.inputSchema.parse(rawArgs) as Record<string, unknown>;
-  const runCmd = (): Promise<ToolExecutionResult> => executeCandidateComparisonGitCommand(node, parsed, ctx);
+  const validated = node.inputSchema.parse(rawArgs);
+  const runCmd = (): Promise<ToolExecutionResult> =>
+    executeCandidateComparisonGitCommand(node, validated, ctx);
   if (node.runner !== undefined && typeof ctx.getRunner === 'function') {
     return ctx.getRunner(node.runner).withSlot(runCmd, ctx.signal);
   }

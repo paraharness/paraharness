@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { GitWorktreeHandle } from '@harness-dsl/core';
 import { withFileLock } from '@harness-dsl/lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import {
@@ -132,4 +133,46 @@ export async function writeHarnessMeta(
   await withFileLock(lockPath, async () => {
     await writeFileAtomic(metaPath, JSON.stringify(validated, null, 2), { encoding: 'utf8' });
   });
+}
+
+/**
+ * Updates mutable `GitWorktreeHandle` properties in place when the caller passed a non-frozen handle.
+ *
+ * Avoids throwing `TypeError` when a caller passes a frozen `GitWorktreeHandle` fixture without
+ * using empty `try / catch` blocks.
+ *
+ * @param {GitWorktreeHandle}          handle - Target worktree handle to update.
+ * @param {Partial<GitWorktreeHandle>} patch  - Partial property updates to assign onto `handle`.
+ */
+export function updateWorktreeHandleInPlace(
+  handle: GitWorktreeHandle,
+  patch: Partial<GitWorktreeHandle>,
+): void {
+  if (!Object.isFrozen(handle)) {
+    Object.assign(handle, patch);
+  }
+}
+
+/**
+ * Executes a host-repository worktree administrative operation (`worktree prune`, `worktree add`, `worktree remove`)
+ * under `<commonGitDir>/harness-worktree.lock` to prevent concurrent `git worktree` administrative races.
+ *
+ * @template T Result type returned by `fn`.
+ *
+ * @param {string}          cwd - Working directory inside the host repository or an attached worktree.
+ * @param {() => Promise<T>} fn  - Async callback performing `git worktree` administrative commands.
+ *
+ * @returns {Promise<T>} Result produced by `fn`.
+ */
+export async function withHostWorktreeLock<T>(
+  cwd: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const commonDirResult = await runGitCommand({
+    cwd,
+    args: ['rev-parse', '--git-common-dir'],
+  });
+  const commonGitDir = path.resolve(cwd, commonDirResult.stdout.trim());
+  const lockPath = path.join(commonGitDir, 'harness-worktree.lock');
+  return withFileLock(lockPath, fn);
 }

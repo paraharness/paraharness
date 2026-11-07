@@ -3,7 +3,10 @@ import path from 'node:path';
 import type { GitCowWorktreeNode, GitWorktreeHandle } from '@harness-dsl/core';
 import type { GitCheckpointPayload } from '../git-checkpoint-payload.js';
 import { stageCheckpointTreeAndOversizedBlobs } from './checkpoint-staging-and-integrity.js';
-import { computeNodeModulesDigest } from './file-digest-and-globs.js';
+import {
+  computeNodeModulesDigest,
+  snapshotNodeModulesForCheckpoint,
+} from './file-digest-and-globs.js';
 import { gitCheckpointStatusMap } from './git-checkpoint-status-map.js';
 import { readHarnessMeta, runGitCommand } from './git-cli-runner.js';
 import { DEFAULT_MAX_UNTRACKED_FILE_SIZE_BYTES } from './git-executor.constants.js';
@@ -35,22 +38,21 @@ export async function gitCheckpointSerialize(
     'utf8',
   ).catch(() => null);
   const meta = await readHarnessMeta(handle.gitDirPath);
-  const ignoredSnapshot = await gitCheckpointStatusMap(handle.worktreePath, {
+  const snapshot = await gitCheckpointStatusMap(handle.worktreePath, {
     excludeGlobs: policy?.excludeGlobs,
     includeMatchingIgnored: true,
-  });
-  const cleanSnapshot = await gitCheckpointStatusMap(handle.worktreePath, {
-    excludeGlobs: policy?.excludeGlobs,
   });
   const maxBytes =
     policy?.maxUntrackedFileSizeBytes ?? DEFAULT_MAX_UNTRACKED_FILE_SIZE_BYTES;
   const staged = await stageCheckpointTreeAndOversizedBlobs(
     handle,
-    cleanSnapshot,
+    snapshot,
     maxBytes,
   );
-  const nodeModulesDigest = await computeNodeModulesDigest(
+  const nodeModulesDigest = await computeNodeModulesDigest(handle.worktreePath);
+  await snapshotNodeModulesForCheckpoint(
     handle.worktreePath,
+    nodeModulesDigest,
     path.join(handle.gitDirPath, 'harness-ckpt-nm'),
   );
   const payload: GitCheckpointPayload = Object.freeze({
@@ -59,8 +61,8 @@ export async function gitCheckpointSerialize(
     indexTreeSha: indexTreeResult.stdout.trim(),
     infoExcludeContent,
     meta,
-    statusMap: cleanSnapshot.statusMap,
-    ignoredPaths: ignoredSnapshot.ignoredPaths,
+    statusMap: snapshot.statusMap,
+    ignoredPaths: snapshot.ignoredPaths,
     nodeModulesDigest,
     treeSha: staged.treeSha,
     oversizedUntrackedBlobs: staged.oversizedUntrackedBlobs,

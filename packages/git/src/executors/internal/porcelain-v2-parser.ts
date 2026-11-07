@@ -10,28 +10,38 @@ import { runGitCommand } from './git-cli-runner.js';
 import type { WorktreeStatusSnapshot } from './worktree-status-snapshot.js';
 
 /**
+ * Parameters for expanding a newly ignored directory or file entry (`! <relPath>`) into `statusMap`.
+ */
+interface CollectNewlyIgnoredFilesParams {
+  /** Worktree directory path. */
+  readonly worktreePath: string;
+  /** Newly ignored relative path from porcelain v2. */
+  readonly relPath: string;
+  /** Compiled exclusion glob predicate. */
+  readonly isExcluded: (candidate: string) => boolean;
+  /** Mutable status map receiving discovered ignored files. */
+  readonly statusMap: Record<string, string>;
+}
+
+/**
  * Expands a newly ignored directory or file entry (`! <relPath>`) into its underlying files and records their digests.
  *
- * @param {string}                          worktreePath - Worktree directory path.
- * @param {string}                          relPath      - Newly ignored relative path from porcelain v2.
- * @param {(candidate: string) => boolean}  isExcluded   - Compiled exclusion glob predicate.
- * @param {Record<string, string>}          statusMap    - Mutable status map receiving discovered ignored files.
+ * @param {CollectNewlyIgnoredFilesParams} params - Ignored file collection parameters.
  *
- * @returns {Promise<void>} Resolves once all matching ignored files under `relPath` are hashed into `statusMap`.
+ * @returns {Promise<void>} Resolves once all matching ignored files under `params.relPath` are hashed into `params.statusMap`.
  */
 async function collectNewlyIgnoredFiles(
-  worktreePath: string,
-  relPath: string,
-  isExcluded: (candidate: string) => boolean,
-  statusMap: Record<string, string>,
+  params: CollectNewlyIgnoredFilesParams,
 ): Promise<void> {
   const lsFilesOutput = await runGitCommand({
-    cwd: worktreePath,
-    args: ['ls-files', '--others', '-i', '--exclude-standard', '-z', '--', relPath],
+    cwd: params.worktreePath,
+    args: ['ls-files', '--others', '-i', '--exclude-standard', '-z', '--', params.relPath],
   });
   for (const subPath of lsFilesOutput.stdout.split('\0')) {
-    if (subPath.length > 0 && !isExcluded(subPath)) {
-      statusMap[subPath] = await computePathModeAndSha256(path.join(worktreePath, subPath));
+    if (subPath.length > 0 && !params.isExcluded(subPath)) {
+      params.statusMap[subPath] = await computePathModeAndSha256(
+        path.join(params.worktreePath, subPath),
+      );
     }
   }
 }
@@ -69,8 +79,18 @@ export async function parsePorcelainV2Records(
     if (record.startsWith('! ')) {
       const relPath = record.slice(2);
       ignoredPaths.push(relPath);
-      if (options?.includeMatchingIgnored && !options.baselineIgnoredPaths?.has(relPath) && !isExcluded(relPath)) {
-        await collectNewlyIgnoredFiles(worktreePath, relPath, isExcluded, statusMap);
+      if (
+        options?.includeMatchingIgnored &&
+        options.baselineIgnoredPaths !== undefined &&
+        !options.baselineIgnoredPaths.has(relPath) &&
+        !isExcluded(relPath)
+      ) {
+        await collectNewlyIgnoredFiles({
+          worktreePath,
+          relPath,
+          isExcluded,
+          statusMap,
+        });
       }
       continue;
     }

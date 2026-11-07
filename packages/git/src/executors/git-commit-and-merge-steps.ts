@@ -4,7 +4,7 @@ import type {
   GitWorktreeHandle,
   StepExecutionContext,
 } from '@harness-dsl/core';
-import { extractMergeTrainCandidates } from './internal/merge-train-bisector.js';
+import { extractMergeTrainCandidates } from './internal/git-merge-train-bisect.js';
 import { executeBatchMergeTrainQueue } from './internal/merge-train-runner.js';
 import { runSquashRebaseAndPush } from './internal/squash-rebase-and-push.js';
 

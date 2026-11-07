@@ -28,7 +28,7 @@ export interface GitCommitAndPushBuilder<TIn = unknown>
    *
    * @returns {GitCommitAndPushBuilder<TNextIn>} Updated immutable step builder instance.
    */
-  input<TNextIn>(
+  input<TNextIn extends TIn = TIn>(
     schema: z.ZodType<TNextIn>,
   ): GitCommitAndPushBuilder<TNextIn>;
 

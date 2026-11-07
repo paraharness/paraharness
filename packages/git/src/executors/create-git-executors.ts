@@ -1,5 +1,6 @@
 import type {
   AbortHookExecutionInput,
+  BranchableScope,
   CrossVerifierBranchCandidate,
   GitCandidateComparisonToolNode,
   GitCleanWorkingTreeNode,
@@ -49,7 +50,11 @@ export function createGitExecutors(): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({
     scopes: Object.freeze({
       'git:cow-worktree': (node: GitCowWorktreeNode) =>
-        new GitCowWorktreeScopeDriver(node) as never,
+        new GitCowWorktreeScopeDriver(node) as BranchableScope<
+          unknown,
+          Record<string, unknown>,
+          Record<string, unknown>
+        >,
     }),
     steps: Object.freeze({
       'git:commit-and-push': (node: GitCommitAndPushNode, input: unknown, ctx: StepExecutionContext<unknown>) =>

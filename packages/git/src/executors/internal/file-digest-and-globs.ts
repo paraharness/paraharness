@@ -13,7 +13,10 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import picomatch from 'picomatch';
-import { IMPLICIT_REPO_EXCLUDE_GLOBS } from './git-executor.constants.js';
+import {
+  COMPILED_EXCLUDE_MATCHER_CACHE,
+  IMPLICIT_REPO_EXCLUDE_GLOBS,
+} from './git-executor.constants.js';
 
 /**
  * Computes the `${mode}:${sha256}` digest for a worktree path using `lstat(2)` and `readlink(2)` / `readFile(2)`.
@@ -57,11 +60,16 @@ export function compileWorktreeExcludeMatcher(
   excludeGlobs: readonly string[] | undefined,
 ): (relPath: string) => boolean {
   const allGlobs: string[] = [...IMPLICIT_REPO_EXCLUDE_GLOBS, ...(excludeGlobs ?? [])];
+  const cacheKey = allGlobs.join('\0');
+  const cached = COMPILED_EXCLUDE_MATCHER_CACHE.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
   const matchers: Array<(candidate: string) => boolean> = [];
   for (const pattern of allGlobs) {
     matchers.push(picomatch(pattern, { dot: true }));
   }
-  return (relPath: string): boolean => {
+  const compiled = (relPath: string): boolean => {
     const normalized = relPath.replace(/\\/g, '/').replace(/\/+$/, '');
     if (normalized === '.gitignore' || normalized.endsWith('/.gitignore')) return false;
     for (const isMatch of matchers) {
@@ -69,32 +77,51 @@ export function compileWorktreeExcludeMatcher(
     }
     return false;
   };
+  COMPILED_EXCLUDE_MATCHER_CACHE.set(cacheKey, compiled);
+  return compiled;
 }
 
 /**
- * Computes a structural SHA-256 digest of `<worktreePath>/node_modules` and optionally mirrors it under `backupRootDir/<digest>`.
+ * Checks whether a relative directory path inside `node_modules` is a transient bundler or test-runner cache directory.
  *
- * Walks regular files and symlinks inside `node_modules` (excluding `.cache`, `.vite`, and `.vitest`)
- * so `diffEffects` and `restoreCheckpoint` can detect and roll back `node_modules` tampering across multiple checkpoints.
+ * Matches both top-level and nested `.cache`, `.vite`, and `.vitest` directories.
  *
- * @param {string} worktreePath    - Worktree root directory path.
- * @param {string} [backupRootDir] - Optional `<gitdir>/harness-ckpt-nm` root directory to populate via CoW copy.
+ * @param {string} relDir - Forward-slash relative directory path inside `node_modules`.
+ *
+ * @returns {boolean} `true` when `relDir` is a transient `.cache`, `.vite`, or `.vitest` directory.
+ */
+function isTransientNodeModulesCacheDir(relDir: string): boolean {
+  return (
+    relDir === '.cache' ||
+    relDir === '.vite' ||
+    relDir === '.vitest' ||
+    relDir.endsWith('/.cache') ||
+    relDir.endsWith('/.vite') ||
+    relDir.endsWith('/.vitest')
+  );
+}
+
+/**
+ * Computes a structural SHA-256 digest of `<worktreePath>/node_modules`.
+ *
+ * Walks regular files and symlinks inside `node_modules` (excluding top-level and nested `.cache`, `.vite`, and `.vitest`)
+ * so `diffEffects` and `restoreCheckpoint` can detect `node_modules` tampering without performing backup I/O.
+ *
+ * @param {string} worktreePath - Worktree root directory path.
  *
  * @returns {Promise<string>} Hex SHA-256 digest of the `node_modules` tree, or `'ABSENT'` when not present.
  */
 export async function computeNodeModulesDigest(
   worktreePath: string,
-  backupRootDir?: string,
 ): Promise<string> {
   const nmRoot = path.join(worktreePath, 'node_modules');
   const rootStat = await lstat(nmRoot).catch(() => null);
   if (rootStat === null) return 'ABSENT';
   const hash = createHash('sha256');
-  const filesToBackup: string[] = [];
   const stack: string[] = [''];
   while (stack.length > 0) {
     const relDir = stack.pop() ?? '';
-    if (relDir === '.cache' || relDir === '.vite' || relDir === '.vitest') continue;
+    if (isTransientNodeModulesCacheDir(relDir)) continue;
     const entries = await readdir(path.join(nmRoot, relDir), { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
@@ -103,21 +130,50 @@ export async function computeNodeModulesDigest(
       else {
         const digest = await computePathModeAndSha256(path.join(nmRoot, childRel));
         hash.update(`${childRel}:${digest}\n`, 'utf8');
-        filesToBackup.push(childRel);
       }
     }
   }
-  const digest = hash.digest('hex');
-  if (backupRootDir !== undefined) {
-    const digestBackupDir = path.join(backupRootDir, digest);
-    const exists = await lstat(digestBackupDir).then(() => true, () => false);
-    if (!exists) {
-      for (const rel of filesToBackup) {
-        await copyFileCowOrValue(path.join(nmRoot, rel), path.join(digestBackupDir, rel));
+  return hash.digest('hex');
+}
+
+/**
+ * Mirrors `<worktreePath>/node_modules` into `<backupRootDir>/<digest>` via Copy-on-Write if not already backed up.
+ *
+ * Skips transient `.cache`, `.vite`, and `.vitest` subdirectories and short-circuits when `digest === 'ABSENT'`
+ * or `<backupRootDir>/<digest>` already exists on disk.
+ *
+ * @param {string} worktreePath  - Worktree root directory path.
+ * @param {string} digest        - Precomputed structural SHA-256 digest of `node_modules`.
+ * @param {string} backupRootDir - `<gitdir>/harness-ckpt-nm` backup root directory.
+ *
+ * @returns {Promise<void>} Resolves once the content-addressed backup directory is populated.
+ */
+export async function snapshotNodeModulesForCheckpoint(
+  worktreePath: string,
+  digest: string,
+  backupRootDir: string,
+): Promise<void> {
+  if (digest === 'ABSENT') return;
+  const nmRoot = path.join(worktreePath, 'node_modules');
+  const digestBackupDir = path.join(backupRootDir, digest);
+  const exists = await lstat(digestBackupDir).then(
+    () => true,
+    () => false,
+  );
+  if (exists) return;
+  const stack: string[] = [''];
+  while (stack.length > 0) {
+    const relDir = stack.pop() ?? '';
+    if (isTransientNodeModulesCacheDir(relDir)) continue;
+    const entries = await readdir(path.join(nmRoot, relDir), { withFileTypes: true });
+    for (const entry of entries) {
+      const childRel = relDir.length === 0 ? entry.name : `${relDir}/${entry.name}`;
+      if (entry.isDirectory()) stack.push(childRel);
+      else {
+        await copyFileCowOrValue(path.join(nmRoot, childRel), path.join(digestBackupDir, childRel));
       }
     }
   }
-  return digest;
 }
 
 /**

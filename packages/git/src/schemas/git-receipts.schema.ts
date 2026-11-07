@@ -59,3 +59,122 @@ export const HarnessMetaSchema = z.object({
  * Inferred TypeScript record shape for `<gitdir>/harness-meta.json`.
  */
 export type HarnessMetaRecord = z.infer<typeof HarnessMetaSchema>;
+
+/**
+ * Zod schema validating input arguments for the `readRefFile` git object-store inspection tool.
+ */
+export const ReadRefFileInputSchema = z.object({
+  ref: z.string(),
+  path: z.string(),
+});
+
+/**
+ * Inferred TypeScript input shape for `readRefFile`.
+ */
+export type ReadRefFileInput = z.infer<typeof ReadRefFileInputSchema>;
+
+/**
+ * Zod schema validating input arguments for the `diffRefs` git object-store inspection tool.
+ */
+export const DiffRefsInputSchema = z.object({
+  fromRef: z.string(),
+  toRef: z.string(),
+  paths: z.array(z.string()).optional(),
+});
+
+/**
+ * Inferred TypeScript input shape for `diffRefs`.
+ */
+export type DiffRefsInput = z.infer<typeof DiffRefsInputSchema>;
+
+/**
+ * Zod schema validating input arguments for the `listRefFiles` git object-store inspection tool.
+ */
+export const ListRefFilesInputSchema = z.object({
+  ref: z.string(),
+  prefix: z.string().optional(),
+});
+
+/**
+ * Inferred TypeScript input shape for `listRefFiles`.
+ */
+export type ListRefFilesInput = z.infer<typeof ListRefFilesInputSchema>;
+
+/**
+ * Zod schema validating input arguments for the `diffCandidates` candidate comparison tool.
+ */
+export const DiffCandidatesInputSchema = z.object({
+  fromBranchIndex: z.number().int().min(0),
+  toBranchIndex: z.number().int().min(0),
+  paths: z.array(z.string()).optional(),
+});
+
+/**
+ * Inferred TypeScript input shape for `diffCandidates`.
+ */
+export type DiffCandidatesInput = z.infer<typeof DiffCandidatesInputSchema>;
+
+/**
+ * Zod schema validating input arguments for the `readCandidateFile` candidate comparison tool.
+ */
+export const ReadCandidateFileInputSchema = z.object({
+  branchIndex: z.number().int().min(0),
+  path: z.string(),
+});
+
+/**
+ * Inferred TypeScript input shape for `readCandidateFile`.
+ */
+export type ReadCandidateFileInput = z.infer<typeof ReadCandidateFileInputSchema>;
+
+/**
+ * Zod schema validating input arguments for the `evalInCandidates` candidate benchmark tool.
+ */
+export const EvalInCandidatesInputSchema = z.object({
+  branchIndices: z.array(z.number().int().min(0)).optional(),
+  branchIndex: z.number().int().min(0).optional(),
+  argv: z.array(z.string()).optional(),
+  command: z.union([z.string(), z.array(z.string())]).optional(),
+});
+
+/**
+ * Inferred TypeScript input shape for `evalInCandidates`.
+ */
+export type EvalInCandidatesInput = z.infer<typeof EvalInCandidatesInputSchema>;
+
+/**
+ * Zod schema validating a single candidate entry passed to `git.mergeQueue`.
+ */
+export const MergeTrainInputItemSchema = z.union([
+  z.string(),
+  z.object({
+    branchName: z.string().optional(),
+    ref: z.string().optional(),
+    headRef: z.string().optional(),
+    baseRef: z.string().optional(),
+  }),
+]);
+
+/**
+ * Inferred TypeScript shape for a single candidate entry passed to `git.mergeQueue`.
+ */
+export type MergeTrainInputItem = z.infer<typeof MergeTrainInputItemSchema>;
+
+/**
+ * Zod schema validating the step input payload accepted by `git.mergeQueue`.
+ */
+export const MergeTrainStepInputSchema = z.union([
+  z.array(MergeTrainInputItemSchema),
+  z.object({
+    candidates: z.array(MergeTrainInputItemSchema).optional(),
+    branches: z.array(MergeTrainInputItemSchema).optional(),
+    refs: z.array(MergeTrainInputItemSchema).optional(),
+    receipts: z.array(MergeTrainInputItemSchema).optional(),
+  }),
+]);
+
+/**
+ * Inferred TypeScript shape for the step input payload accepted by `git.mergeQueue`.
+ */
+export type MergeTrainStepInput = z.infer<typeof MergeTrainStepInputSchema>;
+

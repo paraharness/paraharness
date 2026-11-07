@@ -4,8 +4,13 @@ import type {
   CheckASTNode,
   CheckEvaluationResult,
   GitWorktreeHandle,
+  NodeExecutor,
   StepExecutionContext,
 } from '@harness-dsl/core';
+import {
+  MergeTrainStepInputSchema,
+  type MergeTrainInputItem,
+} from '../../schemas/git-receipts.schema.js';
 import {
   buildIsolatedWorktreeGitEnv,
   runGitCommand,
@@ -27,23 +32,43 @@ export async function evaluateWorktreeCheck(
   checkNode: BaseCheckASTNode<string, GitWorktreeHandle>,
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<CheckEvaluationResult> {
-  const registered = ctx.registry?.checks?.[checkNode.type as CheckASTNode['type']];
+  const registered = ctx.registry?.checks?.[
+    checkNode.type as CheckASTNode['type']
+  ] as
+    | NodeExecutor<
+        BaseCheckASTNode<string, GitWorktreeHandle>,
+        void,
+        CheckEvaluationResult,
+        StepExecutionContext<GitWorktreeHandle>
+      >
+    | undefined;
   if (registered !== undefined) {
-    return await registered(checkNode as never, undefined, ctx);
+    return registered(checkNode, undefined, ctx);
   }
   if ('command' in checkNode && typeof checkNode.command === 'string') {
     const cmd = checkNode.command;
     const cwd = ctx.scopeHandle.worktreePath;
     const env = buildIsolatedWorktreeGitEnv(cwd);
-    return await new Promise<CheckEvaluationResult>((resolve) => {
-      execFile('sh', ['-c', cmd], { cwd, env }, (err, stdout, stderr) => {
-        const ok = err === null;
-        const msg = (stderr || stdout || (err?.message ?? 'Check failed')).trim();
-        resolve({ ok, deficits: ok ? [] : [msg] });
-      });
+    return new Promise<CheckEvaluationResult>((resolve) => {
+      execFile(
+        'sh',
+        ['-c', cmd],
+        { cwd, env, signal: ctx.signal },
+        (err, stdout, stderr) => {
+          const ok = err === null;
+          const msg = (
+            stderr ||
+            stdout ||
+            (err?.message ?? 'Check failed')
+          ).trim();
+          resolve({ ok, deficits: ok ? [] : [msg] });
+        },
+      );
     });
   }
-  throw new Error(`No CheckExecutor registered for '${checkNode.type}' (id '${checkNode.id}').`);
+  throw new Error(
+    `No CheckExecutor registered for '${checkNode.type}' (id '${checkNode.id}').`,
+  );
 }
 
 /**
@@ -62,31 +87,50 @@ export async function extractMergeTrainCandidates(
   handle: GitWorktreeHandle,
   maxBatchSize: number,
 ): Promise<readonly MergeTrainCandidate[]> {
-  const rawItems: unknown[] = [];
-  if (Array.isArray(input)) {
-    for (const entry of input) rawItems.push(entry);
-  } else if (typeof input === 'object' && input !== null) {
-    const record = input as Record<string, unknown>;
-    const list = record['candidates'] ?? record['branches'] ?? record['refs'] ?? record['receipts'];
-    if (Array.isArray(list)) for (const entry of list) rawItems.push(entry);
-  }
+  const parsed = MergeTrainStepInputSchema.safeParse(input);
+  const rawItems: readonly MergeTrainInputItem[] = parsed.success
+    ? Array.isArray(parsed.data)
+      ? parsed.data
+      : (parsed.data.candidates ??
+        parsed.data.branches ??
+        parsed.data.refs ??
+        parsed.data.receipts ??
+        [])
+    : [];
   if (rawItems.length === 0) {
     const fallbackHead = handle.headRef ?? handle.baseRef;
-    return Object.freeze([{ label: handle.branchName ?? fallbackHead, headSha: fallbackHead, baseSha: handle.baseRef }]);
+    return Object.freeze([
+      {
+        label: handle.branchName ?? fallbackHead,
+        headSha: fallbackHead,
+        baseSha: handle.baseRef,
+      },
+    ]);
   }
   const candidates: MergeTrainCandidate[] = [];
   const limit = Math.min(rawItems.length, Math.max(1, maxBatchSize));
   for (let idx = 0; idx < limit; idx += 1) {
     const raw = rawItems[idx];
-    const label = typeof raw === 'string'
-      ? raw
-      : String((raw as Record<string, unknown>)['branchName'] ?? (raw as Record<string, unknown>)['ref'] ?? (raw as Record<string, unknown>)['headRef']);
-    const refInput = typeof raw === 'string' ? raw : String((raw as Record<string, unknown>)['headRef'] ?? label);
-    const headSha = (await runGitCommand({ cwd: handle.worktreePath, args: ['rev-parse', refInput] })).stdout.trim();
-    const explicitBase = typeof raw === 'object' && raw !== null && typeof (raw as Record<string, unknown>)['baseRef'] === 'string'
-      ? String((raw as Record<string, unknown>)['baseRef'])
-      : undefined;
-    const parentLookup = (await runGitCommand({ cwd: handle.worktreePath, args: ['rev-parse', `${headSha}^`], allowNonZeroExit: true })).stdout.trim();
+    if (raw === undefined) continue;
+    const label =
+      typeof raw === 'string'
+        ? raw
+        : (raw.branchName ?? raw.ref ?? raw.headRef ?? '');
+    const refInput = typeof raw === 'string' ? raw : (raw.headRef ?? label);
+    const headSha = (
+      await runGitCommand({
+        cwd: handle.worktreePath,
+        args: ['rev-parse', refInput],
+      })
+    ).stdout.trim();
+    const explicitBase = typeof raw === 'string' ? undefined : raw.baseRef;
+    const parentLookup = (
+      await runGitCommand({
+        cwd: handle.worktreePath,
+        args: ['rev-parse', `${headSha}^`],
+        allowNonZeroExit: true,
+      })
+    ).stdout.trim();
     const baseSha = (explicitBase ?? parentLookup) || handle.baseRef;
     candidates.push({ label, headSha, baseSha });
   }

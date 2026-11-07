@@ -22,36 +22,44 @@ import {
 import { buildIsolatedWorktreeGitEnv, runGitCommand } from './git-cli-runner.js';
 
 /**
+ * Parameters for cloning a single directory entry inside `node_modules`.
+ */
+interface CloneSingleNodeModulesEntryParams {
+  /** Directory entry read from `srcRoot`. */
+  readonly entry: Dirent;
+  /** Repository-relative path of `entry`. */
+  readonly childRel: string;
+  /** Source repository or parent worktree root path. */
+  readonly srcRoot: string;
+  /** Destination worktree root path. */
+  readonly destRoot: string;
+  /** DFS directory traversal stack to push subdirectories onto. */
+  readonly stack: string[];
+}
+
+/**
  * Clones a single directory entry inside `node_modules` using symlink recreation, `.prisma` value copy, or hardlinking.
  *
- * @param {Dirent}   entry    - Directory entry read from `srcRoot`.
- * @param {string}   childRel - Repository-relative path of `entry`.
- * @param {string}   srcRoot  - Source repository or parent worktree root path.
- * @param {string}   destRoot - Destination worktree root path.
- * @param {string[]} stack    - DFS directory traversal stack to push subdirectories onto.
+ * @param {CloneSingleNodeModulesEntryParams} params - Single `node_modules` entry clone parameters.
  *
- * @returns {Promise<void>} Resolves once the entry is cloned or pushed onto `stack`.
+ * @returns {Promise<void>} Resolves once the entry is cloned or pushed onto `params.stack`.
  */
 async function cloneSingleNodeModulesEntry(
-  entry: Dirent,
-  childRel: string,
-  srcRoot: string,
-  destRoot: string,
-  stack: string[],
+  params: CloneSingleNodeModulesEntryParams,
 ): Promise<void> {
-  if (entry.isDirectory()) {
-    stack.push(childRel);
+  if (params.entry.isDirectory()) {
+    params.stack.push(params.childRel);
     return;
   }
-  const srcAbs = path.join(srcRoot, childRel);
-  const destAbs = path.join(destRoot, childRel);
-  if (entry.isSymbolicLink()) {
+  const srcAbs = path.join(params.srcRoot, params.childRel);
+  const destAbs = path.join(params.destRoot, params.childRel);
+  if (params.entry.isSymbolicLink()) {
     await mkdir(path.dirname(destAbs), { recursive: true });
     await rm(destAbs, { force: true });
     await symlink(await readlink(srcAbs, 'utf8'), destAbs);
     return;
   }
-  if (childRel.includes('/.prisma/')) {
+  if (params.childRel.includes('/.prisma/')) {
     await copyFileCowOrValue(srcAbs, destAbs);
     return;
   }
@@ -88,7 +96,13 @@ export async function cloneNodeModulesTree(
     for (const entry of entries) {
       const childRel = `${relDir}/${entry.name}`;
       if (isExcluded(childRel)) continue;
-      await cloneSingleNodeModulesEntry(entry, childRel, srcRoot, destRoot, stack);
+      await cloneSingleNodeModulesEntry({
+        entry,
+        childRel,
+        srcRoot,
+        destRoot,
+        stack,
+      });
     }
   }
 }

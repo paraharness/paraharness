@@ -1,9 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, rmdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { GitWorktreeHandle } from '@harness-dsl/core';
 import type { GitCheckpointPayload } from '../git-checkpoint-payload.js';
 import { computeNodeModulesDigest, copyFileCowOrValue } from './file-digest-and-globs.js';
-import { runGitCommand, writeHarnessMeta } from './git-cli-runner.js';
+import {
+  runGitCommand,
+  updateWorktreeHandleInPlace,
+  writeHarnessMeta,
+} from './git-cli-runner.js';
 
 /**
  * Step 1 of `restoreCheckpoint`: restores `<gitdir>/HEAD`, `info/exclude`, `harness-meta.json`, live index, and `.gitignore` files.
@@ -31,14 +36,19 @@ export async function restoreGitdirMetadataAndGitignores(
     await writeFile(excludePath, fromCheckpoint.infoExcludeContent, 'utf8');
   } else await rm(excludePath, { force: true });
   await writeHarnessMeta(handle.gitDirPath, fromCheckpoint.meta);
-  Object.assign(handle, {
+  updateWorktreeHandleInPlace(handle, {
     baseRef: fromCheckpoint.meta.baseRef,
     baseBranch: fromCheckpoint.meta.baseBranch,
     branchName: fromCheckpoint.meta.branchName,
     headRef: fromCheckpoint.headSha,
     unresolvedConflictPaths: Object.freeze({ ...fromCheckpoint.meta.unresolvedConflictPaths }),
   });
-  const gitignorePaths = [...treePaths].filter((relPath) => relPath === '.gitignore' || relPath.endsWith('/.gitignore'));
+  const gitignorePaths: string[] = [];
+  for (const relPath of treePaths) {
+    if (relPath === '.gitignore' || relPath.endsWith('/.gitignore')) {
+      gitignorePaths.push(relPath);
+    }
+  }
   if (gitignorePaths.length > 0) {
     await checkoutCheckpointTreeAndRestoreIndex(handle, fromCheckpoint, gitignorePaths);
   }
@@ -107,7 +117,7 @@ export async function checkoutCheckpointTreeAndRestoreIndex(
   fromCheckpoint: GitCheckpointPayload,
   pathsToMaterialize: readonly string[] | 'ALL',
 ): Promise<void> {
-  const tmpIndex = path.join(handle.gitDirPath, `harness-restore-idx.${process.pid}.${Date.now()}`);
+  const tmpIndex = path.join(handle.gitDirPath, `harness-restore-idx.${process.pid}.${randomUUID()}`);
   try {
     await runGitCommand({
       cwd: handle.worktreePath,
