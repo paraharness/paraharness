@@ -1,1 +1,3 @@
 # Lessons (Builder)
+
+- **[PQueue.add / AbortSignal]** Pass a queued-wait-only `AbortController` signal (`{ signal: waitController.signal }`) to `PQueue.add` and detach the caller's `AbortSignal` listener inside the task callback before invoking critical-section work or awaiting lock settlement when using `PQueue({ concurrency: 1 })` as a mutex or serialized queue, because `p-queue` wraps in-flight tasks in `Promise.race([fn(), abortPromise])` and immediately decrements `pending` (releasing the concurrency slot to the next queued waiter while `fn()` is still running) if the signal aborts mid-execution.
