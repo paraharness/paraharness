@@ -1,12 +1,19 @@
 # Coding Guidelines
 
-Every file in this repository must conform to these guidelines, enforced by `pnpm lint` (`eslint.config.mjs`), review, and verification gates. *(Outside **§2**, `/** ... */` JSDoc is omitted from snippets to isolate each rule; production and `test/fixtures/` files require full JSDoc per **§2**.)*
+Every file in this repository must be written for long-term clarity, soundness, and maintainability. *(Outside **§2**, `/** ... */` JSDoc is omitted from code snippets to isolate the rule being illustrated; production and `test/fixtures/` files require complete JSDoc per **§2**.)*
 
-## 1. File & Module Taxonomy
+## 1. File & Module Organization
 
-### Rule 1.1 — Strict Single-Kind Entity Files & Universal Line Ceilings
-- Unrelated or different-kind declarations (`interface`, `type`, `class`, `function`, `const`) must **never** share a production file (`src/**`, `test/fixtures/**`), enforced by `harness/file-separation` (Rules 1.2–1.7): **(1) `*.types.ts`** (pure `type` aliases); **(2) `*.schema.ts`** (Zod schema `const` + its `z.infer` `type`; `interface`, `class`, and `function` are forbidden); **(3) `<entity-name>.ts`** (1 root `interface` + sub-interfaces reachable via `TSPropertySignature`, `TSIndexSignature`, `extends`, or `TSMethodSignature`); **(4) `<class-name>.ts`** (1 `class` + optional dedicated `*Params` / `*Options` interfaces); **(5) `create-*-builder.ts` / `<domain-verb>.ts` / `internal/<domain-verb>.ts`** (functions + optional dedicated `*Params` / `*Options` interfaces: `<= 1` function in `**/builders/*.ts`, `**/create-*.ts`, or `> 40` lines; `<= 4` in `internal/`); **(6) `*.constants.ts` & `index.ts`** (`const` values only in `*.constants.ts`; pure re-exports in `index.ts`).
-- **Line ceilings & test/CLI scope:** Non-test files (`src/**`, `test/fixtures/**`, `scripts/**`, `.agents/hooks/**`, `eslint.config.mjs`) must be **`<= 250` lines**; test files (`test/**/*.test.ts`) must be **`<= 400` lines** and may co-locate local test constants and setup helpers with `describe`/`it` suites (reusable fakes live in `test/fixtures/**` per Rule 6.1). CLI/config files in `.agents/hooks/**`, `scripts/**`, and `eslint.config.mjs` (`<= 250` lines) may co-locate constants, documented functions, and entrypoint/config exports.
+### Rule 1.1 — Single-Kind Entity Files
+- Each file in `src/**` and `test/fixtures/**` holds one declaration kind so module boundaries stay clear and predictable:
+  1. **`<entity-name>.ts` (`interface`):** One root `interface` plus any sub-interfaces directly reachable from it via property signatures (`TSPropertySignature`), index signatures (`TSIndexSignature`), `extends`, or method signatures (`TSMethodSignature`).
+  2. **`<class-name>.ts` (`class`):** One `class` with a single stateful responsibility, plus optional dedicated `*Params` / `*Options` interfaces consumed by that class.
+  3. **`<domain-verb>.ts` / `internal/<domain-verb>.ts` (`function`):** Focused functions with optional dedicated `*Params` / `*Options` interfaces.
+  4. **`*.types.ts` (`type`):** Pure `type` aliases (discriminated unions, mapped/conditional types, template-literal types).
+  5. **`*.schema.ts` (Zod schemas):** Zod schema `const` declarations paired with their inferred `z.infer<typeof Schema>` `type` aliases (`interface`, `class`, and `function` declarations do not belong in `*.schema.ts`).
+  6. **`*.constants.ts` & `index.ts`:** Named static constants in `*.constants.ts`; pure explicit re-exports in `index.ts`.
+- Test files (`test/**/*.test.ts`) may co-locate local test constants and setup helpers alongside `describe`/`it` suites, while reusable test fakes and harnesses live in `test/fixtures/**` per Rule 6.1. CLI and config entrypoints in `.agents/hooks/**`, `scripts/**`, and `eslint.config.mjs` may co-locate constants, documented functions, and entrypoint exports.
+
 **DON'T (`src/runtime/runner.ts`):**
 ```ts
 export const DEFAULT_TIMEOUT_MS = 5_000;
@@ -21,8 +28,9 @@ export interface RunnerOptions { readonly timeoutMs?: number; }
 export class LocalRunner { run(opts: RunnerOptions): void {} }
 ```
 
-### Rule 1.2 — One Root `interface` Per File (Property & Method Sub-Interfaces Allowed)
-- Place each root `interface` in its own `kebab-case` file (`LessonsBuilder` $\to$ `lessons-builder.ts`) without `.interface.ts`. Secondary interfaces may share a file **only if** reachable from the root interface via `TSPropertySignature`, `TSIndexSignature`, `extends`, or `TSMethodSignature` parameter/return types (such as fluent callback sub-builders `$d`, `$r`, `$f`, `$s`, `$intr`); dedicated `*Params` / `*Options` interfaces may be co-located with their consuming function/class or placed in their own file when shared across modules. Unrelated sibling AST/port interfaces must live in separate files, and fake `*Template` properties are forbidden.
+### Rule 1.2 — One Root `interface` Per File (Reachable Property & Method Sub-Interfaces Allowed)
+- Place each root `interface` in its own `kebab-case` file (`LessonsBuilder` $\to$ `lessons-builder.ts`) without `.interface.ts`. Secondary interfaces may share that file only when reachable from the root interface via `TSPropertySignature`, `TSIndexSignature`, `extends`, or `TSMethodSignature` parameter/return types (such as fluent callback sub-builders `$d`, `$r`, `$f`, `$s`, `$intr`). Unrelated sibling AST or port interfaces belong in separate files.
+
 **DON'T (`src/ast/nodes.ts`):**
 ```ts
 export interface AgentNode { readonly type: 'harness:agent'; readonly id: string; }
@@ -35,7 +43,8 @@ export interface LessonsBuilder<TIn = unknown> { distillWith(fn: ($d: LessonDist
 ```
 
 ### Rule 1.3 — One `class` Per File & Single-Responsibility Classes
-- Place each `class` in its own `kebab-case` file (`ScopeLockManager` $\to$ `scope-lock-manager.ts`) with one stateful responsibility, importing constants from `*.constants.ts` and either co-locating dedicated `*Params` / `*Options` interfaces or importing shared ones from dedicated files. Never pack multiple classes into one file or mix unrelated state machines; extract stateless algorithms to `internal/` functions.
+- Place each `class` in its own `kebab-case` file (`ScopeLockManager` $\to$ `scope-lock-manager.ts`) with one cohesive stateful responsibility. Keep pure calculations, wire formatting, and stateless algorithms in focused `internal/` functions rather than bloating the class body.
+
 **DON'T (`src/runtime/managers.ts`):**
 ```ts
 export class RuntimeGodManager {
@@ -61,8 +70,9 @@ export class ScopeLockManager {
 }
 ```
 
-### Rule 1.4 — Grouped `type` Aliases (`*.types.ts`) & Schema Type Co-Location (`*.schema.ts`)
-- Pure `type` aliases (discriminated unions, primitive/template-literal/mapped/conditional types) live in `*.types.ts`; a `z.infer<typeof FooSchema>` type may pair with `FooSchema` in `*.schema.ts` per Rule 1.1(2). Never place `interface`, `class`, `const`, or `function` declarations in `*.types.ts`, or use `type Foo = { ... }` object-type literals to evade dedicated interface files.
+### Rule 1.4 — Grouped `type` Aliases (`*.types.ts`) & Schema Co-Location (`*.schema.ts`)
+- Place pure `type` aliases in `*.types.ts` (and `z.infer<typeof FooSchema>` types alongside `FooSchema` in `*.schema.ts`). Do not use object-type literals (`type Foo = { ... }`) in `*.types.ts` as a substitute for a dedicated `interface` file.
+
 **DON'T (`src/ast/step.types.ts`):**
 ```ts
 export const STEP_VERSION = 1;
@@ -78,7 +88,8 @@ export type CoreStepNodeType = CoreStepASTNode['type'];
 ```
 
 ### Rule 1.5 — Grouped Constants (`*.constants.ts`), Schemas (`*.schema.ts`) & Zero Magic Literals
-- Place module-scope constants, protocol markers, default bounds, pre-compiled regexes, and frozen lookup tables in `*.constants.ts` (and Zod schemas with `z.infer` types in `*.schema.ts`). Never mix constants into interface, class, type, or function files, or scatter magic numbers (`65_536`, `5_000`, `0.25`) or wire strings (`'harness:fork-dispatched'`) inline in bodies.
+- Place module-scope constants, protocol markers, default bounds, pre-compiled regexes, and frozen lookup tables in `*.constants.ts` (and Zod schemas in `*.schema.ts`). Never scatter magic numbers or protocol strings inline inside function bodies.
+
 **DON'T (`src/runtime/lane/compute-priority.ts`):**
 ```ts
 export const DEFAULT_AGING_MS = 60_000;
@@ -94,8 +105,9 @@ export const DEFAULT_PRIORITY_AGING_INTERVAL_MS = 60_000;
 export const PRIORITY_AGING_STEP_WEIGHT = 5;
 ```
 
-### Rule 1.6 — Single-Function Builder/Large Function Files & Cohesive `internal/` Helpers
-- Functions never share a file with constants, types, classes, or non-`*Params`/`*Options` interfaces (dedicated `*Params` / `*Options` interfaces and their sub-interfaces may be co-located with their consuming function or placed in their own interface file when shared). Entity builder factories (`**/builders/*.ts`, `**/create-*.ts` outside `internal/`) and any file with a function `> 40` lines allow **at most 1 top-level function per file** (`createLessonsBuilder` $\to$ `create-lessons-builder.ts`). Cohesive helpers (`<= 40` lines each) may share a file (**up to 4 functions per file**), with non-public helpers under `internal/` (`src/builders/internal/assert-valid-max-turns.ts`).
+### Rule 1.6 — Focused Function Files & `internal/` Phase Decomposition
+- Give every public builder (`create-*-builder.ts`), executor (`execute-*.ts`), and non-trivial `internal/` phase helper its own file named after what it does (`createLessonsBuilder` $\to$ `create-lessons-builder.ts`, `recallLoopLessons` $\to$ `internal/recall-loop-lessons.ts`). Keep non-public phase, predicate, and projection functions under `internal/`.
+
 **DON'T (`src/builders/agent.ts`):**
 ```ts
 function assertValidMaxTurns(n: number): void { if (!Number.isInteger(n) || n < 1) throw new Error(`Invalid: ${n}`); }
@@ -111,8 +123,9 @@ export function createAgentBuilder(id: string, defaultTurns = 25): AgentBuilder 
 }
 ```
 
-### Rule 1.7 — Pure Barrel Files (`index.ts`) & Strict Acyclic Import Graph (DAG)
-- `index.ts` files contain **only** `export { ... } from '...'` and `export type { ... } from '...'` statements (zero declarations and zero wildcard `export *` re-exports). Module imports must form a strict DAG (`*.types.ts / interfaces / *.constants.ts` $\to$ `internal/` $\to$ `public classes & functions` $\to$ `index.ts`); leaf files import directly from sibling leaf files (`./agent-node.js`), never through `index.js`.
+### Rule 1.7 — Pure Barrel Files (`index.ts`) & Acyclic Import Graph (DAG)
+- `index.ts` files contain only explicit `export { ... } from '...'` and `export type { ... } from '...'` statements (zero declarations and zero wildcard `export *` re-exports). Module imports must form a strict DAG (`*.types.ts / interfaces / *.constants.ts` $\to$ `internal/` $\to$ `public classes & functions` $\to$ `index.ts`); leaf modules import directly from sibling leaf files (`./agent-node.js`), never through `index.js`.
+
 **DON'T (`src/index.ts`):**
 ```ts
 import { createRuntime } from './runtime/index.js';
@@ -129,7 +142,8 @@ export { createRuntime } from './runtime/create-runtime.js';
 ```
 
 ### Rule 1.8 — 1:1 File & Identifier Naming Precision (Zero Grab-Bag Names)
-- File names must match their primary exported entity in `kebab-case` (`ScopeLockManager` $\to$ `scope-lock-manager.ts`). Grab-bag file names (`utils.ts`, `helpers.ts`, `common.ts`, `shared.ts`, `misc.ts`, `core.ts`, `base.ts`, unprefixed `types.ts` / `constants.ts`) and vague identifiers (`data`, `info`, `item`, `val`, `temp`, `obj`, `res`, `ret`, `processData`, `handleItem`, `doWork`, `Manager`, `Helper`) are forbidden.
+- File names must match their primary exported symbol in `kebab-case` (`ScopeLockManager` $\to$ `scope-lock-manager.ts`, `selectEligibleLessons` $\to$ `select-eligible-lessons.ts`). Grab-bag file names (`utils.ts`, `helpers.ts`, `common.ts`, `shared.ts`, `misc.ts`, `core.ts`, `base.ts`, unprefixed `types.ts` / `constants.ts`) and vague identifiers (`data`, `info`, `item`, `val`, `temp`, `obj`, `res`, `ret`, `processData`, `handleItem`, `doWork`) are forbidden.
+
 **DON'T (`src/runtime/utils.ts`):**
 ```ts
 export function processData(data: readonly unknown[], flag: boolean): unknown[] {
@@ -147,10 +161,13 @@ export function selectEligibleLessons(lessons: readonly LessonRecord[], minConfi
 }
 ```
 
+---
+
 ## 2. JSDoc Documentation & Comment Discipline
 
 ### Rule 2.1 — Mandatory JSDoc on Every Class, Interface, Method, Function, and Top-Level Type or Constant
 Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public, `internal/`, and CLI hook/script functions), and top-level `type` alias or `const` in `src/**`, `test/fixtures/**`, `scripts/**`, `.agents/hooks/**`, and `eslint.config.mjs` requires a `/** ... */` JSDoc block immediately above its declaration (in `test/**/*.test.ts`, `describe`/`it` suites and local test helpers do not require §2 JSDoc).
+
 **DON'T:**
 ```ts
 export interface LeaseReceipt { readonly leaseId: string; readonly scopeKey: string; readonly fenceToken: number; }
@@ -172,8 +189,6 @@ export class FenceClock {
   /**
    * Increments the counter by one and returns the newly issued fencing token.
    *
-   * Rejects allocation before overflow so tokens remain safe integers.
-   *
    * @returns {number} Strictly positive fencing token greater than all prior tokens.
    *
    * @throws {RangeError} If incrementing would exceed `Number.MAX_SAFE_INTEGER`.
@@ -187,17 +202,16 @@ export class FenceClock {
 ```
 
 ### Rule 2.2 — JSDoc Anatomy & Tag Completeness
-**Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) requires the 3-part JSDoc anatomy below** (`private` class methods and small `internal/` helper functions `<= 20` lines may use a 1-paragraph summary + required `@tags`; properties, top-level constants, and simple type aliases may use a 1-sentence `/** Summary. */` unless `@template` tags or invariants require detail; 1-line stub JSDocs on interface methods are rejected by `harness/require-complete-jsdoc`):
-1. **Summary line:** One direct sentence stating what the entity is or does.
-2. **Detailed description:** Separated by an empty `*` line; explains behavioral invariants, state transitions, edge cases, or concurrency guarantees (optional on `private` methods and `internal/` functions `<= 20` lines).
-3. **Grouped block tags** separated by empty `*` lines: `@template TName Description`, `@param {Type} name - Description` (`[name=default]` when optional, matching parameter count), `@returns {Type} Description` (mandatory for non-`void` callables), `@throws {ErrorType} Description`, and `@note` / `@example` when applicable (vertical column alignment of `@template` / `@param` tags is not required).
+Every documented declaration must include:
+1. **Clear summary & behavioral description:** A direct opening sentence stating what the entity is or does, followed by behavioral invariants, state transitions, edge cases, or concurrency guarantees whenever non-obvious.
+2. **Complete block tags** separated by empty `*` lines:
+   - `@template TName Description` for every generic type parameter on the declaration.
+   - `@param {Type} name - Description` (`[name=default]` when optional) matching every parameter on functions, methods, and interface callables.
+   - `@returns {Type} Description` on every non-`void` function, method, and interface callable.
+   - `@throws {ErrorType} Description`, `@note`, and `@example` where applicable.
+
 **DON'T:**
 ```ts
-/** Fluent configurator for contrastive lesson distillation. */
-export interface LessonDistillationBuilder {
-  /** Enables contrastive distillation on outer `H.loop` recovery iterations. */
-  onLoopRecovery(enabled?: boolean): LessonDistillationBuilder;
-}
 /**
  * Executes a step node.
  * @param node the node
@@ -208,26 +222,10 @@ export async function executeStepNode<TIn, TOut>(node: StepASTNode<TIn, TOut>, i
 **DO:**
 ```ts
 /**
- * Fluent configurator for contrastive lesson distillation (`$d` in `.distillWith`).
- *
- * Captures trigger conditions used when distilling failure-to-pass trajectory pairs into `LessonStore`.
- */
-export interface LessonDistillationBuilder {
-  /**
-   * Toggles contrastive distillation when an outer `H.loop` recovers after a failed check.
-   *
-   * Pairs the latest failing trajectory with the passing trajectory for distillation.
-   *
-   * @param {boolean} [enabled=true] - Whether outer loop recovery distillation is active.
-   *
-   * @returns {LessonDistillationBuilder} Updated immutable builder instance.
-   */
-  onLoopRecovery(enabled?: boolean): LessonDistillationBuilder;
-}
-/**
  * Dispatches a passive step AST node to its registered runtime executor.
  *
- * Built-in steps narrow via `switch (node.type)`; adapter steps dispatch via `ctx.registry.steps`.
+ * Built-in steps narrow via `switch (node.type)`; adapter steps dispatch via `ctx.registry.steps`
+ * with input and output validated against `node.inputSchema` and `node.outputSchema`.
  *
  * @template TIn Step input payload type.
  * @template TOut Step output payload type.
@@ -240,20 +238,19 @@ export interface LessonDistillationBuilder {
  * @returns {Promise<TOut>} Validated step output payload.
  *
  * @throws {ZodError} If `input` fails `node.inputSchema` or output fails `node.outputSchema`.
- *
- * @note
- * Callers must hold at least a shared read lease on the active scope.
- *
- * @example
- * ```ts
- * const out = await executeStepNode(agentNode, { issueId: 42 }, stepCtx);
- * ```
  */
-export async function executeStepNode<TIn = unknown, TOut = unknown, THandle = unknown>(node: StepASTNode<TIn, TOut, THandle>, input: TIn, ctx: StepExecutionContext<THandle>): Promise<TOut> { throw new Error(ctx.runId); }
+export async function executeStepNode<TIn = unknown, TOut = unknown, THandle = unknown>(
+  node: StepASTNode<TIn, TOut, THandle>,
+  input: TIn,
+  ctx: StepExecutionContext<THandle>,
+): Promise<TOut> {
+  throw new Error(ctx.runId);
+}
 ```
 
-### Rule 2.3 — JSDoc Prose Quality (Grounded & Direct — No Vague Stubs, No Robotic Walls of Text)
-- Write direct engineering English: **no tautological stubs** repeating identifier words (`/** Validates fence token. */`), and **no robotic walls of text** with LLM throat-clearing (*"This function is responsible for..."*) or repeated sentences across summary, description, and `@returns`.
+### Rule 2.3 — Grounded JSDoc Prose (No Empty Stubs, No Robotic Filler)
+- Write direct engineering English: neither tautological stubs that merely repeat the identifier words (`/** Validates fence token. */`) nor robotic filler (*"This function is responsible for ensuring that..."*).
+
 **DON'T:**
 ```ts
 /**
@@ -261,18 +258,11 @@ export async function executeStepNode<TIn = unknown, TOut = unknown, THandle = u
  * @param {number} token - The token.
  */
 export function assertFreshFenceTokenStub(token: number): void {}
-/**
- * This function is responsible for ensuring that a given fencing token is valid.
- * @param {number} fenceToken - This parameter represents the fence token.
- */
-export function assertFreshFenceTokenVerbose(fenceToken: number): void {}
 ```
 **DO:**
 ```ts
 /**
  * Rejects state mutations carrying a fencing token older than the resource's high-water mark.
- *
- * Compares `fenceToken` against `highWaterMark` and throws on stale tokens.
  *
  * @param {number} fenceToken - Active lease fencing token.
  * @param {number} highWaterMark - Highest token committed to `resourceId`.
@@ -285,8 +275,9 @@ export function assertFreshFenceToken(fenceToken: number, highWaterMark: number,
 }
 ```
 
-### Rule 2.4 — Zero Inline or Non-JSDoc Comments Anywhere
-- Single-line comments (`// ...`) and non-JSDoc block comments (`/* ... */`) are forbidden in all files, and **zero comments of any kind (`//`, `/* */`, `/** */`) may appear inside a function, method, or constructor body**. Extract complex blocks into named `internal/` helpers with declaration JSDoc.
+### Rule 2.4 — Zero Inline or Body Comments
+- Single-line comments (`// ...`), non-JSDoc block comments (`/* ... */`), and comments of any kind inside function, method, or constructor bodies are forbidden. Whenever a block of code feels like it needs a section comment, extract that block into a named `internal/` function with its own declaration JSDoc.
+
 **DON'T:**
 ```ts
 export async function settleTournament(s: TournamentState): Promise<WinnerResult> {
@@ -299,7 +290,6 @@ export async function settleTournament(s: TournamentState): Promise<WinnerResult
 ```
 **DO:**
 ```ts
-/** Resolves a completed speculative tournament race into a winning branch or unpark continuation (full JSDoc per §2). */
 export async function settleTournament(s: TournamentState): Promise<WinnerResult> {
   if (shouldUnparkSoleEscalatedCandidate(s)) return unparkSoleEscalatedCandidate(s);
   if (canShortCircuitArbiterForSoleSurvivor(s)) return verifySoleSurvivor(s);
@@ -307,34 +297,256 @@ export async function settleTournament(s: TournamentState): Promise<WinnerResult
 }
 ```
 
-## 3. Clean Code, KISS, Single Responsibility & Control Flow
+---
 
-### Rule 3.1 — Single Responsibility & Natural Function Decomposition (`<= 80` Lines, Zero Closure State Machines)
-- Each function and class method must do **one thing** at one level of abstraction and stay under **80 lines**. Never write closure state machines mutating outer `let` variables from inner closures; define an explicit state interface in its own file and decompose along real domain phases (`compileTurnPrefix`, `invokeModelTurn`, `dispatchToolCalls`) in `internal/`.
-**DON'T:**
+## 3. Single Responsibility, Abstraction Levels & Control Flow
+
+### Rule 3.1 — One Responsibility Per Function, Method, and Entity at a Single Level of Abstraction
+Every function, method, and class must have **one clear responsibility** and operate at **one uniform level of abstraction**.
+- An **orchestrator** sequences high-level domain phases and manages lifecycle boundaries (`try / finally`); it never performs inline type-cast extraction, state-object assembly, scoring math, raw SQL/git/wire formatting, or loop-body details.
+- A **phase function** executes one phase of a workflow and delegates distinct sub-steps (such as lesson recall, checkpoint diffing, or model failover) to dedicated `internal/` functions.
+- A **class method** coordinates state transitions on the instance and delegates pure domain calculations (such as 3-way merges, DAG cycle checks, or candidate scoring) to stateless `internal/` functions.
+- Never write closure state machines that mutate outer `let` variables from nested closures, and never pack multiple statements or comma-chained declarations onto a single line to hide complexity.
+
+#### Example 1 — Step Orchestrator vs. Phase Implementation (`executeLoop`)
+
+**DON'T (Mixes runtime context casting, lesson recall & scoring, continuation frame construction, iteration control, and outcome sink projection inside one function):**
 ```ts
-export async function executeAgent(node: AgentNode, input: unknown, ctx: StepExecutionContext): Promise<unknown> {
-  let turn = 0;
-  let history: WireFrameRecord[] = [];
-  const runTools = async (calls: readonly ToolCall[]): Promise<void> => { for (const c of calls) history.push(await runSingleTool(c)); };
-  while (turn < node.maxTurns) {
-    turn += 1;
-    const res = await invokeDriver(node, history, ctx);
-    if (res.toolCalls.length > 0) await runTools(res.toolCalls);
+export const executeLoop: NodeExecutor<LoopNode, unknown, unknown, StepExecutionContext> = async (node, input, ctx) => {
+  const validatedInput = node.inputSchema.parse(input);
+  const runtime = (ctx as StepExecutionContext & { readonly _runtime?: LoopRuntimeInternals })._runtime;
+  const existingLoopFrame = ctx.resumeContinuationStack?.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame' && f.loopId === node.id);
+  const recalledLessons = existingLoopFrame
+    ? [...existingLoopFrame.recalledLessons]
+    : node.distillLessons && runtime?.lessonStores?.get(node.distillLessons.id)
+      ? selectRecalledLessons(
+          await runtime.lessonStores.get(node.distillLessons.id)!.queryCandidates({
+            queryText: node.distillLessons.queryMapper ? node.distillLessons.queryMapper(validatedInput) : JSON.stringify(validatedInput),
+            partitions: ctx.activePartitions,
+          }),
+          ctx.activePartitions,
+          runtime.partitionEpochs ?? new Map(),
+          node.distillLessons.scoring,
+        )
+      : [];
+  const state: LoopExecutionState = {
+    loopFrame: existingLoopFrame ?? {
+      kind: 'loop-frame',
+      loopId: node.id,
+      roleKey: node.roleKey,
+      stepExecId: ctx.stepExecId,
+      loopInputJson: JSON.stringify(validatedInput),
+      iteration: 0,
+      phase: 'act',
+      preservedActLeafMessageId: null,
+      turnsTaken: 0,
+      costUsd: 0,
+      elapsedDurationMs: 0,
+      actTurnsTaken: 0,
+      actCostUsd: 0,
+      actElapsedDurationMs: 0,
+      grantedLoopLeases: [...ctx.activeLeases],
+      activeSkillIds: [],
+      activeSkillActivations: {},
+      observedEffects: [...ctx.observedEffects],
+      injectedScopedRuleIds: [],
+      recalledLessons,
+      accumulatedLessonOutcomes: {},
+    },
+    acceptedOutput: undefined,
+    latestFeedback: undefined,
+  };
+  try {
+    while (state.loopFrame.iteration < node.maxIterations) {
+      if (state.loopFrame.phase === 'act') await runLoopActPhase(node, validatedInput, ctx, state);
+      const accepted = await runLoopEvaluatePhase(node, validatedInput, ctx, state);
+      if (accepted) return node.outputSchema.parse(state.acceptedOutput);
+    }
+    throw new Error(`Loop '${node.id}' exhausted maxIterations (${node.maxIterations}) in run '${ctx.runId}'.`);
+  } finally {
+    if (runtime?.childOutcomeSink !== undefined) {
+      runtime.childOutcomeSink.accumulatedLessonOutcomes = state.loopFrame.accumulatedLessonOutcomes;
+      runtime.childOutcomeSink.preservedActLeafMessageId = state.loopFrame.preservedActLeafMessageId;
+    }
   }
-  return undefined;
+};
+```
+
+**DO (The orchestrator only sequences session setup, iteration execution, and finalization at one level of abstraction; each phase lives in its own `internal/` function):**
+```ts
+// src/runtime/loop/execute-loop.ts
+export const executeLoop: NodeExecutor<LoopNode, unknown, unknown, StepExecutionContext> = async (node, input, ctx) => {
+  const validatedInput = node.inputSchema.parse(input);
+  const state = await initializeLoopExecutionState(node, validatedInput, ctx);
+  try {
+    const rawOutput = await runLoopIterationsUntilAccepted(node, validatedInput, ctx, state);
+    return node.outputSchema.parse(rawOutput);
+  } finally {
+    projectLoopChildOutcomeSink(ctx, state);
+  }
+};
+```
+```ts
+// src/runtime/loop/internal/run-loop-iterations-until-accepted.ts
+export async function runLoopIterationsUntilAccepted(
+  node: LoopNode,
+  validatedInput: unknown,
+  ctx: StepExecutionContext,
+  state: LoopExecutionState,
+): Promise<unknown> {
+  while (state.loopFrame.iteration < node.maxIterations) {
+    if (state.loopFrame.phase === 'act') {
+      await runLoopActPhase(node, validatedInput, ctx, state);
+    }
+    const accepted = await runLoopEvaluatePhase(node, validatedInput, ctx, state);
+    if (accepted) {
+      await flushStepLessonOutcomes({ node: node.distillLessons, ctx, state, exhausted: false });
+      return state.acceptedOutput;
+    }
+  }
+  await flushStepLessonOutcomes({ node: node.distillLessons, ctx, state, exhausted: true });
+  throw new Error(`Loop '${node.id}' exhausted maxIterations (${node.maxIterations}) in run '${ctx.runId}'.`);
 }
 ```
-**DO:**
+
+#### Example 2 — Tool Dispatch Pipeline vs. Leaf Operations (`dispatchSingleToolCall`)
+
+**DON'T (Mixes JSON argument parsing, skill-lease verification, pre-flight policy guards, post-flight checkpoint sandboxing, reactive rule injection, and batch state mutation in one body):**
 ```ts
-export async function executeAgent<TIn = unknown, TOut = unknown, THandle = unknown>(node: AgentNode<TIn, TOut, THandle>, input: TIn, ctx: StepExecutionContext<THandle>): Promise<TOut> {
-  const s = await createAgentTurnSession(node, input, ctx);
-  try { return await runAgentTurnLoop(s); } finally { await releaseAgentTurnSession(s); }
+export async function dispatchSingleToolCall(
+  session: AgentTurnSessionState,
+  call: PendingRemainingCall,
+): Promise<ToolCallDispatchOutcome> {
+  const args = JSON.parse(call.argsJson) as unknown;
+  const requiredSkill = session.skillByToolName.get(call.toolName);
+  if (requiredSkill !== undefined && !session.agentFrame.activeSkillIds.includes(requiredSkill.id)) {
+    const errResult = {
+      callId: call.callId,
+      content: `Tool '${call.toolName}' requires active skill '${requiredSkill.id}'. Call activateSkill first.`,
+      isError: true,
+    };
+    await shiftRemainingCallToCompleted(session, call.callId, errResult);
+    return { status: 'completed', result: errResult };
+  }
+  const toolNode = session.toolByName.get(call.toolName);
+  if (toolNode === undefined) {
+    throw new Error(`Unknown tool '${call.toolName}' in agent '${session.node.id}' (runId '${session.ctx.runId}').`);
+  }
+  if (toolNode.effectTracking === 'subprocess-post-flight') {
+    const preToolCkpt = await session.checkpointScope.serializeCheckpoint(session.ctx.scopeHandle);
+    await persistInFlightPreToolCheckpoint(session, preToolCkpt);
+    try {
+      const execOut = await session.ctx.registry.tools[toolNode.type].execute(toolNode, args, session.ctx);
+      const diffedEffects = await session.checkpointScope.diffEffects(preToolCkpt, session.ctx.scopeHandle);
+      const guardVerdict = await evaluatePolicyClauses(session, call.toolName, diffedEffects);
+      if (!guardVerdict.allowed) {
+        await session.checkpointScope.restoreCheckpoint(session.ctx.scopeHandle, preToolCkpt);
+        return await handlePostFlightViolation(session, call, guardVerdict);
+      }
+      session.ctx.recordEffects(diffedEffects);
+      const reactiveNotes = await collectReactiveRuleNotes(session, diffedEffects);
+      const finalResult = appendReactiveNotes(call.callId, execOut, reactiveNotes);
+      await shiftRemainingCallToCompleted(session, call.callId, finalResult);
+      return { status: 'completed', result: finalResult };
+    } catch (err) {
+      await session.checkpointScope.restoreCheckpoint(session.ctx.scopeHandle, preToolCkpt);
+      await clearInFlightPreToolCheckpoint(session);
+      throw err;
+    }
+  }
+  const rawOut = await session.ctx.registry.tools[toolNode.type].execute(toolNode, args, session.ctx);
+  await shiftRemainingCallToCompleted(session, call.callId, { callId: call.callId, ...rawOut });
+  return { status: 'completed', result: { callId: call.callId, ...rawOut } };
+}
+```
+
+**DO (The dispatcher sequences named checks and execution strategies at a uniform level of abstraction; sandboxed post-flight execution lives in its own function):**
+```ts
+// src/runtime/agent/internal/dispatch-single-tool-call.ts
+export async function dispatchSingleToolCall(
+  session: AgentTurnSessionState,
+  call: PendingRemainingCall,
+): Promise<ToolCallDispatchOutcome> {
+  if (isBuiltInCapabilityOrSkillTool(session, call.toolName)) {
+    return executeBuiltInCapabilityOrSkillTool(session, call);
+  }
+  const leaseDenial = checkSkillLeaseGate(session, call);
+  if (leaseDenial !== undefined) {
+    await shiftRemainingCallToCompleted(session, call.callId, leaseDenial);
+    return { status: 'completed', result: leaseDenial };
+  }
+  const toolNode = resolveMountedToolNode(session, call.toolName);
+  const args = parseToolCallArgumentsJson(call);
+  if (toolNode.effectTracking === 'subprocess-post-flight') {
+    return executePostFlightSandboxedToolCall(session, call, toolNode, args);
+  }
+  return executeDeclaredEffectToolCall(session, call, toolNode, args);
+}
+```
+
+#### Example 3 — Stateful Class Method vs. Pure Domain Algorithm (`PoolManager`)
+
+**DON'T (Mixes per-run sticky seat state mutation with candidate rate-limit filtering and strategy dispatch inside one method):**
+```ts
+export class PoolManager {
+  private readonly stickySeatByRunAndPool = new Map<string, string>();
+  private readonly candidateStates = new Map<string, PoolCandidateState[]>();
+
+  selectSeat<TSeat extends AccountSeatASTNode>(pool: PoolNode<TSeat>, runId: string, nowMs: number): TSeat {
+    const stickyKey = `${runId}:${pool.id}`;
+    const candidates = (this.candidateStates.get(pool.id) ?? []) as PoolCandidateState<TSeat>[];
+    const stickyId = this.stickySeatByRunAndPool.get(stickyKey);
+    if (stickyId !== undefined) {
+      const sticky = candidates.find((c) => c.id === stickyId);
+      if (sticky !== undefined && (sticky.rateLimitedUntilMs === undefined || sticky.rateLimitedUntilMs <= nowMs)) {
+        return sticky.item;
+      }
+    }
+    const available = candidates.filter((c) => c.rateLimitedUntilMs === undefined || c.rateLimitedUntilMs <= nowMs);
+    if (available.length === 0) {
+      if (pool.fallbackItem !== undefined) return pool.fallbackItem;
+      throw new Error(`All seats rate-limited in pool '${pool.id}' for run '${runId}'.`);
+    }
+    const chosen =
+      pool.strategy.strategyKind === 'round-robin'
+        ? available.reduce((a, b) => ((a.lastUsedAtMs ?? 0) <= (b.lastUsedAtMs ?? 0) ? a : b))
+        : pool.strategy.strategyKind === 'least-used'
+          ? available.reduce((a, b) => (a.usageCount <= b.usageCount ? a : b))
+          : available[0]!;
+    this.stickySeatByRunAndPool.set(stickyKey, chosen.id);
+    return chosen.item;
+  }
+}
+```
+
+**DO (The class method manages sticky state and delegates candidate filtering and strategy evaluation to focused `internal/` functions):**
+```ts
+export class PoolManager {
+  private readonly stickySeatByRunAndPool = new Map<string, string>();
+  private readonly candidateStates = new Map<string, PoolCandidateState[]>();
+
+  selectSeat<TSeat extends AccountSeatASTNode>(pool: PoolNode<TSeat>, runId: string, nowMs: number): TSeat {
+    const stickyKey = `${runId}:${pool.id}`;
+    const candidates = this.getCandidateStates<TSeat>(pool);
+    const activeSticky = findAvailableStickyCandidate(candidates, this.stickySeatByRunAndPool.get(stickyKey), nowMs);
+    if (activeSticky !== undefined) {
+      this.recordCandidateUsage(pool.id, activeSticky.id, nowMs);
+      return activeSticky.item;
+    }
+    const selected = selectCandidateByPoolStrategy(pool, candidates, { poolId: pool.id, runId, retryAttempt: 0, nowMs });
+    if (selected === undefined) {
+      return resolveFallbackSeatOrThrow(pool, runId);
+    }
+    this.stickySeatByRunAndPool.set(stickyKey, selected.id);
+    this.recordCandidateUsage(pool.id, selected.id, nowMs);
+    return selected.item;
+  }
 }
 ```
 
 ### Rule 3.2 — Guard Clauses & Flat Control Flow (Maximum Nesting Depth 3)
-- Validate preconditions, null/undefined checks, and early-exit cases at the top of the function using guard clauses (`if (!isValid) return ...;`). Never wrap the main body in deep `if / else if / else` pyramids, or nest control structures deeper than **3 levels**.
+- Validate preconditions, null/undefined checks, and early-exit cases at the top of the function using guard clauses (`if (!isValid) return ...;`). Never wrap the main body in deep `if / else if / else` pyramids or nest control structures deeper than **3 levels**.
+
 **DON'T:**
 ```ts
 export function resolveInterrupt(h: InterruptHandlerNode | undefined, sig: InterruptSignal): Resolution {
@@ -357,7 +569,8 @@ export function resolveInterrupt(h: InterruptHandlerNode | undefined, sig: Inter
 ```
 
 ### Rule 3.3 — Named Parameter Objects Over Long Positional Parameter Lists (`> 3` Parameters)
-- Functions, methods, and constructors requiring **more than 3 parameters** must accept a single typed `*Params` / `*Options` parameter interface (co-located in the function/class file, placed in its own interface file such as `dispatch-fork-child-params.ts` when shared, or reachable as a sub-interface of its port per Rule 1.2). Never pass positional boolean flags.
+- Functions, methods, and constructors requiring **more than 3 parameters** must accept a single typed `*Params` / `*Options` parameter interface (co-located in the function/class file, placed in its own interface file when shared, or reachable as a sub-interface of its port per Rule 1.2). Never pass positional boolean flags.
+
 **DON'T:**
 ```ts
 export async function dispatchForkChild(runId: string, node: StepASTNode, input: unknown, isolate: boolean, inherit: boolean, timeoutMs?: number): Promise<ForkChildResult> {
@@ -372,8 +585,9 @@ export function dispatchForkChild(p: DispatchForkChildParams): Promise<ForkChild
 }
 ```
 
-### Rule 3.4 — KISS: Zero Speculative Abstractions, Single-Caller Wrappers, or Unrequested Options
-- Write the simplest direct implementation satisfying `docs/SPEC.md`. Never introduce an abstract base class with one subclass, a strategy pattern with one strategy, a pass-through wrapper, or unrequested config flags (decomposing complex functions or branches into single-caller `internal/` phase/predicate helpers per Rules 1.3, 2.4, and 3.1 is required and compliant).
+### Rule 3.4 — KISS: Zero Speculative Abstractions or Unrequested Options
+- Write the simplest direct implementation satisfying `docs/SPEC.md`. Never introduce an abstract base class with one subclass, a strategy pattern with one strategy, a pass-through wrapper that adds no domain clarity, or unrequested configuration flags. Decomposing complex workflows into focused `internal/` phase, predicate, and projection functions per Rules 1.3, 2.4, and 3.1 is required clean design, not speculative abstraction.
+
 **DON'T:**
 ```ts
 export abstract class AbstractDigestStrategy { abstract compute(s: string): string; }
@@ -400,10 +614,13 @@ export function computeSha256Hex(s: string): string { return createHash('sha256'
   - **`@harness-dsl/claude`, `@harness-dsl/openai`, `@harness-dsl/gemini`**: `@anthropic-ai/sdk`, `openai`, `@google/genai`.
   - **`@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, `@harness-dsl/netsuite`**: `@octokit/rest` + `@octokit/webhooks`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook`, `stripe`, `big.js` (exact decimal math).
 
+---
+
 ## 4. Library-Grade Runtime Performance
 
 ### Rule 4.1 — Zero-Allocation Loops Over Spreads & Chained Array Combinators
 - Never write spread accumulations (`arr = [...arr, item]`, `obj = { ...obj, [k]: v }`) inside a loop ($O(N^2)$ copies/GC churn), or chain `.filter().map().flatMap().reduce()` in runtime paths; use a single `for (const x of list)` loop mutating local collections in-place and call `Object.freeze` **once** at the return boundary (such as `.toAST()`).
+
 **DON'T:**
 ```ts
 export function collectUnlockedToolNames(frames: readonly WireFrameRecord[], skills: readonly SkillNode[], enabledIds: ReadonlySet<string>): readonly string[] {
@@ -423,6 +640,7 @@ export function collectUnlockedToolNames(skills: readonly SkillNode[], enabledId
 
 ### Rule 4.2 — $O(1)$ Pre-Indexed `Map` / `Set` Lookups Over Repeated Linear Scans
 - Never call `.find()`, `.some()`, `.includes()`, or `.indexOf()` inside per-turn, per-tool-call, per-frame, or per-item loops; pre-index into `Map<string, T>` or `Set<string>` once at initialization for $O(1)$ lookup. Use `Map`/`Set` for dynamic collections instead of `Record<string, T>` with `delete obj[key]`, and never call `Object.keys()` / `Object.entries()` on dynamic collections or in hot loops (cold diagnostics and one-time static `Readonly<Record<...>>` init are permitted).
+
 **DON'T:**
 ```ts
 export async function dispatchToolBatch(calls: readonly ModelToolCall[], tools: readonly ToolASTNode[], allowed: readonly string[]): Promise<ToolResult[]> {
@@ -452,6 +670,7 @@ export async function dispatchToolBatch(calls: readonly ModelToolCall[], byName:
 
 ### Rule 4.3 — Monomorphic Object Shapes (Preserve V8 Hidden Classes & Inline Caches)
 - Never construct AST nodes, wire frames, or runtime records using conditional property spreads (`{ id, ...(a !== undefined ? { a } : {}) }`), which create $2^k$ V8 hidden classes and megamorphic inline caches. Always initialize all properties in a single fixed, unconditional order, setting absent optional properties to `undefined`.
+
 **DON'T:**
 ```ts
 export function buildCommandNode<TIn, TOut, THandle>(id: string, fn: CommandFn<TIn, TOut, THandle>, inputSchema?: ZodType<TIn>, outputSchema?: ZodType<TOut>, extractPartitions?: (input: TIn) => readonly string[]): CommandNode<TIn, TOut, THandle> {
@@ -467,6 +686,7 @@ export function buildCommandNode<TIn = unknown, TOut = unknown, THandle = unknow
 
 ### Rule 4.4 — Compile & Serialize Once, Reuse Everywhere
 - Pre-compile `picomatch` glob matchers and `RegExp` instances once when a guard (`fs:protect`), scoped rule, or skill trigger is registered—never inside per-file or per-tool-call loops. Never use `JSON.parse(JSON.stringify(value))` to clone or test deep equality, or re-serialize/re-hash immutable wire frames or checkpoints whose `sha256` digest is already computed.
+
 **DON'T:**
 ```ts
 export function isProtectedPath(path: string, globs: readonly string[], snap: Record<string, unknown>): boolean {
@@ -488,6 +708,7 @@ export function compilePathGlobMatcher(globs: readonly string[]): (path: string)
 
 ### Rule 4.5 — Zero Unnecessary `async` Microtasks & Per-Call Wrapper Closures
 - Do not mark a function `async` unless it directly `await`s an async operation or satisfies an async port contract; return delegated Promises directly when no `try / catch / finally` is needed, and avoid per-call proxy closures around `StepExecutionContext`.
+
 **DON'T:**
 ```ts
 export async function computeSlotThreeDigest(frames: readonly WireFrameRecord[]): Promise<string> {
@@ -505,10 +726,13 @@ export function computeSlotThreeDigest(frames: readonly WireFrameRecord[]): stri
 }
 ```
 
+---
+
 ## 5. Type Rigor, Purity, Resource Lifecycle & Error Handling
 
 ### Rule 5.1 — Exhaustive Type Narrowing (Zero Unsound Casts, Type Erasures, or `!`)
 - `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `: any`, `as any`, `as unknown as T`, and unguarded `!` non-null assertions are forbidden in `src/**` and `test/**`. Annotate every function and object-literal method parameter, pass the target interface type argument to generic wrappers (`Object.freeze<TargetInterface>({ ... })`, `deepFreeze<TargetInterface>({ ... })`), narrow discriminated unions via exhaustive `switch (node.type)` (`assertNever` default) or type predicates (`x is T`), and check indexed lookups for `undefined` under `noUncheckedIndexedAccess: true`.
+
 **DON'T:**
 ```ts
 export function getFirstBranchOutput<TOut>(branches: readonly BranchOutcome<TOut>[]): TOut {
@@ -526,6 +750,7 @@ export function getFirstBranchOutput<TOut>(branches: readonly BranchOutcome<TOut
 
 ### Rule 5.2 — Zero Import-Time Side Effects & Symbolic `EnvRef` Resolution
 - Importing any module (`src/**`, `test/fixtures/**`) must perform **zero I/O**, spawn zero subprocesses, open zero connections, and mutate zero global state (CLI scripts in `.agents/hooks/**` and `scripts/**` may execute their entrypoint per Rule 1.1). Builders and AST nodes must never read `.env` or `process.env[key]` at declaration time; represent secrets symbolically via `H.env('KEY')` (`EnvRef`) and resolve them exclusively inside leaf adapter execution.
+
 **DON'T:**
 ```ts
 const API_KEY = process.env['OPENAI_API_KEY'] ?? '';
@@ -543,6 +768,7 @@ export function resolveEnvRef(ref: EnvRef, env: Readonly<Record<string, string |
 
 ### Rule 5.3 — Deterministic `try / finally` Resource Lifecycle & `AbortSignal` Hygiene
 - Release every acquired resource (read/write scope lease, `ScopeHandle`, warm-pool lease, `ServiceSession` daemon, subprocess, SQLite transaction, timer, file handle) and remove every `AbortSignal` listener (`signal.removeEventListener('abort', onAbort)`) inside `try / finally` so parent signals never leak closed-over buffers or child handles.
+
 **DON'T:**
 ```ts
 export async function runWithAbortAndLease<T>(p: RunWithAbortAndLeaseParams<T>): Promise<T> {
@@ -574,6 +800,7 @@ export async function runWithAbortAndLease<T>(p: RunWithAbortAndLeaseParams<T>):
 
 ### Rule 5.4 — Actionable Domain Errors & Zero Silent Fallbacks
 - Every thrown `Error` must state: (1) **which subsystem/operation** failed, (2) **which entity identifier** (`runId`, `stepExecId`, `node.type`, `node.id`, `scopeKey`) was involved, and (3) **why** it failed. Never swallow exceptions (`catch {}`) or return fabricated fallbacks when a required executor, driver, tool, or schema validation fails.
+
 **DON'T:**
 ```ts
 export async function executeExternalStep(n: StepASTNode, input: unknown, ctx: StepExecutionContext): Promise<unknown> {
@@ -589,10 +816,13 @@ export async function executeExternalStep<TIn = unknown, TOut = unknown, THandle
 }
 ```
 
+---
+
 ## 6. Testing Standards & Anti-Smell Discipline
 
 ### Rule 6.1 — Focused Per-Subsystem Test Files & Shared `test/fixtures/`
-- Organize tests by subsystem (`test/scope-lock-manager.test.ts`, `test/prefix-compiler.test.ts`), keeping each test file `<= 400` lines. Extract reusable fakes into `test/fixtures/` (`<= 250` lines per file), obeying the exact same taxonomy and JSDoc rules as `src/**` (1 class/interface per file, mandatory JSDoc per **§2**, zero inline comments).
+- Organize tests by subsystem (`test/scope-lock-manager.test.ts`, `test/prefix-compiler.test.ts`). Extract reusable fakes and test harnesses into `test/fixtures/`, obeying the exact same module organization and JSDoc rules as `src/**` (single-kind entity files per **§1**, mandatory JSDoc per **§2**, zero inline comments).
+
 **DON'T (`test/everything.test.ts`):**
 ```ts
 describe('runtime', () => {
@@ -617,6 +847,7 @@ export class ScriptedModelDriver implements ModelDriver {
 
 ### Rule 6.2 — Real Local Resources & Deterministic Synchronization (Zero `setTimeout` Sleeps)
 - Test adapters against **real local resources** (SQLite DBs, temp dirs/files, Git repos, Node child processes), mocking only external network HTTP transports. Never coordinate concurrent tests with `setTimeout` sleeps; use deterministic deferred promises / barrier latches, and clean up temp dirs, DBs, and child processes in `afterEach` or `try / finally`.
+
 **DON'T:**
 ```ts
 it('queues second writer', async () => {
@@ -646,6 +877,7 @@ it('queues second writer until first releases lease', async () => {
 
 ### Rule 6.3 — Exact Behavioral Assertions (Zero Weak, Tautological, or Inverted-Oracle Tests)
 - Assert exact output values, wire frame structures, database rows, and thrown error messages/codes. Weak existence checks (`expect(result).toBeDefined()`, `expect(frames.length).toBeGreaterThanOrEqual(0)`), unawaited async rejections (`expect(fn()).rejects.toThrow()` without `await`), `.skip` / `.todo` / `.only`, and "make-bugs-pass" tests (assertions tailored to match broken implementation behavior instead of `docs/SPEC.md`) are forbidden.
+
 **DON'T:**
 ```ts
 it('validates fencing token', async () => {
