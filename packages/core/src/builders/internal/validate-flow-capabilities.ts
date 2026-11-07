@@ -89,6 +89,23 @@ function validateAgentAgainstScopeTier(flowNode: FlowNode, agentNode: AgentNode)
 }
 
 /**
+ * Checks whether a step's underlying actor or loop action actor binds a policy-level `abortHook`.
+ *
+ * @param {StepASTNode} stepNode - Step AST node to inspect.
+ *
+ * @returns {boolean} True when the step's active policy declares an `abortHook`.
+ */
+function stepHasPolicyAbortHook(stepNode: StepASTNode): boolean {
+  if (stepNode.type === 'harness:agent') {
+    return stepNode.policy?.abortHook !== undefined;
+  }
+  if (stepNode.type === 'harness:loop') {
+    return stepNode.actStep.actor.policy?.abortHook !== undefined;
+  }
+  return false;
+}
+
+/**
  * Recursively validates a `StepASTNode` and any inner loop, fork, or speculate executables against `flowNode.scope.capabilityTier`.
  *
  * Traverses child fork executables, speculative tournament workers, arbiters, sole-survivor verifiers,
@@ -98,24 +115,27 @@ function validateAgentAgainstScopeTier(flowNode: FlowNode, agentNode: AgentNode)
  * @param {StepASTNode} stepNode - Step AST node to validate.
  */
 function validateStepExecutableAgainstScope(flowNode: FlowNode, stepNode: StepASTNode): void {
-  if (stepNode.type === 'harness:agent') {
-    validateAgentAgainstScopeTier(flowNode, stepNode);
-    for (const fork of stepNode.capabilities?.forks ?? []) {
-      validateStepExecutableAgainstScope(flowNode, fork.childExecutable);
-    }
-    for (const spec of stepNode.capabilities?.speculations ?? []) {
-      validateStepExecutableAgainstScope(flowNode, spec.workerExecutable);
-      validateStepExecutableAgainstScope(flowNode, spec.arbiter.actor);
-      if (spec.verifyWinnerWith !== undefined) {
-        validateStepExecutableAgainstScope(flowNode, spec.verifyWinnerWith.evaluator);
-      }
-      if (spec.refineWinnerWhen !== undefined) {
-        validateStepExecutableAgainstScope(flowNode, spec.refineWinnerWhen.refinementExecutable);
-      }
-    }
-  } else if (stepNode.type === 'harness:loop') {
+  if (stepNode.type === 'harness:loop') {
     validateStepExecutableAgainstScope(flowNode, stepNode.actStep.actor);
     validateStepExecutableAgainstScope(flowNode, stepNode.evaluateStep.evaluator);
+    return;
+  }
+  if (stepNode.type !== 'harness:agent') {
+    return;
+  }
+  validateAgentAgainstScopeTier(flowNode, stepNode);
+  for (const fork of stepNode.capabilities?.forks ?? []) {
+    validateStepExecutableAgainstScope(flowNode, fork.childExecutable);
+  }
+  for (const spec of stepNode.capabilities?.speculations ?? []) {
+    validateStepExecutableAgainstScope(flowNode, spec.workerExecutable);
+    validateStepExecutableAgainstScope(flowNode, spec.arbiter.actor);
+    if (spec.verifyWinnerWith !== undefined) {
+      validateStepExecutableAgainstScope(flowNode, spec.verifyWinnerWith.evaluator);
+    }
+    if (spec.refineWinnerWhen !== undefined) {
+      validateStepExecutableAgainstScope(flowNode, spec.refineWinnerWhen.refinementExecutable);
+    }
   }
 }
 
@@ -134,21 +154,17 @@ export function validateFlowScopeCapabilities(flowNode: FlowNode): void {
     for (const node of nodes) {
       if (node.type === 'harness:flow-step') {
         validateStepExecutableAgainstScope(flowNode, node.step);
-        const hasPolicyAbort =
-          (node.step.type === 'harness:agent' && node.step.policy?.abortHook !== undefined) ||
-          (node.step.type === 'harness:loop' &&
-            node.step.actStep.actor.policy?.abortHook !== undefined);
         validateReplaceHandlersHaveAbortSupport(
           flowNode,
-          { id: node.id, hasPolicyAbort },
+          { id: node.id, hasPolicyAbort: stepHasPolicyAbortHook(node.step) },
           node.onInterruptHandlers,
         );
-      } else {
-        for (const branchCase of node.cases) {
-          visitNodes(branchCase.steps);
-        }
-        visitNodes(node.otherwiseSteps);
+        continue;
       }
+      for (const branchCase of node.cases) {
+        visitNodes(branchCase.steps);
+      }
+      visitNodes(node.otherwiseSteps);
     }
   };
   visitNodes(flowNode.nodes);

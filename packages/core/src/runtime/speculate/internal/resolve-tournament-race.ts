@@ -36,7 +36,8 @@ export function resolvePostRaceCases(
   branches: readonly SpeculateBranchEntryRecord[],
   humanRulingsHistory: readonly SpeculateHumanRulingRecord[],
 ): PostRaceResolution {
-  const completed: SpeculateBranchEntryRecord[] = [], parked: SpeculateBranchEntryRecord[] = [];
+  const completed: SpeculateBranchEntryRecord[] = [];
+  const parked: SpeculateBranchEntryRecord[] = [];
   for (const b of branches) {
     if (b.status === 'COMPLETED' || b.status === 'WINNER_COMMITTED') completed.push(b);
     else if (b.status === 'PARKED_ON_ESCALATION') parked.push(b);
@@ -70,14 +71,17 @@ export async function runTournamentArbiterWithGate<THandle = unknown>(params: Sp
   }
   const cvExec = params.capability.crossVerifier !== undefined && crossCandidates.length > 0 ? params.ctx.registry.crossVerifiers[params.capability.crossVerifier.type] : undefined;
   const crossReports: Readonly<Record<number, unknown>> = cvExec !== undefined && params.capability.crossVerifier !== undefined ? await cvExec(params.capability.crossVerifier as never, crossCandidates, params.ctx as never) : {};
-  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}')), branchInputs = params.capability.mapBranches(params.parentInput, req);
-  const candidates: Array<Record<string, unknown>> = [], failedBranches: Array<{ readonly branchIndex: number; readonly errorSummary: string }> = [];
+  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}'));
+  const branchInputs = params.capability.mapBranches(params.parentInput, req);
+  const candidates: Array<Record<string, unknown>> = [];
+  const failedBranches: Array<{ readonly branchIndex: number; readonly errorSummary: string }> = [];
   for (const b of frame.branches) {
     if (b.status === 'FAILED') {
       failedBranches.push({ branchIndex: b.branchIndex, errorSummary: b.errorSummary ?? 'Failed' });
       continue;
     }
-    const h = handlesByBranch.get(b.branchIndex), receipt = b.scopeReceiptJson !== undefined ? JSON.parse(b.scopeReceiptJson) : (h !== undefined ? await params.branchableScope.inspect(h) : {});
+    const h = handlesByBranch.get(b.branchIndex);
+    const receipt = b.scopeReceiptJson !== undefined ? JSON.parse(b.scopeReceiptJson) : (h !== undefined ? await params.branchableScope.inspect(h) : {});
     if (b.status === 'PARKED_ON_ESCALATION') {
       const escPayload = b.parkedEscalationPayloadJson !== undefined ? JSON.parse(b.parkedEscalationPayloadJson) : undefined;
       candidates.push({ status: 'PARKED_ON_ESCALATION', branchIndex: b.branchIndex, input: branchInputs[b.branchIndex], scopeReceipt: receipt, interruptId: b.parkedInterruptId ?? 'unknown', escalationPayload: escPayload, parkedInterruptId: b.parkedInterruptId, parkedEscalationPayload: escPayload });
@@ -112,7 +116,9 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(params:
   const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, humanAdaptersById: params.humanAdaptersById, outerFrames: [...params.outerFrames, frame] }));
   const branch = frame.branches.find((b) => b.branchIndex === unparkCtx.branchIndex);
   if (branch === undefined) throw new Error(`Parked branch '${String(unparkCtx.branchIndex)}' not found.`);
-  const interruptId = branch.parkedInterruptId ?? 'unknown', payload = branch.parkedEscalationPayloadJson !== undefined ? JSON.parse(branch.parkedEscalationPayloadJson) : undefined, workerAgent = params.capability.workerExecutable.type === 'harness:agent' ? params.capability.workerExecutable : params.capability.workerExecutable.actStep.actor;
+  const interruptId = branch.parkedInterruptId ?? 'unknown';
+  const payload = branch.parkedEscalationPayloadJson !== undefined ? JSON.parse(branch.parkedEscalationPayloadJson) : undefined;
+  const workerAgent = params.capability.workerExecutable.type === 'harness:agent' ? params.capability.workerExecutable : params.capability.workerExecutable.actStep.actor;
   let matchedAsk: Extract<(typeof workerAgent.onInterruptHandlers)[number], { readonly mode: 'ask' }> | undefined;
   for (const h of workerAgent.onInterruptHandlers) {
     if (h.mode === 'ask' && h.interrupt.id === interruptId && matchedAsk === undefined) matchedAsk = h;
@@ -130,7 +136,8 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(params:
   const decision = await humanAdapter.requestDecision({ runId: params.ctx.runId, requestId, humanId: escCap.human.id, payload, responseSchema: escCap.responseSchema, signal: params.ctx.signal });
   const grantedLease = escCap.elevateLeaseWhen !== undefined && escCap.elevateLeaseWhen.predicate(decision) ? escCap.elevateLeaseWhen.leaseMapper(decision) : undefined;
   const feedback = 'resumeWith' in escCap && typeof escCap.resumeWith === 'function' ? escCap.resumeWith(decision) : JSON.stringify(decision);
-  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}')), branchInputs = params.capability.mapBranches(params.parentInput, req);
+  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}'));
+  const branchInputs = params.capability.mapBranches(params.parentInput, req);
   const resumedStack = stackWithReqId.map((f) => {
     if (f.kind === 'loop-frame') return grantedLease !== undefined ? Object.freeze<LoopContinuationFrame>({ ...f, grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, grantedLease]) }) : f;
     if (f.kind !== 'agent-frame') return f;
@@ -165,17 +172,22 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(params:
 export async function executeWinnerRefinementAndCommit<THandle = unknown>(params: SpeculateTournamentParams<THandle>, frame: SpeculateContinuationFrame, commitCtx: WinnerRefinementCommitContext<THandle>): Promise<SpeculateTournamentResult> {
   const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, humanAdaptersById: params.humanAdaptersById, outerFrames: [...params.outerFrames, frame] }));
   const winnerHandle = commitCtx.handlesByBranch.get(commitCtx.winnerBranchIndex);
-  let winnerBranch = frame.branches.find((b) => b.branchIndex === commitCtx.winnerBranchIndex), curFrame = Object.freeze<SpeculateContinuationFrame>({ ...frame, winnerBranchIndex: commitCtx.winnerBranchIndex });
+  let winnerBranch = frame.branches.find((b) => b.branchIndex === commitCtx.winnerBranchIndex);
+  let curFrame = Object.freeze<SpeculateContinuationFrame>({ ...frame, winnerBranchIndex: commitCtx.winnerBranchIndex });
   if (winnerHandle === undefined || winnerBranch === undefined) throw new Error(`Winning branch '${String(commitCtx.winnerBranchIndex)}' handle not found.`);
-  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}')), branchInputs = params.capability.mapBranches(params.parentInput, req), refineCfg = params.capability.refineWinnerWhen;
-  let activeExecutable = params.capability.workerExecutable, activeInput: unknown = branchInputs[commitCtx.winnerBranchIndex];
+  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}'));
+  const branchInputs = params.capability.mapBranches(params.parentInput, req);
+  const refineCfg = params.capability.refineWinnerWhen;
+  let activeExecutable = params.capability.workerExecutable;
+  let activeInput: unknown = branchInputs[commitCtx.winnerBranchIndex];
   const inheritedLeases = winnerBranch.continuationStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')?.grantedLoopLeases ?? winnerBranch.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.activeLeases ?? params.ctx.activeLeases;
   try {
     if (refineCfg !== undefined && commitCtx.verdict !== undefined && refineCfg.predicate(commitCtx.verdict)) {
       const preCkpt = await params.branchableScope.serializeCheckpoint(winnerHandle);
       await commitCtx.persistFrame((curFrame = Object.freeze<SpeculateContinuationFrame>({ ...curFrame, phase: 'REFINING_WINNER', preRefinementCheckpoint: preCkpt })));
       const candidates = curFrame.branches.map((b) => ({ branchIndex: b.branchIndex, input: branchInputs[b.branchIndex], status: b.status, output: b.outputJson !== undefined ? JSON.parse(b.outputJson) : undefined, scopeReceipt: b.scopeReceiptJson !== undefined ? JSON.parse(b.scopeReceiptJson) : undefined }));
-      const refineInput = refineCfg.mapInput(params.parentInput, commitCtx.verdict, candidates), parentRt = (params.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+      const refineInput = refineCfg.mapInput(params.parentInput, commitCtx.verdict, candidates);
+      const parentRt = (params.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
       try {
         const refinedOut = await runStep(refineCfg.refinementExecutable, refineInput, Object.freeze({ ...params.ctx, stepExecId: `${params.ctx.stepExecId}:refine:${String(commitCtx.winnerBranchIndex)}`, scopeHandle: winnerHandle, activeLeases: inheritedLeases, candidateHandles: commitCtx.handlesByBranch, _runtime: { ...parentRt, outerFrames: [...params.outerFrames, curFrame] } }));
         if (refinedOut.status === 'completed') {

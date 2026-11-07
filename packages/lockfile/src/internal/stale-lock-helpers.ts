@@ -68,6 +68,62 @@ export async function isExistingLockStale(resolvedLockPath: string, staleMs: num
 }
 
 /**
+ * Atomically creates `resolvedLockPath` with `open(..., 'wx')` and writes `serializedRecord`.
+ *
+ * Returns `true` when the file is created and written exclusively, `false` when `open` fails with
+ * `EEXIST`, and rethrows any other unexpected filesystem error.
+ *
+ * @param {string} resolvedLockPath - Canonical absolute path of the lockfile to create.
+ * @param {string} serializedRecord - JSON-serialized `FileLockRecord` payload to write.
+ *
+ * @returns {Promise<boolean>} True if the lockfile was exclusively created, or false on `EEXIST`.
+ *
+ * @throws {Error} If an unexpected filesystem error other than `EEXIST` occurs.
+ */
+export async function tryWriteExclusiveLockFile(
+  resolvedLockPath: string,
+  serializedRecord: string,
+): Promise<boolean> {
+  try {
+    const lockHandle = await open(resolvedLockPath, 'wx');
+    let wrotePayload = false;
+    try {
+      await lockHandle.writeFile(serializedRecord, 'utf8');
+      wrotePayload = true;
+      return true;
+    } finally {
+      await lockHandle.close();
+      if (!wrotePayload) await unlink(resolvedLockPath).catch(() => undefined);
+    }
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Unlinks `resolvedLockPath` only when its on-disk `FileLockRecord` still matches `ownerToken`.
+ *
+ * Prevents a slow releasing holder from deleting a lockfile that was already reclaimed by another process.
+ *
+ * @param {string} resolvedLockPath - Canonical absolute path of the lockfile.
+ * @param {string} ownerToken       - Expected lease owner token.
+ *
+ * @returns {Promise<void>} Resolves once ownership is checked and the file is unlinked if still owned.
+ */
+export async function unlinkOwnedLockFile(
+  resolvedLockPath: string,
+  ownerToken: string,
+): Promise<void> {
+  const record = await readLockRecord(resolvedLockPath);
+  if (record?.ownerToken === ownerToken) {
+    await unlink(resolvedLockPath).catch(() => undefined);
+  }
+}
+
+/**
  * Atomically reclaims a stale lockfile under an exclusive `.reclaim` guard lockfile.
  *
  * Acquires `${resolvedLockPath}.reclaim` via `open(..., 'wx')`, re-verifies that `resolvedLockPath` is
@@ -96,16 +152,7 @@ export async function tryReclaimStaleLock(
   try {
     if (!(await isExistingLockStale(resolvedLockPath, staleMs))) return false;
     await unlink(resolvedLockPath);
-    const lockHandle = await open(resolvedLockPath, 'wx');
-    let wrotePayload = false;
-    try {
-      await lockHandle.writeFile(serializedRecord, 'utf8');
-      wrotePayload = true;
-      return true;
-    } finally {
-      await lockHandle.close();
-      if (!wrotePayload) await unlink(resolvedLockPath).catch(() => undefined);
-    }
+    return await tryWriteExclusiveLockFile(resolvedLockPath, serializedRecord);
   } catch {
     return false;
   } finally {

@@ -31,7 +31,8 @@ export async function compileRunWirePrefixes(
 ): Promise<ReadonlyMap<string, CompiledWirePrefix>> {
   const result = new Map<string, CompiledWirePrefix>();
   for (const group of params.prefixGroups) {
-    const groundingSnapshots: GroundingSnapshotRecord[] = [], systemBlocks: string[] = [];
+    const groundingSnapshots: GroundingSnapshotRecord[] = [];
+    const systemBlocks: string[] = [];
     for (const gSource of group.sharedGrounding) {
       const snap = await resolveSourceStringValue(gSource, params.registry, params.resolutionContext);
       groundingSnapshots.push(snap);
@@ -42,7 +43,8 @@ export async function compileRunWirePrefixes(
       systemBlocks.push(snap.text);
     }
     for (const d of await resolveGlobalRuleDirectives(group.sharedRules, params.registry, params.resolutionContext)) systemBlocks.push(d);
-    const systemPromptText = systemBlocks.join('\n\n'), groupActors = [];
+    const systemPromptText = systemBlocks.join('\n\n');
+    const groupActors = [];
     for (const actor of params.actors) {
       if (actor.prefixGroup === undefined || actor.prefixGroup.id === group.id) {
         groupActors.push(actor);

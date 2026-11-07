@@ -47,11 +47,16 @@ function makeOutTurn<T>(output: T) {
 
 describe('ScopeLockManager & StepContinuationQueue', () => {
   it('enforces concurrent shared reads, writer-preference fairness, queued writer/reader abort reconciliation, and idle eviction', async () => {
-    const locks = new ScopeLockManager(), events: string[] = [];
-    const releaseR1 = await locks.acquireRead('scope-1'), releaseR2 = await locks.acquireRead('scope-1');
+    const locks = new ScopeLockManager();
+    const events: string[] = [];
+    const releaseR1 = await locks.acquireRead('scope-1');
+    const releaseR2 = await locks.acquireRead('scope-1');
     expect(locks.hasLockEntry('scope-1')).toBe(true);
-    const wAbort = new AbortController(), rAbort = new AbortController(), w2Abort = new AbortController();
-    const abortedWriter = locks.acquireWrite('scope-1', wAbort.signal), rPromoted = locks.acquireRead('scope-1');
+    const wAbort = new AbortController();
+    const rAbort = new AbortController();
+    const w2Abort = new AbortController();
+    const abortedWriter = locks.acquireWrite('scope-1', wAbort.signal);
+    const rPromoted = locks.acquireRead('scope-1');
     wAbort.abort(new Error('writer-cancelled'));
     const rSyncAfterAbort = locks.acquireRead('scope-1');
     await expect(abortedWriter).rejects.toThrow('writer-cancelled');
@@ -59,7 +64,8 @@ describe('ScopeLockManager & StepContinuationQueue', () => {
     releaseR1();
     releaseR2();
     expect(locks.hasLockEntry('scope-1')).toBe(true);
-    const w1Started = createDeferred(), releaseW1 = createDeferred();
+    const w1Started = createDeferred();
+    const releaseW1 = createDeferred();
     const w1 = locks.withWriteLock('scope-1', async () => {
       events.push('w1:enter');
       w1Started.resolve();
@@ -74,7 +80,9 @@ describe('ScopeLockManager & StepContinuationQueue', () => {
     releaseSync();
     await w1Started.promise;
     expect(events).toEqual(['w1:enter']);
-    const b1Entered = createDeferred(), b2Entered = createDeferred(), releaseBatch = createDeferred();
+    const b1Entered = createDeferred();
+    const b2Entered = createDeferred();
+    const releaseBatch = createDeferred();
     const b1 = locks.withReadLock('scope-1', async () => {
       b1Entered.resolve();
       await Promise.all([b2Entered.promise, releaseBatch.promise]);
@@ -96,9 +104,15 @@ describe('ScopeLockManager & StepContinuationQueue', () => {
   });
 
   it('serializes StepContinuationQueue updates per stepExecId, honours queued AbortSignal without mid-flight eviction, and evicts idle queues', async () => {
-    const queue = new StepContinuationQueue(), order: string[] = [];
-    const t1Started = createDeferred(), gate = createDeferred(), soloStarted = createDeferred(), soloGate = createDeferred();
-    const t1Abort = new AbortController(), queuedAbort = new AbortController(), soloAbort = new AbortController();
+    const queue = new StepContinuationQueue();
+    const order: string[] = [];
+    const t1Started = createDeferred();
+    const gate = createDeferred();
+    const soloStarted = createDeferred();
+    const soloGate = createDeferred();
+    const t1Abort = new AbortController();
+    const queuedAbort = new AbortController();
+    const soloAbort = new AbortController();
     const p1 = queue.enqueueUpdate('step-1', async () => {
       t1Started.resolve();
       await gate.promise;
@@ -134,7 +148,9 @@ describe('ScopeLockManager & StepContinuationQueue', () => {
 describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation', () => {
   it('maintains run-sticky seat affinity and fails over on HTTP 429 rate-limit until resetAtMs', () => {
     const poolManager = new PoolManager();
-    const seatA = makeSeat('seat-a'), seatB = makeSeat('seat-b'), fallbackSeat = makeSeat('seat-fallback');
+    const seatA = makeSeat('seat-a');
+    const seatB = makeSeat('seat-b');
+    const fallbackSeat = makeSeat('seat-fallback');
     const seatPool = H.pool<ClaudeAccountSeatNode>('seats').with(seatA, seatB).strategy('round-robin').fallback(fallbackSeat).toAST();
 
     expect(poolManager.selectSeat(seatPool, 'run-1', 1_000).id).toBe('seat-a');
@@ -149,7 +165,9 @@ describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation'
 
   it('escalates model tiers on retry attempts and when empirical completion rate drops below minSuccessRate', () => {
     const poolManager = new PoolManager();
-    const haiku = makeModel('claude-haiku', 'haiku'), sonnet = makeModel('claude-sonnet', 'sonnet'), opus = makeModel('claude-opus', 'opus');
+    const haiku = makeModel('claude-haiku', 'haiku');
+    const sonnet = makeModel('claude-sonnet', 'sonnet');
+    const opus = makeModel('claude-opus', 'opus');
     const modelPool = H.pool<ClaudeModelNode>('models')
       .with(haiku, sonnet, opus)
       .strategy(($s: PoolStrategyConfigurator<ClaudeModelNode>) => $s.escalateOnRetry().minSuccessRate(0.75).minSamples(4))
@@ -195,7 +213,8 @@ describe('H.prefixGroup compilation, in-run grounding diffs, and toolsMode', () 
       registry,
       resolutionContext,
     });
-    const roleCompiled = compiled.get('pg-role'), unionCompiled = compiled.get('pg-union');
+    const roleCompiled = compiled.get('pg-role');
+    const unionCompiled = compiled.get('pg-union');
     if (roleCompiled === undefined || unionCompiled === undefined) throw new Error('Expected compiled prefixes');
     expect(roleCompiled.systemPromptText).toBe('ARCH_V1\nSHARED_LINE\n\nSTABLE_DOC\n\nSHARED_INSTRUCTIONS\n\n[Rule: rule-1] Never force push');
     expect(roleCompiled.wireToolSchemasByRoleKey[readerAgent.roleKey]?.map((t) => t.name)).toEqual(['fs_read']);

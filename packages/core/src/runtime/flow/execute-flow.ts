@@ -31,14 +31,19 @@ import { executeReplaceWithPromotion, foldFlowCustomTelemetry } from './internal
 export async function executeFlowStep<TIn = unknown, THandle = unknown>(flowCtx: FlowExecutionContext<TIn, THandle>, stepNode: FlowStepNode<unknown, unknown, THandle>, outerBranchId?: string): Promise<{ readonly status: 'completed' | 'suspended' | 'rewound'; readonly output?: unknown }> {
   const maxTries = flowCtx.retryConfig?.tries ?? 1;
   for (let attempt = 1; attempt <= maxTries; attempt += 1) {
-    const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle)), isReplaced = flowCtx.activeReplacementExecutable !== undefined, targetExecutable = flowCtx.activeReplacementExecutable ?? stepNode.step;
+    const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle));
+    const isReplaced = flowCtx.activeReplacementExecutable !== undefined;
+    const targetExecutable = flowCtx.activeReplacementExecutable ?? stepNode.step;
     const stepInput = !isReplaced && stepNode.inputFrom !== undefined ? stepNode.inputFrom(flowCtx.currentInput, Object.fromEntries(flowCtx.completedStepOutputs.entries()), scopeReceipt) : flowCtx.currentInput;
-    const extractPartsFn = (targetExecutable as { readonly extractPartitions?: (i: unknown) => readonly string[] }).extractPartitions, stepExecId = flowCtx.activeStepExecId ?? `${flowCtx.runId}:${stepNode.id}:${String(attempt)}`, baseCkpt = flowCtx.scopeDriver.serializeCheckpoint !== undefined ? await flowCtx.scopeDriver.serializeCheckpoint(flowCtx.scopeHandle) : undefined;
+    const extractPartsFn = (targetExecutable as { readonly extractPartitions?: (i: unknown) => readonly string[] }).extractPartitions;
+    const stepExecId = flowCtx.activeStepExecId ?? `${flowCtx.runId}:${stepNode.id}:${String(attempt)}`;
+    const baseCkpt = flowCtx.scopeDriver.serializeCheckpoint !== undefined ? await flowCtx.scopeDriver.serializeCheckpoint(flowCtx.scopeHandle) : undefined;
     if (baseCkpt !== undefined && flowCtx.stepBaseCheckpointsByStepId !== undefined && !flowCtx.stepBaseCheckpointsByStepId.has(stepNode.id)) flowCtx.stepBaseCheckpointsByStepId.set(stepNode.id, baseCkpt);
     if (flowCtx.activeStepExecId === null) await flowCtx.ledgerStore.recordStepStart({ runId: flowCtx.runId, stepExecId, stepId: stepNode.id, executableId: targetExecutable.id, inputMsgId: null, baseScopeCheckpoint: baseCkpt, continuationStack: Object.freeze([]) });
     Object.assign(flowCtx, { activeStepId: stepNode.id, activeStepExecId: stepExecId });
     const built = buildFlowStepExecutionContext(flowCtx, targetExecutable, { stepExecId, activePartitions: extractPartsFn !== undefined ? extractPartsFn(stepInput) : [], baseScopeCheckpoint: baseCkpt, stepInterruptHandlers: isReplaced ? [] : stepNode.onInterruptHandlers });
-    const resumeHolder = flowCtx as FlowExecutionContext<TIn, THandle> & { resumeContinuationStack?: typeof built.stepCtx.resumeContinuationStack }, stepCtx = resumeHolder.resumeContinuationStack !== undefined ? Object.freeze({ ...built.stepCtx, resumeContinuationStack: resumeHolder.resumeContinuationStack }) : built.stepCtx;
+    const resumeHolder = flowCtx as FlowExecutionContext<TIn, THandle> & { resumeContinuationStack?: typeof built.stepCtx.resumeContinuationStack };
+    const stepCtx = resumeHolder.resumeContinuationStack !== undefined ? Object.freeze({ ...built.stepCtx, resumeContinuationStack: resumeHolder.resumeContinuationStack }) : built.stepCtx;
     resumeHolder.resumeContinuationStack = undefined;
     try {
       const output = await executeStepNode(built.executable, stepInput, stepCtx);
@@ -115,10 +120,12 @@ export async function executeFlowBranch<TIn = unknown, THandle = unknown>(
  */
 export async function executeFlow<TIn = unknown, THandle = unknown>(flowCtx: FlowExecutionContext<TIn, THandle>): Promise<FlowRunResult> {
   flowCtx.currentInput = flowCtx.flow.inputSchema.parse(flowCtx.currentInput);
-  const flowActors = collectFlowActors(flowCtx.flow.nodes), prefixGroups = collectFlowPrefixGroups(flowActors, flowCtx.prefixGroups);
+  const flowActors = collectFlowActors(flowCtx.flow.nodes);
+  const prefixGroups = collectFlowPrefixGroups(flowActors, flowCtx.prefixGroups);
   if (flowCtx.wirePrefixesByGroupId.size === 0 && prefixGroups.length > 0) {
     const compiled = await compileRunWirePrefixes({ prefixGroups, actors: flowActors, registry: flowCtx.registry, resolutionContext: { runId: flowCtx.runId, scopeHandle: flowCtx.scopeHandle, activePartitions: [], observedEffects: [], resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]) } });
-    const byId = new Map<string, CompiledWirePrefix>(), jsonMap: Record<string, string> = {};
+    const byId = new Map<string, CompiledWirePrefix>();
+    const jsonMap: Record<string, string> = {};
     for (const [pgId, p] of compiled.entries()) jsonMap[(byId.set(pgId, p), pgId)] = JSON.stringify(p);
     flowCtx.wirePrefixesByGroupId = byId;
     await flowCtx.ledgerStore.createOrResumeRun({ runId: flowCtx.runId, laneId: flowCtx.laneId, itemKey: flowCtx.itemKey, inputJson: JSON.stringify(flowCtx.currentInput), compiledPrefixesJson: jsonMap });

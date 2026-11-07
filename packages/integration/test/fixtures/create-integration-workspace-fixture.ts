@@ -15,9 +15,13 @@ import type { IntegrationWorkspaceHandle } from './integration-workspace-handle.
  * @returns {Promise<IntegrationWorkspaceHandle>} Initialized workspace handle with `readCreatedPrs()` and `cleanup()`.
  */
 export async function createIntegrationWorkspaceFixture(): Promise<IntegrationWorkspaceHandle> {
-  const previousCwd = process.cwd(), previousPath = process.env['PATH'] ?? '';
+  const previousCwd = process.cwd();
+  const previousPath = process.env['PATH'] ?? '';
   const tempRootDir = await mkdtemp(path.join(os.tmpdir(), 'harness-m4-e2e-'));
-  const repoDir = path.join(tempRootDir, 'repo'), remoteBareDir = path.join(tempRootDir, 'origin.git'), binDir = path.join(tempRootDir, 'bin'), ghPrsLogPath = path.join(tempRootDir, 'gh-prs.json');
+  const repoDir = path.join(tempRootDir, 'repo');
+  const remoteBareDir = path.join(tempRootDir, 'origin.git');
+  const binDir = path.join(tempRootDir, 'bin');
+  const ghPrsLogPath = path.join(tempRootDir, 'gh-prs.json');
   const dirs = [
     remoteBareDir, binDir, path.join(repoDir, 'packages/db/src'), path.join(repoDir, 'packages/db/migrations'),
     path.join(repoDir, 'packages/api/src'), path.join(repoDir, 'packages/api/test'), path.join(repoDir, 'packages/web/src'),
@@ -68,7 +72,8 @@ export async function createIntegrationWorkspaceFixture(): Promise<IntegrationWo
     ['commit', '-m', 'Initial monorepo seed'], ['push', '-u', 'origin', 'main'],
   ];
   for (const args of gitCmds) execFileSync('git', args, { cwd: args[1] === '--bare' ? tempRootDir : repoDir, stdio: 'ignore' });
-  const sqlitePath = path.join(repoDir, '.harness/state.sqlite'), db = openSqliteConnection(sqlitePath);
+  const sqlitePath = path.join(repoDir, '.harness/state.sqlite');
+  const db = openSqliteConnection(sqlitePath);
   try {
     db.exec("CREATE TABLE IF NOT EXISTS owner_global_rules (id TEXT PRIMARY KEY, directive TEXT NOT NULL); INSERT OR IGNORE INTO owner_global_rules (id, directive) VALUES ('owner-rule-1', 'Maintain backwards compatibility unless approved by owner.');");
   } finally {

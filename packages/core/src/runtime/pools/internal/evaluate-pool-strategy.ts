@@ -129,7 +129,8 @@ export function selectCandidateByStrategy<TItem>(
     return soonest.item;
   }
   if (pool.strategy.strategyKind === 'escalate-on-retry') {
-    const minRate = pool.strategy.minSuccessRate ?? 0, minSamples = pool.strategy.minSamples ?? 1;
+    const minRate = pool.strategy.minSuccessRate ?? 0;
+    const minSamples = pool.strategy.minSamples ?? 1;
     for (let i = Math.min(selectionCtx.retryAttempt, available.length - 1); i < available.length; i += 1) {
       const c = available[i];
       if (c !== undefined && (c.sampleCount < minSamples || c.empiricalSuccessRate >= minRate)) return c.item;

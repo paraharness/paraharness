@@ -114,7 +114,8 @@ export async function evaluateBeforeStopGate<TIn, TOut, THandle>(
 ): Promise<BeforeStopGateEvaluationResult> {
   session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pausedAtPhase: 'BEFORE_STOP_GATE', pauseState: Object.freeze({ kind: 'before-stop-gate' }) });
   if (session.ledgerStore !== undefined) await session.continuationQueue.enqueueUpdate(session.ctx.stepExecId, () => (session.ledgerStore as NonNullable<typeof session.ledgerStore>).updateContinuationStack(session.ctx.runId, session.ctx.stepExecId, Object.freeze<readonly ContinuationFrame[]>([...session.outerFrames, session.agentFrame])));
-  const deficits: string[] = [], failedCheckIds: string[] = [];
+  const deficits: string[] = [];
+  const failedCheckIds: string[] = [];
   if (session.node.onChildInterruptHandlers.length > 0 && session.ledgerStore !== undefined) {
     const openForks = await session.ledgerStore.getSuspendedForks(session.ctx.runId, { parentStepExecId: session.ctx.stepExecId });
     if (openForks.length > 0) {
@@ -137,7 +138,8 @@ export async function evaluateBeforeStopGate<TIn, TOut, THandle>(
   const result = Object.freeze<BeforeStopGateEvaluationResult>({ passed: deficits.length === 0, deficits: Object.freeze(deficits), failedCheckIds: Object.freeze(failedCheckIds) });
   await attributeBeforeStopLessonOutcomes(session, result, structuredOutput);
   if (!result.passed && session.ledgerStore !== undefined) {
-    const feedbackText = `[BEFORE_STOP_GATE_REJECTED]\n${deficits.join('\n')}`, msgId = `msg:${session.ctx.stepExecId}:gate-fail:${String(session.agentFrame.turnsTaken)}`;
+    const feedbackText = `[BEFORE_STOP_GATE_REJECTED]\n${deficits.join('\n')}`;
+    const msgId = `msg:${session.ctx.stepExecId}:gate-fail:${String(session.agentFrame.turnsTaken)}`;
     await session.ledgerStore.appendMessageFrame(session.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: msgId, parentMessageId: session.agentFrame.leafMessageId, vendorId: session.modelNode.vendor, rawWireFrame: new TextEncoder().encode(feedbackText), canonical: Object.freeze({ role: 'user', visibleText: feedbackText }), prefixDigest: session.wirePrefix?.systemDigest ?? 'unpinned' }));
     session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, leafMessageId: msgId, neutralSyncContinuation: false, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }) });
   }

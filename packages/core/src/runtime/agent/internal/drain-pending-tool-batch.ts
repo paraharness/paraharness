@@ -171,8 +171,11 @@ export async function evaluatePostToolTripwireAndFlush<TIn, TOut, THandle>(
  */
 export async function drainPendingToolBatch<TIn, TOut, THandle>(session: AgentTurnSessionState<TIn, TOut, THandle>, initialBatch: PendingToolBatch): Promise<DrainToolBatchOutcome<THandle>> {
   const reacquiredNotes = await session.serviceRegistry.reacquireActiveSkillServices({ runId: session.ctx.runId, scopeKey: session.ctx.stepExecId, scopeHandle: session.ctx.scopeHandle, activeSkillIds: session.agentFrame.activeSkillIds, skillsById: session.skillsById, driverContext: { registry: session.ctx.registry, resolveEnv: (v) => session.ctx.resolveEnv(v), getRunner: (n) => session.ctx.getRunner(n) } });
-  const completedResults: CompletedToolBatchResultRecord[] = [...initialBatch.completedResults], remainingCalls: RemainingToolCallRecord[] = [...initialBatch.remainingCalls], batchState = { completedResults, adjudicationFeedback: initialBatch.adjudicationFeedback };
-  let precedingReplayCallDenied = false, reacquiredNotesAttached = false;
+  const completedResults: CompletedToolBatchResultRecord[] = [...initialBatch.completedResults];
+  const remainingCalls: RemainingToolCallRecord[] = [...initialBatch.remainingCalls];
+  const batchState = { completedResults, adjudicationFeedback: initialBatch.adjudicationFeedback };
+  let precedingReplayCallDenied = false;
+  let reacquiredNotesAttached = false;
   while (remainingCalls.length > 0) {
     const call = remainingCalls[0] as RemainingToolCallRecord;
     if (precedingReplayCallDenied) {
@@ -184,14 +187,16 @@ export async function drainPendingToolBatch<TIn, TOut, THandle>(session: AgentTu
     if (preOut.status === 're-evaluate' || preOut.status === 'denied-in-band' || (preOut.status === 'lease-denied' && (precedingReplayCallDenied = true))) continue;
     const curBatch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([...completedResults]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([...remainingCalls]), adjudicationFeedback: batchState.adjudicationFeedback });
     if (preOut.status === 'interrupted') return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'interrupted', batch: curBatch, interruptResolution: preOut.interruptResolution });
-    const prevEffects = session.agentFrame.observedEffects, stepOut = await executeSingleToolInPipeline(session, call, curBatch);
+    const prevEffects = session.agentFrame.observedEffects;
+    const stepOut = await executeSingleToolInPipeline(session, call, curBatch);
     if (stepOut.status === 'interrupted') {
       const intrBatch = Object.freeze<PendingToolBatch>({ ...curBatch, activeInterruptCallId: call.callId });
       return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'interrupted', batch: (session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pauseState: Object.freeze({ kind: 'tool-batch', pendingToolBatch: intrBatch }) }), intrBatch), interruptResolution: stepOut.interruptResolution });
     }
     remainingCalls.shift();
     if (stepOut.newEffects !== undefined && stepOut.newEffects.length > 0) (session.ctx as { readonly recordEffects?: (effs: readonly ToolEffect[]) => void }).recordEffects?.(stepOut.newEffects);
-    const prefix = call.blockedPreFlight === true && batchState.adjudicationFeedback !== undefined ? `[Lease Elevated: ${batchState.adjudicationFeedback}]\n\n` : '', svcPrefix = !reacquiredNotesAttached && reacquiredNotes.length > 0 ? ((reacquiredNotesAttached = true), `${reacquiredNotes.join('\n')}\n`) : '';
+    const prefix = call.blockedPreFlight === true && batchState.adjudicationFeedback !== undefined ? `[Lease Elevated: ${batchState.adjudicationFeedback}]\n\n` : '';
+    const svcPrefix = !reacquiredNotesAttached && reacquiredNotes.length > 0 ? ((reacquiredNotesAttached = true), `${reacquiredNotes.join('\n')}\n`) : '';
     completedResults.push(Object.freeze<CompletedToolBatchResultRecord>({ callId: call.callId, content: `${svcPrefix}${prefix}${stepOut.content}`, isError: stepOut.isError }));
     const settledBatch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([...completedResults]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([...remainingCalls]), adjudicationFeedback: batchState.adjudicationFeedback });
     if (stepOut.status === 'suspended') return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'suspended', batch: (session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'prerequisite-wait', pendingToolBatch: curBatch }) }), settledBatch) });
@@ -203,7 +208,9 @@ export async function drainPendingToolBatch<TIn, TOut, THandle>(session: AgentTu
   if (!reacquiredNotesAttached && reacquiredNotes.length > 0 && completedResults.length > 0) completedResults[completedResults.length - 1] = Object.freeze<CompletedToolBatchResultRecord>({ ...(completedResults[completedResults.length - 1] as CompletedToolBatchResultRecord), content: `${(completedResults[completedResults.length - 1] as CompletedToolBatchResultRecord).content}\n${reacquiredNotes.join('\n')}` });
   const finalBatch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([...completedResults]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([]), adjudicationFeedback: batchState.adjudicationFeedback });
   if (session.ledgerStore !== undefined && completedResults.length > 0) {
-    const toolMsgId = `msg:${session.ctx.stepExecId}:tools:${String(session.agentFrame.turnsTaken)}`, frameJson = JSON.stringify(completedResults), canonicalResults = completedResults.map((r) => Object.freeze({ callId: r.callId, content: r.content, isError: Boolean(r.isError) }));
+    const toolMsgId = `msg:${session.ctx.stepExecId}:tools:${String(session.agentFrame.turnsTaken)}`;
+    const frameJson = JSON.stringify(completedResults);
+    const canonicalResults = completedResults.map((r) => Object.freeze({ callId: r.callId, content: r.content, isError: Boolean(r.isError) }));
     await session.ledgerStore.appendMessageFrame(session.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: toolMsgId, parentMessageId: session.agentFrame.leafMessageId, vendorId: session.modelNode.vendor, rawWireFrame: new TextEncoder().encode(frameJson), canonical: Object.freeze({ role: 'tool', visibleText: frameJson, toolResults: Object.freeze(canonicalResults) }), prefixDigest: session.wirePrefix?.systemDigest ?? 'unpinned' }));
     session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, leafMessageId: toolMsgId, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }) });
   }

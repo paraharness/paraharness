@@ -122,7 +122,8 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
 export async function recoverInterruptedRunOnBoot<TIn = unknown, THandle = unknown>(
   params: RecoverInterruptedRunParams<TIn, THandle>,
 ): Promise<{ readonly reattachedChildHandles: ReadonlyMap<string, THandle>; readonly readyToResume: boolean }> {
-  const { bootRecord, flowCtx } = params, reattachedChildren = new Map<string, THandle>();
+  const { bootRecord, flowCtx } = params;
+  const reattachedChildren = new Map<string, THandle>();
   flowCtx.scopeHandle = await flowCtx.scopeDriver.reattachRoot(bootRecord.runId, bootRecord.baseScopeCheckpoint);
   const branchScope = flowCtx.scopeDriver as Partial<BranchableScope<THandle, Record<string, unknown>, Record<string, unknown>>>;
   for (const frame of bootRecord.continuationStack) {

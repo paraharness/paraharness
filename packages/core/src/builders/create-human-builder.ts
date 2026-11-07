@@ -12,6 +12,45 @@ import type { ScopedHumanNameBuilder as ScopedHumanAliasBuilder } from './scoped
 import type { ScopedHumanTargetBuilder } from './scoped-human-target-builder.js';
 
 /**
+ * Creates a `ScopedHumanAliasBuilder` for `H.human(id).withName(alias)`.
+ *
+ * Validates that the underlying `HumanNode` channel is `'bidirectional'` when `.output(schema)` is invoked.
+ *
+ * @template TMode Interaction mode (`'bidirectional' | 'notify-only'`).
+ *
+ * @param {string}                  alias       - Named human review role alias.
+ * @param {() => HumanNode<TMode>}  compileNode - Thunk compiling the parent `HumanNode`.
+ *
+ * @returns {ScopedHumanAliasBuilder} Frozen alias sub-builder.
+ */
+function createScopedHumanAliasBuilder<
+  TMode extends 'bidirectional' | 'notify-only' = 'bidirectional' | 'notify-only',
+>(alias: string, compileNode: () => HumanNode<TMode>): ScopedHumanAliasBuilder {
+  return Object.freeze<ScopedHumanAliasBuilder>({
+    output<TResponse>(responseSchema: z.ZodType<TResponse>): ScopedHumanTargetBuilder<TResponse> {
+      const bidirectionalHuman = validateBidirectionalHumanChannel(
+        compileNode(),
+        'H.human.withName().output()',
+      );
+      const scopedNode = deepFreeze<ScopedHumanTargetNode<TResponse>>({
+        type: 'harness:scoped-human',
+        human: bidirectionalHuman,
+        alias,
+        outputSchema: responseSchema,
+      });
+      return Object.freeze<ScopedHumanTargetBuilder<TResponse>>({
+        human: bidirectionalHuman,
+        alias,
+        outputSchema: responseSchema,
+        toAST(): ScopedHumanTargetNode<TResponse> {
+          return scopedNode;
+        },
+      });
+    },
+  });
+}
+
+/**
  * Creates a fluent `HumanBuilder` for `H.human(id)`.
  *
  * Tracks the channel interaction mode (`'bidirectional' | 'notify-only'`) and validates
@@ -58,32 +97,7 @@ export function createHumanBuilder<
     },
     withName(alias: string): ScopedHumanAliasBuilder {
       assertNonEmptyIdentifier('H.human.withName', alias);
-      return Object.freeze<ScopedHumanAliasBuilder>({
-        output<TResponse>(
-          responseSchema: z.ZodType<TResponse>,
-        ): ScopedHumanTargetBuilder<TResponse> {
-          const bidirectionalHuman = validateBidirectionalHumanChannel(
-            compileNode(),
-            'H.human.withName().output()',
-          );
-          const scopedNode: ScopedHumanTargetNode<TResponse> = deepFreeze<
-            ScopedHumanTargetNode<TResponse>
-          >({
-            type: 'harness:scoped-human',
-            human: bidirectionalHuman,
-            alias,
-            outputSchema: responseSchema,
-          });
-          return Object.freeze<ScopedHumanTargetBuilder<TResponse>>({
-            human: bidirectionalHuman,
-            alias,
-            outputSchema: responseSchema,
-            toAST(): ScopedHumanTargetNode<TResponse> {
-              return scopedNode;
-            },
-          });
-        },
-      });
+      return createScopedHumanAliasBuilder(alias, compileNode);
     },
     toAST(): HumanNode<TMode> {
       return compileNode();

@@ -72,7 +72,9 @@ export function computeLessonScore(
   const decayFactor = Math.pow(scoring.decayOnPartitionEpochChange, epochDelta);
   const windowSize = Math.max(1, scoring.slidingWindowInjections);
   const windowOutcomes = lesson.recentOutcomes.slice(-windowSize);
-  let cleanCount = 0, gateCount = 0, violatedCount = 0;
+  let cleanCount = 0;
+  let gateCount = 0;
+  let violatedCount = 0;
   for (const outcome of windowOutcomes) {
     if (outcome === 'clean_pass') cleanCount += 1;
     else if (outcome === 'violated') violatedCount += 1;
@@ -112,7 +114,9 @@ export function shouldRetireLesson(
   const minRate = retirement.minCleanPassRate.minRate;
   const minInjections = Math.max(1, retirement.minCleanPassRate.afterInjections);
   const windowOutcomes = lesson.recentOutcomes.slice(-Math.max(1, slidingWindow));
-  let cleanCount = 0, violatedCount = 0, unrecoveredCount = 0;
+  let cleanCount = 0;
+  let violatedCount = 0;
+  let unrecoveredCount = 0;
   for (const outcome of windowOutcomes) {
     if (outcome === 'clean_pass') cleanCount += 1;
     else if (outcome === 'violated') violatedCount += 1;

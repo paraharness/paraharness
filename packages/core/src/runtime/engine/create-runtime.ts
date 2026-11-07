@@ -37,7 +37,8 @@ export function createRuntime(
   harness: HarnessNode | AstBuilder<HarnessNode>,
   options?: HarnessRuntimeOptions & { readonly topologyNode?: TopologyNode<string>; readonly topologyStore?: TopologyStore; readonly lessonStore?: LessonStore; readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter> },
 ): HarnessRuntime {
-  const node: HarnessNode = 'toAST' in harness ? harness.toAST() : harness, env = options?.env ?? {};
+  const node: HarnessNode = 'toAST' in harness ? harness.toAST() : harness;
+  const env = options?.env ?? {};
   const registry: RuntimeExecutorRegistry = options?.registry !== undefined ? createExecutorRegistry(options.registry) : createExecutorRegistry();
   const memoizedRunners = new Map<string, RunnerDriver>();
   const drvCtx: RuntimeDriverContext = {
@@ -55,7 +56,10 @@ export function createRuntime(
   const ledgerFactory = registry.ledgers[node.ledger.type];
   if (ledgerFactory === undefined) throw new Error(`No LedgerStore registered for '${node.ledger.type}' in harness '${node.id}'.`);
   const ledgerStore = ledgerFactory(node.ledger as never, drvCtx);
-  const lockManager = new ScopeLockManager(), continuationQueue = new StepContinuationQueue(), poolManager = new PoolManager(), serviceRegistry = new ServiceSessionRegistry();
+  const lockManager = new ScopeLockManager();
+  const continuationQueue = new StepContinuationQueue();
+  const poolManager = new PoolManager();
+  const serviceRegistry = new ServiceSessionRegistry();
   const humanAdaptersById = new Map<string, HumanAdapter>(options?.humanAdaptersById?.entries() ?? []);
   for (const notif of node.onSignalNotifications) {
     const chFactory = registry.humanChannels[notif.human.channel.type];
@@ -63,7 +67,8 @@ export function createRuntime(
   }
   const laneSchedulers = new Map<string, LaneScheduler<unknown>>();
   for (const lane of node.lanes) laneSchedulers.set(lane.id, new LaneScheduler({ lane, registry, env, ledgerStore, topologyStore: options?.topologyStore, topologyNode: options?.topologyNode, lessonStore: options?.lessonStore, lockManager, continuationQueue, poolManager, serviceRegistry, humanAdaptersById }));
-  const streamHandles: StreamSubscriptionHandle[] = [], controlPlaneHandles: ControlPlaneHandle[] = [];
+  const streamHandles: StreamSubscriptionHandle[] = [];
+  const controlPlaneHandles: ControlPlaneHandle[] = [];
   const controller: HarnessRuntimeController = {
     async emitSignal<TPayload>(signalId: string, payload: TPayload): Promise<void> {
       await handleEmittedRuntimeSignal(signalId, payload, { node, ledgerStore, topologyNode: options?.topologyNode, topologyStore: options?.topologyStore, lessonStore: options?.lessonStore, humanAdaptersById, laneSchedulers });

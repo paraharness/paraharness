@@ -64,7 +64,10 @@ export async function resolveAgentSkillsAndTools<TIn, TOut, THandle>(
   node: AgentNode<TIn, TOut, THandle>,
   ctx: StepExecutionContext<THandle>,
 ): Promise<{ readonly toolsByName: ReadonlyMap<string, ToolASTNode<THandle>>; readonly skillsById: ReadonlyMap<string, InlineSkillNode<THandle>>; readonly skillOwnerByToolName: ReadonlyMap<string, string>; readonly serviceByToolName: ReadonlyMap<string, string> }> {
-  const toolsByName = new Map<string, ToolASTNode<THandle>>(), skillsById = new Map<string, InlineSkillNode<THandle>>(), skillOwnerByToolName = new Map<string, string>(), serviceByToolName = new Map<string, string>();
+  const toolsByName = new Map<string, ToolASTNode<THandle>>();
+  const skillsById = new Map<string, InlineSkillNode<THandle>>();
+  const skillOwnerByToolName = new Map<string, string>();
+  const serviceByToolName = new Map<string, string>();
   const toolMaps = { toolsByName, skillOwnerByToolName, serviceByToolName };
   for (const t of node.tools) toolsByName.set(t.name, t);
   for (const sEntry of node.skills) {

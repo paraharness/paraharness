@@ -107,7 +107,8 @@ export async function evaluateLaneItemBudget<TIn = unknown>(
   item: LaneQueuedItemState<TIn>,
   syncTracker: (itemKey: string, state: string) => Promise<void>,
 ): Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }> {
-  const maxCfg = cfg.lane.maxCostUsd, currentLimit = item.approvedMaxCostUsd ?? maxCfg?.limitUsd;
+  const maxCfg = cfg.lane.maxCostUsd;
+  const currentLimit = item.approvedMaxCostUsd ?? maxCfg?.limitUsd;
   if (maxCfg === undefined || currentLimit === undefined || item.costUsd <= currentLimit) return Object.freeze({ allowed: true, newLimitUsd: currentLimit });
   const adapter = cfg.humanAdaptersById?.get(maxCfg.approver.human.id);
   if (adapter === undefined) throw new Error(`No HumanAdapter for budget approver '${maxCfg.approver.human.id}'.`);

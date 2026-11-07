@@ -35,6 +35,27 @@ function isMessageMapper<TPayload>(
 }
 
 /**
+ * Clones and re-keys an existing list of `PolicyGuardClauseNode` entries for an inherited policy `newId`.
+ *
+ * Assigns deterministic `"${newId}:clause:${index}"` identifiers while preserving each clause's guards and handler.
+ *
+ * @param {string}                              newId   - Identifier of the extended policy.
+ * @param {readonly PolicyGuardClauseNode[]}    clauses - Base policy guard clauses to re-key.
+ *
+ * @returns {readonly PolicyGuardClauseNode[]} Frozen array of re-keyed guard clauses.
+ */
+export function rekeyPolicyGuardClauses(
+  newId: string,
+  clauses: readonly PolicyGuardClauseNode[],
+): readonly PolicyGuardClauseNode[] {
+  return Object.freeze(
+    clauses.map((existing, index) =>
+      deepFreeze<PolicyGuardClauseNode>({ ...existing, id: `${newId}:clause:${index}` }),
+    ),
+  );
+}
+
+/**
  * Creates a `PolicyLimitExceededBuilder` for `H.policy(id).onLimitExceeded($limit => ...)`.
  *
  * Captures the mandatory flush interrupt and optional abort hook invoked when

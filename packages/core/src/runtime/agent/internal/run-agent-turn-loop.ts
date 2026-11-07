@@ -36,7 +36,8 @@ export async function initializeAgentContinuationFrame<TIn, TOut, THandle>(
   session: AgentTurnSessionState<TIn, TOut, THandle>,
 ): Promise<void> {
   if (session.agentFrame.leafMessageId !== null || session.agentFrame.turnsTaken > 0) return;
-  const injectedIdSet = new Set<string>(session.agentFrame.injectedScopedRuleIds), activePartitionSet = new Set<string>(session.ctx.activePartitions);
+  const injectedIdSet = new Set<string>(session.agentFrame.injectedScopedRuleIds);
+  const activePartitionSet = new Set<string>(session.ctx.activePartitions);
   const partitionDirectives: Array<{ readonly id: string; readonly directive: string }> = [];
   for (const rule of session.scopedRules) {
     if (injectedIdSet.has(rule.id)) continue;
@@ -66,7 +67,9 @@ export async function initializeAgentContinuationFrame<TIn, TOut, THandle>(
     actorGroundingTexts: session.actorGroundingTexts, actorInstructionTexts: session.actorInstructionTexts,
     skillCatalog, topologyPartitions, updatedGroundingDiffs, scopedRuleDirectives: partitionDirectives, recalledLessons: session.recalledLessons,
   });
-  const userPrompt = `${roleContextText}\n\n[INPUT]\n${session.agentFrame.inputJson}`, turn0MsgId = `msg:${session.ctx.stepExecId}:turn-0`, seededLeafId = session.ctx.seededHistory?.[session.ctx.seededHistory.length - 1]?.messageId ?? null;
+  const userPrompt = `${roleContextText}\n\n[INPUT]\n${session.agentFrame.inputJson}`;
+  const turn0MsgId = `msg:${session.ctx.stepExecId}:turn-0`;
+  const seededLeafId = session.ctx.seededHistory?.[session.ctx.seededHistory.length - 1]?.messageId ?? null;
   if (session.ledgerStore !== undefined) await session.ledgerStore.appendMessageFrame(session.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: turn0MsgId, parentMessageId: seededLeafId, vendorId: session.modelNode.vendor, rawWireFrame: new TextEncoder().encode(userPrompt), canonical: Object.freeze({ role: 'user', visibleText: userPrompt }), prefixDigest: session.wirePrefix?.systemDigest ?? 'unpinned' }));
   session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, leafMessageId: turn0MsgId, injectedScopedRuleIds: Object.freeze(Array.from(injectedIdSet)) });
 }
@@ -105,7 +108,8 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
       response = await session.modelDriver.invokeTurn({ modelId: session.modelNode.modelId, accountConfig: seat as never, effort: session.modelNode.effort, toolChoice: 'auto', wirePrefix: session.wirePrefix, roleKey: session.agentFrame.roleKey, history, wireToolSchemas, outputSchema: session.node.outputSchema, signal: session.ctx.signal });
     } else throw err;
   }
-  const latencyMs = Math.max(0, Date.now() - startMs), assistantMsgId = `msg:${session.ctx.stepExecId}:assistant:${String(session.agentFrame.turnsTaken + 1)}`;
+  const latencyMs = Math.max(0, Date.now() - startMs);
+  const assistantMsgId = `msg:${session.ctx.stepExecId}:assistant:${String(session.agentFrame.turnsTaken + 1)}`;
   if (session.ledgerStore !== undefined) await session.ledgerStore.appendMessageFrame(session.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: assistantMsgId, parentMessageId: session.agentFrame.leafMessageId, vendorId: session.modelNode.vendor, rawWireFrame: response.wireFrame, canonical: response.canonical, prefixDigest: session.wirePrefix?.systemDigest ?? 'unpinned' }));
   session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, leafMessageId: assistantMsgId, turnsTaken: session.agentFrame.turnsTaken + 1, costUsd: session.agentFrame.costUsd + response.usage.costUsd, elapsedDurationMs: session.agentFrame.elapsedDurationMs + latencyMs });
   for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
@@ -141,12 +145,14 @@ export async function prepareAndDrainTurnToolBatch<TIn, TOut, THandle>(
     const rawCalls: RemainingToolCallRecord[] = (response.canonical.toolCalls ?? []).map((tc) => Object.freeze<RemainingToolCallRecord>({ callId: tc.id, toolName: tc.name, argsJson: tc.argsJson }));
     batch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze(rawCalls) });
   } else {
-    const ps = session.agentFrame.pauseState, pending = (ps.kind === 'tool-batch' || ps.kind === 'adjudication' || ps.kind === 'prerequisite-wait') ? ps.pendingToolBatch : undefined;
+    const ps = session.agentFrame.pauseState;
+    const pending = (ps.kind === 'tool-batch' || ps.kind === 'adjudication' || ps.kind === 'prerequisite-wait') ? ps.pendingToolBatch : undefined;
     if (pending !== undefined && (pending.remainingCalls.length > 0 || pending.completedResults.length > 0)) batch = pending;
     else if (session.agentFrame.activeSkillIds.length > 0) {
       const notes = await session.serviceRegistry.reacquireActiveSkillServices({ runId: session.ctx.runId, scopeKey: session.ctx.stepExecId, scopeHandle: session.ctx.scopeHandle, activeSkillIds: session.agentFrame.activeSkillIds, skillsById: session.skillsById, driverContext: { registry: session.ctx.registry, resolveEnv: (v) => session.ctx.resolveEnv(v), getRunner: (n) => session.ctx.getRunner(n) } });
       if (notes.length > 0 && session.ledgerStore !== undefined && session.agentFrame.leafMessageId !== null) {
-        const chain = await session.ledgerStore.getMessageChain(session.agentFrame.leafMessageId), last = chain[chain.length - 1];
+        const chain = await session.ledgerStore.getMessageChain(session.agentFrame.leafMessageId);
+        const last = chain[chain.length - 1];
         if (last !== undefined && (last.canonical.role === 'tool' || last.canonical.role === 'user')) await session.ledgerStore.replaceMessageFrame(session.ctx.runId, await session.modelDriver.appendToolResultNotes(last, notes));
       }
     }
@@ -191,7 +197,8 @@ export async function runAgentTurnLoop<TIn, TOut, THandle>(session: AgentTurnSes
     const limitReason = checkQuantitativeLimits(session.node.policy, tripwireMetrics);
     if (limitReason !== undefined) {
       if (session.node.policy?.onLimitExceeded === undefined) throw new Error(`Quantitative policy limit exceeded on agent '${session.node.id}' in run '${session.ctx.runId}' (step '${session.ctx.stepExecId}'): ${limitReason}.`);
-      const limCfg = session.node.policy.onLimitExceeded, hasReplaceAbortHook = session.node.onInterruptHandlers.some((h) => h.interrupt.id === limCfg.flushInterrupt.id && h.mode === 'replace' && h.abortHook !== undefined);
+      const limCfg = session.node.policy.onLimitExceeded;
+      const hasReplaceAbortHook = session.node.onInterruptHandlers.some((h) => h.interrupt.id === limCfg.flushInterrupt.id && h.mode === 'replace' && h.abortHook !== undefined);
       const flushPayload = session.ledgerStore !== undefined ? (await executeLimitExceededSequence({ agentFrame: session.agentFrame, outerFrames: session.outerFrames, limitConfig: limCfg, modelNode: session.modelNode, modelDriver: session.modelDriver, wirePrefix: session.wirePrefix, ledgerStore: session.ledgerStore, continuationQueue: session.continuationQueue, topologyStore: session.topologyStore, serviceRegistry: session.serviceRegistry, baseScopeCheckpoint: hasReplaceAbortHook ? undefined : session.baseScopeCheckpoint, tripReason: limitReason, ctx: session.ctx })).flushedPayload : Object.freeze({ reason: limitReason, ...tripwireMetrics, observedEffects: session.agentFrame.observedEffects });
       const intrRes = await resolveInterruptEdge(session, limCfg.flushInterrupt.id, flushPayload);
       if (session.laneId === undefined && intrRes.status === 'replace' && intrRes.replaceHandler?.mode === 'replace') {
@@ -208,7 +215,8 @@ export async function runAgentTurnLoop<TIn, TOut, THandle>(session: AgentTurnSes
     }
     let parsedVisible: unknown = response.canonical.visibleText;
     if (response.structuredOutput === undefined && response.canonical.visibleText.trim().startsWith('{')) parsedVisible = JSON.parse(response.canonical.visibleText);
-    const rawCandidate = response.structuredOutput !== undefined ? response.structuredOutput : parsedVisible, validatedOutput = session.node.outputSchema.parse(rawCandidate);
+    const rawCandidate = response.structuredOutput !== undefined ? response.structuredOutput : parsedVisible;
+    const validatedOutput = session.node.outputSchema.parse(rawCandidate);
     if (!(await evaluateBeforeStopGate(session, rawCandidate)).passed) continue;
     for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
       const outer = session.outerFrames[idx];

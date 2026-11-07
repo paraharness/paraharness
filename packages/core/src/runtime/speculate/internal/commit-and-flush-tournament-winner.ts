@@ -78,7 +78,8 @@ export function promoteRefinedWinnerStack(
   const priorLoopLeases = priorStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')?.grantedLoopLeases ?? [];
   const priorAgentLeases = priorStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.activeLeases ?? [];
   const mergeLeases = (a: readonly LeaseDelta[], b: readonly LeaseDelta[]): readonly LeaseDelta[] => {
-    const seen = new Set<string>(), out: LeaseDelta[] = [];
+    const seen = new Set<string>();
+    const out: LeaseDelta[] = [];
     for (const l of [...a, ...b]) if (!seen.has(l.id)) out.push((seen.add(l.id), l));
     return Object.freeze(out);
   };
@@ -121,7 +122,8 @@ export async function commitWinnerWithConflictBounce<THandle = unknown>(ctx: {
     const commitRes = await ctx.params.lockManager.withWriteLock(ctx.params.ctx.scopeHandle, () => ctx.params.branchableScope.commitChild(ctx.winnerHandle, ctx.params.ctx.scopeHandle));
     if (commitRes.status === 'clean' || curFrame.conflictRetryCount >= 2) return { committed: commitRes.status === 'clean', commitRes, winnerBranch, curFrame };
     const conflictLease = ctx.params.branchableScope.getConflictLease?.(ctx.winnerHandle);
-    const note = `[COMMIT_CONFLICT] ${commitRes.conflictedSummary}`, bounceId = `msg:${winnerBranch.forkId}:conflict:${String(curFrame.conflictRetryCount + 1)}`;
+    const note = `[COMMIT_CONFLICT] ${commitRes.conflictedSummary}`;
+    const bounceId = `msg:${winnerBranch.forkId}:conflict:${String(curFrame.conflictRetryCount + 1)}`;
     const prevLeaf = winnerBranch.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.leafMessageId ?? null;
     await ctx.params.ledgerStore.appendMessageFrame(ctx.params.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: bounceId, parentMessageId: prevLeaf, vendorId: ctx.params.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(note), canonical: Object.freeze({ role: 'user', visibleText: note }), prefixDigest: ctx.params.wirePrefix?.systemDigest ?? 'unpinned' }));
     const bouncedStack = normalizeEvaluatorRollbackStack(winnerBranch.continuationStack, 'evaluate').map((f) => f.kind === 'agent-frame' ? Object.freeze<AgentContinuationFrame>({ ...f, leafMessageId: bounceId, conflictCheckArmed: true, activeLeases: conflictLease !== undefined ? Object.freeze([...f.activeLeases, conflictLease]) : f.activeLeases }) : f.kind === 'loop-frame' ? Object.freeze<LoopContinuationFrame>({ ...f, preservedActLeafMessageId: bounceId, conflictCheckArmed: true, grantedLoopLeases: conflictLease !== undefined ? Object.freeze([...f.grantedLoopLeases, conflictLease]) : f.grantedLoopLeases }) : f);

@@ -59,7 +59,8 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {number} Effective priority weight.
    */
   computeEffectivePriority(item: LaneQueuedItemState<TIn>, nowMs: number = Date.now()): number {
-    const baseWeight = LANE_PRIORITY_WEIGHTS[this.cfg.lane.priority] ?? LANE_PRIORITY_WEIGHTS.normal, agingMinutes = this.cfg.lane.agingMinutes ?? 0;
+    const baseWeight = LANE_PRIORITY_WEIGHTS[this.cfg.lane.priority] ?? LANE_PRIORITY_WEIGHTS.normal;
+    const agingMinutes = this.cfg.lane.agingMinutes ?? 0;
     if (agingMinutes <= 0) return baseWeight + item.priorityBoost;
     return baseWeight + item.priorityBoost + Math.floor(Math.max(0, nowMs - item.enqueuedAtMs) / (agingMinutes * DEFAULT_PRIORITY_AGING_INTERVAL_MS)) * PRIORITY_AGING_STEP_WEIGHT;
   }
@@ -75,7 +76,8 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {Promise<void>} Resolves once the external tracker state is updated.
    */
   async syncTrackerState(itemKey: string, canonicalKey: string, rawExit?: string): Promise<void> {
-    const trackerCfg = this.cfg.lane.tracker, mappedState = trackerCfg?.stateMappings[canonicalKey] ?? (rawExit !== undefined ? trackerCfg?.stateMappings[rawExit] : undefined);
+    const trackerCfg = this.cfg.lane.tracker;
+    const mappedState = trackerCfg?.stateMappings[canonicalKey] ?? (rawExit !== undefined ? trackerCfg?.stateMappings[rawExit] : undefined);
     const adapter = mappedState !== undefined ? resolveLaneTrackerAdapter(this.cfg) : undefined;
     if (adapter !== undefined && mappedState !== undefined) await adapter.setExternalState(itemKey, mappedState);
   }
@@ -87,9 +89,11 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {Promise<readonly LaneQueuedItemState<TIn>[]>} Newly enqueued lane item states.
    */
   async pollTrackerOnce(): Promise<readonly LaneQueuedItemState<TIn>[]> {
-    const trackerCfg = this.cfg.lane.tracker, adapter = resolveLaneTrackerAdapter(this.cfg);
+    const trackerCfg = this.cfg.lane.tracker;
+    const adapter = resolveLaneTrackerAdapter(this.cfg);
     if (trackerCfg === undefined || adapter === undefined) return Object.freeze([]);
-    const rawIssues = await adapter.poll(), added: LaneQueuedItemState<TIn>[] = [];
+    const rawIssues = await adapter.poll();
+    const added: LaneQueuedItemState<TIn>[] = [];
     for (const raw of rawIssues) {
       const mapped = trackerCfg.fromIssue(raw);
       if (mapped !== undefined) added.push(await this.enqueueItem({ input: mapped }));
@@ -106,9 +110,12 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {Promise<LaneQueuedItemState<TIn>>} Enqueued or existing item state.
    */
   async enqueueItem(options: EnqueueLaneItemOptions<TIn>): Promise<LaneQueuedItemState<TIn>> {
-    const validatedInput = this.cfg.lane.inputSchema.parse(options.input), itemKey = this.cfg.lane.keyMapper(validatedInput), existing = this.itemsByKey.get(itemKey);
+    const validatedInput = this.cfg.lane.inputSchema.parse(options.input);
+    const itemKey = this.cfg.lane.keyMapper(validatedInput);
+    const existing = this.itemsByKey.get(itemKey);
     if (existing !== undefined) return existing;
-    const runId = options.runId ?? `run:${this.cfg.lane.id}:${itemKey}`, mappedDeps = this.cfg.lane.waitFor !== undefined ? this.cfg.lane.waitFor.depsMapper(validatedInput) : [];
+    const runId = options.runId ?? `run:${this.cfg.lane.id}:${itemKey}`;
+    const mappedDeps = this.cfg.lane.waitFor !== undefined ? this.cfg.lane.waitFor.depsMapper(validatedInput) : [];
     const dependsOn = Object.freeze([...new Set([...mappedDeps, ...(options.additionalDeps ?? [])])]);
     assertAcyclicLaneDependencies(this.cfg.lane.id, this.itemsByKey, itemKey, dependsOn);
     const initialStatus = dependsOn.some((depKey) => this.itemsByKey.get(depKey)?.status !== 'COMPLETED') ? 'WAITING' : 'QUEUED';

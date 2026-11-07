@@ -32,12 +32,15 @@ import {
  */
 export async function executeForkBatch<THandle = unknown>(params: ForkBatchExecutionParams<THandle>): Promise<ForkBatchExecutionResult> {
   const entriesByForkId = new Map<string, ForkBatchEntryRecord>((params.existingBatchFrame?.forks ?? []).map((f) => [f.forkId, f]));
-  const handlesByForkId = new Map<string, THandle>(), triggers: PendingPauseTriggerRecord[] = [...(params.existingBatchFrame?.pendingPauseTriggers ?? [])], unreleasedHandles = new Set<THandle>();
+  const handlesByForkId = new Map<string, THandle>();
+  const triggers: PendingPauseTriggerRecord[] = [...(params.existingBatchFrame?.pendingPauseTriggers ?? [])];
+  const unreleasedHandles = new Set<THandle>();
   const persistEntryUpdate = async (updated: ForkBatchEntryRecord): Promise<void> => {
     entriesByForkId.set(updated.forkId, updated);
     await params.continuationQueue.enqueueUpdate(params.ctx.stepExecId, () => params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, Object.freeze([...params.outerFrames, Object.freeze<ForkBatchContinuationFrame>({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) })])));
   };
-  const prepared: Array<Awaited<ReturnType<typeof prepareForkCallContext<THandle>>>> = [], outcomesByForkId = new Map<string, ChildForkExecutionOutcome<unknown>>();
+  const prepared: Array<Awaited<ReturnType<typeof prepareForkCallContext<THandle>>>> = [];
+  const outcomesByForkId = new Map<string, ChildForkExecutionOutcome<unknown>>();
   let batchHasInterrupt = false;
   try {
     for (const call of params.forkCalls ?? []) {
@@ -46,15 +49,18 @@ export async function executeForkBatch<THandle = unknown>(params: ForkBatchExecu
       prepared.push(prep);
     }
     const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, poolManager: params.poolManager, humanAdaptersById: params.humanAdaptersById }));
-    const limit = pLimit(Math.max(1, prepared.length)), settledOutcomes = await Promise.all(prepared.map((prep) => limit(() => runStep(prep.call.capability.childExecutable, prep.childInput, prep.childCtx))));
+    const limit = pLimit(Math.max(1, prepared.length));
+    const settledOutcomes = await Promise.all(prepared.map((prep) => limit(() => runStep(prep.call.capability.childExecutable, prep.childInput, prep.childCtx))));
     for (let idx = 0; idx < prepared.length; idx += 1) {
-      const prep = prepared[idx] as NonNullable<(typeof prepared)[number]>, outcome = settledOutcomes[idx] as ChildForkExecutionOutcome<unknown>;
+      const prep = prepared[idx] as NonNullable<(typeof prepared)[number]>;
+      const outcome = settledOutcomes[idx] as ChildForkExecutionOutcome<unknown>;
       outcomesByForkId.set(prep.call.forkId, outcome);
       entriesByForkId.set(prep.call.forkId, Object.freeze<ForkBatchEntryRecord>({ ...prep.entry, continuationStack: outcome.continuationStack }));
       if (outcome.status === 'interrupt-raised') batchHasInterrupt = true;
     }
     for (const prep of prepared) {
-      const entry = entriesByForkId.get(prep.call.forkId), outcome = outcomesByForkId.get(prep.call.forkId);
+      const entry = entriesByForkId.get(prep.call.forkId);
+      const outcome = outcomesByForkId.get(prep.call.forkId);
       if (entry !== undefined && outcome !== undefined && outcome.status !== 'interrupt-raised' && !(batchHasInterrupt && outcome.continuationStack.length > 0)) {
         unreleasedHandles.delete(prep.childHandle);
         await reconcileChildForkWithBounce({ batchParams: { ...params, executeChildStep: runStep }, entry, childHandle: prep.childHandle, childNode: prep.call.capability.childExecutable, childInput: prep.childInput, outcome, persistEntryUpdate });
@@ -88,7 +94,8 @@ export async function executeResumeForkBatch<THandle = unknown>(
   const req = params.resumeRequest;
   if (req === undefined) throw new Error(`executeResumeForkBatch requires resumeRequest in run '${params.ctx.runId}'.`);
   const suspendedRecords = await params.ledgerStore.getSuspendedForks(params.ctx.runId, { forkIds: req.suspendedForkIds, parentStepExecId: params.ctx.stepExecId });
-  const entriesByForkId = new Map<string, ForkBatchEntryRecord>(), perForkOutputs: unknown[] = [];
+  const entriesByForkId = new Map<string, ForkBatchEntryRecord>();
+  const perForkOutputs: unknown[] = [];
   const persistEntryUpdate = async (updated: ForkBatchEntryRecord): Promise<void> => {
     entriesByForkId.set(updated.forkId, updated);
     const frame: ForkBatchContinuationFrame = Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, forks: Object.freeze(Array.from(entriesByForkId.values())) });

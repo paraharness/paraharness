@@ -29,7 +29,8 @@ import type { SpeculateTournamentResult } from './speculate-tournament-result.js
  */
 export async function executeSpeculateTournament<THandle = unknown>(params: SpeculateTournamentParams<THandle>): Promise<SpeculateTournamentResult> {
   const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}'));
-  const branchInputs = params.capability.mapBranches(params.parentInput, req), handlesByBranch = new Map<number, THandle>();
+  const branchInputs = params.capability.mapBranches(params.parentInput, req);
+  const handlesByBranch = new Map<number, THandle>();
   const bufferedLessons: SpeculateBufferedLessonOutcomeRecord[] = [...(params.existingTournamentFrame?.bufferedLessonOutcomes ?? [])];
   let curFrame: SpeculateContinuationFrame = params.existingTournamentFrame ?? Object.freeze<SpeculateContinuationFrame>({ kind: 'speculate-frame', parentStepExecId: params.ctx.stepExecId, callId: params.callId, toolName: params.capability.toolName, phase: 'RACING', conflictRetryCount: 0, conflictCheckArmed: false, branches: Object.freeze([]), humanRulingsHistory: Object.freeze([]) });
   const persistFrame = async (next: SpeculateContinuationFrame): Promise<void> => {
@@ -41,8 +42,10 @@ export async function executeSpeculateTournament<THandle = unknown>(params: Spec
   try {
     if (curFrame.branches.length === 0) {
       for (let idx = 0; idx < params.capability.branchCount; idx += 1) handlesByBranch.set(idx, await params.lockManager.withReadLock(params.ctx.scopeHandle, () => params.branchableScope.forkChild(params.ctx.scopeHandle, `${params.callId}:branch:${String(idx)}`)));
-      const limit = pLimit(Math.max(1, params.capability.branchCount)), settledBranches = await Promise.all(Array.from({ length: params.capability.branchCount }, (_, idx) => limit(async (): Promise<SpeculateBranchEntryRecord> => {
-        const forkId = `${params.callId}:branch:${String(idx)}`, handle = handlesByBranch.get(idx) as THandle;
+      const limit = pLimit(Math.max(1, params.capability.branchCount));
+      const settledBranches = await Promise.all(Array.from({ length: params.capability.branchCount }, (_, idx) => limit(async (): Promise<SpeculateBranchEntryRecord> => {
+        const forkId = `${params.callId}:branch:${String(idx)}`;
+        const handle = handlesByBranch.get(idx) as THandle;
         try {
           const outcome = await runStep(params.capability.workerExecutable, branchInputs[idx], Object.freeze({ ...params.ctx, stepExecId: `${params.ctx.stepExecId}:branch:${String(idx)}`, scopeHandle: handle }));
           const ckpt = await params.branchableScope.serializeCheckpoint(handle);
@@ -67,7 +70,9 @@ export async function executeSpeculateTournament<THandle = unknown>(params: Spec
         continue;
       }
       if (postRace.caseKind === 'sole-survivor' && postRace.targetBranchIndex !== undefined) {
-        const b = curFrame.branches.find((x) => x.branchIndex === postRace.targetBranchIndex), h = handlesByBranch.get(postRace.targetBranchIndex), vw = params.capability.verifyWinnerWith;
+        const b = curFrame.branches.find((x) => x.branchIndex === postRace.targetBranchIndex);
+        const h = handlesByBranch.get(postRace.targetBranchIndex);
+        const vw = params.capability.verifyWinnerWith;
         if (b !== undefined && h !== undefined && vw !== undefined) {
           const evalOut = await runStep(vw.evaluator, vw.mapInput(branchInputs[b.branchIndex], JSON.parse(b.outputJson ?? 'null'), JSON.parse(b.scopeReceiptJson ?? '{}')), Object.freeze({ ...params.ctx, stepExecId: `${params.ctx.stepExecId}:verify:${String(b.branchIndex)}`, scopeHandle: h }));
           if (evalOut.status !== 'completed' || !vw.acceptWhen(evalOut.output)) {

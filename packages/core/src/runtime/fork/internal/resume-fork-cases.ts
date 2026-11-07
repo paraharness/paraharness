@@ -141,10 +141,12 @@ export async function injectCaseCResumeFrame<THandle = unknown>(
  * @returns {Promise<ForkBatchEntryRecord>} Settled `ForkBatchEntryRecord` after resumption.
  */
 export async function resumeSuspendedForkEntry<THandle = unknown>(params: ResumeSuspendedForkEntryParams<THandle>): Promise<ForkBatchEntryRecord> {
-  const { batchParams, record } = params, forkCap = batchParams.parentNode.capabilities?.forks.find((f) => f.toolName === record.forkToolName);
+  const { batchParams, record } = params;
+  const forkCap = batchParams.parentNode.capabilities?.forks.find((f) => f.toolName === record.forkToolName);
   if (forkCap === undefined) throw new Error(`Unknown fork tool '${record.forkToolName}' on parent '${batchParams.parentNode.id}'.`);
   const childHandle = await batchParams.lockManager.withReadLock(batchParams.ctx.scopeHandle, () => batchParams.branchableScope.reattachChild(batchParams.ctx.scopeHandle, record.forkId, record.childScopeCheckpoint));
-  let handedOffToReconcile = false, curEntry = params.entry;
+  let handedOffToReconcile = false;
+  let curEntry = params.entry;
   try {
     if (curEntry.syncedToParentCheckpoint === undefined) {
       const syncOut = await batchParams.lockManager.withWriteLock(batchParams.ctx.scopeHandle, async () => {
@@ -158,7 +160,8 @@ export async function resumeSuspendedForkEntry<THandle = unknown>(params: Resume
       await params.persistEntryUpdate(curEntry);
     }
     if (curEntry.resumeFrameInjected !== true) {
-      const syncJson = curEntry.syncResultJson ?? '{}', innerAgent = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame');
+      const syncJson = curEntry.syncResultJson ?? '{}';
+      const innerAgent = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame');
       const nextStack = record.suspensionReason === 'INTERRUPT_RAISED' ? await injectCaseAResumeFrame({ ...params, entry: curEntry }, syncJson) : innerAgent?.pausedAtPhase === 'BEFORE_STOP_GATE' ? await injectCaseCResumeFrame({ ...params, entry: curEntry }, syncJson) : await injectCaseBResumeFrame({ ...params, entry: curEntry }, syncJson);
       curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, resumeFrameInjected: true, continuationStack: nextStack });
       await params.persistEntryUpdate(curEntry);

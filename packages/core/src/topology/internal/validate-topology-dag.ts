@@ -49,6 +49,106 @@ function formatCyclePath(graph: Graph, componentSet: ReadonlySet<string>, startK
 }
 
 /**
+ * Extracts and validates all own partition keys declared on `partitions`.
+ *
+ * Ensures at least one partition is declared and every partition key is a non-empty identifier.
+ *
+ * @template TPartition Literal string union of partition identifiers.
+ *
+ * @param {string}                                                                topologyId - Unique identifier of the topology.
+ * @param {Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>} partitions - Partition dependency map.
+ *
+ * @returns {readonly TPartition[]} Ordered list of own partition keys.
+ *
+ * @throws {Error} If `partitions` is empty or contains an empty/whitespace partition identifier.
+ */
+function collectDeclaredPartitions<TPartition extends string>(
+  topologyId: string,
+  partitions: Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>,
+): readonly TPartition[] {
+  const declaredKeys = Object.keys(partitions).filter((key): key is TPartition =>
+    isPartitionKey(partitions, key),
+  );
+  if (declaredKeys.length === 0) {
+    throw new Error(`Topology '${topologyId}' must declare at least one partition.`);
+  }
+  for (const key of declaredKeys) {
+    if (key.trim().length === 0) {
+      throw new Error(`Topology '${topologyId}' contains an empty partition identifier.`);
+    }
+  }
+  return declaredKeys;
+}
+
+/**
+ * Constructs a forward dependency graph (`dependent -> upstream`) and validates all direct edges.
+ *
+ * Rejects unknown upstream partition references and direct self-dependency edges (`key -> key`).
+ *
+ * @template TPartition Literal string union of partition identifiers.
+ *
+ * @param {string}                                                                topologyId   - Unique identifier of the topology.
+ * @param {Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>} partitions   - Partition dependency map.
+ * @param {readonly TPartition[]}                                                 declaredKeys - Validated partition keys.
+ *
+ * @returns {Graph} Directed forward dependency graph.
+ *
+ * @throws {Error} If any partition depends on an unknown partition or directly on itself.
+ */
+function buildForwardDependencyGraph<TPartition extends string>(
+  topologyId: string,
+  partitions: Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>,
+  declaredKeys: readonly TPartition[],
+): Graph {
+  const graph = new Graph({ directed: true });
+  for (const key of declaredKeys) {
+    graph.setNode(key);
+  }
+  for (const key of declaredKeys) {
+    for (const dep of partitions[key].dependsOn ?? []) {
+      if (!graph.hasNode(dep)) {
+        throw new Error(
+          `Topology '${topologyId}' partition '${key}' depends on unknown partition '${dep}'.`,
+        );
+      }
+      if (dep === key) {
+        throw new Error(
+          `Topology '${topologyId}' contains a self-dependency cycle on partition '${key}' (${key} -> ${key}).`,
+        );
+      }
+      graph.setEdge(key, dep);
+    }
+  }
+  return graph;
+}
+
+/**
+ * Constructs a reverse dependency graph (`upstream -> dependent`) for transitive dependent queries.
+ *
+ * @template TPartition Literal string union of partition identifiers.
+ *
+ * @param {Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>} partitions   - Partition dependency map.
+ * @param {readonly TPartition[]}                                                 declaredKeys - Validated partition keys.
+ *
+ * @returns {Graph} Directed reverse dependency graph.
+ */
+function buildReverseDependencyGraph<TPartition extends string>(
+  partitions: Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>,
+  declaredKeys: readonly TPartition[],
+): Graph {
+  const reverseGraph = new Graph({ directed: true });
+  for (const key of declaredKeys) {
+    reverseGraph.setNode(key);
+  }
+  for (const dependentKey of declaredKeys) {
+    for (const upstreamKey of partitions[dependentKey].dependsOn ?? []) {
+      reverseGraph.setEdge(upstreamKey, dependentKey);
+    }
+  }
+  return reverseGraph;
+}
+
+/**
  * Validates that a topology's partition map has non-empty partition IDs, valid `dependsOn` references, and zero directed cycles.
  *
  * Builds a directed `Graph` using `@dagrejs/graphlib` and invokes `alg.findCycles` to reject self-loops and multi-node cycles at AST build time.
@@ -64,30 +164,15 @@ export function validateTopologyDAG<TPartition extends string>(
   topologyId: string,
   partitions: Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>,
 ): void {
-  const rawKeys = Object.keys(partitions);
-  if (rawKeys.length === 0) throw new Error(`Topology '${topologyId}' must declare at least one partition.`);
-  const graph = new Graph({ directed: true });
-  const declaredKeys: TPartition[] = [];
-  for (const key of rawKeys) {
-    if (!isPartitionKey(partitions, key)) continue;
-    if (key.trim().length === 0) throw new Error(`Topology '${topologyId}' contains an empty partition identifier.`);
-    graph.setNode(key);
-    declaredKeys.push(key);
-  }
-  for (const key of declaredKeys) {
-    for (const dep of partitions[key].dependsOn ?? []) {
-      if (!graph.hasNode(dep)) throw new Error(`Topology '${topologyId}' partition '${key}' depends on unknown partition '${dep}'.`);
-      if (dep === key) {
-        throw new Error(`Topology '${topologyId}' contains a self-dependency cycle on partition '${key}' (${key} -> ${key}).`);
-      }
-      graph.setEdge(key, dep);
-    }
-  }
+  const declaredKeys = collectDeclaredPartitions(topologyId, partitions);
+  const graph = buildForwardDependencyGraph(topologyId, partitions, declaredKeys);
   const firstCycle = alg.findCycles(graph)[0];
   if (firstCycle !== undefined) {
     const componentSet = new Set<string>(firstCycle);
     const startKey = declaredKeys.find((key) => componentSet.has(key)) ?? firstCycle[0] ?? '';
-    throw new Error(`Topology '${topologyId}' contains a dependency cycle: ${formatCyclePath(graph, componentSet, startKey)}.`);
+    throw new Error(
+      `Topology '${topologyId}' contains a dependency cycle: ${formatCyclePath(graph, componentSet, startKey)}.`,
+    );
   }
 }
 
@@ -112,27 +197,19 @@ export function computeTransitiveDependents<TPartition extends string>(
   partitions: Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>>,
   partitionId: TPartition,
 ): readonly TPartition[] {
-  const reverseGraph = new Graph({ directed: true });
-  const declaredKeys: TPartition[] = [];
-  for (const rawKey of Object.keys(partitions)) {
-    if (!isPartitionKey(partitions, rawKey)) continue;
-    reverseGraph.setNode(rawKey);
-    declaredKeys.push(rawKey);
-  }
+  const declaredKeys = Object.keys(partitions).filter((key): key is TPartition =>
+    isPartitionKey(partitions, key),
+  );
+  const reverseGraph = buildReverseDependencyGraph(partitions, declaredKeys);
   if (!reverseGraph.hasNode(partitionId)) {
-    throw new Error(`Cannot query dependents on topology '${topologyId}': unknown partition '${partitionId}'.`);
-  }
-  for (const dependentKey of declaredKeys) {
-    for (const upstreamKey of partitions[dependentKey].dependsOn ?? []) {
-      reverseGraph.setEdge(upstreamKey, dependentKey);
-    }
+    throw new Error(
+      `Cannot query dependents on topology '${topologyId}': unknown partition '${partitionId}'.`,
+    );
   }
   const reachable = alg.preorder(reverseGraph, [partitionId]);
-  const strictDependents: TPartition[] = [];
-  for (const nodeKey of reachable) {
-    if (nodeKey !== partitionId && isPartitionKey(partitions, nodeKey)) {
-      strictDependents.push(nodeKey);
-    }
-  }
+  const strictDependents = reachable.filter(
+    (nodeKey): nodeKey is TPartition =>
+      nodeKey !== partitionId && isPartitionKey(partitions, nodeKey),
+  );
   return Object.freeze(strictDependents);
 }

@@ -12,6 +12,7 @@ import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js'
 import {
   createPolicyGuardClausePendingBuilder,
   createPolicyLimitExceededBuilder,
+  rekeyPolicyGuardClauses,
 } from './internal/policy-sub-builders.js';
 import type {
   PolicyBuilder,
@@ -43,8 +44,7 @@ export function createPolicyBuilder<THandle = unknown>(
   return Object.freeze<PolicyBuilder<THandle>>({
     id,
     guard(...guards: ReadonlyArray<MaybeBuilder<PolicyGuardASTNode>>): PolicyGuardClausePendingBuilder<THandle> {
-      const extractedGuards: PolicyGuardASTNode[] = [];
-      for (const g of guards) extractedGuards.push(extractAST(g));
+      const extractedGuards = guards.map((guard) => extractAST(guard));
       return createPolicyGuardClausePendingBuilder<THandle>(
         `${id}:clause:${currentClauses.length}`,
         extractedGuards,
@@ -53,8 +53,7 @@ export function createPolicyBuilder<THandle = unknown>(
       );
     },
     tripwire(...tripwires: ReadonlyArray<MaybeBuilder<QuotaTripwireASTNode>>): PolicyBuilder<THandle> {
-      const next: QuotaTripwireASTNode[] = [...currentTripwires];
-      for (const tw of tripwires) next.push(extractAST(tw));
+      const next = [...currentTripwires, ...tripwires.map((tw) => extractAST(tw))];
       return createPolicyBuilder<THandle>(id, { ...options, tripwires: Object.freeze(next) });
     },
     maxTurns: (turns: number) => createPolicyBuilder<THandle>(id, { ...options, maxTurns: turns }),
@@ -69,16 +68,9 @@ export function createPolicyBuilder<THandle = unknown>(
     },
     extend(newId: string): PolicyBuilder<THandle> {
       assertNonEmptyIdentifier('H.policy.extend', newId);
-      const rekeyedClauses: PolicyGuardClauseNode[] = [];
-      for (let i = 0; i < currentClauses.length; i += 1) {
-        const existing = currentClauses[i];
-        if (existing !== undefined) {
-          rekeyedClauses.push(deepFreeze<PolicyGuardClauseNode>({ ...existing, id: `${newId}:clause:${i}` }));
-        }
-      }
       return createPolicyBuilder<THandle>(newId, {
         ...options,
-        clauses: Object.freeze(rekeyedClauses),
+        clauses: rekeyPolicyGuardClauses(newId, currentClauses),
         tripwires: currentTripwires,
       });
     },

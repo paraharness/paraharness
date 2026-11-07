@@ -44,7 +44,8 @@ export async function escalateLoopActorModelIfNeeded<TIn, TOut, THandle>(
   const msgIdMap = new Map<string, string>();
   let newLeafId = state.loopFrame.preservedActLeafMessageId;
   for (let idx = 0; idx < forkedHistory.length; idx += 1) {
-    const oldFrame = sourceHistory[idx], newFrame = forkedHistory[idx] as WireFrameRecord;
+    const oldFrame = sourceHistory[idx];
+    const newFrame = forkedHistory[idx] as WireFrameRecord;
     if (oldFrame !== undefined) msgIdMap.set(oldFrame.messageId, newFrame.messageId);
     await state.ledgerStore.appendMessageFrame(state.ctx.runId, newFrame);
     newLeafId = newFrame.messageId;
@@ -122,12 +123,16 @@ export async function runLoopActPhase<TIn, TOut, THandle>(
  * @returns {Promise<LoopEvaluatePhaseResult<TOut>>} Evaluation result indicating acceptance or rejection feedback.
  */
 export async function runLoopEvaluatePhase<TIn, TOut, THandle>(state: LoopExecutionState<TIn, TOut, THandle>): Promise<LoopEvaluatePhaseResult<TOut>> {
-  const actOutput = JSON.parse(state.loopFrame.lastActOutputJson ?? 'null') as TOut, scopeReceipt = JSON.parse(state.loopFrame.lastActScopeReceiptJson ?? '{}') as Record<string, unknown>, outerForEval: ContinuationFrame[] = [...state.outerFrames, state.loopFrame];
+  const actOutput = JSON.parse(state.loopFrame.lastActOutputJson ?? 'null') as TOut;
+  const scopeReceipt = JSON.parse(state.loopFrame.lastActScopeReceiptJson ?? '{}') as Record<string, unknown>;
+  const outerForEval: ContinuationFrame[] = [...state.outerFrames, state.loopFrame];
   const evalStepExecId = `${state.ctx.stepExecId}:eval:${String(state.loopFrame.iteration)}${state.ctx.resumeContinuationStack !== undefined ? `:r${String(state.loopFrame.turnsTaken)}` : ''}`;
   const evalCtx = Object.freeze({ ...state.ctx, stepExecId: evalStepExecId, resumeContinuationStack: undefined, _runtime: { ledgerStore: state.ledgerStore, topologyStore: state.topologyStore, lessonStore: state.lessonStore, lockManager: state.lockManager, continuationQueue: state.continuationQueue, poolManager: state.poolManager, serviceRegistry: state.serviceRegistry, humanAdaptersById: state.humanAdaptersById, wirePrefixesByGroupId: state.wirePrefixesByGroupId, outerFrames: outerForEval } }) as StepExecutionContext<THandle>;
-  const baseEval = state.node.evaluateStep.evaluator, metaSchema = z.object({ violatedLessonIds: z.array(z.string()).default([]) }).optional();
+  const baseEval = state.node.evaluateStep.evaluator;
+  const metaSchema = z.object({ violatedLessonIds: z.array(z.string()).default([]) }).optional();
   const evalActor = (state.node.distillLessons !== undefined || state.loopFrame.recalledLessons.length > 0) && baseEval.outputSchema instanceof z.ZodObject ? Object.freeze({ ...baseEval, outputSchema: (baseEval.outputSchema as z.ZodObject<z.ZodRawShape>).extend({ _harnessMeta: metaSchema }) as never }) : baseEval;
-  const rawEvalOut = await executeAgent(evalActor, state.node.evaluateStep.mapInput(state.validatedInput, actOutput, scopeReceipt), evalCtx), updatedLoop = outerForEval[outerForEval.length - 1] as LoopContinuationFrame;
+  const rawEvalOut = await executeAgent(evalActor, state.node.evaluateStep.mapInput(state.validatedInput, actOutput, scopeReceipt), evalCtx);
+  const updatedLoop = outerForEval[outerForEval.length - 1] as LoopContinuationFrame;
   await state.serviceRegistry.quiesceScopeServices(evalStepExecId);
   const violatedIds: string[] = [];
   let evalOutput: unknown = rawEvalOut;
@@ -138,7 +143,8 @@ export async function runLoopEvaluatePhase<TIn, TOut, THandle>(state: LoopExecut
   }
   if (!state.node.evaluateStep.acceptWhen(evalOutput) || violatedIds.length > 0) {
     if ((state.node.actStep.actor.model as { readonly type?: string }).type === 'harness:pool') state.poolManager.recordModelOutcome((state.node.actStep.actor.model as { readonly id: string }).id, state.currentActModelNode.modelId, false);
-    const feedback = state.node.evaluateStep.feedbackMapper(evalOutput), fbText = `[EVALUATOR_REJECTED]\n${feedback}`;
+    const feedback = state.node.evaluateStep.feedbackMapper(evalOutput);
+    const fbText = `[EVALUATOR_REJECTED]\n${feedback}`;
     for (const l of state.loopFrame.recalledLessons) state.accumulatedLessonOutcomes[l.id] = mergeLessonOutcomePrecedence(state.accumulatedLessonOutcomes[l.id], 'gate_rejected_unrecovered');
     let nextLeaf = updatedLoop.preservedActLeafMessageId;
     if (state.node.preserveActorSession && state.ledgerStore !== undefined && nextLeaf !== null) {
@@ -149,7 +155,8 @@ export async function runLoopEvaluatePhase<TIn, TOut, THandle>(state: LoopExecut
     if (state.ledgerStore !== undefined) await state.continuationQueue.enqueueUpdate(state.ctx.stepExecId, () => (state.ledgerStore as NonNullable<typeof state.ledgerStore>).updateContinuationStack(state.ctx.runId, state.ctx.stepExecId, Object.freeze([...state.outerFrames, state.loopFrame])));
     return Object.freeze<LoopEvaluatePhaseResult<TOut>>({ accepted: false, actOutput, feedback, evaluatorOutput: evalOutput });
   }
-  const hadPriorReject = updatedLoop.lastRejectedIterationJson !== undefined, lessonsNode = state.node.distillLessons ?? state.node.actStep.actor.lessons?.node;
+  const hadPriorReject = updatedLoop.lastRejectedIterationJson !== undefined;
+  const lessonsNode = state.node.distillLessons ?? state.node.actStep.actor.lessons?.node;
   for (const l of state.loopFrame.recalledLessons) state.accumulatedLessonOutcomes[l.id] = hadPriorReject && (state.accumulatedLessonOutcomes[l.id] === 'gate_rejected_unrecovered' || state.accumulatedLessonOutcomes[l.id] === undefined) ? 'gate_rejected_recovered' : (state.accumulatedLessonOutcomes[l.id] ?? 'clean_pass');
   if (lessonsNode !== undefined && state.lessonStore !== undefined) {
     for (const bufGate of (updatedLoop.bufferedGateRecoveries ?? []) as readonly ContrastiveDistillationTrajectoryPair[]) await runContrastiveLessonDistillation({ lessonsNode, lessonStore: state.lessonStore, topologyStore: state.topologyStore, trajectory: bufGate, ctx: state.ctx as never, poolManager: state.poolManager });

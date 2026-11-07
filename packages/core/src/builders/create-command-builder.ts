@@ -7,6 +7,38 @@ import type { CreateCommandBuilderState } from './create-command-builder-state.j
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
 
 /**
+ * Normalizes a 2-argument `CommandConfigOptions` record or internal `CreateCommandBuilderState` into a uniform state snapshot.
+ *
+ * @template TIn     Validated command input payload type.
+ * @template TOut    Validated command output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {CommandConfigOptions<TIn, TOut, THandle> | CreateCommandBuilderState<TIn, TOut, THandle>} [optionsOrState] - Direct config options or internal state.
+ *
+ * @returns {CreateCommandBuilderState<TIn, TOut, THandle>} Normalized command builder state.
+ */
+function normalizeCommandBuilderState<TIn = unknown, TOut = unknown, THandle = unknown>(
+  optionsOrState?:
+    | CommandConfigOptions<TIn, TOut, THandle>
+    | CreateCommandBuilderState<TIn, TOut, THandle>,
+): CreateCommandBuilderState<TIn, TOut, THandle> {
+  if (optionsOrState !== undefined && 'input' in optionsOrState) {
+    return {
+      inputSchema: optionsOrState.input,
+      outputSchema: optionsOrState.output,
+      extractPartitions: optionsOrState.extractPartitions,
+      fn: optionsOrState.fn,
+    };
+  }
+  return {
+    inputSchema: optionsOrState?.inputSchema,
+    outputSchema: optionsOrState?.outputSchema,
+    extractPartitions: optionsOrState?.extractPartitions,
+    fn: optionsOrState?.fn,
+  };
+}
+
+/**
  * Creates a fluent `CommandBuilder` for `H.command(id)` or `H.command(id, options)`.
  *
  * Supports both progressive fluent chaining (`.input()`, `.output()`, `.partitions()`, `.run()`)
@@ -26,20 +58,7 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
   optionsOrState?: CommandConfigOptions<TIn, TOut, THandle> | CreateCommandBuilderState<TIn, TOut, THandle>,
 ): CommandBuilder<TIn, TOut, THandle> {
   assertNonEmptyIdentifier('H.command', id);
-  const state: CreateCommandBuilderState<TIn, TOut, THandle> =
-    optionsOrState !== undefined && 'input' in optionsOrState
-      ? {
-          inputSchema: optionsOrState.input,
-          outputSchema: optionsOrState.output,
-          extractPartitions: optionsOrState.extractPartitions,
-          fn: optionsOrState.fn,
-        }
-      : {
-          inputSchema: optionsOrState?.inputSchema,
-          outputSchema: optionsOrState?.outputSchema,
-          extractPartitions: optionsOrState?.extractPartitions,
-          fn: optionsOrState?.fn,
-        };
+  const state = normalizeCommandBuilderState(optionsOrState);
 
   return Object.freeze<CommandBuilder<TIn, TOut, THandle>>({
     id,

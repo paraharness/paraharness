@@ -16,6 +16,41 @@ import type { TopologyCommitOverlayBuilderInput } from './topology-commit-overla
 import type { TopologyConfigBuilder as ConfigurableTopologyBuilder } from './topology-config-builder.js';
 
 /**
+ * Normalizes a `TopologyCommitOverlayBuilderInput` into a deeply frozen `TopologyCommitOverlayConfig`.
+ *
+ * Extracts the underlying `SignalNode` instances for `onSignal` and `discardOnSignal` when provided.
+ *
+ * @template TOnSig      Commit signal payload type.
+ * @template TDiscardSig Discard signal payload type.
+ *
+ * @param {TopologyCommitOverlayBuilderInput<TOnSig, TDiscardSig>} config - Raw overlay commit configuration.
+ *
+ * @returns {TopologyCommitOverlayConfig} Deeply frozen overlay commit configuration.
+ */
+function normalizeTopologyCommitOverlay<TOnSig = unknown, TDiscardSig = unknown>(
+  config: TopologyCommitOverlayBuilderInput<TOnSig, TDiscardSig>,
+): TopologyCommitOverlayConfig {
+  return deepFreeze<TopologyCommitOverlayConfig>({
+    onSignal:
+      config.onSignal !== undefined
+        ? {
+            signal: extractAST(config.onSignal.signal),
+            correlateBy: config.onSignal.correlateBy,
+            baseBranch: config.onSignal.baseBranch,
+          }
+        : undefined,
+    discardOnSignal:
+      config.discardOnSignal !== undefined
+        ? {
+            signal: extractAST(config.discardOnSignal.signal),
+            correlateBy: config.discardOnSignal.correlateBy,
+          }
+        : undefined,
+    maxSealedAgeHours: config.maxSealedAgeHours,
+  });
+}
+
+/**
  * Creates a fluent `ConfigurableTopologyBuilder` for `H.topology(id)`.
  *
  * Validates the partition dependency DAG at `.partitions(...)` call time and exposes
@@ -56,27 +91,11 @@ export function createTopologyBuilder<TPartition extends string = string>(
     },
     commitOverlayWhen: <TOnSig = unknown, TDiscardSig = unknown>(
       config: TopologyCommitOverlayBuilderInput<TOnSig, TDiscardSig>,
-    ) => {
-      const normalized = deepFreeze<TopologyCommitOverlayConfig>({
-        onSignal:
-          config.onSignal !== undefined
-            ? {
-                signal: extractAST(config.onSignal.signal),
-                correlateBy: config.onSignal.correlateBy,
-                baseBranch: config.onSignal.baseBranch,
-              }
-            : undefined,
-        discardOnSignal:
-          config.discardOnSignal !== undefined
-            ? {
-                signal: extractAST(config.discardOnSignal.signal),
-                correlateBy: config.discardOnSignal.correlateBy,
-              }
-            : undefined,
-        maxSealedAgeHours: config.maxSealedAgeHours,
-      });
-      return createTopologyBuilder<TPartition>(id, { ...options, commitOverlayWhen: normalized });
-    },
+    ) =>
+      createTopologyBuilder<TPartition>(id, {
+        ...options,
+        commitOverlayWhen: normalizeTopologyCommitOverlay(config),
+      }),
     dependentsOf: (partitionId: TPartition) => computeTransitiveDependents(id, ensurePartitions(), partitionId),
     affectedBy: (partitionId: TPartition) =>
       Object.freeze([partitionId, ...computeTransitiveDependents(id, ensurePartitions(), partitionId)]),

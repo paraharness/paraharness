@@ -50,7 +50,8 @@ export async function executeLoop<TIn = unknown, TOut = unknown, THandle = unkno
       readonly childOutcomeSink?: { continuationStack?: readonly ContinuationFrame[]; leafMessageId?: string | null; accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>; raisedByPhase?: 'act' | 'evaluate'; suspendedAtCallId?: string };
     };
   })._runtime;
-  const poolManager = rtEnv?.poolManager ?? new PoolManager(), actor = node.actStep.actor;
+  const poolManager = rtEnv?.poolManager ?? new PoolManager();
+  const actor = node.actStep.actor;
   const resumedLoopFrame = rtEnv?.existingLoopFrame ?? ctx.resumeContinuationStack?.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame');
   const initialActModel: ModelASTNode = poolManager.selectModel(actor.model, ctx.runId, resumedLoopFrame?.iteration ?? 0);
   const lessonsNode = node.distillLessons ?? actor.lessons?.node;

@@ -97,19 +97,18 @@ export function agentRequiresBranchableScope(agentNode: AgentNode): boolean {
  * @returns {ToolASTNode | undefined} First post-flight subprocess tool node, or `undefined` if none is mounted.
  */
 export function findPostFlightSubprocessTool(agentNode: AgentNode): ToolASTNode | undefined {
-  for (const tool of agentNode.tools) {
-    if (tool.effectTracking === 'subprocess-post-flight') {
-      return tool;
-    }
+  const directMatch = agentNode.tools.find(
+    (tool) => tool.effectTracking === 'subprocess-post-flight',
+  );
+  if (directMatch !== undefined) {
+    return directMatch;
   }
   for (const skillEntry of agentNode.skills) {
-    if (skillEntry.type === 'harness:skill') {
-      for (const tool of skillEntry.unlockedTools) {
-        if (tool.effectTracking === 'subprocess-post-flight') {
-          return tool;
-        }
-      }
-    }
+    if (skillEntry.type !== 'harness:skill') continue;
+    const skillMatch = skillEntry.unlockedTools.find(
+      (tool) => tool.effectTracking === 'subprocess-post-flight',
+    );
+    if (skillMatch !== undefined) return skillMatch;
   }
   return undefined;
 }

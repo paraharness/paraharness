@@ -139,7 +139,9 @@ export async function executeUpdatePartitionContract<THandle = unknown>(
  */
 export async function syncSuspendedRunPrerequisites<THandle = unknown>(params: SyncPrerequisitesParams<THandle>): Promise<SyncPrerequisitesResult> {
   const receiptsMap = await params.ledgerStore.getRunTerminalReceipts(params.prerequisiteItemKeys);
-  const syncNotes: string[] = [], prereqReceipts: Record<string, unknown>[] = [], prereqRunIdSet = new Set<string>(params.prerequisiteRunIds ?? []);
+  const syncNotes: string[] = [];
+  const prereqReceipts: Record<string, unknown>[] = [];
+  const prereqRunIdSet = new Set<string>(params.prerequisiteRunIds ?? []);
   let allSucceeded = true;
   for (const key of params.prerequisiteItemKeys) {
     const rec = receiptsMap.get(key);
@@ -155,7 +157,10 @@ export async function syncSuspendedRunPrerequisites<THandle = unknown>(params: S
     await params.topologyStore.syncRunOverlays(params.runId, prereqRunIds);
     syncNotes.push(`[TOPOLOGY_SYNC] Merged topology overlays from prerequisite runs: ${prereqRunIds.join(', ')}.`);
   }
-  let conflictLease, conflictCheckArmed = params.agentFrame?.conflictCheckArmed === true, updatedFrame = params.agentFrame, postCkpt = params.agentFrame?.syncedToPrerequisiteCheckpoint;
+  let conflictLease;
+  let conflictCheckArmed = params.agentFrame?.conflictCheckArmed === true;
+  let updatedFrame = params.agentFrame;
+  let postCkpt = params.agentFrame?.syncedToPrerequisiteCheckpoint;
   if (params.branchableScope !== undefined && params.agentFrame?.syncedToPrerequisiteCheckpoint === undefined && prereqReceipts.length > 0) {
     if (params.headScopeCheckpoint !== undefined) await params.branchableScope.restoreCheckpoint(params.scopeHandle, params.headScopeCheckpoint);
     const syncRes = await params.branchableScope.syncRoot(params.scopeHandle, prereqReceipts);
@@ -168,7 +173,8 @@ export async function syncSuspendedRunPrerequisites<THandle = unknown>(params: S
   }
   if (updatedFrame !== undefined) {
     const nextLeases = conflictLease !== undefined ? Object.freeze([...updatedFrame.activeLeases, conflictLease]) : updatedFrame.activeLeases;
-    const prevBatch = updatedFrame.pauseState.kind === 'prerequisite-wait' || updatedFrame.pauseState.kind === 'tool-batch' ? updatedFrame.pauseState.pendingToolBatch : undefined, headCall = prevBatch?.remainingCalls[0];
+    const prevBatch = updatedFrame.pauseState.kind === 'prerequisite-wait' || updatedFrame.pauseState.kind === 'tool-batch' ? updatedFrame.pauseState.pendingToolBatch : undefined;
+    const headCall = prevBatch?.remainingCalls[0];
     const settledCompleted = prevBatch !== undefined ? (headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies' ? [...prevBatch.completedResults, Object.freeze({ callId: headCall.callId, content: syncNotes.join('\n') || '{"status":"RESUMED"}', isError: !allSucceeded })] : prevBatch.completedResults.map((r, i) => i === prevBatch.completedResults.length - 1 && syncNotes.length > 0 ? Object.freeze({ ...r, content: `${r.content}\n${syncNotes.join('\n')}` }) : r)) : [];
     const nextPauseState = prevBatch !== undefined ? Object.freeze({ kind: 'tool-batch' as const, pendingToolBatch: Object.freeze({ ...prevBatch, completedResults: Object.freeze(settledCompleted), remainingCalls: headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies' ? Object.freeze(prevBatch.remainingCalls.slice(1)) : prevBatch.remainingCalls }) }) : updatedFrame.pauseState;
     const stack: readonly ContinuationFrame[] = Object.freeze([...(params.outerFrames ?? []), (updatedFrame = Object.freeze({ ...updatedFrame, activeLeases: nextLeases, conflictCheckArmed, syncedToPrerequisiteCheckpoint: postCkpt, pauseState: nextPauseState }))]);

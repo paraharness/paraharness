@@ -35,7 +35,8 @@ export async function executeLimitExceededSequence<THandle = unknown>(
     const toolResults: CanonicalToolResult[] = [];
     for (const done of params.pendingToolBatch.completedResults) toolResults.push({ callId: done.callId, content: done.content, isError: done.isError === true });
     for (const rem of params.pendingToolBatch.remainingCalls) toolResults.push({ callId: rem.callId, content: '[Aborted: Limit Exceeded]', isError: true });
-    const toolJson = JSON.stringify({ role: 'tool', toolResults }), toolFrameId = `msg:${ctx.stepExecId}:limit-abort-tools`;
+    const toolJson = JSON.stringify({ role: 'tool', toolResults });
+    const toolFrameId = `msg:${ctx.stepExecId}:limit-abort-tools`;
     await ledgerStore.appendMessageFrame(ctx.runId, Object.freeze<WireFrameRecord>({ messageId: toolFrameId, parentMessageId: leafId, vendorId: modelDriver.vendorId, rawWireFrame: new TextEncoder().encode(toolJson), canonical: Object.freeze({ role: 'tool', visibleText: '', toolResults: Object.freeze(toolResults) }), prefixDigest: params.wirePrefix?.systemDigest ?? 'unpinned' }));
     leafId = toolFrameId;
   }

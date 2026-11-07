@@ -94,7 +94,8 @@ export function collectRoleScopedWireTools(
   actor: AgentNode<unknown, unknown, unknown>,
   extraSkills: readonly InlineSkillNode<unknown>[] = [],
 ): readonly WireToolSchema[] {
-  const schemas: WireToolSchema[] = [], seen = new Set<string>();
+  const schemas: WireToolSchema[] = [];
+  const seen = new Set<string>();
   const push = (name: string, desc: string, schema: z.ZodTypeAny): void => {
     if (seen.has(name)) return;
     seen.add(name);
