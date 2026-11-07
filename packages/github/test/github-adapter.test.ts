@@ -256,6 +256,38 @@ describe('@harness-dsl/github adapter', () => {
         await subscription.close();
       }
     });
+
+    it('responds with HTTP 500 JSON error without unhandled rejection when onEvent rejects', async () => {
+      const secret = 'whsec_err_secret';
+      const streamNode = github.webhookStream({
+        repo: 'acme/app',
+        port: 0,
+        secret: H.env('GH_WEBHOOK_SECRET'),
+        events: ['pull_request.closed'],
+      });
+      const source = new GithubWebhookStreamSource(
+        streamNode,
+        createTestDriverContext({ GH_WEBHOOK_SECRET: secret }),
+      );
+      const subscription = await source.subscribe(async () => {
+        throw new Error('Downstream event processor failed');
+      });
+
+      try {
+        const rawBody = JSON.stringify({ action: 'closed', repository: { full_name: 'acme/app' } });
+        const sig = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+        const res = await fetch(`http://127.0.0.1:${source.getBoundPort()}/webhooks/github`, {
+          method: 'POST',
+          headers: { 'X-GitHub-Event': 'pull_request', 'X-Hub-Signature-256': sig },
+          body: rawBody,
+          signal: AbortSignal.timeout(500),
+        });
+        expect(res.status).toBe(500);
+        await expect(res.json()).resolves.toEqual({ error: 'Downstream event processor failed' });
+      } finally {
+        await subscription.close();
+      }
+    });
   });
 
   describe('github.createOrUpdatePr builder and step executor', () => {

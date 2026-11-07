@@ -121,7 +121,7 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
             }
             reject(new Error(`Slack decision request '${req.requestId}' for run '${req.runId}' was aborted.`));
           };
-          req.signal.addEventListener('abort', onAbort, { once: true });
+          req.signal.aborted ? onAbort() : req.signal.addEventListener('abort', onAbort, { once: true });
         }
       });
     } finally {

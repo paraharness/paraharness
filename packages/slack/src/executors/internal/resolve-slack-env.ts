@@ -68,7 +68,7 @@ export function cleanupPendingSlackDecision(
 /**
  * Starts a periodic thread heartbeat interval for an in-flight Slack decision request when configured.
  *
- * Returns `undefined` when `req.keepAliveSeconds` is omitted or non-positive.
+ * Returns `undefined` when `req.keepAliveSeconds` is omitted, non-positive, or `req.signal` is already aborted.
  *
  * @param {HumanDecisionRequest} req       - Decision request descriptor.
  * @param {SlackTransport}       transport - Slack transport used to post thread heartbeats.
@@ -85,7 +85,11 @@ export function startSlackDecisionHeartbeat(
     readonly messageTs: string;
   },
 ): ReturnType<typeof setInterval> | undefined {
-  if (req.keepAliveSeconds === undefined || req.keepAliveSeconds <= 0) {
+  if (
+    req.keepAliveSeconds === undefined ||
+    req.keepAliveSeconds <= 0 ||
+    req.signal?.aborted === true
+  ) {
     return undefined;
   }
   const timer = setInterval(() => {

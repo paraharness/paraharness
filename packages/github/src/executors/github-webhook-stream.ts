@@ -126,7 +126,7 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
    * Validates and dispatches a single incoming HTTP webhook delivery request.
    *
    * Responds with `404` on path mismatch, `401` on invalid HMAC signature, `400` on invalid JSON,
-   * `202` when filtered out, and `200` once `onEvent` completes.
+   * `202` when filtered out, `200` once `onEvent` completes, and `500` if reading or handling fails.
    *
    * @param {IncomingMessage} req    - Incoming HTTP request.
    * @param {ServerResponse}  res    - Outgoing HTTP response.
@@ -143,48 +143,61 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
       readonly onEvent: (event: TEvent) => Promise<void>;
     },
   ): Promise<void> {
-    const requestPath = (req.url ?? '').split('?')[0];
-    if (req.method !== 'POST' || requestPath !== config.targetPath) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not Found' }));
-      return;
-    }
-    const rawBody = await readHttpRequestBody(req);
-    const sigHeader = req.headers['x-hub-signature-256'];
-    const signature = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
-    if (!verifyGithubWebhookSignature(rawBody, signature, config.secret)) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid X-Hub-Signature-256' }));
-      return;
-    }
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(rawBody.toString('utf8'));
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Malformed JSON payload' }));
-      return;
+      const requestPath = (req.url ?? '').split('?')[0];
+      if (req.method !== 'POST' || requestPath !== config.targetPath) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not Found' }));
+        return;
+      }
+      const rawBody = await readHttpRequestBody(req);
+      const sigHeader = req.headers['x-hub-signature-256'];
+      const signature = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
+      if (!verifyGithubWebhookSignature(rawBody, signature, config.secret)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid X-Hub-Signature-256' }));
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawBody.toString('utf8'));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Malformed JSON payload' }));
+        return;
+      }
+      if (typeof parsed !== 'object' || parsed === null) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Expected JSON object payload' }));
+        return;
+      }
+      const evHeaderRaw = req.headers['x-github-event'];
+      const eventHeader = Array.isArray(evHeaderRaw) ? evHeaderRaw[0] : evHeaderRaw;
+      const payloadRecord = parsed as Readonly<Record<string, unknown>>;
+      if (
+        !matchesGithubWebhookFilter(eventHeader, payloadRecord, {
+          subscribedEvents: this.subscribedEvents,
+          repo: this.node.repo,
+        })
+      ) {
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ delivered: false, reason: 'filtered' }));
+        return;
+      }
+      await config.onEvent(parsed as TEvent);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ delivered: true }));
+    } catch (err: unknown) {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: err instanceof Error ? err.message : 'Internal webhook handler error',
+          }),
+        );
+      } else if (!res.writableEnded) {
+        res.end();
+      }
     }
-    if (typeof parsed !== 'object' || parsed === null) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Expected JSON object payload' }));
-      return;
-    }
-    const evHeaderRaw = req.headers['x-github-event'];
-    const eventHeader = Array.isArray(evHeaderRaw) ? evHeaderRaw[0] : evHeaderRaw;
-    const payloadRecord = parsed as Readonly<Record<string, unknown>>;
-    if (
-      !matchesGithubWebhookFilter(eventHeader, payloadRecord, {
-        subscribedEvents: this.subscribedEvents,
-        repo: this.node.repo,
-      })
-    ) {
-      res.writeHead(202, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ delivered: false, reason: 'filtered' }));
-      return;
-    }
-    await config.onEvent(parsed as TEvent);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ delivered: true }));
   }
 }

@@ -174,6 +174,65 @@ describe('@harness-dsl/slack adapter', () => {
       ]);
     });
 
+    it('aborts cleanly without hanging or leaking heartbeat timers when signal aborts while postMessage is in flight', async () => {
+      vi.useFakeTimers();
+      try {
+        const botNode = slack.bot({
+          appToken: 'xapp-literal',
+          botToken: 'xoxb-literal',
+          channel: 'C999',
+        });
+        const transport = new RecordedSlackTransport();
+        const ctx = createTestDriverContext({}, transport);
+        const adapter = new SlackApproverAdapter(botNode, ctx, transport);
+        const abortController = new AbortController();
+
+        const originalPostMessage = transport.postMessage.bind(transport);
+        vi.spyOn(transport, 'postMessage').mockImplementationOnce(
+          async (botToken, channel, payload) => {
+            abortController.abort(new Error('Aborted while postMessage in flight'));
+            return originalPostMessage(botToken, channel, payload);
+          },
+        );
+
+        const decisionPromise = adapter.requestDecision({
+          runId: 'run-abort-1',
+          requestId: 'req-abort-inflight',
+          humanId: 'owner',
+          payload: { question: 'Approve rollout?' },
+          responseSchema: z.object({ approved: z.boolean() }),
+          keepAliveSeconds: 5,
+          signal: abortController.signal,
+        });
+
+        await expect(decisionPromise).rejects.toThrow(
+          "Slack decision request 'req-abort-inflight' for run 'run-abort-1' was aborted.",
+        );
+
+        expect(transport.updatedMessages).toEqual([
+          {
+            botToken: 'xoxb-literal',
+            channel: 'C999',
+            payload: {
+              ts: '1000.1',
+              status: 'aborted',
+              text: "[ABORTED] Decision request 'req-abort-inflight' for run 'run-abort-1' was aborted.",
+            },
+          },
+        ]);
+
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(transport.postedMessages).toHaveLength(1);
+        expect(() =>
+          adapter.submitDecision('run-abort-1', 'req-abort-inflight', { approved: true }),
+        ).toThrow(
+          "No pending Slack decision request found for run 'run-abort-1', request 'req-abort-inflight'.",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('connects Socket Mode control plane via start(controller) and emits external signals', async () => {
       const botNode = slack.bot({
         appToken: H.env('SLACK_APP_TOKEN'),
