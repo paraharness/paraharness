@@ -1,6 +1,7 @@
 import type {
   BranchableScope, GitCowWorktreeNode, GitScopeReceipt, GitSyncReceipt, GitWorktreeHandle, LeaseDelta, ReconcileResult, ToolEffect,
 } from '@harness-dsl/core';
+import PQueue from 'p-queue';
 import { GitScopeReceiptSchema, GitSyncReceiptSchema } from '../schemas/git-receipts.schema.js';
 import { buildConflictLeaseDelta, flushParentWorkingTreeCleanChanges } from './internal/conflict-pruning-and-parent-flush.js';
 import { diffGitWorktreeEffects, restoreGitWorktreeCheckpoint, serializeGitWorktreeCheckpoint } from './internal/porcelain-v2-and-checkpoints.js';
@@ -33,8 +34,8 @@ export class GitCowWorktreeScopeDriver
   private readonly effectiveExcludeGlobs: readonly string[] | undefined;
   /** Precomputed checkpoint policy with merged `effectiveExcludeGlobs`. */
   private readonly effectiveCheckpointPolicy: GitCowWorktreeNode['checkpointPolicy'];
-  /** Per-parent worktree async mutex chain serializing automatic parent dirty-tree flushes during `forkChild`. */
-  private readonly parentFlushChains = new Map<string, Promise<string>>();
+  /** Per-parent worktree `PQueue` (`concurrency: 1`) serializing automatic parent dirty-tree flushes during `forkChild`. */
+  private readonly parentFlushQueues = new Map<string, PQueue>();
 
   /**
    * Initializes a `GitCowWorktreeScopeDriver` from its passive `GitCowWorktreeNode` AST configuration.
@@ -100,7 +101,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<void>} Resolves once the completed ref is pinned and the worktree is removed.
    */
   release(handle: GitWorktreeHandle): Promise<void> {
-    this.parentFlushChains.delete(handle.worktreePath);
+    this.parentFlushQueues.delete(handle.worktreePath);
     return releaseWorktreeAndPinRef(handle, this.effectiveExcludeGlobs);
   }
 
@@ -157,19 +158,22 @@ export class GitCowWorktreeScopeDriver
    */
   forkChild(parent: GitWorktreeHandle, forkId: string): Promise<GitWorktreeHandle> {
     const excludeGlobs = this.effectiveExcludeGlobs;
-    const prior = this.parentFlushChains.get(parent.worktreePath) ?? Promise.resolve(parent.headRef ?? parent.baseRef);
-    const run = async (): Promise<GitWorktreeHandle> => {
-      await flushParentWorkingTreeCleanChanges(parent, excludeGlobs);
-      return forkChildWorktree(this.node, parent, forkId);
-    };
-    const next = prior.then(run, run);
-    const trackedChain = next.then((h) => h.headRef ?? h.baseRef, () => parent.baseRef).finally(() => {
-      if (this.parentFlushChains.get(parent.worktreePath) === trackedChain) {
-        this.parentFlushChains.delete(parent.worktreePath);
-      }
-    });
-    this.parentFlushChains.set(parent.worktreePath, trackedChain);
-    return next;
+    let queue = this.parentFlushQueues.get(parent.worktreePath);
+    if (queue === undefined) {
+      queue = new PQueue({ concurrency: 1 });
+      this.parentFlushQueues.set(parent.worktreePath, queue);
+    }
+    const activeQueue = queue;
+    return activeQueue
+      .add(async (): Promise<GitWorktreeHandle> => {
+        await flushParentWorkingTreeCleanChanges(parent, excludeGlobs);
+        return forkChildWorktree(this.node, parent, forkId);
+      })
+      .finally(() => {
+        if (activeQueue.size === 0 && activeQueue.pending === 0 && this.parentFlushQueues.get(parent.worktreePath) === activeQueue) {
+          this.parentFlushQueues.delete(parent.worktreePath);
+        }
+      });
   }
 
   /**

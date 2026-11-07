@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type {
   CrossVerifierBranchCandidate,
   GitCandidateComparisonToolNode,
@@ -87,15 +86,11 @@ export async function executeGitPatchEquivalence(
   const branchesByDigest = new Map<string, number[]>();
   const groupIndexByDigest = new Map<string, number>();
   for (const cand of candidates) {
-    const headSha = typeof cand.scopeReceipt['headRef'] === 'string'
-      ? cand.scopeReceipt['headRef']
-      : (cand.scopeHandle.headRef ?? cand.scopeHandle.baseRef);
-    const rawDiff = (await runGitCommand({ cwd: cand.scopeHandle.worktreePath, args: ['diff', '--no-ext-diff', '--no-color', cand.scopeHandle.baseRef, headSha] })).stdout;
-    const keptLines: string[] = [];
-    for (const line of rawDiff.split('\n')) {
-      if (!line.startsWith('index ')) keptLines.push(line.trimEnd());
-    }
-    const digest = createHash('sha256').update(keptLines.join('\n').trim(), 'utf8').digest('hex');
+    const cwd = cand.scopeHandle.worktreePath;
+    const headSha = typeof cand.scopeReceipt['headRef'] === 'string' ? cand.scopeReceipt['headRef'] : (cand.scopeHandle.headRef ?? cand.scopeHandle.baseRef);
+    const diffRes = await runGitCommand({ cwd, args: ['diff', '--no-ext-diff', '--no-color', cand.scopeHandle.baseRef, headSha] });
+    const patchRes = diffRes.stdout.trim().length > 0 ? await runGitCommand({ cwd, args: ['patch-id', '--stable'], stdin: diffRes.stdout }) : undefined;
+    const digest = (patchRes?.stdout.trim().split(/\s+/)[0] || 'EMPTY_PATCH');
     digestByBranch.set(cand.branchIndex, digest);
     const existingGroup = branchesByDigest.get(digest);
     if (existingGroup !== undefined) existingGroup.push(cand.branchIndex);

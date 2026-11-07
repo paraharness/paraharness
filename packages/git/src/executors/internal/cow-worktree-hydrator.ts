@@ -9,10 +9,11 @@ import {
   readlink,
   rm,
   symlink,
-  writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
 import type { ASTNode, GitCowWorktreeNode } from '@harness-dsl/core';
+import { withFileLock } from '@harness-dsl/lockfile';
+import writeFileAtomic from 'write-file-atomic';
 import {
   compileWorktreeExcludeMatcher,
   copyFileCowOrValue,
@@ -119,13 +120,17 @@ export async function evaluateLockfileGateHit(
   const wtHash = createHash('sha256').update(wtLockBuf).digest('hex');
   const hostHash = createHash('sha256').update(hostLockBuf).digest('hex');
   const gitCommonRes = await runGitCommand({ cwd: repoPath, args: ['rev-parse', '--git-common-dir'] });
-  const cacheFile = path.resolve(repoPath, gitCommonRes.stdout.trim(), 'harness-warm-lockfile.sha256');
-  const cachedHash = await readFile(cacheFile, 'utf8').catch(() => null);
-  if (cachedHash === null) {
-    await writeFile(cacheFile, hostHash, 'utf8');
-    return wtHash === hostHash;
-  }
-  return wtHash === cachedHash.trim() && wtHash === hostHash;
+  const commonGitDir = path.resolve(repoPath, gitCommonRes.stdout.trim());
+  const cacheFile = path.join(commonGitDir, 'harness-warm-lockfile.sha256');
+  const lockPath = path.join(commonGitDir, 'harness-warm-lockfile.lock');
+  return withFileLock(lockPath, async () => {
+    const cachedHash = await readFile(cacheFile, 'utf8').catch(() => null);
+    if (cachedHash === null) {
+      await writeFileAtomic(cacheFile, hostHash, { encoding: 'utf8' });
+      return wtHash === hostHash;
+    }
+    return wtHash === cachedHash.trim() && wtHash === hostHash;
+  });
 }
 
 /**

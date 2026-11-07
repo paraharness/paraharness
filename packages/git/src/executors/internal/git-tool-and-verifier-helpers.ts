@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
 import path from 'node:path';
 import type {
   CrossVerifierBranchCandidate,
   GitWorktreeHandle,
   StepExecutionContext,
 } from '@harness-dsl/core';
+import { init, parse } from 'es-module-lexer';
 import {
   buildIsolatedWorktreeGitEnv,
   runGitCommand,
@@ -16,30 +18,34 @@ import {
 } from './porcelain-v2-and-checkpoints.js';
 
 /**
- * Extracts and normalizes relative module import paths from a test file's source text.
+ * Extracts and normalizes relative module import paths from a test file's source text using `es-module-lexer`.
  *
- * Resolves `./` and `../` specifiers relative to `testFileRelPath` and normalizes `.js` extensions.
+ * Resolves `./` and `../` specifiers relative to `testFileRelPath` while ignoring fake imports in comments or string literals.
  *
  * @param {string} sourceCode      - Raw UTF-8 test file contents.
  * @param {string} testFileRelPath - Posix-normalized repository-relative path of the test file.
  *
- * @returns {readonly string[]} Normalized repository-relative imported file paths.
+ * @returns {Promise<readonly string[]>} Normalized repository-relative imported file paths.
  */
-export function extractRelativeImports(
+export async function extractRelativeImports(
   sourceCode: string,
   testFileRelPath: string,
-): readonly string[] {
-  const regex = /(?:from\s+|import\s*\(\s*)['"](\.[^'"]+)['"]/g;
+): Promise<readonly string[]> {
+  await init();
+  let imports: ReturnType<typeof parse>[0];
+  try {
+    [imports] = parse(sourceCode, testFileRelPath);
+  } catch {
+    const stripped = stripTypeScriptTypes(sourceCode, { mode: 'strip' });
+    [imports] = parse(stripped, testFileRelPath);
+  }
   const dir = path.posix.dirname(testFileRelPath);
   const resolvedPaths: string[] = [];
-  let match = regex.exec(sourceCode);
-  while (match !== null) {
-    const specifier = match[1];
-    if (specifier !== undefined) {
-      const joined = path.posix.normalize(path.posix.join(dir, specifier));
-      resolvedPaths.push(joined);
+  for (const imp of imports) {
+    const specifier = imp.specifier;
+    if (typeof specifier === 'string' && specifier.startsWith('.')) {
+      resolvedPaths.push(path.posix.normalize(path.posix.join(dir, specifier)));
     }
-    match = regex.exec(sourceCode);
   }
   return Object.freeze(resolvedPaths);
 }
@@ -73,7 +79,7 @@ export async function collectCandidateBoundaryTests(
     if (relPath.length === 0 || !/(?:\.test\.|\.spec\.|^test\/|\/test\/)/.test(relPath)) continue;
     const content = await readFile(path.join(cwd, relPath), 'utf8').catch(() => undefined);
     if (content === undefined) continue;
-    const imports = extractRelativeImports(content, relPath);
+    const imports = await extractRelativeImports(content, relPath);
     const allBoundary = imports.length > 0 && imports.every((imp) =>
       isBoundaryPath(imp) || isBoundaryPath(imp.replace(/\.js$/, '.ts')) || isBoundaryPath(`${imp}/index.ts`));
     if (allBoundary) boundaryTests.set(relPath, content);

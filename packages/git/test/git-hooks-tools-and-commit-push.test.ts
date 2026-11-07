@@ -152,7 +152,7 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     await mkdir(path.join(cand0.worktreePath, 'test'), { recursive: true });
     await writeFile(
       path.join(cand0.worktreePath, 'test/public.test.mjs'),
-      'import assert from "node:assert";\nimport { multiply } from "../src/index.mjs";\nassert.strictEqual(multiply(3, 4), 12);\n',
+      'import assert from "node:assert";\nimport { multiply } from "../src/index.mjs";\nconst fakeLiteral = "from \'../src/internal/secret.mjs\'";\nassert.strictEqual(multiply(3, 4), 12); /* import "../src/internal/secret.mjs" */\n',
       'utf8',
     );
     await writeFile(
@@ -252,15 +252,18 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       [
         { branchIndex: 0, scopeHandle: cand0, scopeReceipt: receipt0 },
         { branchIndex: 1, scopeHandle: cand1, scopeReceipt: receipt1 },
+        { branchIndex: 2, scopeHandle: root, scopeReceipt: { headRef: root.baseRef } },
       ],
       ctx,
     );
-    expect(
-      (eqReports[0] as { readonly equivalenceGroupIndex: number }).equivalenceGroupIndex,
-    ).toBe(0);
-    expect(
-      (eqReports[1] as { readonly equivalenceGroupIndex: number }).equivalenceGroupIndex,
-    ).toBe(1);
+    const rep0 = eqReports[0] as { readonly equivalenceGroupIndex: number; readonly normalizedPatchDigest: string };
+    const rep1 = eqReports[1] as { readonly equivalenceGroupIndex: number; readonly normalizedPatchDigest: string };
+    const rep2 = eqReports[2] as { readonly equivalenceGroupIndex: number; readonly normalizedPatchDigest: string };
+    expect(rep0.equivalenceGroupIndex).toBe(0);
+    expect(rep0.normalizedPatchDigest).toMatch(/^[0-9a-f]{40}$/);
+    expect(rep1.equivalenceGroupIndex).toBe(1);
+    expect(rep1.normalizedPatchDigest).toMatch(/^[0-9a-f]{40}$/);
+    expect(rep2.normalizedPatchDigest).toBe('EMPTY_PATCH');
 
     await scope.release(cand0);
     await scope.release(cand1);

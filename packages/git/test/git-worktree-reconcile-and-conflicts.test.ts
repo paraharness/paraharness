@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   GitCowWorktreeScopeDriver,
   executeGitCleanWorkingTreeCheck,
+  executeGitPatchEquivalence,
   git,
 } from '../src/index.js';
 import {
@@ -12,6 +13,7 @@ import {
   runGitCommand,
   writeHarnessMeta,
 } from '../src/executors/internal/git-cli-runner.js';
+import { extractRelativeImports } from '../src/executors/internal/git-tool-and-verifier-helpers.js';
 import { createTempGitHostRepo } from './fixtures/temp-git-host-repo.js';
 import type { TempGitHostRepoHandle } from './fixtures/temp-git-host-repo-handle.js';
 
@@ -324,5 +326,59 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
     await scope.release(recreatedChild);
     await scope.release(prereqRoot);
     await scope.release(downstreamRoot);
+  }, 20_000);
+
+  it('extracts relative imports via es-module-lexer, computes git patch-id --stable across line shifts, and serializes writeHarnessMeta', async () => {
+    const tsTestSource = [
+      'import type { PublicContract } from "../src/index.js";',
+      'import { add, type AddOpts } from "../src/index.js";',
+      '/* import { secret } from "../src/internal/secret.js"; */',
+      'const tpl = `from "../src/internal/secret.js"`;',
+      'const val: number = add(1, 2);',
+    ].join('\n');
+    const extracted = await extractRelativeImports(tsTestSource, 'test/unit.test.ts');
+    expect(extracted).toEqual(['src/index.js', 'src/index.js']);
+
+    const scopeNode = git.cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir }).toAST();
+    const scope = new GitCowWorktreeScopeDriver(scopeNode);
+    const rootA = await scope.acquireRoot('run-patch-shift-a');
+    const rootB = await scope.acquireRoot('run-patch-shift-b');
+
+    const origIndex = await readFile(path.join(rootB.worktreePath, 'src/index.ts'), 'utf8');
+    await writeFile(path.join(rootB.worktreePath, 'src/index.ts'), `\n\n\n${origIndex}`, 'utf8');
+    await runGitCommand({ cwd: rootB.worktreePath, args: ['add', 'src/index.ts'] });
+    await runGitCommand({ cwd: rootB.worktreePath, args: ['commit', '-m', 'shift line numbers'] });
+    const shiftedBaseSha = (await runGitCommand({ cwd: rootB.worktreePath, args: ['rev-parse', 'HEAD'] })).stdout.trim();
+    Object.assign(rootB, { baseRef: shiftedBaseSha, headRef: shiftedBaseSha });
+
+    await writeFile(path.join(rootA.worktreePath, 'src/index.ts'), `${origIndex}\nexport const EXTRA = 7;\n`, 'utf8');
+    await writeFile(path.join(rootB.worktreePath, 'src/index.ts'), `\n\n\n${origIndex}\nexport const EXTRA = 7;\n`, 'utf8');
+    const receiptA = await scope.inspect(rootA);
+    const receiptB = await scope.inspect(rootB);
+
+    const eqReports = await executeGitPatchEquivalence(
+      git.patchEquivalence().toAST(),
+      [
+        { branchIndex: 0, scopeHandle: rootA, scopeReceipt: receiptA },
+        { branchIndex: 1, scopeHandle: rootB, scopeReceipt: receiptB },
+      ],
+      createMockStepCtx(rootA),
+    );
+    const r0 = eqReports[0] as { readonly equivalenceGroupIndex: number; readonly equivalentBranchIndices: readonly number[]; readonly normalizedPatchDigest: string };
+    const r1 = eqReports[1] as { readonly equivalenceGroupIndex: number; readonly equivalentBranchIndices: readonly number[]; readonly normalizedPatchDigest: string };
+    expect(r0.normalizedPatchDigest).toBe(r1.normalizedPatchDigest);
+    expect(r0.equivalenceGroupIndex).toBe(0);
+    expect(r1.equivalenceGroupIndex).toBe(0);
+    expect(r0.equivalentBranchIndices).toEqual([0, 1]);
+
+    await Promise.all([
+      writeHarnessMeta(rootA.gitDirPath, { baseRef: rootA.baseRef, baseBranch: 'main', branchName: 'b1', unresolvedConflictPaths: {} }),
+      writeHarnessMeta(rootA.gitDirPath, { baseRef: rootA.baseRef, baseBranch: 'main', branchName: 'b2', unresolvedConflictPaths: {} }),
+    ]);
+    const finalMeta = await readHarnessMeta(rootA.gitDirPath);
+    expect(['b1', 'b2']).toContain(finalMeta.branchName);
+
+    await scope.release(rootA);
+    await scope.release(rootB);
   }, 20_000);
 });

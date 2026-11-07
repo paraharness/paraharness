@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { withFileLock } from '@harness-dsl/lockfile';
+import writeFileAtomic from 'write-file-atomic';
 import {
   HarnessMetaSchema,
   type HarnessMetaRecord,
@@ -111,9 +113,9 @@ export async function readHarnessMeta(gitDirPath: string): Promise<HarnessMetaRe
 }
 
 /**
- * Atomically writes and validates `<gitDirPath>/harness-meta.json`.
+ * Atomically writes and validates `<gitDirPath>/harness-meta.json` under a cross-process file lock.
  *
- * Writes to a temporary sibling file inside `gitDirPath` and renames it over `harness-meta.json`.
+ * Acquires `<gitDirPath>/harness-meta.json.lock` via `withFileLock` and persists the validated JSON via `writeFileAtomic`.
  *
  * @param {string}            gitDirPath - Path to the worktree's isolated `<gitdir>` metadata directory.
  * @param {HarnessMetaRecord} meta       - Metadata record to persist.
@@ -126,7 +128,8 @@ export async function writeHarnessMeta(
 ): Promise<void> {
   const validated = HarnessMetaSchema.parse(meta);
   const metaPath = path.join(gitDirPath, 'harness-meta.json');
-  const tmpPath = path.join(gitDirPath, `harness-meta.json.${process.pid}.${Date.now()}.tmp`);
-  await writeFile(tmpPath, JSON.stringify(validated, null, 2), 'utf8');
-  await rename(tmpPath, metaPath);
+  const lockPath = path.join(gitDirPath, 'harness-meta.json.lock');
+  await withFileLock(lockPath, async () => {
+    await writeFileAtomic(metaPath, JSON.stringify(validated, null, 2), { encoding: 'utf8' });
+  });
 }
