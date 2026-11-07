@@ -28,25 +28,26 @@ function classifyTopLevelEntity(rawNode) {
 }
 
 /**
- * Validates that multiple interfaces in a single file are property-referenced sub-interfaces of one root.
+ * Validates that interfaces in a file are reachable from a single root (or `*Params`/`*Options` roots in function/class files).
  *
- * Builds the `TSPropertySignature`, `TSIndexSignature`, and `extends` reference graph and reports unreachable interfaces.
+ * Builds the `TSPropertySignature`, `TSIndexSignature`, `TSMethodSignature`, and `extends` reference graph and reports unreachable interfaces.
  *
- * @param {object[]} interfaces - Array of classified interface descriptors in the file.
- * @param {string}   filename   - Normalized file path of the current module.
- * @param {object}   context    - ESLint rule execution context.
+ * @param {object[]} interfaces     - Array of classified interface descriptors in the file.
+ * @param {string}   filename       - Normalized file path of the current module.
+ * @param {object}   context        - ESLint rule execution context.
+ * @param {boolean}  paramRootsOnly - Whether only `*Params` / `*Options` interfaces may serve as roots.
  *
  * @returns {void}
  */
-function verifySingleRootInterface(interfaces, filename, context) {
+function verifySingleRootInterface(interfaces, filename, context, paramRootsOnly = false) {
   for (const item of interfaces) {
     for (const member of item.node.body?.body ?? []) {
       if (member.type === 'TSPropertySignature' && member.key?.type === 'Identifier' && member.key.name.endsWith('Template')) context.report({ node: member, message: `Fake '*Template' property '${member.key.name}' on '${item.name}' is forbidden (Rule 1.2 & Rule 3.4).` });
     }
   }
-  if (interfaces.length <= 1) return;
+  if (!paramRootsOnly && interfaces.length <= 1) return;
   const collectRefs = (astNode, out) => {
-    if (!astNode || typeof astNode !== 'object' || astNode.type === 'TSMethodSignature') return;
+    if (!astNode || typeof astNode !== 'object') return;
     if (astNode.type === 'Identifier') out.add(astNode.name);
     for (const [k, v] of Object.entries(astNode)) {
       if (k === 'parent' || k === 'range' || k === 'loc') continue;
@@ -62,7 +63,7 @@ function verifySingleRootInterface(interfaces, filename, context) {
     for (const heritage of item.node.extends ?? []) collectRefs(heritage, refs);
     for (const member of item.node.body?.body ?? []) {
       if (member.type === 'TSPropertySignature' && member.key?.type === 'Identifier' && member.key.name.endsWith('Template')) continue;
-      if (member.type === 'TSPropertySignature' || member.type === 'TSIndexSignature') collectRefs(member.typeAnnotation ?? member, refs);
+      if (member.type === 'TSPropertySignature' || member.type === 'TSIndexSignature' || member.type === 'TSMethodSignature') collectRefs(member.typeAnnotation ?? member, refs);
     }
     const targets = [...refs].filter((ref) => ref !== item.name && byName.has(ref));
     edges.set(item.name, targets);
@@ -70,8 +71,9 @@ function verifySingleRootInterface(interfaces, filename, context) {
   }
   const baseStem = (filename.split('/').pop() ?? '').replace(/\.[^.]+$/, '').replace(/-/g, '').toLowerCase();
   const root = interfaces.find((i) => i.name.toLowerCase() === baseStem && (inDegree.get(i.name) ?? 0) === 0) ?? interfaces.find((i) => i.name.toLowerCase() === baseStem) ?? interfaces.filter((i) => (inDegree.get(i.name) ?? 0) === 0).pop() ?? interfaces[interfaces.length - 1];
-  const reachable = new Set([root.name]);
-  const queue = [root.name];
+  const roots = paramRootsOnly ? interfaces.filter((i) => /(?:Params|Options)$/.test(i.name)).map((i) => i.name) : [root.name];
+  const reachable = new Set(roots);
+  const queue = [...roots];
   while (queue.length > 0) {
     for (const next of edges.get(queue.shift()) ?? []) {
       if (!reachable.has(next)) queue.push(next);
@@ -79,15 +81,14 @@ function verifySingleRootInterface(interfaces, filename, context) {
     }
   }
   for (const item of interfaces) {
-    if (item !== root && /(?:Options|Params)$/.test(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' must live in its own dedicated '*Options' / '*Params' file (Rule 1.2).` });
-    else if (!reachable.has(item.name)) context.report({ node: item.node, message: `Interface '${item.name}' is not a property sub-interface of '${root.name}'. Top-level interfaces must live one per file (Rule 1.2).` });
+    if (!reachable.has(item.name)) context.report({ node: item.node, message: paramRootsOnly ? `Interface '${item.name}' in a function/class file must be a '*Params' / '*Options' interface or reachable from one (Rule 1.1 & Rule 1.2).` : `Interface '${item.name}' is not reachable from root interface '${root.name}'. Unrelated interfaces must live in separate files (Rule 1.2).` });
   }
 }
 
 /**
- * Validates that an AST node has an adjacent JSDoc block with required 2-part prose and aligned tags.
+ * Validates that an AST node has an adjacent JSDoc block with required prose and tags.
  *
- * Enforces summary + detailed description paragraphs, aligned `@template` and `@param` tags, and `@returns` on non-void callables.
+ * Enforces summary (and detailed description when required), `@template` and `@param` tags, and `@returns` on non-void callables.
  *
  * @param {object} params - Validation target node, callable node, kind label, name, and ESLint context.
  *
@@ -111,10 +112,6 @@ function checkStructuredJsdoc(params) {
     const tpName = typeof tp.name === 'string' ? tp.name : tp.name?.name;
     if (tpName && !templateLines.some((l) => new RegExp(`^@template\\s+(?:\\{[^}]+\\}\\s+)?${tpName}\\b\\s+\\S+`).test(l.trim()))) context.report({ node, message: `JSDoc for ${kindLabel} '${name}' is missing '@template ${tpName} <Description>' (Rule 2.2).` });
   }
-  if (templateLines.length >= 2) {
-    const tCols = templateLines.map((l) => /^(@template\s+(?:\{[^}]+\}\s+)?[a-zA-Z0-9_$]+\s+)\S/.exec(l.trimStart())?.[1].length ?? null);
-    if (tCols.every(Boolean) && new Set(tCols).size > 1) context.report({ node, message: `JSDoc '@template' tags on ${kindLabel} '${name}' must vertically align descriptions (Rule 2.2).` });
-  }
   if (!isCallable) return;
   const paramLines = tagLines.filter((l) => l.trim().startsWith('@param'));
   const paramList = callableNode?.params ?? [];
@@ -124,13 +121,6 @@ function checkStructuredJsdoc(params) {
     const idNode = unwrapped?.type === 'AssignmentPattern' ? unwrapped.left : unwrapped?.type === 'RestElement' ? unwrapped.argument : unwrapped;
     const pName = idNode?.type === 'Identifier' ? idNode.name : null;
     if (pName && !paramLines.some((l) => new RegExp(`^@param\\s+\\{.+\\}\\s+(?:\\[)?${pName}(?:=[^\\]]+)?(?:\\])?\\s+-\\s+\\S+`).test(l.trim()))) context.report({ node, message: `JSDoc for ${kindLabel} '${name}' is missing '@param {Type} ${pName} - Description' (Rule 2.2).` });
-  }
-  if (paramLines.length >= 2) {
-    const cols = paramLines.map((l) => {
-      const m = /^(@param\s+\{.+?\}\s+)((?:\[)?[a-zA-Z0-9_$]+(?:=[^\]]+)?(?:\])?\s+)-\s+\S/.exec(l.trimStart());
-      return m ? { nameCol: m[1].length, dashCol: m[1].length + m[2].length } : null;
-    });
-    if (cols.every(Boolean) && (new Set(cols.map((c) => c.nameCol)).size > 1 || new Set(cols.map((c) => c.dashCol)).size > 1)) context.report({ node, message: `JSDoc '@param' tags on ${kindLabel} '${name}' must vertically align parameter names and '-' descriptions (Rule 2.2).` });
   }
   const ret = callableNode?.returnType?.typeAnnotation;
   const isVoid = !ret || ret.type === 'TSVoidKeyword' || node.kind === 'constructor' || node.kind === 'set';
@@ -176,6 +166,7 @@ export default [
                 },
                 Program(program) {
                   if (filename.endsWith('.test.ts')) return;
+                  if (filename.includes('/test/') && !filename.includes('/test/fixtures/')) context.report({ node: program, message: 'Non-test helper files under test/ must reside in test/fixtures/ (Rule 6.1).' });
                   if (filename.endsWith('/index.ts')) {
                     for (const stmt of program.body) if (!(stmt.type === 'ExportNamedDeclaration' && stmt.declaration === null && stmt.source !== null)) context.report({ node: stmt, message: 'Barrel file index.ts must contain only named re-exports (Rule 1.7).' });
                     return;
@@ -194,13 +185,27 @@ export default [
                     for (const e of entities.filter((x) => x.kind === 'interface' || x.kind === 'class' || x.kind === 'function')) context.report({ node: e.node, message: `Schema file may not declare ${e.kind} '${e.name}' (Rule 1.1).` });
                     return;
                   }
+                  if (filename.endsWith('.types.ts')) {
+                    for (const e of entities) {
+                      if (e.kind !== 'type') context.report({ node: e.node, message: `'*.types.ts' file may not declare ${e.kind} '${e.name}' (Rule 1.4).` });
+                      else if (e.node.typeAnnotation?.type === 'TSTypeLiteral') context.report({ node: e.node, message: `Object type literal 'type ${e.name} = { ... }' in *.types.ts is forbidden; use a dedicated interface file (Rule 1.4).` });
+                    }
+                  } else if (filename.endsWith('.constants.ts')) {
+                    for (const e of entities) if (e.kind !== 'const') context.report({ node: e.node, message: `'*.constants.ts' file may not declare ${e.kind} '${e.name}' (Rule 1.5).` });
+                  } else {
+                    for (const e of entities) {
+                      if (e.kind === 'type') context.report({ node: e.node, message: `Type alias '${e.name}' must reside in a '*.types.ts' or '*.schema.ts' file (Rule 1.4).` });
+                      else if (e.kind === 'const' && !/\/[a-z0-9-]+-namespace\.ts$/.test(filename)) context.report({ node: e.node, message: `Constant '${e.name}' must reside in a '*.constants.ts', '*-namespace.ts', or '*.schema.ts' file (Rule 1.5).` });
+                    }
+                  }
                   const kinds = [...new Set(entities.map((e) => e.kind))];
-                  if (kinds.length > 1) {
+                  const canCoLocateParams = kinds.length === 2 && kinds.includes('interface') && (kinds.includes('function') || kinds.includes('class'));
+                  if (kinds.length > 1 && !canCoLocateParams) {
                     const firstMixed = entities.find((e) => e.kind !== entities[0].kind) ?? entities[1];
                     context.report({ node: firstMixed.node, message: `File mixes multiple entity kinds (${kinds.join(' + ')}): ${entities.map((e) => `${e.kind} '${e.name}'`).join(', ')}. Keep interfaces, types, classes, functions, and constants in separate files (Rule 1.1).` });
                   }
                   for (const cls of entities.filter((e) => e.kind === 'class').slice(1)) context.report({ node: cls.node, message: `Class '${cls.name}' exceeds 1 class per file (Rule 1.3).` });
-                  verifySingleRootInterface(entities.filter((e) => e.kind === 'interface'), filename, context);
+                  if (kinds.length === 1 || canCoLocateParams) verifySingleRootInterface(entities.filter((e) => e.kind === 'interface'), filename, context, canCoLocateParams);
                   const singleFn = (!filename.includes('/internal/') && (filename.includes('/builders/') || /\/create-[^/]+\.ts$/.test(filename))) || funcs.some((f) => f.node.loc.end.line - f.node.loc.start.line + 1 > 40);
                   for (const fn of funcs.slice(singleFn ? 1 : 4)) context.report({ node: fn.node, message: `Function '${fn.name}' exceeds maximum of ${singleFn ? 1 : 4} function(s) in this file (Rule 1.6).` });
                 },
@@ -209,15 +214,17 @@ export default [
           },
           'require-complete-jsdoc': {
             create(context) {
-              if (context.filename.replace(/\\/g, '/').endsWith('/index.ts')) return {};
+              const filename = context.filename.replace(/\\/g, '/');
+              if (filename.endsWith('/index.ts')) return {};
+              const isInternal = filename.includes('/internal/');
               const check = (node, callableNode, kindLabel, name, requireTwoParagraphs, isCallable) =>
                 checkStructuredJsdoc({ node, callableNode, kindLabel, name, requireTwoParagraphs, isCallable, context });
               return {
                 TSInterfaceDeclaration: (n) => check(n, n, 'interface', n.id?.name ?? '<interface>', true, false),
                 ClassDeclaration: (n) => check(n, n, 'class', n.id?.name ?? '<class>', true, false),
                 TSTypeAliasDeclaration: (n) => check(n, n, 'type', n.id?.name ?? '<type>', false, false),
-                FunctionDeclaration: (n) => check(n, n, 'function', n.id?.name ?? '<function>', true, true),
-                MethodDefinition: (n) => check(n, n.value, 'method', n.key?.name ?? '<method>', true, true),
+                FunctionDeclaration: (n) => check(n, n, 'function', n.id?.name ?? '<function>', !(isInternal && n.loc.end.line - n.loc.start.line + 1 <= 20), true),
+                MethodDefinition: (n) => check(n, n.value, 'method', n.key?.name ?? '<method>', !(n.accessibility === 'private' || n.key?.type === 'PrivateIdentifier'), true),
                 TSMethodSignature: (n) => n.parent?.type === 'TSInterfaceBody' && check(n, n, 'interface method', n.key?.name ?? '<method>', true, true),
                 TSPropertySignature: (n) => n.parent?.type === 'TSInterfaceBody' && check(n, n, 'interface property', n.key?.name ?? '<property>', false, false),
                 PropertyDefinition: (n) => check(n, n, 'class property', n.key?.name ?? '<property>', false, false),
@@ -226,7 +233,7 @@ export default [
                   const first = n.declarations?.[0];
                   const name = first?.id?.type === 'Identifier' ? first.id.name : '<const>';
                   const isFn = first?.init && (first.init.type === 'ArrowFunctionExpression' || first.init.type === 'FunctionExpression');
-                  if (isFn) check(n, first.init, 'function', name, true, true);
+                  if (isFn) check(n, first.init, 'function', name, !(isInternal && n.loc.end.line - n.loc.start.line + 1 <= 20), true);
                   else check(n, n, 'const', name, false, false);
                 },
               };
@@ -237,6 +244,6 @@ export default [
     },
     rules: { 'harness/no-inline-comments': 'error', 'harness/file-separation': 'error', 'max-statements-per-line': ['error', { max: 1 }], '@typescript-eslint/no-explicit-any': 'error', '@typescript-eslint/no-non-null-assertion': 'error', '@typescript-eslint/ban-ts-comment': 'error' },
   },
-  { files: ['packages/*/src/**/*.ts', 'packages/*/test/fixtures/**/*.ts', '.agents/hooks/**/*.mjs', 'eslint.config.mjs'], rules: { 'harness/require-complete-jsdoc': 'error', 'max-lines': ['error', { max: 250, skipBlankLines: false, skipComments: false }] } },
+  { files: ['packages/*/src/**/*.ts', 'packages/*/test/**/*.ts', '.agents/hooks/**/*.mjs', 'eslint.config.mjs'], ignores: ['packages/*/test/**/*.test.ts'], rules: { 'harness/require-complete-jsdoc': 'error', 'max-lines': ['error', { max: 250, skipBlankLines: false, skipComments: false }] } },
   { files: ['packages/*/test/**/*.test.ts'], rules: { 'max-lines': ['error', { max: 400, skipBlankLines: false, skipComments: false }] } },
 ];
