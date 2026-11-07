@@ -15,18 +15,6 @@ export const ISOLATED_GIT_ENV_OVERRIDES: Readonly<Record<string, string>> = Obje
   GIT_CONFIG_VALUE_1: '/dev/null',
 });
 
-/**
- * Environment overrides injected into subprocesses guarded by `node:deny-network`.
- *
- * Forces package managers and HTTP clients to fail fast on outbound network connections.
- */
-export const DENY_NETWORK_ENV_OVERRIDES: Readonly<Record<string, string>> = Object.freeze({
-  npm_config_offline: 'true',
-  YARN_ENABLE_NETWORK: '0',
-  HTTP_PROXY: 'http://127.0.0.1:0',
-  HTTPS_PROXY: 'http://127.0.0.1:0',
-});
-
 /** Grace period in milliseconds between `SIGTERM` and `SIGKILL` during process-group termination. */
 export const DEFAULT_SUBPROCESS_GRACE_MS = 200;
 

@@ -88,6 +88,5 @@ export {
 export { NodeRunnerDriver } from './executors/node-runner-driver.js';
 export {
   DEFAULT_SUBPROCESS_GRACE_MS,
-  DENY_NETWORK_ENV_OVERRIDES,
   ISOLATED_GIT_ENV_OVERRIDES,
 } from './executors/node-subprocess-env.constants.js';

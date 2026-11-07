@@ -29,6 +29,7 @@ import {
   startLocalDaemonService,
 } from '../src/index.js';
 import { ACTIVE_LEASED_DAEMON_PORTS } from '../src/executors/node-subprocess-env.constants.js';
+import { waitForPtyFrameSettle } from '../src/executors/internal/wait-for-pty-frame-settle.js';
 import {
   buildSampleInteractiveReplArgv,
   buildSampleTcpDaemonArgv,
@@ -184,6 +185,58 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
         expect(turn1.content).not.toContain('DELAY:15:first_query');
         expect(turn2.content).toBe('OUT:SECOND_QUERY');
         expect(turn2.content).not.toContain('second_query');
+
+        const inFlightAbort = new AbortController();
+        const inFlightStart = Date.now();
+        const inFlightPromise = session.invokeTool(
+          'psql',
+          { input: 'HANG' },
+          { ...stepCtx, signal: inFlightAbort.signal },
+        );
+        setImmediate(() => inFlightAbort.abort());
+        await expect(inFlightPromise).rejects.toThrow(/aborted by AbortSignal/i);
+        expect(Date.now() - inFlightStart).toBeLessThan(1_000);
+
+        const respawnAbort = new AbortController();
+        const respawnStart = Date.now();
+        const respawnPromise = session.invokeTool(
+          'psql',
+          { input: 'HANG' },
+          { ...stepCtx, signal: respawnAbort.signal },
+        );
+        respawnAbort.abort();
+        await expect(respawnPromise).rejects.toThrow(/aborted/i);
+        expect(Date.now() - respawnStart).toBeLessThan(1_000);
+
+        const preAbortedController = new AbortController();
+        preAbortedController.abort();
+        let closedOnPreAbort = false;
+        await expect(
+          waitForPtyFrameSettle({
+            toolName: 'psql',
+            frameDelimiter: 'postgres=# ',
+            delimiterRegex: undefined,
+            idleSettleMs: 10,
+            timeoutSeconds: 5,
+            signal: preAbortedController.signal,
+            getBuffer: () => '',
+            clearBuffer: () => {},
+            getExitState: () => ({ exited: false, exitCode: 0 }),
+            setListeners: () => {},
+            onPrematureExit: () => {},
+            closeSession: async () => {
+              closedOnPreAbort = true;
+            },
+          }),
+        ).rejects.toThrow(/Interactive tool 'psql' aborted by AbortSignal\./);
+        expect(closedOnPreAbort).toBe(true);
+
+        const recoveredTurn = await serviceToolDriver.execute(
+          psqlToolNode,
+          { input: 'recovered_query' },
+          stepCtx,
+        );
+        expect(recoveredTurn.content).toBe('OUT:RECOVERED_QUERY');
 
         await expect(
           session.invokeTool('hang-tool', { input: 'HANG' }, stepCtx),
@@ -396,7 +449,7 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       } finally {
         writeSpy.mockRestore();
       }
-      expect(capturedStdout.length).toBeGreaterThanOrEqual(2);
+      expect(capturedStdout).toHaveLength(2);
       expect(JSON.parse(capturedStdout[0] ?? '{}')).toEqual({
         jsonrpc: '2.0',
         id: null,

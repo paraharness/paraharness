@@ -1,12 +1,13 @@
 import type http from 'node:http';
 import type { HarnessRuntimeController } from '@harness-dsl/core';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { buildControlPlaneMcpServer } from './build-control-plane-mcp-server.js';
+import type { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { connectSseControlPlaneSession } from './connect-sse-control-plane-session.js';
 import {
   dispatchControlPlaneJsonRpc,
   isPlainRecord,
 } from './dispatch-control-plane-json-rpc.js';
+import { readControlPlaneRequestJson } from './read-control-plane-request-json.js';
 
 /**
  * Active MCP `SSEServerTransport` session entry tracked by an HTTP control-plane listener.
@@ -39,12 +40,15 @@ export interface HandleControlPlaneHttpRequestParams {
 /**
  * Handles a single HTTP or MCP `SSEServerTransport` request on the control-plane server.
  *
- * Connects `McpServer` over `SSEServerTransport` on `GET /sse`, routes `POST /messages` to the
- * matching session's `SSEServerTransport.handlePostMessage`, and serves REST `/runs` and `/signals`.
+ * Routes `GET /sse` to `connectSseControlPlaneSession`, `POST /messages` to the matching session's
+ * `SSEServerTransport.handlePostMessage`, `GET` requests to active run status, and `POST` payloads
+ * through `readControlPlaneRequestJson` and `dispatchControlPlaneJsonRpc`.
  *
  * @param {HandleControlPlaneHttpRequestParams} params - HTTP request, response, controller, and SSE transport map.
  *
  * @returns {Promise<void>} Resolves once the HTTP response or SSE handshake completes.
+ *
+ * @throws {Error} If request body parsing, SSE session connection, or JSON-RPC dispatch fails.
  */
 export async function handleControlPlaneHttpRequest(
   params: HandleControlPlaneHttpRequestParams,
@@ -55,13 +59,7 @@ export async function handleControlPlaneHttpRequest(
     req.method === 'GET' &&
     (parsedUrl.pathname === '/sse' || parsedUrl.pathname === '/mcp/sse')
   ) {
-    const mcpServer = buildControlPlaneMcpServer('metaharness-sse', controller);
-    const transport = new SSEServerTransport('/messages', res);
-    sseTransports.set(transport.sessionId, { mcpServer, transport });
-    res.once('close', () => sseTransports.delete(transport.sessionId));
-    await mcpServer.connect(transport);
-    const runs = await controller.getActiveRuns();
-    res.write(`event: runs\ndata: ${JSON.stringify({ runs })}\n\n`);
+    await connectSseControlPlaneSession({ res, controller, sseTransports });
     return;
   }
   if (req.method === 'POST' && parsedUrl.pathname === '/messages') {
@@ -76,12 +74,7 @@ export async function handleControlPlaneHttpRequest(
     res.end(JSON.stringify({ ok: true, runs: await controller.getActiveRuns() }));
     return;
   }
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-  }
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
-  const parsed: unknown = raw.length > 0 ? JSON.parse(raw) : {};
+  const parsed = await readControlPlaneRequestJson(req);
   const responsePayload = await dispatchControlPlaneJsonRpc({
     body: isPlainRecord(parsed) ? parsed : {},
     controller,

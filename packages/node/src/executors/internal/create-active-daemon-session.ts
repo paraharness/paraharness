@@ -6,14 +6,10 @@ import type {
   ToolExecutionResult,
 } from '@harness-dsl/core';
 import type { LocalDaemonCommandContext } from '../../builders/local-daemon-builder.js';
-import { ACTIVE_LEASED_DAEMON_PORTS } from '../node-subprocess-env.constants.js';
 import { buildServiceToolNodes } from './build-service-tool-nodes.js';
 import { createPtyInteractionController } from './create-pty-interaction-controller.js';
-import {
-  terminateProcessGroupWithGrace,
-  type ResolvedSubprocessEnvironment,
-} from './process-group-lifecycle.js';
-import { runBestEffortStopCommand } from './run-best-effort-stop-command.js';
+import type { ResolvedSubprocessEnvironment } from './process-group-lifecycle.js';
+import { teardownDaemonProcessAndPorts } from './teardown-daemon-process-and-ports.js';
 
 /**
  * Parameters for constructing an active `ServiceSession` around a booted daemon process.
@@ -65,20 +61,16 @@ export function createActiveDaemonSession<THandle = unknown>(
       if (lifecycleState.stopped) return;
       lifecycleState.stopped = true;
       try {
-        try {
-          await ptyController.closeAll();
-        } finally {
-          await runBestEffortStopCommand(node.stopArgv?.(cmdCtx), resolvedEnv);
-        }
+        await ptyController.closeAll();
       } finally {
-        try {
-          await terminateProcessGroupWithGrace(daemonChild);
-        } finally {
-          for (const port of Object.values(cmdCtx.ports)) {
-            ACTIVE_LEASED_DAEMON_PORTS.delete(port);
-          }
+        await teardownDaemonProcessAndPorts({
+          stopArgv: node.stopArgv?.(cmdCtx),
+          resolvedEnv,
+          daemonChild,
+          ports: cmdCtx.ports,
+        }).finally(() => {
           releaseDaemonSlot();
-        }
+        });
       }
     },
   });

@@ -1,7 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import type { LocalServiceNode, ServiceSession } from '@harness-dsl/core';
 import type { LocalDaemonCommandContext } from '../../builders/local-daemon-builder.js';
-import { ACTIVE_LEASED_DAEMON_PORTS } from '../node-subprocess-env.constants.js';
 import { createActiveDaemonSession } from './create-active-daemon-session.js';
 import {
   allocateDynamicPorts,
@@ -9,10 +8,10 @@ import {
 } from './daemon-ports-and-scope-key.js';
 import {
   spawnDetachedSubprocess,
-  terminateProcessGroupWithGrace,
   type ResolvedSubprocessEnvironment,
 } from './process-group-lifecycle.js';
 import { runBestEffortStopCommand } from './run-best-effort-stop-command.js';
+import { teardownDaemonProcessAndPorts } from './teardown-daemon-process-and-ports.js';
 import { waitForDaemonReadiness } from './wait-for-daemon-readiness.js';
 
 /**
@@ -41,6 +40,8 @@ export interface BootLocalDaemonSessionParams {
  * @param {BootLocalDaemonSessionParams} params - Daemon node, raw scope key, resolved environment, and slot release callback.
  *
  * @returns {Promise<ServiceSession<THandle>>} Live daemon `ServiceSession`.
+ *
+ * @throws {Error} If port allocation, process spawn, or readiness verification fails.
  */
 export async function bootLocalDaemonSession<THandle = unknown>(
   params: BootLocalDaemonSessionParams,
@@ -65,17 +66,12 @@ export async function bootLocalDaemonSession<THandle = unknown>(
       serviceId: node.id,
     });
   } catch (error) {
-    try {
-      await runBestEffortStopCommand(node.stopArgv?.(cmdCtx), resolvedEnv);
-    } finally {
-      try {
-        if (daemonChild !== undefined) await terminateProcessGroupWithGrace(daemonChild);
-      } finally {
-        for (const port of Object.values(ports)) {
-          ACTIVE_LEASED_DAEMON_PORTS.delete(port);
-        }
-      }
-    }
+    await teardownDaemonProcessAndPorts({
+      stopArgv: node.stopArgv?.(cmdCtx),
+      resolvedEnv,
+      daemonChild,
+      ports,
+    });
     throw error;
   }
   return createActiveDaemonSession<THandle>({

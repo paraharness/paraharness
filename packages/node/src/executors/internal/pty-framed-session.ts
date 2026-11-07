@@ -3,12 +3,11 @@ import PQueue from 'p-queue';
 import type { LocalDaemonRegexDescriptor } from '../../builders/local-daemon-builder.js';
 import { enqueueWithQueuedAbortSignal } from './enqueue-with-queued-abort-signal.js';
 import { ensureNodePtySpawnHelperExecutable } from './ensure-node-pty-spawn-helper.js';
-import { matchesPtyFrameDelimiter } from './matches-pty-frame-delimiter.js';
 import {
   terminatePidTreeWithGrace,
   type ResolvedSubprocessEnvironment,
 } from './process-group-lifecycle.js';
-import { stripPtyFrameDelimiter } from './strip-pty-frame-delimiter.js';
+import { waitForPtyFrameSettle } from './wait-for-pty-frame-settle.js';
 
 /**
  * Configuration options for initializing a `PtyFramedInteractiveSession`.
@@ -94,6 +93,8 @@ export class PtyFramedInteractiveSession {
    * @param {AbortSignal} [signal] - Optional abort signal cancelling the turn.
    *
    * @returns {Promise<string>} Settled output frame with the trailing prompt delimiter stripped.
+   *
+   * @throws {Error} If `signal` aborts, the PTY process exits prematurely, or the turn times out.
    */
   async sendTurn(input: string, signal?: AbortSignal): Promise<string> {
     return enqueueWithQueuedAbortSignal<string>({
@@ -142,16 +143,18 @@ export class PtyFramedInteractiveSession {
    *
    * @returns {Promise<string>} Settled output frame for the turn.
    *
-   * @throws {Error} If the PTY process is not writable or frame settlement fails.
+   * @throws {Error} If `signal` aborts, the PTY process is not writable, or frame settlement fails.
    */
   private async executeSerializedTurn(input: string, signal?: AbortSignal): Promise<string> {
     signal?.throwIfAborted();
     if (!this.bannerDrained || this.ptyProcess === undefined || this.ptyExited) {
       await this.close();
+      signal?.throwIfAborted();
       this.spawnInteractiveProcess();
       await this.waitForFrameSettle(signal);
       this.bannerDrained = true;
     }
+    signal?.throwIfAborted();
     this.currentBuffer = '';
     if (this.ptyProcess === undefined) {
       throw new Error(`Interactive session '${this.options.toolName}' PTY is not writable.`);
@@ -199,72 +202,40 @@ export class PtyFramedInteractiveSession {
   /**
    * Waits until `this.currentBuffer` matches `frameDelimiter` and remains quiet for `idleSettleMs`.
    *
-   * Enforces `timeoutSeconds` and `signal` cancellation and strips the trailing prompt delimiter.
+   * Delegates timer and abort-signal coordination to `waitForPtyFrameSettle`.
    *
    * @param {AbortSignal} [signal] - Optional abort signal.
    *
    * @returns {Promise<string>} Settled output frame string.
+   *
+   * @throws {Error} If the PTY exits prematurely, `signal` aborts, or `timeoutSeconds` elapses.
    */
   private waitForFrameSettle(signal?: AbortSignal): Promise<string> {
-    const timeoutMs = this.options.timeoutSeconds * 1000;
-    const settleMs = Math.max(1, this.options.idleSettleMs);
-    const timers: {
-      settleTimer?: ReturnType<typeof setTimeout>;
-      timeoutTimer?: ReturnType<typeof setTimeout>;
-    } = {};
-    return new Promise<string>((resolve, reject) => {
-      const onAbort = (): void => {
-        cleanup();
-        void this.close().finally(() =>
-          reject(new Error(`Interactive tool '${this.options.toolName}' aborted by AbortSignal.`)),
-        );
-      };
-      const cleanup = (): void => {
-        this.onDataCallback = undefined;
-        this.onExitCallback = undefined;
-        if (timers.settleTimer !== undefined) clearTimeout(timers.settleTimer);
-        if (timers.timeoutTimer !== undefined) clearTimeout(timers.timeoutTimer);
-        signal?.removeEventListener('abort', onAbort);
-      };
-      const onPrematureClose = (code: number, sig?: number): void => {
-        cleanup();
+    return waitForPtyFrameSettle({
+      toolName: this.options.toolName,
+      frameDelimiter: this.options.frameDelimiter,
+      delimiterRegex: this.delimiterRegex,
+      idleSettleMs: this.options.idleSettleMs,
+      timeoutSeconds: this.options.timeoutSeconds,
+      signal,
+      getBuffer: () => this.currentBuffer,
+      clearBuffer: () => {
+        this.currentBuffer = '';
+      },
+      getExitState: () => ({
+        exited: this.ptyExited,
+        exitCode: this.lastExitCode,
+        exitSignal: this.lastExitSignal,
+      }),
+      setListeners: (onData, onExit) => {
+        this.onDataCallback = onData;
+        this.onExitCallback = onExit;
+      },
+      onPrematureExit: () => {
         this.ptyProcess = undefined;
         this.bannerDrained = false;
-        reject(
-          new Error(
-            `Interactive tool '${this.options.toolName}' exited prematurely (code ${String(code)}, signal ${String(sig ?? null)}) before matching frame delimiter.`,
-          ),
-        );
-      };
-      const scheduleCheck = (): void => {
-        if (timers.settleTimer !== undefined) clearTimeout(timers.settleTimer);
-        if (!matchesPtyFrameDelimiter(this.currentBuffer, this.options.frameDelimiter, this.delimiterRegex)) return;
-        timers.settleTimer = setTimeout(() => {
-          if (!matchesPtyFrameDelimiter(this.currentBuffer, this.options.frameDelimiter, this.delimiterRegex)) return;
-          const output = stripPtyFrameDelimiter(this.currentBuffer, this.options.frameDelimiter, this.delimiterRegex);
-          this.currentBuffer = '';
-          cleanup();
-          resolve(output);
-        }, settleMs);
-      };
-      this.onDataCallback = scheduleCheck;
-      this.onExitCallback = onPrematureClose;
-      if (this.ptyExited) {
-        onPrematureClose(this.lastExitCode, this.lastExitSignal);
-        return;
-      }
-      signal?.addEventListener('abort', onAbort, { once: true });
-      timers.timeoutTimer = setTimeout(() => {
-        cleanup();
-        void this.close().finally(() =>
-          reject(
-            new Error(
-              `Interactive tool '${this.options.toolName}' timed out after ${String(this.options.timeoutSeconds)}s waiting for frame delimiter.`,
-            ),
-          ),
-        );
-      }, timeoutMs);
-      scheduleCheck();
+      },
+      closeSession: () => this.close(),
     });
   }
 }

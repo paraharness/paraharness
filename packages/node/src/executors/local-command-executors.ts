@@ -82,12 +82,12 @@ export async function executeLocalCommandStep<TIn = unknown, TOut = unknown, THa
   ctx: StepExecutionContext<THandle>,
 ): Promise<TOut> {
   const validatedInput = node.inputSchema.parse(input);
-  const skipped = await shouldSkipUnrepeatableCommand(
+  const skipped = await shouldSkipUnrepeatableCommand({
     node,
     validatedInput,
     ctx,
-    executeLocalCommandStep,
-  );
+    runPreCheck: executeLocalCommandStep,
+  });
   if (skipped) {
     return node.outputSchema.parse(undefined);
   }

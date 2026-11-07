@@ -320,7 +320,7 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
       .toAST();
 
     expect(emptyKeyCmd.stdinMode).not.toBe('closed');
-    expect(emptyKeyCmd.unrepeatable).toBeDefined();
+    expect(emptyKeyCmd.unrepeatable?.preCheckCmd.id).toBe('precheck-should-not-run');
     await expect(executeLocalCommandStep(emptyKeyCmd, { ref: '   ' }, ctx)).rejects.toThrow(
       /empty unrepeatable idempotency key/i,
     );
