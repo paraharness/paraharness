@@ -1,3 +1,4 @@
+import { Graph, alg } from '@dagrejs/graphlib';
 import type { IsolationScope } from '../../../ports/isolation-scope.js';
 import type { TrackerAdapter } from '../../../ports/tracker-adapter.js';
 import { BudgetApprovalSchema } from '../../../schemas/budget-and-lesson.schema.js';
@@ -123,4 +124,38 @@ export async function evaluateLaneItemBudget<TIn = unknown>(
   await cfg.ledgerStore.recordRunTerminalReceipt(item.runId, item.itemKey, 'cancelled');
   await syncTracker(item.itemKey, 'cancelled');
   return Object.freeze({ allowed: false });
+}
+
+/**
+ * Validates that adding `candidateDeps` for `candidateKey` introduces zero directed cycles in `laneId` (`SPEC.md` §3.10).
+ *
+ * Builds a directed `Graph` via `@dagrejs/graphlib` and invokes `alg.findCycles` to reject self-loops and multi-item cycles.
+ *
+ * @template TIn Validated lane work item input type.
+ *
+ * @param {string}                                         laneId        - Target lane identifier.
+ * @param {ReadonlyMap<string, LaneQueuedItemState<TIn>>} itemsByKey    - Existing tracked items in the lane.
+ * @param {string}                                         candidateKey  - Work item key being enqueued.
+ * @param {readonly string[]}                              candidateDeps - Prerequisite item keys for `candidateKey`.
+ *
+ * @throws {Error} If a self-dependency or directed prerequisite cycle is detected.
+ */
+export function assertAcyclicLaneDependencies<TIn = unknown>(
+  laneId: string,
+  itemsByKey: ReadonlyMap<string, LaneQueuedItemState<TIn>>,
+  candidateKey: string,
+  candidateDeps: readonly string[],
+): void {
+  const graph = new Graph({ directed: true });
+  for (const [key, existing] of itemsByKey.entries()) {
+    for (const dep of existing.dependsOn) graph.setEdge(key, dep);
+  }
+  for (const dep of candidateDeps) {
+    if (dep === candidateKey) throw new Error(`Self-dependency cycle on '${candidateKey}' in lane '${laneId}'.`);
+    graph.setEdge(candidateKey, dep);
+  }
+  const firstCycle = alg.findCycles(graph)[0];
+  if (firstCycle !== undefined) {
+    throw new Error(`Prerequisite dependency cycle in lane '${laneId}': ${firstCycle.join(' -> ')}.`);
+  }
 }

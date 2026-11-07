@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import type {
   ForkBatchContinuationFrame,
   ForkBatchEntryRecord,
@@ -46,7 +47,7 @@ export async function executeForkBatch<THandle = unknown>(
     prepared.push(prep);
   }
   const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, poolManager: params.poolManager, humanAdaptersById: params.humanAdaptersById }));
-  const settledOutcomes = await Promise.all(prepared.map((prep) => runStep(prep.call.capability.childExecutable, prep.childInput, prep.childCtx)));
+  const limit = pLimit(Math.max(1, prepared.length)), settledOutcomes = await Promise.all(prepared.map((prep) => limit(() => runStep(prep.call.capability.childExecutable, prep.childInput, prep.childCtx))));
   const outcomesByForkId = new Map<string, ChildForkExecutionOutcome<unknown>>();
   let batchHasInterrupt = false;
   for (let idx = 0; idx < prepared.length; idx += 1) {

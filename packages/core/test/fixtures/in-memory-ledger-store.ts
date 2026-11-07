@@ -9,6 +9,7 @@ import type { RecordStepTransitionInput } from '../../src/ports/record-step-tran
 import type { RunTerminalReceiptRecord } from '../../src/ports/run-terminal-receipt-record.js';
 import type { SuspendedForkRecord } from '../../src/ports/suspended-fork-record.js';
 import type { WireFrameRecord } from '../../src/ports/wire-frame-record.js';
+import { applyMutateLanePlan } from './internal/apply-lane-plan-mutation.js';
 import { applyCreateOrResumeRun, applyFrameTombstone, applyStepStartOrUpdate, applyStepTransition } from './internal/apply-ledger-mutations.js';
 import { queryInterruptedStepsOnBoot, queryMessageChain, querySuspendedForks, queryTerminalReceipts } from './internal/query-ledger-records.js';
 
@@ -94,7 +95,7 @@ export class InMemoryLedgerStore implements LedgerStore {
    * @returns {Promise<void>} Resolves once recorded.
    */
   async mutateLanePlan(req: MutateLanePlanRequest): Promise<void> {
-    this.planMutations.push(req);
+    applyMutateLanePlan(this, req);
   }
   /**
    * Appends a `WireFrameRecord` to the in-memory message store.

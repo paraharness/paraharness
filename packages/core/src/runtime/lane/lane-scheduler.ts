@@ -6,7 +6,7 @@ import { StepContinuationQueue } from '../locks/step-continuation-queue.js';
 import { PoolManager } from '../pools/pool-manager.js';
 import { ServiceSessionRegistry } from '../services/service-session-registry.js';
 import type { EnqueueLaneItemOptions } from './enqueue-lane-item-options.js';
-import { evaluateLaneItemBudget, prepareLaneItemFlowExecution, resolveLaneTrackerAdapter } from './internal/lane-run-helpers.js';
+import { assertAcyclicLaneDependencies, evaluateLaneItemBudget, prepareLaneItemFlowExecution, resolveLaneTrackerAdapter } from './internal/lane-run-helpers.js';
 import { DEFAULT_PRIORITY_AGING_INTERVAL_MS, LANE_PRIORITY_WEIGHTS, PRIORITY_AGING_STEP_WEIGHT } from './lane-priority.constants.js';
 import type { LaneQueuedItemState } from './lane-queued-item-state.js';
 import type { LaneSchedulerConfig } from './lane-scheduler-config.js';
@@ -106,11 +106,11 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {Promise<LaneQueuedItemState<TIn>>} Enqueued or existing item state.
    */
   async enqueueItem(options: EnqueueLaneItemOptions<TIn>): Promise<LaneQueuedItemState<TIn>> {
-    const validatedInput = this.cfg.lane.inputSchema.parse(options.input), itemKey = this.cfg.lane.keyMapper(validatedInput);
-    const existing = this.itemsByKey.get(itemKey);
+    const validatedInput = this.cfg.lane.inputSchema.parse(options.input), itemKey = this.cfg.lane.keyMapper(validatedInput), existing = this.itemsByKey.get(itemKey);
     if (existing !== undefined) return existing;
     const runId = options.runId ?? `run:${this.cfg.lane.id}:${itemKey}`, mappedDeps = this.cfg.lane.waitFor !== undefined ? this.cfg.lane.waitFor.depsMapper(validatedInput) : [];
     const dependsOn = Object.freeze([...new Set([...mappedDeps, ...(options.additionalDeps ?? [])])]);
+    assertAcyclicLaneDependencies(this.cfg.lane.id, this.itemsByKey, itemKey, dependsOn);
     const initialStatus = dependsOn.some((depKey) => this.itemsByKey.get(depKey)?.status !== 'COMPLETED') ? 'WAITING' : 'QUEUED';
     const itemState: LaneQueuedItemState<TIn> = { runId, itemKey, laneId: this.cfg.lane.id, input: validatedInput, status: initialStatus, enqueuedAtMs: options.enqueuedAtMs ?? Date.now(), priorityBoost: options.priorityBoost ?? 0, dependsOn, costUsd: 0, approvedMaxCostUsd: this.cfg.lane.maxCostUsd?.limitUsd };
     this.itemsByKey.set(itemKey, itemState);

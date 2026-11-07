@@ -142,6 +142,8 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
     await ledgerStore.recordRunTerminalReceipt('run-T3', 'T_3', 'failed');
     const addDepRes = await executeAddDependencies({ mutatePlanNode: mutatePlanCap, ctx: stepCtx, laneId: 'lane-main', parentItemKey: 'T_parent', parentPriority: 'normal', dependencyKeysToAdd: ['T_3'], ledgerStore });
     expect(addDepRes.suspended).toBe(false);
+    await expect(executeAddDependencies({ mutatePlanNode: mutatePlanCap, ctx: stepCtx, laneId: 'lane-main', parentItemKey: 'T_prevTip', dependencyKeysToAdd: ['T_2'], ledgerStore })).rejects.toThrow(/cycle/i);
+    await expect(executeAddDependencies({ mutatePlanNode: Object.freeze({ ...mutatePlanCap, spawnTasks: Object.freeze({ ...(mutatePlanCap.spawnTasks as NonNullable<typeof mutatePlanCap.spawnTasks>), maxPrerequisiteDepth: 2 }) }), ctx: stepCtx, laneId: 'lane-main', parentItemKey: 'T_parent', dependencyKeysToAdd: ['T_2'], ledgerStore })).rejects.toThrow(/exceeds maxPrerequisiteDepth/);
     const failedSync = await syncSuspendedRunPrerequisites({ runId: 'run-parent', stepExecId: 'step-parent-1', prerequisiteItemKeys: ['T_3'], ledgerStore, continuationQueue: new StepContinuationQueue(), scopeHandle: parentHandle });
     expect(failedSync.allPrerequisitesSucceeded).toBe(false);
     expect(failedSync.syncNotes.some((n) => n.includes('[PREREQUISITE_FAILED]'))).toBe(true);
@@ -219,6 +221,7 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
 
     await scheduler.enqueueItem({ input: { id: 'item-prereq', deps: [] }, enqueuedAtMs: 1_000 });
     await scheduler.enqueueItem({ input: { id: 'item-child', deps: ['item-prereq'], failStep2: true }, enqueuedAtMs: 1_000 });
+    await expect(scheduler.enqueueItem({ input: { id: 'item-self-cycle', deps: ['item-self-cycle'] } })).rejects.toThrow(/cycle/i);
     expect(scheduler.getItemsByKey().get('item-child')?.status).toBe('WAITING');
 
     const pass1 = await scheduler.scheduleNextReadyRuns(1_000 + 20 * 60_000);

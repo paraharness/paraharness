@@ -1,3 +1,4 @@
+import { Graph, alg } from '@dagrejs/graphlib';
 import type { AgentContinuationFrame } from '../../ports/agent-continuation-frame.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
 import type { MutateLanePlanSpawnedItem } from '../../ports/mutate-lane-plan-request.js';
@@ -77,6 +78,12 @@ export async function executeAddDependencies<THandle = unknown>(
     throw new Error(`addDependencies is not enabled on mutatePlan in run '${params.ctx.runId}'.`);
   }
   const depKeys = params.dependencyKeysToAdd ?? [];
+  const graph = new Graph({ directed: true });
+  for (const depKey of depKeys) {
+    if (depKey === params.parentItemKey) throw new Error(`Self-dependency cycle on '${depKey}' in run '${params.ctx.runId}'.`);
+    graph.setEdge(params.parentItemKey, depKey);
+  }
+  if (alg.findCycles(graph).length > 0) throw new Error(`Prerequisite dependency cycle detected in run '${params.ctx.runId}'.`);
   const maxDepth = params.mutatePlanNode.spawnTasks?.maxPrerequisiteDepth ?? 3;
   await params.ledgerStore.mutateLanePlan({ laneId: params.laneId, parentRunId: params.ctx.runId, parentItemKey: params.parentItemKey, maxPrerequisiteDepth: maxDepth, addedDependencies: depKeys });
   const receipts = await params.ledgerStore.getRunTerminalReceipts(depKeys);

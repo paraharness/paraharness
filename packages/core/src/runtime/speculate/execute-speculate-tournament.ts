@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import type {
   SpeculateBranchEntryRecord,
   SpeculateBufferedLessonOutcomeRecord,
@@ -44,7 +45,7 @@ export async function executeSpeculateTournament<THandle = unknown>(
   const normParams: SpeculateTournamentParams<THandle> = { ...params, executeChildStep: runStep };
   if (curFrame.branches.length === 0) {
     for (let idx = 0; idx < params.capability.branchCount; idx += 1) handlesByBranch.set(idx, await params.lockManager.withReadLock(params.ctx.scopeHandle, () => params.branchableScope.forkChild(params.ctx.scopeHandle, `${params.callId}:branch:${String(idx)}`)));
-    const settledBranches = await Promise.all(Array.from({ length: params.capability.branchCount }, async (_, idx): Promise<SpeculateBranchEntryRecord> => {
+    const limit = pLimit(Math.max(1, params.capability.branchCount)), settledBranches = await Promise.all(Array.from({ length: params.capability.branchCount }, (_, idx) => limit(async (): Promise<SpeculateBranchEntryRecord> => {
       const forkId = `${params.callId}:branch:${String(idx)}`, handle = handlesByBranch.get(idx) as THandle;
       try {
         const outcome = await runStep(params.capability.workerExecutable, branchInputs[idx], Object.freeze({ ...params.ctx, stepExecId: `${params.ctx.stepExecId}:branch:${String(idx)}`, scopeHandle: handle }));
@@ -56,7 +57,7 @@ export async function executeSpeculateTournament<THandle = unknown>(
       } catch (err) {
         return Object.freeze<SpeculateBranchEntryRecord>({ branchIndex: idx, forkId, status: 'FAILED', errorSummary: err instanceof Error ? err.message : String(err), continuationStack: Object.freeze([]) });
       }
-    }));
+    })));
     await persistFrame(Object.freeze<SpeculateContinuationFrame>({ ...curFrame, branches: Object.freeze(settledBranches), bufferedLessonOutcomes: Object.freeze(bufferedLessons) }));
   } else {
     for (const b of curFrame.branches) handlesByBranch.set(b.branchIndex, await params.lockManager.withReadLock(params.ctx.scopeHandle, () => params.branchableScope.reattachChild(params.ctx.scopeHandle, b.forkId, b.childScopeCheckpoint)));
