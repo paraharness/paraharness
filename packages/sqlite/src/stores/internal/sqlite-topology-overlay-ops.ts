@@ -133,7 +133,7 @@ export function updateContractInOverlay(
     prevHasUncommittedChanges: ovRow !== undefined ? ovRow.has_uncommitted_changes : 0,
     prevLastMutatedByRunId: ovRow !== undefined ? ovRow.last_mutated_by_run_id : baseLastRun,
   });
-  const acquireBase = resolveNextSqliteAcquireBase(ovRow, alreadyMutated, baseText);
+  const acquireBase = resolveNextSqliteAcquireBase(ovRow, baseText);
   db.prepare(
     "INSERT OR REPLACE INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, 'ACTIVE', ?, ?, ?)",
   ).run(

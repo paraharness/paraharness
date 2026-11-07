@@ -1,28 +1,14 @@
 import { createHash } from 'node:crypto';
+import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { H, createExecutorRegistry } from '@harness-dsl/core';
-import type {
-  AgentContinuationFrame,
-  ResolutionContext,
-  RuntimeDriverContext,
-  SuspendedForkRecord,
-  WireFrameRecord,
-} from '@harness-dsl/core';
+import type { AgentContinuationFrame, ResolutionContext, RuntimeDriverContext, SuspendedForkRecord, WireFrameRecord } from '@harness-dsl/core';
+import { adaptPgPoolToQueryClient, normalizePostgresClient } from '../src/ddl/internal/normalize-postgres-client.js';
 import {
-  PostgresLedgerStore,
-  PostgresLessonStore,
-  PostgresTopologyStore,
-  type PostgresQueryClient,
-  type PostgresQueryResult,
-  createCompactionConfigBuilder,
-  createPostgresExecutors,
-  createPostgresGlobalRulesBuilder,
-  createPostgresLedgerBuilder,
-  createPostgresLessonsBuilder,
-  createPostgresTopologyBuilder,
-  postgres,
-  postgresExecutors,
+  PostgresLedgerStore, PostgresLessonStore, PostgresTopologyStore, type PostgresQueryClient, type PostgresQueryResult,
+  createCompactionConfigBuilder, createPostgresExecutors, createPostgresGlobalRulesBuilder,
+  createPostgresLedgerBuilder, createPostgresLessonsBuilder, createPostgresTopologyBuilder, postgres, postgresExecutors,
 } from '../src/index.js';
 import { PglitePoolFactory } from './fixtures/pglite-pool-factory.js';
 
@@ -261,12 +247,22 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await expect(ledgerStore.replaceMessageFrame('pg-run-1', createSampleWireFrame('pm-missing', null, 'x'))).rejects.toThrow(/frame not found/i);
     await expect(ledgerStore.markFrameTombstone('pg-run-1', 'pm-missing', 'call-x', '[Tombstone]')).rejects.toThrow(/unknown messageId/i);
     await ledgerStore.markFrameTombstone('pg-run-1', 'pm-1', 'call-pm-1', '[Tombstone]');
+    const peerLedgerStore = new PostgresLedgerStore(pgClient);
+    await peerLedgerStore.getInterruptedStepsOnBoot();
+    await Promise.all([
+      ledgerStore.markFrameTombstone('pg-run-1', 'pm-1', 'call_1', 'tomb_1'),
+      peerLedgerStore.markFrameTombstone('pg-run-1', 'pm-1', 'call_2', 'tomb_2'),
+    ]);
     await ledgerStore.recordRunTerminalReceipt('pg-run-1', 'ISS-10', 'done', '{"sha":"999"}');
     expect((await ledgerStore.getRunTerminalReceipts(['ISS-10'])).get('ISS-10')?.terminalState).toBe('done');
     await ledgerStore.compactRunFrames('pg-run-1');
     const compactedChain = await ledgerStore.getMessageChain('pm-2');
     expect(compactedChain[0]?.rawWireFrame.byteLength).toBe(0);
-    expect(compactedChain[0]?.compactedTombstones).toEqual({ 'call-pm-1': '[Tombstone]' });
+    expect(compactedChain[0]?.compactedTombstones).toEqual({
+      'call-pm-1': '[Tombstone]',
+      call_1: 'tomb_1',
+      call_2: 'tomb_2',
+    });
     expect(new TextDecoder().decode((await ledgerStore.getMessageChain('pm-active'))[0]?.rawWireFrame)).toBe('active-body');
   });
 
@@ -385,5 +381,19 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     expect(asyncSliceEvents).toContain('pinned.query:BEGIN');
     expect(asyncSliceEvents).toContain('pinned.query:COMMIT');
     expect(asyncSliceEvents).toContain('pinned.release');
+
+    const evictUri = 'postgres://localhost:5432/test_evict';
+    const client1 = normalizePostgresClient(evictUri);
+    expect(normalizePostgresClient(evictUri)).toBe(client1);
+    await client1.close?.();
+    const client2 = normalizePostgresClient(evictUri);
+    expect(client2).not.toBe(client1);
+    await client2.close?.();
+
+    const rawPool = new Pool({ connectionString: evictUri });
+    const wrapped1 = adaptPgPoolToQueryClient(rawPool);
+    expect(adaptPgPoolToQueryClient(rawPool)).toBe(wrapped1);
+    await wrapped1.close?.();
+    expect(adaptPgPoolToQueryClient(rawPool)).not.toBe(wrapped1);
   });
 });

@@ -138,7 +138,7 @@ export async function updateContractInPgOverlay(
     prevHasUncommittedChanges: ovRow !== undefined ? ovRow.has_uncommitted_changes : 0,
     prevLastMutatedByRunId: ovRow !== undefined ? ovRow.last_mutated_by_run_id : baseLastRun,
   });
-  const acquireBase = resolveNextPgAcquireBase(ovRow, alreadyMutated, baseText);
+  const acquireBase = resolveNextPgAcquireBase(ovRow, baseText);
   await client.query(
     "INSERT INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, 1, $10, 'ACTIVE', $11, $12, $13) ON CONFLICT (run_id, partition_id) DO UPDATE SET epoch = EXCLUDED.epoch, contract_text = EXCLUDED.contract_text, base_contract_text_at_acquire = EXCLUDED.base_contract_text_at_acquire, initial_base_contract_text = EXCLUDED.initial_base_contract_text, baseline_contract_text = EXCLUDED.baseline_contract_text, baseline_epoch = EXCLUDED.baseline_epoch, baseline_last_mutated_by_run_id = EXCLUDED.baseline_last_mutated_by_run_id, mutated_in_run = 1, has_uncommitted_changes = 1, last_mutated_by_run_id = EXCLUDED.last_mutated_by_run_id, status = 'ACTIVE', updated_at = EXCLUDED.updated_at, absorbed_run_ids_json = EXCLUDED.absorbed_run_ids_json, step_mutations_json = EXCLUDED.step_mutations_json",
     [

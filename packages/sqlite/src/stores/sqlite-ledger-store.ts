@@ -213,12 +213,14 @@ export class SqliteLedgerStore implements LedgerStore {
     compactedTombstone: string,
   ): Promise<void> {
     return this.queue.add(() => {
-      markFrameTombstoneInSqlite(this.db, {
-        runId,
-        messageId,
-        callId,
-        compactedTombstone,
-      });
+      this.db.transaction(() =>
+        markFrameTombstoneInSqlite(this.db, {
+          runId,
+          messageId,
+          callId,
+          compactedTombstone,
+        }),
+      )();
     });
   }
 

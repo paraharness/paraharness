@@ -45,13 +45,15 @@ async function executePgTargetQuery<TRow = Record<string, unknown>>(
 /**
  * Wraps a `node-postgres` (`pg.Pool`) instance into a `PostgresQueryClient` with `.connect()` transaction pinning.
  *
- * Memoizes the wrapper per `Pool` instance in `POSTGRES_POOL_WRAPPERS` so repeated resolutions share the same queue.
+ * Memoizes the wrapper per `Pool` instance in `POSTGRES_POOL_WRAPPERS` so repeated resolutions share the same queue,
+ * and evicts both `POSTGRES_POOL_WRAPPERS` and `POSTGRES_URI_POOLS` cache entries when `.close()` is invoked.
  *
- * @param {Pool} pool - `node-postgres` connection pool instance.
+ * @param {Pool}   pool        - `node-postgres` connection pool instance.
+ * @param {string} [cachedUri] - Optional connection URI key to evict from `POSTGRES_URI_POOLS` on `.close()`.
  *
  * @returns {PostgresQueryClient} Adapted query client supporting `.connect()` and `.close()`.
  */
-export function adaptPgPoolToQueryClient(pool: Pool): PostgresQueryClient {
+export function adaptPgPoolToQueryClient(pool: Pool, cachedUri?: string): PostgresQueryClient {
   const existing = POSTGRES_POOL_WRAPPERS.get(pool);
   if (existing !== undefined) {
     return existing;
@@ -78,6 +80,10 @@ export function adaptPgPoolToQueryClient(pool: Pool): PostgresQueryClient {
       });
     },
     async close(): Promise<void> {
+      POSTGRES_POOL_WRAPPERS.delete(pool);
+      if (cachedUri !== undefined && POSTGRES_URI_POOLS.get(cachedUri) === adapted) {
+        POSTGRES_URI_POOLS.delete(cachedUri);
+      }
       await pool.end();
     },
   });
@@ -106,7 +112,7 @@ export function normalizePostgresClient(
     if (existing !== undefined) {
       return existing;
     }
-    const created = adaptPgPoolToQueryClient(new Pool({ connectionString: trimmed }));
+    const created = adaptPgPoolToQueryClient(new Pool({ connectionString: trimmed }), trimmed);
     POSTGRES_URI_POOLS.set(trimmed, created);
     return created;
   }

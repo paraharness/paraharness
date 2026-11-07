@@ -40,49 +40,54 @@ export interface SyncedPgOverlayValuesOptions {
 }
 
 /**
+ * Parameters for resolving a single field when folding a prerequisite overlay into a target overlay in PostgreSQL.
+ */
+export interface ResolveSyncedPgOverlayFieldParams {
+  /** Prerequisite run's overlay row being absorbed. */
+  readonly prereqRow: PgTopologyOverlayRow;
+  /** Target run's existing overlay row, if any. */
+  readonly targetRow: PgTopologyOverlayRow | undefined;
+  /** Whether `prereqRow` already absorbed `targetRunId` (stacked child fold). */
+  readonly isStackedChildFold: boolean;
+}
+
+/**
  * Resolves the `base_contract_text_at_acquire` value to persist when updating a partition contract in a PostgreSQL overlay.
  *
  * Preserves `ovRow.base_contract_text_at_acquire` when already mutated in the current run,
  * uses `ovRow.baseline_contract_text` on the first mutation after a prerequisite sync,
  * or falls back to `baseText` when creating a fresh overlay row.
  *
- * @param {PgTopologyOverlayRow | undefined} ovRow          - Existing overlay row for `(runId, partitionId)`, if any.
- * @param {boolean}                          alreadyMutated - Whether `ovRow` was already mutated in `runId`.
- * @param {string}                           baseText       - Canonical base contract text.
+ * @param {PgTopologyOverlayRow | undefined} ovRow    - Existing overlay row for `(runId, partitionId)`, if any.
+ * @param {string}                           baseText - Canonical base contract text.
  *
  * @returns {string} Acquire-base contract text to store on the overlay row.
  */
 export function resolveNextPgAcquireBase(
   ovRow: PgTopologyOverlayRow | undefined,
-  alreadyMutated: boolean,
   baseText: string,
 ): string {
   if (ovRow === undefined) {
     return baseText;
   }
-  if (alreadyMutated) {
+  if (ovRow.mutated_in_run === 1) {
     return ovRow.base_contract_text_at_acquire;
   }
   return ovRow.baseline_contract_text;
 }
 
 /**
- * Resolves the `base_contract_text_at_acquire` after folding `prereqRow` into `targetRow` in PostgreSQL.
+ * Resolves the `base_contract_text_at_acquire` after folding `params.prereqRow` into `params.targetRow` in PostgreSQL.
  *
  * Advances the acquire baseline to `prereqRow.contract_text` when `targetRow` mutated on top of a prerequisite,
  * or preserves the earlier baseline during a stacked child fold.
  *
- * @param {PgTopologyOverlayRow}             prereqRow          - Prerequisite overlay row being absorbed.
- * @param {PgTopologyOverlayRow | undefined} targetRow          - Target overlay row, if any.
- * @param {boolean}                          isStackedChildFold - Whether `prereqRow` already absorbed `targetRunId`.
+ * @param {ResolveSyncedPgOverlayFieldParams} params - Prerequisite row, target row, and stacked-child fold state.
  *
  * @returns {string} Updated `base_contract_text_at_acquire` value.
  */
-function resolveSyncedPgAcquireBase(
-  prereqRow: PgTopologyOverlayRow,
-  targetRow: PgTopologyOverlayRow | undefined,
-  isStackedChildFold: boolean,
-): string {
+function resolveSyncedPgAcquireBase(params: ResolveSyncedPgOverlayFieldParams): string {
+  const { prereqRow, targetRow, isStackedChildFold } = params;
   if (targetRow === undefined || targetRow.mutated_in_run !== 1) {
     return prereqRow.base_contract_text_at_acquire;
   }
@@ -93,22 +98,17 @@ function resolveSyncedPgAcquireBase(
 }
 
 /**
- * Resolves `last_mutated_by_run_id` after folding `prereqRow` into `targetRow` in PostgreSQL.
+ * Resolves `last_mutated_by_run_id` after folding `params.prereqRow` into `params.targetRow` in PostgreSQL.
  *
  * Credits the stacked child on a child fold, the target run when `targetRow` mutated independently,
  * or the prerequisite run when `targetRow` had not mutated the partition.
  *
- * @param {PgTopologyOverlayRow}             prereqRow          - Prerequisite overlay row being absorbed.
- * @param {PgTopologyOverlayRow | undefined} targetRow          - Target overlay row, if any.
- * @param {boolean}                          isStackedChildFold - Whether `prereqRow` already absorbed `targetRunId`.
+ * @param {ResolveSyncedPgOverlayFieldParams} params - Prerequisite row, target row, and stacked-child fold state.
  *
  * @returns {string | null} Run identifier to record as `last_mutated_by_run_id`.
  */
-function resolveSyncedPgLastMutatedBy(
-  prereqRow: PgTopologyOverlayRow,
-  targetRow: PgTopologyOverlayRow | undefined,
-  isStackedChildFold: boolean,
-): string | null {
+function resolveSyncedPgLastMutatedBy(params: ResolveSyncedPgOverlayFieldParams): string | null {
+  const { prereqRow, targetRow, isStackedChildFold } = params;
   if (targetRow === undefined || targetRow.mutated_in_run !== 1) {
     return prereqRow.last_mutated_by_run_id;
   }
@@ -150,8 +150,16 @@ export function computeSyncedPgOverlayValues(
   const mergedContractText = targetMutated
     ? threeWayMergeContract(mergeBase, prereqRow.contract_text, targetRow.contract_text)
     : prereqRow.contract_text;
-  const nextAcquireBase = resolveSyncedPgAcquireBase(prereqRow, targetRow, isStackedChildFold);
-  const nextLastMutatedBy = resolveSyncedPgLastMutatedBy(prereqRow, targetRow, isStackedChildFold);
+  const nextAcquireBase = resolveSyncedPgAcquireBase({
+    prereqRow,
+    targetRow,
+    isStackedChildFold,
+  });
+  const nextLastMutatedBy = resolveSyncedPgLastMutatedBy({
+    prereqRow,
+    targetRow,
+    isStackedChildFold,
+  });
   const nextEpoch =
     targetRow !== undefined ? Math.max(targetRow.epoch, prereqRow.epoch) : prereqRow.epoch;
   const initialBase =

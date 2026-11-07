@@ -235,12 +235,14 @@ export class PostgresLedgerStore implements LedgerStore {
     compactedTombstone: string,
   ): Promise<void> {
     return this.queue.add(async () =>
-      markFrameTombstoneInPg(await this.ensureReady(), {
-        runId,
-        messageId,
-        callId,
-        compactedTombstone,
-      }),
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        markFrameTombstoneInPg(tx, {
+          runId,
+          messageId,
+          callId,
+          compactedTombstone,
+        }),
+      ),
     );
   }
 

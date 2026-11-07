@@ -328,6 +328,15 @@ describe('SqliteLedgerStore durability, DAG mutation, wire frames, and compactio
       },
     });
     await store.markFrameTombstone('run-old', 'm-1', 'call-m-1', '[Compacted tool output]');
+    const peerStore = new SqliteLedgerStore(tempDb.dbPath);
+    try {
+      await Promise.all([
+        store.markFrameTombstone('run-old', 'm-1', 'call_1', 'tomb_1'),
+        peerStore.markFrameTombstone('run-old', 'm-1', 'call_2', 'tomb_2'),
+      ]);
+    } finally {
+      peerStore.close();
+    }
     await store.replaceMessageFrame('run-old', {
       ...f1,
       rawWireFrame: new TextEncoder().encode('root-frame-updated'),
@@ -338,6 +347,8 @@ describe('SqliteLedgerStore durability, DAG mutation, wire frames, and compactio
     expect(chainBeforeCompact.map((f) => f.messageId)).toEqual(['m-1', 'm-2']);
     expect(chainBeforeCompact[0]?.compactedTombstones).toEqual({
       'call-m-1': '[Compacted tool output]',
+      call_1: 'tomb_1',
+      call_2: 'tomb_2',
     });
     expect(new TextDecoder().decode(chainBeforeCompact[1]?.rawWireFrame)).toBe(
       'leaf-frame-with-notes',
