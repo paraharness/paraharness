@@ -26,6 +26,12 @@ import {
   fs,
   fsExecutors,
 } from '../src/index.js';
+import { compileActiveLeaseWriteMatcher } from '../src/executors/internal/compile-active-lease-write-matcher.js';
+import {
+  CACHED_ACTIVE_LEASE_WRITE_MATCHERS,
+  CACHED_BOUNDARY_GUARD_MATCHERS,
+  CACHED_GLOB_OR_EXACT_MATCHERS,
+} from '../src/executors/internal/glob-matcher-cache.constants.js';
 import type { TempFsWorkspaceHandle } from './fixtures/temp-fs-workspace-handle.js';
 import { createTempFsWorkspace } from './fixtures/temp-fs-workspace.js';
 
@@ -155,6 +161,19 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       ctx,
     );
     expect(allowedVerdict.allowed).toBe(true);
+    expect(CACHED_BOUNDARY_GUARD_MATCHERS.has(boundaryGuard)).toBe(true);
+    expect(CACHED_GLOB_OR_EXACT_MATCHERS.has(partMap.mapping.db.boundaryGlobs)).toBe(true);
+    expect(CACHED_GLOB_OR_EXACT_MATCHERS.has(partMap.mapping.api.boundaryGlobs)).toBe(true);
+    const leaseMatcher = lease.grantedMatchers[0];
+    if (leaseMatcher === undefined || leaseMatcher.type !== 'fs:match-globs') {
+      throw new Error('Expected fs:match-globs matcher on lease');
+    }
+    expect(CACHED_GLOB_OR_EXACT_MATCHERS.has(leaseMatcher.globs)).toBe(true);
+    const frozenLeases = Object.freeze([lease]);
+    expect(compileActiveLeaseWriteMatcher(frozenLeases)).toBe(
+      compileActiveLeaseWriteMatcher(frozenLeases),
+    );
+    expect(CACHED_ACTIVE_LEASE_WRITE_MATCHERS.has(frozenLeases)).toBe(true);
   });
 
   it('enforces fs.writeGuard with onlyExistingAtBaseRef and matches bracketed paths via fs.allowWriteGlobs', () => {
@@ -275,6 +294,13 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       createStepContext('/tmp/ws', [], ['api']),
     );
     expect(outOfPartition.allowed).toBe(false);
+    expect(CACHED_GLOB_OR_EXACT_MATCHERS.has(partMap.mapping.api.globs)).toBe(true);
+    const inPartition = evaluateFsScopedWriteGuard(
+      scopedGuard,
+      makeGuardInput([makeWriteEffect(['packages/api/routes.ts'])]),
+      createStepContext('/tmp/ws', [], ['api']),
+    );
+    expect(inPartition.allowed).toBe(true);
 
     const secretGuard = fs.secretLiterals();
     const fakeSecretToken = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;

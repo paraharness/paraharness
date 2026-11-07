@@ -4,29 +4,27 @@ import path from 'node:path';
 import { extractWorktreeRootAndBaseRef } from './extract-worktree-root-and-base-ref.js';
 
 /**
- * Tests whether a single normalized relative file path existed at `baseRef` inside `rootPath`.
+ * Tests whether a single normalized relative file path existed at `gitBaseRef` inside `rootPath`.
  *
- * Invokes `git cat-file -e <baseRef>:<path>` when a `.git` entry and `baseRef` are present,
- * falling back to `existsSync` on disk when no git `baseRef` is configured.
+ * Invokes `git cat-file -e <gitBaseRef>:<path>` when `gitBaseRef` is defined,
+ * falling back to `existsSync` on disk when no git `baseRef` is active.
  *
  * @param {string}             rootPath       - Worktree or repository root directory path.
- * @param {string | undefined} baseRef        - Optional git base commit ref.
- * @param {boolean}            hasGitMetadata - Whether `.git` exists in `rootPath`.
+ * @param {string | undefined} gitBaseRef     - Verified git base commit ref, or `undefined` when git metadata or `baseRef` is absent.
  * @param {string}             normalizedPath - Normalized POSIX relative file path.
  *
- * @returns {boolean} True when `normalizedPath` existed at `baseRef`.
+ * @returns {boolean} True when `normalizedPath` existed at `gitBaseRef`.
  */
 function doesSinglePathExistAtBaseRef(
   rootPath: string,
-  baseRef: string | undefined,
-  hasGitMetadata: boolean,
+  gitBaseRef: string | undefined,
   normalizedPath: string,
 ): boolean {
-  if (baseRef === undefined || !hasGitMetadata) {
+  if (gitBaseRef === undefined) {
     return existsSync(path.resolve(rootPath, normalizedPath));
   }
   try {
-    execFileSync('git', ['cat-file', '-e', `${baseRef}:${normalizedPath}`], {
+    execFileSync('git', ['cat-file', '-e', `${gitBaseRef}:${normalizedPath}`], {
       cwd: rootPath,
       stdio: 'ignore',
       env: {
@@ -56,11 +54,12 @@ export function checkPathsExistAtBaseRef(
   relPaths: readonly string[],
 ): readonly string[] {
   const { rootPath, baseRef } = extractWorktreeRootAndBaseRef(scopeHandle);
-  const hasGitMetadata = existsSync(path.join(rootPath, '.git'));
+  const gitBaseRef =
+    baseRef !== undefined && existsSync(path.join(rootPath, '.git')) ? baseRef : undefined;
   const existing: string[] = [];
   for (const relPath of relPaths) {
     const normalizedPath = relPath.replace(/\\/g, '/').replace(/^\.\//, '');
-    if (doesSinglePathExistAtBaseRef(rootPath, baseRef, hasGitMetadata, normalizedPath)) {
+    if (doesSinglePathExistAtBaseRef(rootPath, gitBaseRef, normalizedPath)) {
       existing.push(normalizedPath);
     }
   }
