@@ -4,6 +4,7 @@ round                      := 1
 $verified_findings         := []
 $pending_adjacent_defects  := []
 round_history              := [] (each completed round's verified findings and rejected false-positive patterns)
+pre_remediation_sha        := "" (captured via git rev-parse HEAD when transitioning from STEP 2 to STEP 3)
 
 POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop` after any `CHECKPOINT` compaction in `transcript.jsonl`)
 1. `.agents/hooks/post-compaction.mjs` injects `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md`) if present, or generates and saves the role's sequential grounding note automatically.
@@ -12,7 +13,7 @@ POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compac
 ```
     LOOP:
         STEP 1 — ADVERSARIAL COLD REVIEW (5x `invoke_subagent`, TypeName: 'loop-reviewer', Model: 'inherit')
-            1.1 Launch 5 parallel cold Reviewer Subagents, each required to read its Reviewer bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then audit `docs/SPEC.md` and `docs/CODING_SAMPLE.md` per `docs/rules/REVIEWER.md` Rule 1 (in Round 1, inspecting `git diff origin/main...HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` and reading both files in full; in Round $r \ge 2$, inspecting `git diff HEAD~1..HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` and `git diff origin/main...HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` plus implicated sections) against its assigned lens:
+            1.1 Launch 5 parallel cold Reviewer Subagents, each required to read its Reviewer bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then audit `docs/SPEC.md` and `docs/CODING_SAMPLE.md` per `docs/rules/REVIEWER.md` Rule 1 (in Round 1, inspecting `git diff origin/main...HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` and reading both files in full; in Round $r \ge 2$, inspecting `git diff <pre_remediation_sha>..HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` and `git diff origin/main...HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` plus implicated sections) against its assigned lens:
               - Lens 1: Concurrency, State Machine Completeness, Lock Ordering, Crash Recovery & Distributed Ledger.
               - Lens 2: LLM Wire Protocols, Provider KV-Caching, Multi-Tool Batch Execution, Interrupts & Policy Guards.
               - Lens 3: Git Worktree Mechanics, Checkpointing, Merge/Rebase Protocols, OS Subprocesses & Daemon Lifecycles.
@@ -23,8 +24,8 @@ POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compac
         STEP 2 — VERIFICATION GATE & HEAD ARBITRATION (`invoke_subagent`, TypeName: 'loop-verifier', Model: 'inherit')
             2.1 If count($findings) == 0:
                 - Set `$verified_findings := []` and exit loop to DISTILLATION.
-            2.2 Launch 1 Verifier Subagent with `$findings`:
-                - Require it to read its Verifier bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `docs/SPEC.md` and `docs/CODING_SAMPLE.md` in full, in sequence, and verify every item in `$findings` against the exact lines of both files.
+            2.2 Launch 1 Verifier Subagent with `$findings` (and `round_history` + `pre_remediation_sha` when `round > 1`):
+                - Require it to read its Verifier bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `docs/SPEC.md` and `docs/CODING_SAMPLE.md` in full, in sequence (plus `git diff <pre_remediation_sha>..HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md` when `round > 1`), and verify every item in `$findings` against the exact lines of both files per `docs/rules/VERIFIER.md`.
                 - DEFECT GATE (Admit to `$verified_findings` IF AND ONLY IF at least one holds):
                   (a) Concurrency race, lock-ordering deadlock, or state-machine transition gap.
                   (b) Crash-recovery data loss, non-idempotent replay, or orphaned state.
@@ -36,7 +37,7 @@ POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compac
                   (h) Genuine architectural flaw: coupling between passive AST nodes and runtime execution logic (self-executing AST nodes, execution/builder methods on AST nodes, duck-typing runtime methods during static validation, or inability to swap the runtime execution engine over the same AST), broken data-flow/state-ownership invariant, or broken `NodeExecutor<TNode>` / discriminated-union (`type`) contract.
                 - REJECTION GATE (Reject from `$verified_findings` if any holds):
                   (w) Violates the Core Paradigm Invariant by proposing to replace the declarative pure-AST DSL with imperative `async`/`await` functions, generators, or native TypeScript control flow (`if`/`for`/`while`).
-                  (x) Factually false (already handled by existing text).
+                  (x) Factually false (already handled by existing text, or contradicts a prior settled ruling / re-flags a previously falsified claim in `round_history` when the target lines are unchanged).
                   (y) Speculative new feature, new abstraction, or scope expansion nobody asked for.
                   (z) Stylistic preference, naming bike-shed, or prose wording nitpick disguised as an architectural flaw without a concrete structural or behavioral failure proof.
                 - For each admitted item, Verifier outputs:
@@ -49,11 +50,11 @@ POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compac
                 - Exit loop to DISTILLATION.
 
         STEP 3 — SPEC REMEDIATION (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit')
-            3.1 Launch 1 Remediation Subagent with `$verified_findings`:
+            3.1 Record `pre_remediation_sha := $(git rev-parse HEAD)` and launch 1 Remediation Subagent with `$verified_findings`:
                 - Read its Builder bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, then read `docs/SPEC.md` completely and `docs/CODING_SAMPLE.md` completely, in sequence.
                 - Apply every fix in `$verified_findings` (plus direct in-scope cascade updates across `docs/SPEC.md` and `docs/CODING_SAMPLE.md`, and if `docs/plan/M*.md` exist, refreshing any shifted §2 `SPEC.md` / `CODING_SAMPLE.md` line ranges) surgically.
-                - Rule A (Self-Review & Local Commit): Verify no edit breaks any existing invariant, type signature, or cross-reference across either file, confirm `git diff` is clean of unintended edits, and commit the remediated spec files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- docs/SPEC.md docs/CODING_SAMPLE.md docs/plan && git commit -m 'spec: remediate round <round>' -- docs/SPEC.md docs/CODING_SAMPLE.md docs/plan"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6).
-                - Rule B (Disclosed Adjacent Defects): Record any unrelated adjacent defects discovered during remediation in a `disclosed_adjacent_defects` section of the completion report (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2, pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` per `docs/rules/BUILDER.md` Rule 2).
+                - Rule A (Self-Review & Local Commit): Verify no edit breaks any existing invariant, type signature, or cross-reference across either file, confirm `git diff` is clean of unintended edits, and commit the remediated spec files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- docs/SPEC.md docs/CODING_SAMPLE.md $(test -d docs/plan && echo docs/plan) && git commit -m 'spec: remediate round <round>' -- docs/SPEC.md docs/CODING_SAMPLE.md $(test -d docs/plan && echo docs/plan)"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6).
+                - Rule B (Disclosed Adjacent Defects): Record any unrelated adjacent defects discovered during remediation in a `disclosed_adjacent_defects` section of the completion report (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2, pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` or `UNAPPROVED_DEPENDENCY` per `docs/rules/BUILDER.md` Rule 2).
             3.2 Increment `round := round + 1` and repeat LOOP at STEP 1.
 
     DISTILLATION (When `round > 1` or when verified findings / false-positive clusters occurred)

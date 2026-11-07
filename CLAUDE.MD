@@ -25,6 +25,4 @@ You read this file first: every session and subagent loads it before anything el
 
 ## Work state
 
-- Governing architecture and contracts live in `docs/SPEC.md` and `docs/CODING_SAMPLE.md`; milestone plans live in `docs/plan/INDEX.md` and `docs/plan/M*.md`; code and test standards live in `docs/CODING_GUIDELINES.md`.
-- Role rules and lessons live in `docs/rules/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER,DISTILLER}.md` and `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md`, loaded as Turn 1 by every subagent per `docs/HARNESS_LOOP.md` §3.
-- Post-compaction grounding notes live in `.memory/post-compaction.md` (and `.memory/post-compaction-<role>.md`), injected or generated automatically by `.agents/hooks/post-compaction.mjs` on the first turn after compaction.
+- Milestone DAG and execution order live in `docs/plan/INDEX.md`; post-compaction grounding notes live in `.memory/post-compaction.md` (and `.memory/post-compaction-<role>.md`), injected or generated automatically by `.agents/hooks/post-compaction.mjs` on the first turn after compaction.

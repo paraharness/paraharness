@@ -46,6 +46,7 @@ round                      := 1
 $verified_changes          := []
 $pending_adjacent_defects  := []
 round_history              := [] (each completed round's verified changes and rejected false-positive patterns)
+pre_remediation_sha        := "" (captured via git rev-parse HEAD when transitioning from STEP 2 to STEP 3)
 ```
 
 ---
@@ -76,7 +77,7 @@ No evolution round may weaken or violate these invariants:
 3. **Separation of Artifact Concerns:**
    - `docs/CODING_GUIDELINES.md` contains code/test standards and `DON'T` / `DO` examples (with JSDoc examples confined strictly to §2).
    - `docs/rules/*.md` contains atomic behavioral rules (`1–3` lines each), split into `GENERAL.md` and role-specific files.
-   - `docs/lessons/*.md` contains atomic, cold, present-tense empirical nuances (`1–3` lines each, `- **[<scope-or-symbol-anchor>]** Do X when Y, because Z.`), split into `GENERAL.md` and role-specific files; genuine atomic lessons are never merged with unrelated lessons into hybrid prose, nominal file size (~25 entries) serves strictly as a soft trigger for Distiller to flag mature promotion candidates for `HARNESS_LOOP`, and existing lessons are retired only after their promotion into `docs/CODING_GUIDELINES.md` or `docs/rules/*.md` is already present in the repo or when their `[<scope-or-symbol-anchor>]` no longer exists (`docs/rules/DISTILLER.md` Rule 4).
+   - `docs/lessons/*.md` contains atomic, cold, present-tense empirical nuances (`1–3` lines each, `- **[<scope-or-symbol-anchor>]** Do X when Y, because Z.`), split into `GENERAL.md` and role-specific files; genuine atomic lessons are never merged with unrelated lessons into hybrid prose, promoted lessons are retired immediately once their promotion into `CLAUDE.MD`, `docs/CODING_GUIDELINES.md`, or `docs/rules/*.md` is present in the repo (or when their `[<scope-or-symbol-anchor>]` no longer exists), and nominal file size (~25 entries) serves strictly as a soft trigger for Distiller to flag mature promotion candidates for `HARNESS_LOOP` (`docs/rules/DISTILLER.md` Rule 4).
    - `docs/*_LOOP.md` contains pure loop procedure and state machines—never coding opinions.
 4. **Zero Steering / Zero Confirmation Bias:** Prompts to Reviewers and Verifiers in any loop must state the scope, context, invariants, and objective evaluation criteria—never leading questions, pre-supposed conclusions, or desired answers that bias the agent toward confirming existing text.
 5. **Head Context Protection:** Head never reads bulk repository source files into its own context; full-file reads happen inside subagent contexts.
@@ -91,7 +92,7 @@ Harness changes are evaluated against five objective dimensions:
 2. **Defect Catch Rate vs. False-Positive Churn:** Does the harness catch real semantic, architectural, concurrency, performance, and structural defects early, without causing Reviewers and Verifiers to waste rounds on false alarms, rigid bureaucratic friction, or subjective style debates?
 3. **Signal-to-Token Density:** Every line in a bootstrap file is paid on every turn of every session that loads it. Does every line earn its token cost by changing behavior or preventing a real failure mode, with zero duplication across `CLAUDE.MD`, `CODING_GUIDELINES.md`, `rules/*.md`, `lessons/*.md`, and `*_LOOP.md`?
 4. **Cross-Artifact Consistency:** Are all file paths, role manifests, gate commands, and termination conditions consistent across all harness files?
-5. **Lesson Promotion & Anchor-Based Retirement:** Do `docs/lessons/*.md` entries stay separate, cold, and anchored (`- **[<scope-or-symbol-anchor>]**`) with ~25-entry promotion flagging and post-promotion/stale-anchor retirement per §4.3 and `docs/rules/DISTILLER.md` Rule 4?
+5. **Lesson Promotion & Immediate Post-Promotion Retirement:** Do `docs/lessons/*.md` entries stay separate, cold, and anchored (`- **[<scope-or-symbol-anchor>]**`) with immediate retirement once promoted into `CLAUDE.MD`, `docs/CODING_GUIDELINES.md`, or `docs/rules/*.md` (or when their anchor no longer exists) and ~25-entry promotion flagging per §4.3 and `docs/rules/DISTILLER.md` Rule 4?
 
 ---
 
@@ -106,7 +107,7 @@ LOOP:
     STEP 1 — UNSTEERED FIRST-PRINCIPLES CRITIQUE (4x `invoke_subagent`, TypeName: 'loop-reviewer', Model: 'inherit')
         1.1 Launch 4 parallel cold Critic Subagents. Pass each Critic:
             - Its required Reviewer bootstrap manifest (§3) to read as Turn 1,
-            - The remaining files in `harness_files` (§2) not already loaded in Turn 1 to read in full,
+            - Per `docs/rules/REVIEWER.md` Rule 1: in Round 1, inspect `git diff --stat origin/main...HEAD` and `git diff origin/main...HEAD` and read the remaining files in `harness_files` (§2) not already loaded in Turn 1 in full; in Round $r \ge 2$, inspect `git diff <pre_remediation_sha>..HEAD` and `git diff origin/main...HEAD` and read the files in `harness_files` touched by the remediation commits (plus their direct dependents) in full,
             - The `baseline_evidence` summary (§2),
             - The Hard Invariants (§4) and Evaluation Criteria (§5),
             - Zero leading hints or pre-selected targets.
@@ -120,8 +121,8 @@ LOOP:
     STEP 2 — FALSIFICATION & VERIFICATION GATE (`invoke_subagent`, TypeName: 'loop-verifier', Model: 'inherit')
         2.1 If count($candidates) == 0:
             - Set `$verified_changes := []` and exit loop to DISTILLATION.
-        2.2 Launch 1 Verifier Subagent with its Verifier bootstrap manifest (§3), `harness_files`, `baseline_evidence`, and `$candidates`:
-            - Read its Verifier bootstrap manifest (§3) as Turn 1, then read the remaining implicated files in `harness_files` (§2) not already loaded in Turn 1 in full and attempt to falsify each candidate in `$candidates` against the exact lines of `harness_files`, the Hard Invariants (§4), and the Evaluation Criteria (§5).
+        2.2 Launch 1 Verifier Subagent with its Verifier bootstrap manifest (§3), `harness_files`, `baseline_evidence`, and `$candidates` (plus `round_history` and `pre_remediation_sha` when `round > 1`):
+            - Read its Verifier bootstrap manifest (§3) as Turn 1, then read the remaining implicated files in `harness_files` (§2) not already loaded in Turn 1 in full (plus `git diff <pre_remediation_sha>..HEAD` when `round > 1`) and attempt to falsify each candidate in `$candidates` against the exact lines of `harness_files`, the Hard Invariants (§4), and the Evaluation Criteria (§5) per `docs/rules/VERIFIER.md`.
             - ADMISSION GATE (Admit to `$verified_changes` IF AND ONLY IF at least one holds):
               (a) Eliminates a proven contradiction, ambiguity, deadlock, or defect escape path across `harness_files`.
               (b) Removes cross-file duplication or token bloat while preserving or increasing behavioral precision.
@@ -129,7 +130,7 @@ LOOP:
               (d) Corrects a genuine architectural or design flaw in the harness mechanisms, role boundaries, or coding guidelines with concrete proof that the proposed change dominates the current design on §5 without violating §4.
             - REJECTION GATE (Reject from `$verified_changes` if any holds):
               (x) Violates any Hard Invariant in §4.
-              (y) Factually false upon inspecting the exact lines of `harness_files`.
+              (y) Factually false upon inspecting the exact lines of `harness_files` (or contradicts a prior settled ruling / re-flags a previously falsified claim in `round_history` when the target lines are unchanged).
               (z) Cosmetic rewording, speculative ceremony, or net token increase that changes no observable agent decision or outcome.
             - For each admitted item, Verifier outputs:
               (1) Exact file + line numbers and quoted snippet,
@@ -141,10 +142,10 @@ LOOP:
             - Exit loop to DISTILLATION.
 
     STEP 3 — SURGICAL HARNESS MUTATION (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit')
-        3.1 Launch 1 Harness Builder Subagent with its Builder bootstrap manifest (§3) and `$verified_changes`:
+        3.1 Record `pre_remediation_sha := $(git rev-parse HEAD)` and launch 1 Harness Builder Subagent with its Builder bootstrap manifest (§3) and `$verified_changes`:
             - Read its Builder bootstrap manifest (§3) as Turn 1, then read all remaining implicated files in `harness_files` not already loaded in Turn 1 in full.
-            - Apply `$verified_changes` surgically across `harness_files` (pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` per `docs/rules/BUILDER.md` Rule 2).
-            - Run smoke verification checks (`node --check .agents/hooks/post-compaction.mjs`, `node --check eslint.config.mjs`, JSON syntax validation of `package.json` and `.agents/hooks.json`, and `echo '{}' | node .agents/hooks/post-compaction.mjs` plus a mock transcript payload check) until exit code `0`, self-audit cross-file references, role manifests, and `git diff` to ensure zero unintended edits or broken links, commit the mutated harness files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- <mutated_harness_files> && git commit -m 'harness: remediate round <round>' -- <mutated_harness_files>"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6), and record any unrelated adjacent defects in `disclosed_adjacent_defects` (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2).
+            - Apply `$verified_changes` surgically across `harness_files` (pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` or `UNAPPROVED_DEPENDENCY` per `docs/rules/BUILDER.md` Rule 2).
+            - Run smoke and lint verification checks (`pnpm lint`, `node --check .agents/hooks/post-compaction.mjs`, `node --check eslint.config.mjs`, JSON syntax validation of `package.json` and `.agents/hooks.json`, and `echo '{}' | node .agents/hooks/post-compaction.mjs` plus a mock transcript payload check) until exit code `0`, self-audit cross-file references, role manifests, and `git diff` to ensure zero unintended edits or broken links, commit the mutated harness files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- <mutated_harness_files> && git commit -m 'harness: remediate round <round>' -- <mutated_harness_files>"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6), and record any unrelated adjacent defects in `disclosed_adjacent_defects` (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2).
         3.2 Increment `round := round + 1` and repeat LOOP at STEP 1.
 
 DISTILLATION (When `round > 1` or when verified changes / false-positive clusters occurred)

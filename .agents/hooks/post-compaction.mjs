@@ -11,37 +11,18 @@ const HEAD_BYTES = 16_384;
 /** Prefix sentinel identifying an injected post-compaction grounding message. */
 const GROUNDING_SENTINEL_PREFIX = 'POST_COMPACTION_GROUNDING_REQUIRED:';
 
-/** Anchored pattern matching an already-injected post-compaction grounding message. */
-const GROUNDING_SENTINEL_PATTERN = /^POST_COMPACTION_GROUNDING_REQUIRED:/;
+/** Tool names recognized as valid manifest file-reading actions. */
+const GROUNDING_TOOLS = new Set(['read_file', 'view_file']);
 
 /** Ordered post-compaction grounding file sequences per harness role. */
 const ROLE_GROUNDING_FILES = {
-  head: [
-    'CLAUDE.MD',
-    'docs/rules/GENERAL.md',
-    'docs/rules/HEAD.md',
-    'docs/lessons/GENERAL.md',
-    'docs/lessons/HEAD.md',
-    'docs/SPEC.md',
-    'and the active loop file (docs/IMPL_LOOP.md)',
-  ],
+  head: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/HEAD.md', 'docs/lessons/GENERAL.md', 'docs/lessons/HEAD.md', 'docs/SPEC.md', 'and the single active docs/*_LOOP.md'],
   builder: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/BUILDER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/BUILDER.md', 'docs/CODING_GUIDELINES.md'],
   reviewer: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/REVIEWER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/REVIEWER.md', 'docs/CODING_GUIDELINES.md'],
   verifier: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/VERIFIER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/VERIFIER.md', 'docs/CODING_GUIDELINES.md'],
   distiller: [
-    'CLAUDE.MD',
-    'docs/rules/GENERAL.md',
-    'docs/rules/DISTILLER.md',
-    'docs/rules/HEAD.md',
-    'docs/rules/BUILDER.md',
-    'docs/rules/REVIEWER.md',
-    'docs/rules/VERIFIER.md',
-    'docs/lessons/GENERAL.md',
-    'docs/lessons/HEAD.md',
-    'docs/lessons/BUILDER.md',
-    'docs/lessons/REVIEWER.md',
-    'docs/lessons/VERIFIER.md',
-    'docs/CODING_GUIDELINES.md',
+    'CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/DISTILLER.md', 'docs/rules/HEAD.md', 'docs/rules/BUILDER.md', 'docs/rules/REVIEWER.md', 'docs/rules/VERIFIER.md',
+    'docs/lessons/GENERAL.md', 'docs/lessons/HEAD.md', 'docs/lessons/BUILDER.md', 'docs/lessons/REVIEWER.md', 'docs/lessons/VERIFIER.md', 'docs/CODING_GUIDELINES.md',
   ],
 };
 
@@ -77,60 +58,50 @@ function readRange(fd, start, end) {
 }
 
 /**
- * Checks whether a parsed JSONL transcript entry is an injected grounding message or completed read.
+ * Checks whether a parsed JSONL transcript entry contains a qualifying manifest read tool call.
  *
- * Inspects non-model system message fields for the grounding sentinel and checks model tool calls
- * for completed terminal grounding file reads (`docs/*_LOOP.md` or `docs/CODING_GUIDELINES.md`).
+ * Requires a `PLANNER_RESPONSE` tool call in `GROUNDING_TOOLS` targeting the role's terminal
+ * manifest file on `Stop` (`_LOOP.md` for `head`, `docs/CODING_GUIDELINES.md` for subagents),
+ * or `CLAUDE.MD` / the terminal manifest file on `PreInvocation`.
  *
- * @param {unknown} entry - Parsed JSONL transcript object.
+ * @param {unknown} entry      - Parsed JSONL transcript object.
+ * @param {string}  role       - Detected harness role for the session.
+ * @param {boolean} isStopHook - Whether the current invocation is a `Stop` hook event.
  *
- * @returns {boolean} `true` if grounding was already injected or completed; otherwise `false`.
+ * @returns {boolean} `true` if a qualifying manifest read tool call occurred; otherwise `false`.
  */
-function isGroundedEntry(entry) {
-  if (!entry || typeof entry !== 'object') return false;
-  if (entry.type === 'PLANNER_RESPONSE' && Array.isArray(entry.tool_calls)) {
-    return entry.tool_calls.some((tc) => {
-      const targetPath = tc?.args?.Path ?? tc?.args?.AbsolutePath;
-      return (
-        (tc?.name === 'read_file' || tc?.name === 'view_file') &&
-        typeof targetPath === 'string' &&
-        (targetPath.endsWith('_LOOP.md') || targetPath.includes('docs/CODING_GUIDELINES.md'))
-      );
-    });
-  }
-  if (entry.type === 'PLANNER_RESPONSE' || entry.type === 'TOOL_RESULT' || entry.type === 'GENERIC') return false;
-  const candidates = [
-    entry.systemMessage?.systemMessage,
-    entry.systemMessage,
-    entry.injectSteps?.[0]?.systemMessage?.systemMessage,
-    entry.reason,
-    entry.content,
-    entry.text,
-  ];
-  return candidates.some((c) => typeof c === 'string' && GROUNDING_SENTINEL_PATTERN.test(c.trim()));
+function isGroundedEntry(entry, role, isStopHook) {
+  if (!entry || typeof entry !== 'object' || entry.type !== 'PLANNER_RESPONSE' || !Array.isArray(entry.tool_calls)) return false;
+  return entry.tool_calls.some((tc) => {
+    const rawPath = tc?.args?.Path ?? tc?.args?.AbsolutePath;
+    if (!GROUNDING_TOOLS.has(tc?.name) || typeof rawPath !== 'string') return false;
+    const targetPath = rawPath.replace(/^"+|"+$/g, '');
+    const isTerminal = role === 'head' ? targetPath.endsWith('_LOOP.md') : targetPath.includes('docs/CODING_GUIDELINES.md');
+    if (isStopHook) return isTerminal;
+    return isTerminal || targetPath.endsWith('CLAUDE.MD') || targetPath.endsWith('CLAUDE.md');
+  });
 }
 
 /**
  * Scans complete JSONL lines in a transcript slice from newest to oldest for compaction state.
  *
- * Returns `'grounded'` if a grounding sentinel or completed read appears after any `CHECKPOINT`,
+ * Returns `'grounded'` if a qualifying manifest read tool call appears after any `CHECKPOINT`,
  * `'ungrounded'` if a `CHECKPOINT` entry is encountered first, or `'none'` if neither appears.
  *
- * @param {string}  text                   - Raw UTF-8 slice from the transcript file.
- * @param {boolean} skipLeadingPartialLine - Whether `text` begins mid-file at `start > 0`.
+ * @param {string}  text       - Complete JSONL lines from the transcript tail window.
+ * @param {string}  role       - Detected harness role for the session.
+ * @param {boolean} isStopHook - Whether the current invocation is a `Stop` hook event.
  *
  * @returns {'grounded' | 'ungrounded' | 'none'} Compaction grounding status for the slice.
  */
-function scanCompactionState(text, skipLeadingPartialLine) {
-  const firstNewline = skipLeadingPartialLine ? text.indexOf('\n') : -1;
-  if (skipLeadingPartialLine && firstNewline === -1) return 'none';
-  const lines = (skipLeadingPartialLine ? text.slice(firstNewline + 1) : text).split('\n');
+function scanCompactionState(text, role, isStopHook) {
+  const lines = text.split('\n');
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i].trim();
     if (!line) continue;
     try {
       const entry = JSON.parse(line);
-      if (isGroundedEntry(entry)) return 'grounded';
+      if (isGroundedEntry(entry, role, isStopHook)) return 'grounded';
       if (entry?.type === 'CHECKPOINT') return 'ungrounded';
     } catch {
       continue;
@@ -140,42 +111,70 @@ function scanCompactionState(text, skipLeadingPartialLine) {
 }
 
 /**
- * Detects the active agent role from the opening slice of the session transcript.
+ * Detects the active agent role from the initial prompt lines of the session transcript.
  *
- * Matches subagent bootstrap role identifiers in the initial prompt and defaults to `'head'`.
+ * Inspects only transcript lines preceding the first `PLANNER_RESPONSE` or `TOOL_RESULT` entry
+ * and selects the role whose bootstrap marker appears earliest, defaulting to `'head'`.
  *
  * @param {string} headText - Opening UTF-8 bytes of `transcript.jsonl`.
  *
  * @returns {'head' | 'builder' | 'reviewer' | 'verifier' | 'distiller'} Detected role key.
  */
 function detectRoleFromHead(headText) {
-  if (headText.includes('loop-distiller') || headText.includes('Distiller bootstrap manifest')) return 'distiller';
-  if (headText.includes('loop-verifier') || headText.includes('Verifier bootstrap manifest')) return 'verifier';
-  if (headText.includes('loop-reviewer') || headText.includes('Reviewer bootstrap manifest')) return 'reviewer';
-  if (headText.includes('loop-builder') || headText.includes('Builder bootstrap manifest')) return 'builder';
-  return 'head';
+  const promptLines = [];
+  for (const line of headText.split('\n')) {
+    if (/"type"\s*:\s*"(?:PLANNER_RESPONSE|TOOL_RESULT|GENERIC)"/.test(line)) break;
+    promptLines.push(line);
+  }
+  const prompt = promptLines.join('\n');
+  const roleMarkers = [
+    ['distiller', ['loop-distiller', 'Distiller bootstrap manifest']],
+    ['verifier', ['loop-verifier', 'Verifier bootstrap manifest']],
+    ['reviewer', ['loop-reviewer', 'Reviewer bootstrap manifest']],
+    ['builder', ['loop-builder', 'Builder bootstrap manifest']],
+  ];
+  let bestRole = 'head';
+  let bestIdx = Infinity;
+  for (const [role, patterns] of roleMarkers) {
+    for (const pat of patterns) {
+      const idx = prompt.indexOf(pat);
+      if (idx !== -1 && idx < bestIdx) {
+        bestIdx = idx;
+        bestRole = role;
+      }
+    }
+  }
+  return bestRole;
 }
 
 /**
  * Inspects `transcriptPath` to determine if an ungrounded compaction `CHECKPOINT` occurred.
  *
- * Reads expanding tail windows until a `CHECKPOINT` or grounding sentinel is found, and detects
- * the session role from the head of the file when grounding is required.
+ * Detects the session role from the initial prompt and reads expanding tail windows until a
+ * qualifying manifest read tool call or `CHECKPOINT` entry is found.
  *
- * @param {string} transcriptPath - Path to the active session's `transcript.jsonl` file.
+ * @param {string}  transcriptPath - Path to the active session's `transcript.jsonl` file.
+ * @param {boolean} isStopHook     - Whether the current invocation is a `Stop` hook event.
  *
  * @returns {{ needed: boolean, role: 'head' | 'builder' | 'reviewer' | 'verifier' | 'distiller' }} Grounding requirement and role.
  */
-function checkCompactionGrounding(transcriptPath) {
+function checkCompactionGrounding(transcriptPath, isStopHook) {
   const fd = openSync(transcriptPath, 'r');
   try {
     const size = fstatSync(fd).size;
+    const role = detectRoleFromHead(readRange(fd, 0, Math.min(size, HEAD_BYTES)));
     for (let tail = TAIL_BYTES; ; tail *= 2) {
       const start = Math.max(0, size - tail);
-      const state = scanCompactionState(readRange(fd, start, size), start > 0);
-      if (state === 'grounded') return { needed: false, role: 'head' };
-      if (state === 'ungrounded') return { needed: true, role: detectRoleFromHead(readRange(fd, 0, Math.min(size, HEAD_BYTES))) };
-      if (start === 0) return { needed: false, role: 'head' };
+      const rawSlice = readRange(fd, start, size);
+      const firstNewline = start > 0 ? rawSlice.indexOf('\n') : -1;
+      if (start > 0 && firstNewline === -1) {
+        if (start === 0) return { needed: false, role };
+        continue;
+      }
+      const state = scanCompactionState(start > 0 ? rawSlice.slice(firstNewline + 1) : rawSlice, role, isStopHook);
+      if (state === 'grounded') return { needed: false, role };
+      if (state === 'ungrounded') return { needed: true, role };
+      if (start === 0) return { needed: false, role };
     }
   } finally {
     closeSync(fd);
@@ -188,8 +187,8 @@ function checkCompactionGrounding(transcriptPath) {
  * Reads `.memory/post-compaction.md` (for `head`) or `.memory/post-compaction-<role>.md` when
  * present; otherwise generates the role-specific sequential reading note and writes it to disk.
  *
- * @param {string} workspaceRoot - Absolute path to the workspace root directory.
- * @param {'head' | 'builder' | 'reviewer' | 'verifier' | 'distiller'} role - Active agent role.
+ * @param {string}                                                     workspaceRoot - Absolute path to the workspace root directory.
+ * @param {'head' | 'builder' | 'reviewer' | 'verifier' | 'distiller'} role          - Active agent role.
  *
  * @returns {string} Complete post-compaction grounding instruction with sentinel prefix.
  */
@@ -226,7 +225,7 @@ async function main() {
     process.stdout.write(isStopHook ? '{"decision":"allow"}\n' : '{}\n');
     return;
   }
-  const { needed, role } = checkCompactionGrounding(payload.transcriptPath);
+  const { needed, role } = checkCompactionGrounding(payload.transcriptPath, isStopHook);
   if (!needed) {
     process.stdout.write(isStopHook ? '{"decision":"allow"}\n' : '{}\n');
     return;
