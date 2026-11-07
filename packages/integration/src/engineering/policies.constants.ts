@@ -48,11 +48,10 @@ export const workerBasePolicy = H.policy('worker-base')
     const requestedPaths: string[] = [];
     for (const eff of violation.violatedEffects) {
       const rawPaths = eff.attributes?.['paths'];
-      if (Array.isArray(rawPaths)) {
-        for (const candidatePath of rawPaths) {
-          if (typeof candidatePath === 'string') {
-            requestedPaths.push(candidatePath);
-          }
+      if (!Array.isArray(rawPaths)) continue;
+      for (const candidatePath of rawPaths) {
+        if (typeof candidatePath === 'string') {
+          requestedPaths.push(candidatePath);
         }
       }
     }

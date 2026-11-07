@@ -160,6 +160,23 @@ describe('SqliteTopologyStore CoW overlays and SqliteLessonStore lifecycle', () 
     expect((await topologyStore.getPartitions()).get('payments')?.contractText).toBe(
       'top\nmid-from-1\nmid-from-2\nbottom',
     );
+
+    await topologyStore.updateContract('run-c0', 'api', 'line1: base\nline2: shared\nline3: base', 's-c0');
+    await topologyStore.sealRunOverlay('run-c0');
+    await topologyStore.commitRunOverlay('run-c0');
+    await topologyStore.updateContract('run-prereq-102', 'db', 'db: v1', 's-102');
+    await topologyStore.sealRunOverlay('run-prereq-102');
+    await topologyStore.syncRunOverlays('run-child-301', ['run-prereq-102']);
+    await topologyStore.updateContract('run-child-301', 'api', 'line1: child-301\nline2: shared\nline3: base', 's-301');
+    await topologyStore.sealRunOverlay('run-child-301');
+    await topologyStore.updateContract('run-conc', 'api', 'line1: base\nline2: shared\nline3: conc-update', 's-conc');
+    await topologyStore.sealRunOverlay('run-conc');
+    await topologyStore.commitRunOverlay('run-conc');
+    await topologyStore.syncRunOverlays('run-prereq-102', ['run-child-301']);
+    await topologyStore.commitRunOverlay('run-prereq-102');
+    expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe(
+      'line1: child-301\nline2: shared\nline3: conc-update',
+    );
   });
 
   it('admits, queries with relevanceScore, records outcomes, syncs epochs, marks signals, and retires lessons', async () => {

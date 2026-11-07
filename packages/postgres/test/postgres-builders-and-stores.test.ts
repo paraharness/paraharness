@@ -242,19 +242,8 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
       { itemKey: 'C_2', status: 'QUEUED', dependsOn: ['C_1'] },
     ]);
 
-    await expect(
-      ledgerStore.mutateLanePlan({
-        laneId: 'lane-pg', parentRunId: 'pg-run-1', parentItemKey: 'C_1',
-        spawnedItems: [], addedDependencies: ['ISS-10'], maxPrerequisiteDepth: 5,
-      }),
-    ).rejects.toThrow(/cycle/i);
-
-    await expect(
-      ledgerStore.mutateLanePlan({
-        laneId: 'lane-pg', parentRunId: 'pg-run-1', parentItemKey: 'P_above',
-        spawnedItems: [], addedDependencies: ['ISS-10'], maxPrerequisiteDepth: 2,
-      }),
-    ).rejects.toThrow(/maxPrerequisiteDepth/);
+    await expect(ledgerStore.mutateLanePlan({ laneId: 'lane-pg', parentRunId: 'pg-run-1', parentItemKey: 'C_1', spawnedItems: [], addedDependencies: ['ISS-10'], maxPrerequisiteDepth: 5 })).rejects.toThrow(/cycle/i);
+    await expect(ledgerStore.mutateLanePlan({ laneId: 'lane-pg', parentRunId: 'pg-run-1', parentItemKey: 'P_above', spawnedItems: [], addedDependencies: ['ISS-10'], maxPrerequisiteDepth: 2 })).rejects.toThrow(/maxPrerequisiteDepth/);
     const fork1: SuspendedForkRecord = {
       suspendedForkId: 'f-pg#1', forkId: 'f-pg', suspensionEpoch: 1, runId: 'pg-run-1',
       parentStepExecId: 'pg-step-1', forkToolName: 'fork_worker', activePartitions: ['db'],
@@ -269,12 +258,8 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await ledgerStore.appendMessageFrame('pg-run-1', createSampleWireFrame('pm-1', null, 'root'));
     await ledgerStore.appendMessageFrame('pg-run-1', createSampleWireFrame('pm-2', 'pm-1', 'leaf'));
     await ledgerStore.appendMessageFrame('pg-run-active', createSampleWireFrame('pm-active', null, 'active-body'));
-    await expect(
-      ledgerStore.replaceMessageFrame('pg-run-1', createSampleWireFrame('pm-missing', null, 'x')),
-    ).rejects.toThrow(/frame not found/i);
-    await expect(
-      ledgerStore.markFrameTombstone('pg-run-1', 'pm-missing', 'call-x', '[Tombstone]'),
-    ).rejects.toThrow(/unknown messageId/i);
+    await expect(ledgerStore.replaceMessageFrame('pg-run-1', createSampleWireFrame('pm-missing', null, 'x'))).rejects.toThrow(/frame not found/i);
+    await expect(ledgerStore.markFrameTombstone('pg-run-1', 'pm-missing', 'call-x', '[Tombstone]')).rejects.toThrow(/unknown messageId/i);
     await ledgerStore.markFrameTombstone('pg-run-1', 'pm-1', 'call-pm-1', '[Tombstone]');
     await ledgerStore.recordRunTerminalReceipt('pg-run-1', 'ISS-10', 'done', '{"sha":"999"}');
     expect((await ledgerStore.getRunTerminalReceipts(['ISS-10'])).get('ISS-10')?.terminalState).toBe('done');
@@ -322,12 +307,18 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await topologyStore.updateContract('r-discard', 'api', 'discard-me', 's-d');
     await topologyStore.discardRunOverlay('r-discard');
     expect((await topologyStore.getPartitions('r-discard')).get('api')?.contractText).toBe('v3-prereq\nv2-extra\nv2-bottom');
-    const lessonId = await lessonStore.admit({
-      partition: 'api',
-      directive: 'Always validate pagination cursor signatures before querying.',
-      epochAtCreation: 0,
-      createdByRunId: 'r-1',
-    });
+    await topologyStore.updateContract('r-p102', 'db', 'db: v1', 's-102');
+    await topologyStore.sealRunOverlay('r-p102');
+    await topologyStore.syncRunOverlays('r-c301', ['r-p102']);
+    await topologyStore.updateContract('r-c301', 'api', 'v4-child301\nv2-extra\nv2-bottom', 's-301');
+    await topologyStore.sealRunOverlay('r-c301');
+    await topologyStore.updateContract('r-conc', 'api', 'v3-prereq\nv2-extra\nv4-conc', 's-conc');
+    await topologyStore.sealRunOverlay('r-conc');
+    await topologyStore.commitRunOverlay('r-conc');
+    await topologyStore.syncRunOverlays('r-p102', ['r-c301']);
+    await topologyStore.commitRunOverlay('r-p102');
+    expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe('v4-child301\nv2-extra\nv4-conc');
+    const lessonId = await lessonStore.admit({ partition: 'api', directive: 'Always validate pagination cursor signatures before querying.', epochAtCreation: 0, createdByRunId: 'r-1' });
     await lessonStore.syncCreationEpochsForRuns(['r-1'], committed.updatedEpochs);
     await lessonStore.recordOutcomes([{ lessonId, outcome: 'clean_pass' }]);
     await lessonStore.markSignalEmitted(lessonId, 'sig-promote', '2026-02-01T00:00:00.000Z');

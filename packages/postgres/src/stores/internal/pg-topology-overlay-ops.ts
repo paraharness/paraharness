@@ -89,7 +89,7 @@ export async function updateContractInPgOverlay(
     "INSERT INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, 1, $10, 'ACTIVE', $11, $12, $13) ON CONFLICT (run_id, partition_id) DO UPDATE SET epoch = EXCLUDED.epoch, contract_text = EXCLUDED.contract_text, base_contract_text_at_acquire = EXCLUDED.base_contract_text_at_acquire, initial_base_contract_text = EXCLUDED.initial_base_contract_text, baseline_contract_text = EXCLUDED.baseline_contract_text, baseline_epoch = EXCLUDED.baseline_epoch, baseline_last_mutated_by_run_id = EXCLUDED.baseline_last_mutated_by_run_id, mutated_in_run = 1, has_uncommitted_changes = 1, last_mutated_by_run_id = EXCLUDED.last_mutated_by_run_id, status = 'ACTIVE', updated_at = EXCLUDED.updated_at, absorbed_run_ids_json = EXCLUDED.absorbed_run_ids_json, step_mutations_json = EXCLUDED.step_mutations_json",
     [
       params.runId, params.partitionId, newEpoch, params.newContractText,
-      ovRow !== undefined ? ovRow.base_contract_text_at_acquire : baseText,
+      ovRow !== undefined ? (alreadyMutated ? ovRow.base_contract_text_at_acquire : ovRow.baseline_contract_text) : baseText,
       ovRow !== undefined ? ovRow.initial_base_contract_text : baseText,
       ovRow !== undefined ? ovRow.baseline_contract_text : baseText,
       ovRow !== undefined ? ovRow.baseline_epoch : baseEpoch,
@@ -135,7 +135,7 @@ export async function syncPrerequisitePgOverlays(
       const targetMutated = targetRow !== undefined && targetRow.mutated_in_run === 1;
       const mergeBase = isStackedChildFold ? prereqRow.base_contract_text_at_acquire : (targetRow?.base_contract_text_at_acquire ?? prereqRow.base_contract_text_at_acquire);
       const mergedContractText = targetMutated ? threeWayMergeContract(mergeBase, prereqRow.contract_text, targetRow.contract_text) : prereqRow.contract_text;
-      const nextAcquireBase = targetMutated && isStackedChildFold ? targetRow.base_contract_text_at_acquire : prereqRow.contract_text;
+      const nextAcquireBase = !targetMutated ? prereqRow.base_contract_text_at_acquire : (isStackedChildFold ? targetRow.base_contract_text_at_acquire : prereqRow.contract_text);
       const nextLastMutatedBy = targetMutated ? (isStackedChildFold ? (prereqRow.last_mutated_by_run_id ?? targetRow.last_mutated_by_run_id) : (targetRow.last_mutated_by_run_id ?? prereqRow.last_mutated_by_run_id)) : prereqRow.last_mutated_by_run_id;
       const nextEpoch = targetRow !== undefined ? Math.max(targetRow.epoch, prereqRow.epoch) : prereqRow.epoch;
       const initialBase = targetRow !== undefined ? targetRow.initial_base_contract_text : prereqRow.initial_base_contract_text;

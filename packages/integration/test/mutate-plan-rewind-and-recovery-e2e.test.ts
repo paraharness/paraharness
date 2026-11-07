@@ -127,7 +127,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
 
       expect(repoTopology.dependentsOf('db')).toEqual(['api', 'web']);
       expect(repoTopology.affectedBy('db')).toEqual(['db', 'api', 'web']);
-      await topologyStore.updateContract('run-seed', 'db', 'line1: UserRecord\nline2: queryUser\nline3: base', 'seed:1');
+      await topologyStore.updateContract('run-seed', 'api', 'line1: getUserEndpoint\nline2: shared\nline3: pending', 'seed:1');
       await topologyStore.commitRunOverlay('run-seed');
 
       let parentCoordTurn = 0;
@@ -158,7 +158,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
 
           if (parentCoordTurn === 2) {
             return drv.buildToolCallResponse([
-              { id: 'parent-update-api-contract', name: 'updatePartitionContract', argsJson: JSON.stringify({ partitionId: 'api', newContractText: 'api exports getUserEndpoint and getTenantEndpoint' }) },
+              { id: 'parent-update-api-contract', name: 'updatePartitionContract', argsJson: JSON.stringify({ partitionId: 'api', newContractText: 'line1: getUserEndpoint\nline2: shared\nline3: getTenantEndpoint' }) },
               {
                 id: 'parent-write-tenant-api',
                 name: 'write_file',
@@ -197,7 +197,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       const prereqInput: WorkItem = { ref: '#102', title: 'Add tenant helper to db', description: 'Prerequisite DB module for #301', routingTier: 'leaf-only', targetPartitions: ['db'], dependsOn: [] };
       const prereqFlowCtx = buildFlowContextForRecoveryTest({ fixture, runId: prereqRunId, currentInput: prereqInput, modelDriver, humanAdapter, scopeHandle: prereqHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
 
-      await topologyStore.updateContract(prereqRunId, 'db', 'line1: UserRecord + TENANT_DB_READY\nline2: queryUser\nline3: base', `${prereqRunId}:step-1`);
+      await topologyStore.updateContract(prereqRunId, 'db', 'db exports UserRecord, queryUser, and TENANT_DB_READY', `${prereqRunId}:step-1`);
       const prereqResult = await executeFlow(prereqFlowCtx);
       expect(prereqResult.exitState).toBe('done');
       await ledgerStore.recordRunTerminalReceipt(prereqRunId, '#102', 'done', JSON.stringify(prereqResult.scopeReceipt));
@@ -229,7 +229,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       } finally {
         await scopeDriver.release(parentFlowCtx.scopeHandle);
       }
-      await topologyStore.updateContract('run-concurrent', 'db', 'line1: UserRecord\nline2: queryUser\nline3: concurrentAudit', 'conc:1');
+      await topologyStore.updateContract('run-concurrent', 'api', 'line1: getUserEndpoint + healthCheck\nline2: shared\nline3: pending', 'conc:1');
       await topologyStore.commitRunOverlay('run-concurrent');
 
       const prs = await fixture.readCreatedPrs();
@@ -250,8 +250,8 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       await runtime.controller.emitSignal('change-shipped', { ref: '#102', mergeCommitSha: 'sha-merge-main', baseBranch: 'main' });
 
       const canonicalPartitions = await topologyStore.getPartitions();
-      expect(canonicalPartitions.get('db')?.contractText).toBe('line1: UserRecord + TENANT_DB_READY\nline2: queryUser\nline3: concurrentAudit');
-      expect(canonicalPartitions.get('api')?.contractText).toContain('getTenantEndpoint');
+      expect(canonicalPartitions.get('db')?.contractText).toContain('TENANT_DB_READY');
+      expect(canonicalPartitions.get('api')?.contractText).toBe('line1: getUserEndpoint + healthCheck\nline2: shared\nline3: getTenantEndpoint');
 
       const recalledCandidates = await lessonStore.queryCandidates({ queryText: 'TENANT_DB_READY', partitions: ['db'] });
       const updatedLesson = recalledCandidates.find((l) => l.id === admittedLesson);

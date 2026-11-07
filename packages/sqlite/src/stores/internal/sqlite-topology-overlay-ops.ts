@@ -87,7 +87,7 @@ export function updateContractInOverlay(
     "INSERT OR REPLACE INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, 'ACTIVE', ?, ?, ?)",
   ).run(
     params.runId, params.partitionId, newEpoch, params.newContractText,
-    ovRow !== undefined ? ovRow.base_contract_text_at_acquire : baseText,
+    ovRow !== undefined ? (alreadyMutated ? ovRow.base_contract_text_at_acquire : ovRow.baseline_contract_text) : baseText,
     ovRow !== undefined ? ovRow.initial_base_contract_text : baseText,
     ovRow !== undefined ? ovRow.baseline_contract_text : baseText,
     ovRow !== undefined ? ovRow.baseline_epoch : baseEpoch,
@@ -129,7 +129,7 @@ export function syncPrerequisiteOverlays(
       const targetMutated = targetRow !== undefined && targetRow.mutated_in_run === 1;
       const mergeBase = isStackedChildFold ? prereqRow.base_contract_text_at_acquire : (targetRow?.base_contract_text_at_acquire ?? prereqRow.base_contract_text_at_acquire);
       const mergedContractText = targetMutated ? threeWayMergeContract(mergeBase, prereqRow.contract_text, targetRow.contract_text) : prereqRow.contract_text;
-      const nextAcquireBase = targetMutated && isStackedChildFold ? targetRow.base_contract_text_at_acquire : prereqRow.contract_text;
+      const nextAcquireBase = !targetMutated ? prereqRow.base_contract_text_at_acquire : (isStackedChildFold ? targetRow.base_contract_text_at_acquire : prereqRow.contract_text);
       const nextLastMutatedBy = targetMutated ? (isStackedChildFold ? (prereqRow.last_mutated_by_run_id ?? targetRow.last_mutated_by_run_id) : (targetRow.last_mutated_by_run_id ?? prereqRow.last_mutated_by_run_id)) : prereqRow.last_mutated_by_run_id;
       const nextEpoch = targetRow !== undefined ? Math.max(targetRow.epoch, prereqRow.epoch) : prereqRow.epoch;
       const initialBase = targetRow !== undefined ? targetRow.initial_base_contract_text : prereqRow.initial_base_contract_text;
