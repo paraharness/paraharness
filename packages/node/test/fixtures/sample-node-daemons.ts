@@ -22,7 +22,7 @@ export function buildEnvAndStdinProbeArgv(): readonly string[] {
  * Builds a Node child-process `argv` array simulating a streaming test suite that emits a failure stack trace.
  *
  * Prints initial passing output, emits a multi-line `FAIL packages/api/foo.test.ts\n  ● suite failure`
- * banner across `stdout` and `stderr` followed by 35 numbered stack trace lines, and then sleeps until killed.
+ * banner across `stdout` and `stderr` followed by 35 numbered stack trace lines, and then waits until killed.
  *
  * @returns {readonly string[]} Node `argv` array simulating a failing streaming test runner.
  */
@@ -30,12 +30,12 @@ export function buildFailingStreamSuiteArgv(): readonly string[] {
   const script = [
     'process.on("SIGTERM", () => process.exit(0));',
     'process.stderr.write("FAIL packages/api/broken.test.ts\\n", () => {',
-    '  setTimeout(() => {',
+    '  setImmediate(() => {',
     '    process.stdout.write("  ● broken test case\\n");',
     '    for (let i = 1; i <= 35; i += 1) {',
     '      process.stdout.write("    trace-line-" + i + "\\n");',
     '    }',
-    '  }, 5);',
+    '  });',
     '});',
     'setInterval(() => {}, 1000);',
   ].join(' ');
@@ -77,8 +77,8 @@ export function buildSampleTcpDaemonArgv(
  * Builds a Node child-process `argv` array simulating an interactive REPL (`psql` or `cdp>`) with prompt framing.
  *
  * Prints an initial startup banner ending with `promptStr`, then processes each line of `stdin`:
- * if a line starts with `SLOW:`, delays before responding; if `HANG`, never prints the prompt;
- * otherwise prints `RESULT:<line>` followed by `promptStr` without echoing the raw input.
+ * if a line starts with `DELAY:`, yields across event-loop ticks before responding; if `HANG`, never prints
+ * the prompt; otherwise prints `OUT:<line>` followed by `promptStr` without echoing the raw input.
  *
  * @param {string} promptStr - Prompt delimiter string emitted after the startup banner and each turn.
  *
@@ -96,7 +96,7 @@ export function buildSampleInteractiveReplArgv(promptStr: string): readonly stri
     '  if (line === "HANG") { process.stdout.write("hanging..."); return; }',
     '  if (line.startsWith("DELAY:")) {',
     '    const parts = line.split(":");',
-    '    setTimeout(() => { process.stdout.write("DELAYED:" + parts[2] + "\\n" + promptStr); }, Number(parts[1]));',
+    '    setImmediate(() => setImmediate(() => { process.stdout.write("DELAYED:" + parts[2] + "\\n" + promptStr); }));',
     '    return;',
     '  }',
     '  process.stdout.write("OUT:" + line.toUpperCase() + "\\n" + promptStr);',

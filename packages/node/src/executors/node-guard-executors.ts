@@ -7,11 +7,9 @@ import type {
   StepExecutionContext,
   ToolEffect,
 } from '@harness-dsl/core';
-import {
-  extractEffectBinaryName,
-  isBinaryInAllowlist,
-  isNetworkToolEffect,
-} from './internal/guard-effect-predicates.js';
+import { extractEffectBinaryName } from './internal/extract-effect-binary-name.js';
+import { isBinaryInAllowlist } from './internal/is-binary-in-allowlist.js';
+import { isNetworkToolEffect } from './internal/is-network-tool-effect.js';
 
 /**
  * Evaluates a `NodeAllowBinariesNode` (`type: 'node:allow-binaries'`) policy guard against proposed tool effects.

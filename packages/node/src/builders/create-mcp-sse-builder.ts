@@ -1,5 +1,5 @@
 import type { AstBuilder, NodeMcpSseNode } from '@harness-dsl/core';
-import type { McpServerOptions } from './mcp-server-options.js';
+import type { McpServerOptions } from './mcp-namespace-contract.js';
 
 /**
  * Creates an MCP HTTP/SSE control-plane builder and passive AST node (`local.mcpSse({ port })`).
@@ -25,8 +25,8 @@ export function createMcpSseBuilder(
     type: 'node:mcp-sse',
     port: options.port,
   });
-  return Object.freeze({
-    type: 'node:mcp-sse' as const,
+  return Object.freeze<AstBuilder<NodeMcpSseNode> & NodeMcpSseNode>({
+    type: 'node:mcp-sse',
     port: options.port,
     toAST(): NodeMcpSseNode {
       return astNode;

@@ -7,10 +7,61 @@ import {
   DEFAULT_SUBPROCESS_GRACE_MS,
   ISOLATED_GIT_ENV_OVERRIDES,
 } from '../node-subprocess-env.constants.js';
-import type {
-  ResolvedSubprocessEnvironment,
-  SpawnDetachedSubprocessParams,
-} from './spawn-detached-subprocess-params.js';
+import { resolveConfiguredEnvVars } from './resolve-configured-env-vars.js';
+import {
+  sendProcessSignalBestEffort,
+  waitForPidTreeExit,
+} from './wait-for-pid-tree-exit.js';
+
+/**
+ * Resolved working directory and environment variable map for spawning a local subprocess.
+ *
+ * Returned by `resolveWorktreeEnvAndCwd` after inspecting the active scope handle and resolving `EnvRef` entries.
+ */
+export interface ResolvedSubprocessEnvironment {
+  /** Working directory for the spawned subprocess (`worktreePath` or `process.cwd()`). */
+  readonly cwd: string;
+  /** Resolved environment variables including any isolated `GIT_*` overrides. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  /** Extracted `worktreePath` from the scope handle when present. */
+  readonly worktreePath?: string;
+}
+
+/**
+ * Parameters for spawning a detached OS subprocess group via `spawnDetachedSubprocess`.
+ *
+ * Bundles the command `argv`, resolved environment and `cwd`, and standard I/O descriptor configuration.
+ */
+export interface SpawnDetachedSubprocessParams {
+  /** Non-empty command argument vector where index `0` is the executable. */
+  readonly argv: readonly string[];
+  /** Resolved working directory and environment variables. */
+  readonly resolvedEnv: ResolvedSubprocessEnvironment;
+  /** Standard input mode (`'ignore'` for closed stdin or `'pipe'` for writable stdin). */
+  readonly stdinStdio?: 'ignore' | 'pipe';
+}
+
+/**
+ * Extracts a normalized absolute `worktreePath` from `scopeHandle` when present and non-empty.
+ *
+ * Narrows `scopeHandle` safely without type casts.
+ *
+ * @param {unknown} scopeHandle - Candidate isolation scope handle.
+ *
+ * @returns {string | undefined} Resolved worktree path, or `undefined` if absent.
+ */
+function extractScopeWorktreePath(scopeHandle: unknown): string | undefined {
+  if (
+    typeof scopeHandle === 'object' &&
+    scopeHandle !== null &&
+    'worktreePath' in scopeHandle &&
+    typeof scopeHandle.worktreePath === 'string' &&
+    scopeHandle.worktreePath.length > 0
+  ) {
+    return path.resolve(scopeHandle.worktreePath);
+  }
+  return undefined;
+}
 
 /**
  * Resolves the subprocess working directory and environment map from the active `scopeHandle` and `envConfig`.
@@ -31,31 +82,22 @@ export function resolveWorktreeEnvAndCwd(
   envConfig: Readonly<Record<string, string | EnvRef>> | undefined,
   resolveEnv: (value: string | EnvRef) => string | undefined,
 ): ResolvedSubprocessEnvironment {
-  const worktreePath =
-    typeof scopeHandle === 'object' &&
-    scopeHandle !== null &&
-    'worktreePath' in scopeHandle &&
-    typeof scopeHandle.worktreePath === 'string' &&
-    scopeHandle.worktreePath.length > 0
-      ? path.resolve(scopeHandle.worktreePath)
-      : undefined;
+  const worktreePath = extractScopeWorktreePath(scopeHandle);
   const cwd = worktreePath ?? process.cwd();
   const env: Record<string, string | undefined> =
     worktreePath !== undefined
-      ? { ...process.env, ...ISOLATED_GIT_ENV_OVERRIDES, GIT_CEILING_DIRECTORIES: path.dirname(worktreePath) }
-      : { ...process.env };
-  if (envConfig !== undefined) {
-    for (const [key, rawVal] of Object.entries(envConfig)) {
-      const resolved = resolveEnv(rawVal);
-      if (typeof rawVal === 'object' && rawVal !== null && 'type' in rawVal && rawVal.type === 'harness:env-ref') {
-        if (resolved === undefined || resolved.length === 0) {
-          throw new Error(`Required environment variable '${rawVal.key}' referenced by H.env('${rawVal.key}') is not set.`);
+      ? {
+          ...process.env,
+          ...ISOLATED_GIT_ENV_OVERRIDES,
+          GIT_CEILING_DIRECTORIES: path.dirname(worktreePath),
         }
-      }
-      env[key] = resolved ?? '';
-    }
-  }
-  return Object.freeze<ResolvedSubprocessEnvironment>({ cwd, env: Object.freeze(env), worktreePath });
+      : { ...process.env };
+  resolveConfiguredEnvVars({ envConfig, resolveEnv, targetEnv: env });
+  return Object.freeze<ResolvedSubprocessEnvironment>({
+    cwd,
+    env: Object.freeze(env),
+    worktreePath,
+  });
 }
 
 /**
@@ -100,29 +142,16 @@ export async function terminatePidTreeWithGrace(
 ): Promise<void> {
   const initialTree = await pidtree(pid, { root: true }).catch(() => [pid]);
   const trackedPids = new Set<number>([pid, ...initialTree]);
-  try {
-    process.kill(-pid, 'SIGTERM');
-  } catch {}
+  sendProcessSignalBestEffort(-pid, 'SIGTERM');
   await fkill([...trackedPids], { force: false, silent: true }).catch(() => undefined);
-  const deadline = Date.now() + graceMs;
-  while (Date.now() < deadline) {
-    let anyAlive = false;
-    for (const candidatePid of trackedPids) {
-      try {
-        process.kill(candidatePid, 0);
-        anyAlive = true;
-        break;
-      } catch {}
-    }
-    if (!anyAlive) break;
-    await new Promise<void>((resolve) => setTimeout(resolve, 15));
-  }
+  await waitForPidTreeExit(trackedPids, graceMs);
   const remainingTree = await pidtree(pid, { root: true }).catch(() => []);
-  for (const childPid of remainingTree) trackedPids.add(childPid);
-  try {
-    process.kill(-pid, 'SIGKILL');
-  } catch {}
+  for (const childPid of remainingTree) {
+    trackedPids.add(childPid);
+  }
+  sendProcessSignalBestEffort(-pid, 'SIGKILL');
   await fkill([...trackedPids], { force: true, silent: true }).catch(() => undefined);
+  await waitForPidTreeExit(trackedPids, graceMs);
 }
 
 /**
@@ -139,6 +168,8 @@ export async function terminateProcessGroupWithGrace(
   child: ChildProcess,
   graceMs = DEFAULT_SUBPROCESS_GRACE_MS,
 ): Promise<void> {
-  if (child.pid === undefined) return;
+  if (child.pid === undefined) {
+    return;
+  }
   await terminatePidTreeWithGrace(child.pid, graceMs);
 }

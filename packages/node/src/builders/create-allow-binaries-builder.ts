@@ -32,8 +32,8 @@ export function createAllowBinariesBuilder(
     id,
     binaries: frozenBinaries,
   });
-  return Object.freeze({
-    type: 'node:allow-binaries' as const,
+  return Object.freeze<AstBuilder<NodeAllowBinariesNode> & NodeAllowBinariesNode>({
+    type: 'node:allow-binaries',
     id,
     binaries: frozenBinaries,
     toAST(): NodeAllowBinariesNode {

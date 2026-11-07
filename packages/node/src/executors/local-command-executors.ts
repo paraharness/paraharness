@@ -7,11 +7,55 @@ import type {
   ToolDriver,
   ToolExecutionResult,
 } from '@harness-dsl/core';
+import { formatCommandToolContent } from './internal/format-command-tool-content.js';
+import { parseCommandStdout } from './internal/parse-command-stdout.js';
 import { resolveWorktreeEnvAndCwd } from './internal/process-group-lifecycle.js';
-import {
-  parseCommandStdout,
-  runBufferedSubprocess,
-} from './internal/run-buffered-subprocess.js';
+import { shouldSkipUnrepeatableCommand } from './internal/should-skip-unrepeatable-command.js';
+import { spawnCapturedCommand } from './internal/spawn-captured-command.js';
+
+/**
+ * Executes a validated `LocalCommandNode` inside an acquired runner slot.
+ *
+ * Resolves `argv`, `stdinPayload`, and `resolvedEnv`, spawns the captured command, throws on non-zero
+ * exit codes, and validates parsed `stdout` against `node.outputSchema`.
+ *
+ * @template TIn     Validated command input payload type.
+ * @template TOut    Validated command output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {LocalCommandNode<TIn, TOut, THandle>} node           - Passive command AST node.
+ * @param {TIn}                                  validatedInput - Schema-validated input payload.
+ * @param {StepExecutionContext<THandle>}        ctx            - Active step execution context.
+ *
+ * @returns {Promise<TOut>} Schema-validated output payload.
+ *
+ * @throws {Error} If the subprocess exits with a non-zero code, times out, or is aborted.
+ */
+async function executeCommandInRunnerSlot<TIn, TOut, THandle>(
+  node: LocalCommandNode<TIn, TOut, THandle>,
+  validatedInput: TIn,
+  ctx: StepExecutionContext<THandle>,
+): Promise<TOut> {
+  const argv = typeof node.argv === 'function' ? node.argv(validatedInput) : node.argv;
+  const stdinPayload = node.stdinMode === 'closed' ? undefined : node.stdinMode(validatedInput);
+  const resolvedEnv = resolveWorktreeEnvAndCwd(ctx.scopeHandle, node.env, (val) =>
+    ctx.resolveEnv(val),
+  );
+  const result = await spawnCapturedCommand({
+    commandId: node.id,
+    argv,
+    resolvedEnv,
+    stdinPayload,
+    timeoutMinutes: node.timeoutMinutes,
+    signal: ctx.signal,
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Command '${node.id}' exited with code ${String(result.exitCode)}. stdout: ${result.stdout.trim()} stderr: ${result.stderr.trim()}`,
+    );
+  }
+  return node.outputSchema.parse(parseCommandStdout(result.stdout));
+}
 
 /**
  * Executes a `LocalCommandNode` (`type: 'node:command'`) inside its configured runner pool slot.
@@ -38,32 +82,20 @@ export async function executeLocalCommandStep<TIn = unknown, TOut = unknown, THa
   ctx: StepExecutionContext<THandle>,
 ): Promise<TOut> {
   const validatedInput = node.inputSchema.parse(input);
-  if (node.unrepeatable !== undefined) {
-    const idempotencyKey = typeof node.unrepeatable.key === 'function' ? node.unrepeatable.key(validatedInput) : node.unrepeatable.key;
-    if (idempotencyKey.trim().length === 0) {
-      throw new Error(`Command '${node.id}' (runId '${ctx.runId}') evaluated an empty unrepeatable idempotency key.`);
-    }
-    const alreadyCompleted = await executeLocalCommandStep(node.unrepeatable.preCheckCmd, validatedInput, ctx);
-    if (alreadyCompleted === true) return node.outputSchema.parse(undefined);
+  const skipped = await shouldSkipUnrepeatableCommand(
+    node,
+    validatedInput,
+    ctx,
+    executeLocalCommandStep,
+  );
+  if (skipped) {
+    return node.outputSchema.parse(undefined);
   }
   const runner = ctx.getRunner(node.runner);
-  return runner.withSlot(async () => {
-    const argv = typeof node.argv === 'function' ? node.argv(validatedInput) : node.argv;
-    const stdinPayload = node.stdinMode === 'closed' ? undefined : node.stdinMode(validatedInput);
-    const resolvedEnv = resolveWorktreeEnvAndCwd(ctx.scopeHandle, node.env, (val) => ctx.resolveEnv(val));
-    const result = await runBufferedSubprocess({
-      commandId: node.id,
-      argv,
-      resolvedEnv,
-      stdinPayload,
-      timeoutMinutes: node.timeoutMinutes,
-      signal: ctx.signal,
-    });
-    if (result.exitCode !== 0) {
-      throw new Error(`Command '${node.id}' exited with code ${String(result.exitCode)}. stdout: ${result.stdout.trim()} stderr: ${result.stderr.trim()}`);
-    }
-    return node.outputSchema.parse(parseCommandStdout(result.stdout));
-  }, ctx.signal);
+  return runner.withSlot(
+    () => executeCommandInRunnerSlot(node, validatedInput, ctx),
+    ctx.signal,
+  );
 }
 
 /**
@@ -89,7 +121,9 @@ export async function executeLocalCommandCheck<THandle = unknown>(
     await executeLocalCommandStep(node.command, undefined, ctx);
     return Object.freeze<CheckEvaluationResult>({ ok: true, deficits: Object.freeze([]) });
   } catch (error) {
-    if (ctx.signal?.aborted === true) throw error;
+    if (ctx.signal?.aborted === true) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     return Object.freeze<CheckEvaluationResult>({
       ok: false,
@@ -120,13 +154,9 @@ export function createLocalCommandToolDriver<THandle = unknown>(): ToolDriver<
     ): Promise<ToolExecutionResult> {
       const validatedArgs = node.inputSchema.parse(args);
       const output = await executeLocalCommandStep(node.command, validatedArgs, ctx);
-      const content =
-        typeof output === 'string'
-          ? output
-          : output === undefined
-            ? ''
-            : JSON.stringify(output);
-      return Object.freeze<ToolExecutionResult>({ content });
+      return Object.freeze<ToolExecutionResult>({
+        content: formatCommandToolContent(output),
+      });
     },
   });
 }

@@ -4,17 +4,15 @@ import {
   type MaybeBuilder,
   type NodeRunnerNode,
 } from '@harness-dsl/core';
-import {
-  compileDaemonInteractionConfig,
-  compileLocalDaemonNode,
-  normalizeRegexDescriptor,
-} from './internal/compile-local-daemon-ast.js';
+import { compileDaemonInteractionConfig } from './internal/compile-daemon-interaction-config.js';
+import { compileLocalDaemonNode } from './internal/compile-local-daemon-node.js';
 import type { LocalDaemonBuilderState } from './internal/local-daemon-builder-state.js';
-import type { LocalDaemonBuilder } from './local-daemon-builder.js';
+import { normalizeRegexDescriptor } from './internal/normalize-regex-descriptor.js';
 import type {
+  LocalDaemonBuilder,
   LocalDaemonCommandContext,
   LocalDaemonInteractOptions,
-} from './local-daemon-interact-options.js';
+} from './local-daemon-builder.js';
 
 /**
  * Creates a fluent `LocalDaemonBuilder` for `local.daemon(id)`.

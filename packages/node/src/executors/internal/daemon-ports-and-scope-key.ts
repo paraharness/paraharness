@@ -23,6 +23,28 @@ export function sanitizeDaemonScopeKey(rawScopeKey: string): string {
 }
 
 /**
+ * Allocates a single unused TCP port on `127.0.0.1` and reserves it in `ACTIVE_LEASED_DAEMON_PORTS`.
+ *
+ * Retries up to 25 times if a concurrent in-process reservation claims the same ephemeral port.
+ *
+ * @param {string} portName - Logical port name for error diagnostics.
+ *
+ * @returns {Promise<number>} Reserved conflict-free TCP port number.
+ *
+ * @throws {Error} If a conflict-free TCP port cannot be allocated after 25 attempts.
+ */
+async function allocateSingleDynamicPort(portName: string): Promise<number> {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const probed = await getPort({ host: '127.0.0.1', exclude: ACTIVE_LEASED_DAEMON_PORTS });
+    if (!ACTIVE_LEASED_DAEMON_PORTS.has(probed)) {
+      ACTIVE_LEASED_DAEMON_PORTS.add(probed);
+      return probed;
+    }
+  }
+  throw new Error(`Failed to allocate conflict-free TCP port for '${portName}'.`);
+}
+
+/**
  * Allocates distinct, conflict-free dynamic TCP ports for all named `.port(name)` entries on a daemon.
  *
  * Uses `getPort` combined with the in-process `ACTIVE_LEASED_DAEMON_PORTS` reservation set so concurrent
@@ -31,6 +53,8 @@ export function sanitizeDaemonScopeKey(rawScopeKey: string): string {
  * @param {readonly string[]} portNames - Declared port names on `LocalServiceNode`.
  *
  * @returns {Promise<Readonly<Record<string, number>>>} Frozen map from port name to allocated TCP port.
+ *
+ * @throws {Error} If any declared port cannot be allocated conflict-free.
  */
 export async function allocateDynamicPorts(
   portNames: readonly string[],
@@ -38,19 +62,7 @@ export async function allocateDynamicPorts(
   const allocated: Record<string, number> = {};
   try {
     for (const name of portNames) {
-      let candidate = 0;
-      for (let attempt = 0; attempt < 25; attempt += 1) {
-        const probed = await getPort({ host: '127.0.0.1', exclude: ACTIVE_LEASED_DAEMON_PORTS });
-        if (!ACTIVE_LEASED_DAEMON_PORTS.has(probed)) {
-          candidate = probed;
-          ACTIVE_LEASED_DAEMON_PORTS.add(probed);
-          break;
-        }
-      }
-      if (candidate === 0) {
-        throw new Error(`Failed to allocate conflict-free TCP port for '${name}'.`);
-      }
-      allocated[name] = candidate;
+      allocated[name] = await allocateSingleDynamicPort(name);
     }
     return Object.freeze(allocated);
   } catch (error) {
@@ -85,20 +97,27 @@ export async function waitForTcpPortReady(
     timeout: timeoutMs,
     interval: 25,
   }).catch(() => {
-    throw new Error(`Timed out after ${String(timeoutMs)}ms waiting for TCP listener on port ${String(port)}.`);
+    throw new Error(
+      `Timed out after ${String(timeoutMs)}ms waiting for TCP listener on port ${String(port)}.`,
+    );
   });
   if (signal === undefined) {
     await waitPromise;
     return;
   }
-  let onAbort: (() => void) | undefined;
+  const abortControl: { rejectAbort?: (reason: Error) => void } = {};
+  const onAbort = (): void => {
+    abortControl.rejectAbort?.(
+      new Error(`Aborted while waiting for TCP listener on port ${String(port)}.`),
+    );
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
   try {
     const abortPromise = new Promise<never>((_, reject) => {
-      onAbort = (): void => reject(new Error(`Aborted while waiting for TCP listener on port ${String(port)}.`));
-      signal.addEventListener('abort', onAbort, { once: true });
+      abortControl.rejectAbort = reject;
     });
     await Promise.race([waitPromise, abortPromise]);
   } finally {
-    if (onAbort !== undefined) signal.removeEventListener('abort', onAbort);
+    signal.removeEventListener('abort', onAbort);
   }
 }

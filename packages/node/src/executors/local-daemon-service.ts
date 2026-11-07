@@ -8,7 +8,7 @@ import type {
   ToolDriver,
   ToolExecutionResult,
 } from '@harness-dsl/core';
-import { bootLocalDaemonSession } from './internal/daemon-session-factory.js';
+import { bootLocalDaemonSession } from './internal/boot-local-daemon-session.js';
 import { resolveWorktreeEnvAndCwd } from './internal/process-group-lifecycle.js';
 
 /**

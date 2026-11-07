@@ -1,5 +1,6 @@
 import {
   createExecutorRegistry,
+  z,
   type RunnerPoolASTNode,
   type StepExecutionContext,
 } from '@harness-dsl/core';
@@ -27,17 +28,16 @@ function createStreamTestContext(): StepExecutionContext {
       return typeof val === 'string' ? val : undefined;
     },
     getRunner(node: RunnerPoolASTNode) {
-      let existing = drivers.get(node.id);
-      if (existing === undefined) {
-        existing = new NodeRunnerDriver({
-          type: 'node:runner',
-          id: node.id,
-          slots: node.slots,
-          maxDaemons: node.maxDaemons,
-        });
-        drivers.set(node.id, existing);
-      }
-      return existing;
+      const existing = drivers.get(node.id);
+      if (existing !== undefined) return existing;
+      const created = new NodeRunnerDriver({
+        type: 'node:runner',
+        id: node.id,
+        slots: node.slots,
+        maxDaemons: node.maxDaemons,
+      });
+      drivers.set(node.id, created);
+      return created;
     },
     recordEffects() {},
   };
@@ -103,10 +103,12 @@ describe('local.streamCheck rolling multi-line circuit breaker and post-flight t
     const ctx = createStreamTestContext();
     const toolResult = await driver.execute(toolNode, {}, ctx);
     expect(toolResult.isError).toBe(true);
-    const parsed = JSON.parse(toolResult.content) as {
-      readonly ok: boolean;
-      readonly deficits: readonly string[];
-    };
+    const parsed = z
+      .object({
+        ok: z.boolean(),
+        deficits: z.array(z.string()),
+      })
+      .parse(JSON.parse(toolResult.content));
     expect(parsed.ok).toBe(false);
     expect(parsed.deficits[0]).toContain('trace-line-5');
     expect(parsed.deficits[0]).not.toContain('trace-line-6');

@@ -1,6 +1,6 @@
 import type { NodeRunnerNode } from '@harness-dsl/core';
+import type { LocalRunnerOptions } from './local-namespace-contract.js';
 import type { LocalRunnerBuilder } from './local-runner-builder.js';
-import type { LocalRunnerOptions } from './local-runner-options.js';
 
 /**
  * Creates a `LocalRunnerBuilder` for `local.runner({ id?, slots, maxDaemons? })`.

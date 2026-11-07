@@ -22,8 +22,8 @@ export function createMcpStdioBuilder(
     type: 'node:mcp-stdio',
     serverName,
   });
-  return Object.freeze({
-    type: 'node:mcp-stdio' as const,
+  return Object.freeze<AstBuilder<NodeMcpStdioNode> & NodeMcpStdioNode>({
+    type: 'node:mcp-stdio',
     serverName,
     toAST(): NodeMcpStdioNode {
       return astNode;

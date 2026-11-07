@@ -13,8 +13,8 @@ export function createDenyNetworkBuilder(): AstBuilder<NodeDenyNetworkNode> & No
     type: 'node:deny-network',
     id: 'node:deny-network',
   });
-  return Object.freeze({
-    type: 'node:deny-network' as const,
+  return Object.freeze<AstBuilder<NodeDenyNetworkNode> & NodeDenyNetworkNode>({
+    type: 'node:deny-network',
     id: 'node:deny-network',
     toAST(): NodeDenyNetworkNode {
       return astNode;

@@ -5,13 +5,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import {
   createExecutorRegistry,
+  z,
   type ActiveRunSummary,
   type HarnessRuntimeController,
   type RunnerPoolASTNode,
   type RuntimeDriverContext,
   type StepExecutionContext,
 } from '@harness-dsl/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   NodeRunnerDriver,
   allocateDynamicPorts,
@@ -33,12 +34,14 @@ import {
   buildSampleTcpDaemonArgv,
 } from './fixtures/sample-node-daemons.js';
 
-function createDriverAndStepContexts(): {
+interface DriverAndStepContexts {
   readonly driverCtx: RuntimeDriverContext;
   readonly createStepCtx: (
     sessions: ReadonlyMap<string, Awaited<ReturnType<typeof startLocalDaemonService>>>,
   ) => StepExecutionContext;
-} {
+}
+
+function createDriverAndStepContexts(): DriverAndStepContexts {
   const drivers = new Map<string, NodeRunnerDriver>();
   const registry = createExecutorRegistry(nodeExecutors);
   const driverCtx: RuntimeDriverContext = {
@@ -47,17 +50,16 @@ function createDriverAndStepContexts(): {
       return typeof val === 'string' ? val : undefined;
     },
     getRunner(node: RunnerPoolASTNode) {
-      let existing = drivers.get(node.id);
-      if (existing === undefined) {
-        existing = new NodeRunnerDriver({
-          type: 'node:runner',
-          id: node.id,
-          slots: node.slots,
-          maxDaemons: node.maxDaemons,
-        });
-        drivers.set(node.id, existing);
-      }
-      return existing;
+      const existing = drivers.get(node.id);
+      if (existing !== undefined) return existing;
+      const created = new NodeRunnerDriver({
+        type: 'node:runner',
+        id: node.id,
+        slots: node.slots,
+        maxDaemons: node.maxDaemons,
+      });
+      drivers.set(node.id, created);
+      return created;
     },
   };
   return {
@@ -129,7 +131,11 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
           timeoutSeconds: 0.05,
         })
         .interact('crash-tool', {
-          command: () => [process.execPath, '-e', 'process.stdout.write("partial"); process.exit(2);'],
+          command: () => [
+            process.execPath,
+            '-e',
+            'process.stdout.write("partial"); process.exit(2);',
+          ],
           frameDelimiter: /never-matches>\s*$/,
           idleSettleMs: 10,
           timeoutSeconds: 5,
@@ -199,7 +205,11 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       const failingDaemon = local
         .daemon('failing-daemon')
         .port('failPort')
-        .start(() => [process.execPath, '-e', 'process.stderr.write("boot crash"); process.exit(1);'])
+        .start(() => [
+          process.execPath,
+          '-e',
+          'process.stderr.write("boot crash"); process.exit(1);',
+        ])
         .stopCommand(({ scopeKey }) => [
           process.execPath,
           '-e',
@@ -211,7 +221,11 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       await expect(
         startLocalDaemonService(
           failingDaemon,
-          { runId: 'run-fail', scopeKey: 'run-fail:root', scopeHandle: { worktreePath: process.cwd() } },
+          {
+            runId: 'run-fail',
+            scopeKey: 'run-fail:root',
+            scopeHandle: { worktreePath: process.cwd() },
+          },
           driverCtx,
         ),
       ).rejects.toThrow(/exited prematurely/i);
@@ -277,7 +291,9 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
     );
     expect(netEval.allowed).toBe(false);
     expect(netEval.violatedEffects).toEqual([netEffect]);
-    expect(netEval.violationSummary).toContain("denied outbound network access for tool 'fetch'");
+    expect(netEval.violationSummary).toContain(
+      "denied outbound network access for tool 'fetch'",
+    );
   });
 
   it('starts and closes mcp.server, local.mcpSse, and local.mcpStdio control-plane adapters', async () => {
@@ -311,7 +327,9 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
 
     try {
       const runsResp = await fetch(`http://127.0.0.1:${String(httpPort)}/runs`);
-      const runsJson = (await runsResp.json()) as { readonly runs: readonly ActiveRunSummary[] };
+      const runsJson = z
+        .object({ runs: z.array(z.unknown()) })
+        .parse(await runsResp.json());
       expect(runsJson.runs).toEqual(activeRuns);
 
       const sigResp = await fetch(`http://127.0.0.1:${String(httpPort)}/signals`, {
@@ -323,7 +341,9 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       expect(emittedSignals).toEqual([{ id: 'steer', payload: { note: 'focus on db' } }]);
 
       const sseClient = new Client({ name: 'test-sse-client', version: '0.1.0' });
-      const sseTransport = new SSEClientTransport(new URL(`http://127.0.0.1:${String(ssePort)}/sse`));
+      const sseTransport = new SSEClientTransport(
+        new URL(`http://127.0.0.1:${String(ssePort)}/sse`),
+      );
       await sseClient.connect(sseTransport);
       try {
         const listedTools = await sseClient.listTools();
@@ -331,7 +351,10 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
         expect(toolNames).toContain('getActiveRuns');
         expect(toolNames).toContain('emitSignal');
 
-        const activeRunsToolResult = await sseClient.callTool({ name: 'getActiveRuns', arguments: {} });
+        const activeRunsToolResult = await sseClient.callTool({
+          name: 'getActiveRuns',
+          arguments: {},
+        });
         expect(activeRunsToolResult.content).toEqual([
           { type: 'text', text: JSON.stringify({ runs: activeRuns }) },
         ]);
@@ -349,16 +372,29 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       }
 
       const capturedStdout: string[] = [];
-      const origWrite = process.stdout.write.bind(process.stdout);
-      process.stdout.write = ((chunk: string | Uint8Array): boolean => {
-        capturedStdout.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
-        return true;
-      }) as typeof process.stdout.write;
+      const stdoutLatch: { resolve?: () => void } = {};
+      const twoMessagesCaptured = new Promise<void>((resolve) => {
+        stdoutLatch.resolve = resolve;
+      });
+      const writeSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk: string | Uint8Array): boolean => {
+          capturedStdout.push(
+            typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'),
+          );
+          if (capturedStdout.length >= 2) {
+            stdoutLatch.resolve?.();
+          }
+          return true;
+        });
       try {
-        process.stdin.emit('data', 'not-valid-json\n{"jsonrpc":"2.0","id":7,"method":"initialize"}\n');
-        await new Promise<void>((r) => setTimeout(r, 20));
+        process.stdin.emit(
+          'data',
+          'not-valid-json\n{"jsonrpc":"2.0","id":7,"method":"initialize"}\n',
+        );
+        await twoMessagesCaptured;
       } finally {
-        process.stdout.write = origWrite;
+        writeSpy.mockRestore();
       }
       expect(capturedStdout.length).toBeGreaterThanOrEqual(2);
       expect(JSON.parse(capturedStdout[0] ?? '{}')).toEqual({
@@ -366,11 +402,18 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
         id: null,
         error: { code: -32700, message: 'Parse error' },
       });
-      const initReply = JSON.parse(capturedStdout[1] ?? '{}') as {
-        readonly jsonrpc: string;
-        readonly id: number;
-        readonly result: { readonly serverInfo: { readonly name: string; readonly version: string } };
-      };
+      const initReply = z
+        .object({
+          jsonrpc: z.string(),
+          id: z.number(),
+          result: z.object({
+            serverInfo: z.object({
+              name: z.string(),
+              version: z.string(),
+            }),
+          }),
+        })
+        .parse(JSON.parse(capturedStdout[1] ?? '{}'));
       expect(initReply.jsonrpc).toBe('2.0');
       expect(initReply.id).toBe(7);
       expect(initReply.result.serverInfo).toEqual({ name: 'custom-stdio', version: '0.1.0' });

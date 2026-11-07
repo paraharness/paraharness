@@ -21,13 +21,28 @@ import {
 } from '../src/index.js';
 import { buildEnvAndStdinProbeArgv } from './fixtures/sample-node-daemons.js';
 
+interface TestStepContextOptions {
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly signal?: AbortSignal;
+  readonly runnerDrivers?: Map<string, NodeRunnerDriver>;
+}
+
+interface DeferredGate {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+}
+
+function createDeferredGate(): DeferredGate {
+  const holder = { resolve: (): void => {} };
+  const promise = new Promise<void>((resolve) => {
+    holder.resolve = resolve;
+  });
+  return { promise, resolve: holder.resolve };
+}
+
 function createTestStepContext<THandle = unknown>(
   scopeHandle: THandle,
-  options?: {
-    readonly env?: Readonly<Record<string, string | undefined>>;
-    readonly signal?: AbortSignal;
-    readonly runnerDrivers?: Map<string, NodeRunnerDriver>;
-  },
+  options?: TestStepContextOptions,
 ): StepExecutionContext<THandle> {
   const drivers = options?.runnerDrivers ?? new Map<string, NodeRunnerDriver>();
   const envMap = options?.env ?? {};
@@ -46,17 +61,16 @@ function createTestStepContext<THandle = unknown>(
       return envMap[val.key];
     },
     getRunner(node: RunnerPoolASTNode) {
-      let existing = drivers.get(node.id);
-      if (existing === undefined) {
-        existing = new NodeRunnerDriver({
-          type: 'node:runner',
-          id: node.id,
-          slots: node.slots,
-          maxDaemons: node.maxDaemons,
-        });
-        drivers.set(node.id, existing);
-      }
-      return existing;
+      const existing = drivers.get(node.id);
+      if (existing !== undefined) return existing;
+      const created = new NodeRunnerDriver({
+        type: 'node:runner',
+        id: node.id,
+        slots: node.slots,
+        maxDaemons: node.maxDaemons,
+      });
+      drivers.set(node.id, created);
+      return created;
     },
     recordEffects() {},
   };
@@ -85,18 +99,16 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
     const driver = new NodeRunnerDriver(runnerNode);
     const order: string[] = [];
     const firstAbortController = new AbortController();
-    let releaseFirst: (() => void) | undefined;
-    const firstEntered = new Promise<void>((resolve) => {
-      void driver.withSlot(async () => {
-        order.push('first-start');
-        resolve();
-        await new Promise<void>((r) => {
-          releaseFirst = r;
-        });
-        order.push('first-end');
-      }, firstAbortController.signal);
-    });
-    await firstEntered;
+    const firstEntered = createDeferredGate();
+    const releaseFirst = createDeferredGate();
+
+    const firstTask = driver.withSlot(async () => {
+      order.push('first-start');
+      firstEntered.resolve();
+      await releaseFirst.promise;
+      order.push('first-end');
+    }, firstAbortController.signal);
+    await firstEntered.promise;
 
     const abortController = new AbortController();
     const abortedWaiter = driver.withSlot(async () => {
@@ -114,7 +126,8 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
     await Promise.resolve();
     expect(order).toEqual(['first-start']);
 
-    releaseFirst?.();
+    releaseFirst.resolve();
+    await firstTask;
     await expect(secondWaiter).resolves.toBe('ok-2');
     expect(order).toEqual(['first-start', 'first-end', 'second']);
   });
@@ -123,10 +136,12 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
     const runnerNode = local.runner({ id: 'isolated-pool', slots: 1, maxDaemons: 1 }).toAST();
     const driver = new NodeRunnerDriver(runnerNode);
     const events: string[] = [];
-    let releaseDaemon: (() => void) | undefined;
+    const daemonState: { release?: () => void; secondAcquired: boolean } = {
+      secondAcquired: false,
+    };
 
     await driver.withDaemonSlot(async (release) => {
-      releaseDaemon = release;
+      daemonState.release = release;
       events.push('daemon-acquired');
     });
 
@@ -137,18 +152,17 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
     expect(commandResult).toBe(42);
     expect(events).toEqual(['daemon-acquired', 'one-shot-executed-while-daemon-active']);
 
-    let secondDaemonAcquired = false;
     const secondDaemonPromise = driver.withDaemonSlot(async (release) => {
-      secondDaemonAcquired = true;
+      daemonState.secondAcquired = true;
       events.push('second-daemon-acquired');
       release();
     });
     await Promise.resolve();
-    expect(secondDaemonAcquired).toBe(false);
+    expect(daemonState.secondAcquired).toBe(false);
 
-    releaseDaemon?.();
+    daemonState.release?.();
     await secondDaemonPromise;
-    expect(secondDaemonAcquired).toBe(true);
+    expect(daemonState.secondAcquired).toBe(true);
     expect(events).toEqual([
       'daemon-acquired',
       'one-shot-executed-while-daemon-active',
@@ -231,8 +245,11 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
   });
 
   it('skips main command execution when .unrepeatable(preCheckCmd, { key }) pre-check returns true', async () => {
-    let mainInvocations = 0;
-    let preCheckState = true;
+    const counters = {
+      mainInvocations: 0,
+      preCheckState: true,
+      preCheckRunsOnEmptyKey: 0,
+    };
     const inputSchema = z.object({ ref: z.string() });
 
     const preCheckCmd = local
@@ -242,7 +259,7 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
       .argv(() => [
         process.execPath,
         '-e',
-        `console.log(${JSON.stringify(preCheckState)});`,
+        `console.log(${JSON.stringify(counters.preCheckState)});`,
       ]);
 
     const publishCmd = local
@@ -250,7 +267,7 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
       .input(inputSchema)
       .output(z.string().optional())
       .argv(({ ref }) => {
-        mainInvocations += 1;
+        counters.mainInvocations += 1;
         return [process.execPath, '-e', `console.log(${JSON.stringify(`published:${ref}`)});`];
       })
       .unrepeatable(preCheckCmd, { key: ({ ref }) => ref })
@@ -259,15 +276,15 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
     const ctx = createTestStepContext({});
     const skippedResult = await executeLocalCommandStep(publishCmd, { ref: 'PR-1' }, ctx);
     expect(skippedResult).toBeUndefined();
-    expect(mainInvocations).toBe(0);
+    expect(counters.mainInvocations).toBe(0);
 
-    preCheckState = false;
+    counters.preCheckState = false;
     const executedNode = local
       .command('publish-pr-run')
       .input(inputSchema)
       .output(z.string().optional())
       .argv(({ ref }) => {
-        mainInvocations += 1;
+        counters.mainInvocations += 1;
         return [process.execPath, '-e', `console.log(${JSON.stringify(`published:${ref}`)});`];
       })
       .unrepeatable(
@@ -282,22 +299,21 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
 
     const executedResult = await executeLocalCommandStep(executedNode, { ref: 'PR-2' }, ctx);
     expect(executedResult).toBe('published:PR-2');
-    expect(mainInvocations).toBe(1);
+    expect(counters.mainInvocations).toBe(1);
 
-    let preCheckRunsOnEmptyKey = 0;
     const emptyKeyCmd = local
       .command('publish-empty-key')
       .argv(() => [process.execPath, '-e', 'console.log("ok");'])
-      .stdin((val: { readonly ref: string }) => val.ref)
+      .stdin((val: unknown) => JSON.stringify(val))
       .unrepeatable(
         local
           .command('precheck-should-not-run')
           .output(z.boolean())
           .argv(() => {
-            preCheckRunsOnEmptyKey += 1;
+            counters.preCheckRunsOnEmptyKey += 1;
             return [process.execPath, '-e', 'console.log(true);'];
           }),
-        { key: ({ ref }: { readonly ref: string }) => ref },
+        { key: () => '   ' },
       )
       .input(inputSchema)
       .output(z.string().optional())
@@ -308,7 +324,7 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
     await expect(executeLocalCommandStep(emptyKeyCmd, { ref: '   ' }, ctx)).rejects.toThrow(
       /empty unrepeatable idempotency key/i,
     );
-    expect(preCheckRunsOnEmptyKey).toBe(0);
+    expect(counters.preCheckRunsOnEmptyKey).toBe(0);
   });
 
   it('reaps surviving background descendant processes across process groups in terminateProcessGroupWithGrace', async () => {
@@ -333,17 +349,7 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
 
     try {
       await terminateProcessGroupWithGrace(leader);
-      let bgAlive = true;
-      for (let attempt = 0; attempt < 40; attempt += 1) {
-        try {
-          process.kill(bgPid, 0);
-          await new Promise<void>((r) => setTimeout(r, 5));
-        } catch {
-          bgAlive = false;
-          break;
-        }
-      }
-      expect(bgAlive).toBe(false);
+      expect(() => process.kill(bgPid, 0)).toThrow();
     } finally {
       try {
         process.kill(bgPid, 'SIGKILL');
@@ -365,14 +371,22 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
       /Command 'failing-cmd' exited with code 3\. stdout: out-msg stderr: err-msg/,
     );
 
-    const checkResult = await executeLocalCommandCheck(failingBuilder.asCheck().toAST(), undefined, ctx);
+    const checkResult = await executeLocalCommandCheck(
+      failingBuilder.asCheck().toAST(),
+      undefined,
+      ctx,
+    );
     expect(checkResult.ok).toBe(false);
     expect(checkResult.deficits[0]).toContain("Command 'failing-cmd' exited with code 3");
 
     const passingBuilder = local
       .command('passing-cmd')
       .argv([process.execPath, '-e', 'console.log(JSON.stringify({ status: "green" }));']);
-    const passCheck = await executeLocalCommandCheck(passingBuilder.asCheck().toAST(), undefined, ctx);
+    const passCheck = await executeLocalCommandCheck(
+      passingBuilder.asCheck().toAST(),
+      undefined,
+      ctx,
+    );
     expect(passCheck).toEqual({ ok: true, deficits: [] });
 
     const toolNode = passingBuilder.asTool().toAST();

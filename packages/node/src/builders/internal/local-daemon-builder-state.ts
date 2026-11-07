@@ -5,7 +5,7 @@ import type {
 import type {
   LocalDaemonCommandContext,
   LocalDaemonRegexDescriptor,
-} from '../local-daemon-interact-options.js';
+} from '../local-daemon-builder.js';
 
 /**
  * Immutable internal state snapshot backing `LocalDaemonBuilder`.

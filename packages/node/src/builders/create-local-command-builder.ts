@@ -7,15 +7,16 @@ import {
   type MaybeBuilder,
   type NodeRunnerNode,
 } from '@harness-dsl/core';
-import {
-  compileLocalCommandCheckBuilder,
-  compileLocalCommandNode,
-  compileLocalCommandToolBuilder,
-  normalizeUnrepeatablePreCheckNode,
-} from './internal/compile-local-command-ast.js';
+import { compileLocalCommandCheckBuilder } from './internal/compile-local-command-check-builder.js';
+import { compileLocalCommandNode } from './internal/compile-local-command-node.js';
+import { compileLocalCommandToolBuilder } from './internal/compile-local-command-tool-builder.js';
 import type { LocalCommandBuilderState } from './internal/local-command-builder-state.js';
-import type { LocalCommandBuilder } from './local-command-builder.js';
-import type { LocalCommandUnrepeatableOptions } from './local-command-unrepeatable-options.js';
+import { normalizeUnrepeatablePreCheckNode } from './internal/normalize-unrepeatable-pre-check-node.js';
+import { rebindLocalCommandInputSchema } from './internal/rebind-local-command-input-schema.js';
+import type {
+  LocalCommandBuilder,
+  LocalCommandUnrepeatableOptions,
+} from './local-command-builder.js';
 
 /**
  * Creates a fluent `LocalCommandBuilder` for `local.command(id)`.
@@ -38,10 +39,17 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
   id: string,
   existingState?: LocalCommandBuilderState<TIn, TOut, THandle>,
 ): LocalCommandBuilder<TIn, TOut, THandle> {
-  if (id.trim().length === 0) throw new Error('local.command requires a non-empty command id.');
+  if (id.trim().length === 0) {
+    throw new Error('local.command requires a non-empty command id.');
+  }
   const state: LocalCommandBuilderState<TIn, TOut, THandle> = existingState ?? {
     id,
-    runner: Object.freeze<NodeRunnerNode>({ type: 'node:runner', id: 'default-runner', slots: 4, maxDaemons: 4 }),
+    runner: Object.freeze<NodeRunnerNode>({
+      type: 'node:runner',
+      id: 'default-runner',
+      slots: 4,
+      maxDaemons: 4,
+    }),
     argv: undefined,
     stdinMode: 'closed',
     env: undefined,
@@ -56,13 +64,19 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
     runner(runner: MaybeBuilder<NodeRunnerNode>): LocalCommandBuilder<TIn, TOut, THandle> {
       return createLocalCommandBuilder(id, { ...state, runner: extractAST(runner) });
     },
-    stdin(mode: 'closed' | BivariantCallback<[input: TIn], string | Uint8Array>): LocalCommandBuilder<TIn, TOut, THandle> {
+    stdin(
+      mode: 'closed' | BivariantCallback<[input: TIn], string | Uint8Array>,
+    ): LocalCommandBuilder<TIn, TOut, THandle> {
       return createLocalCommandBuilder(id, { ...state, stdinMode: mode });
     },
-    env(envVars: Readonly<Record<string, string | EnvRef>>): LocalCommandBuilder<TIn, TOut, THandle> {
+    env(
+      envVars: Readonly<Record<string, string | EnvRef>>,
+    ): LocalCommandBuilder<TIn, TOut, THandle> {
       return createLocalCommandBuilder(id, { ...state, env: Object.freeze({ ...envVars }) });
     },
-    argv(args: readonly string[] | BivariantCallback<[input: TIn], readonly string[]>): LocalCommandBuilder<TIn, TOut, THandle> {
+    argv(
+      args: readonly string[] | BivariantCallback<[input: TIn], readonly string[]>,
+    ): LocalCommandBuilder<TIn, TOut, THandle> {
       return createLocalCommandBuilder(id, { ...state, argv: args });
     },
     timeoutMinutes(minutes: number): LocalCommandBuilder<TIn, TOut, THandle> {
@@ -72,25 +86,16 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
       return createLocalCommandBuilder(id, { ...state, timeoutMinutes: minutes });
     },
     input<TNewIn>(schema: z.ZodType<TNewIn>): LocalCommandBuilder<TNewIn, TOut, THandle> {
-      const { inputSchema: prevSchema, argv: prevArgv, stdinMode: prevStdin, unrepeatable: prevUnrep } = state;
-      const prevKey = prevUnrep?.key;
-      return createLocalCommandBuilder<TNewIn, TOut, THandle>(id, {
-        ...state,
-        argv: typeof prevArgv === 'function' ? (v: TNewIn): readonly string[] => prevArgv(prevSchema.parse(v)) : prevArgv,
-        stdinMode: prevStdin === 'closed' ? 'closed' : (v: TNewIn): string | Uint8Array => prevStdin(prevSchema.parse(v)),
-        inputSchema: schema,
-        hasExplicitInputSchema: true,
-        unrepeatable:
-          prevUnrep === undefined
-            ? undefined
-            : Object.freeze({
-                preCheckCmd: prevUnrep.preCheckCmd,
-                key: typeof prevKey === 'function' ? (v: TNewIn): string => prevKey(prevSchema.parse(v)) : (prevKey ?? ''),
-              }),
-      });
+      return createLocalCommandBuilder<TNewIn, TOut, THandle>(
+        id,
+        rebindLocalCommandInputSchema(state, schema),
+      );
     },
     output<TNewOut>(schema: z.ZodType<TNewOut>): LocalCommandBuilder<TIn, TNewOut, THandle> {
-      return createLocalCommandBuilder<TIn, TNewOut, THandle>(id, { ...state, outputSchema: schema });
+      return createLocalCommandBuilder<TIn, TNewOut, THandle>(id, {
+        ...state,
+        outputSchema: schema,
+      });
     },
     unrepeatable<TPreIn = TIn>(
       preCheckCmd: MaybeBuilder<LocalCommandNode<TPreIn, boolean, THandle>>,
@@ -98,7 +103,10 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
     ): LocalCommandBuilder<TIn, TOut, THandle> {
       return createLocalCommandBuilder(id, {
         ...state,
-        unrepeatable: Object.freeze({ preCheckCmd: normalizeUnrepeatablePreCheckNode(preCheckCmd), key: options.key }),
+        unrepeatable: Object.freeze({
+          preCheckCmd: normalizeUnrepeatablePreCheckNode(preCheckCmd),
+          key: options.key,
+        }),
       });
     },
     asCheck: () => compileLocalCommandCheckBuilder(compileLocalCommandNode(state)),

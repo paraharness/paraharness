@@ -1,5 +1,5 @@
 import type { AstBuilder, NodeHttpControlPlaneNode } from '@harness-dsl/core';
-import type { McpServerOptions } from './mcp-server-options.js';
+import type { McpServerOptions } from './mcp-namespace-contract.js';
 
 /**
  * Creates an HTTP / MCP control-plane builder and passive AST node (`mcp.server({ port })`).
@@ -25,8 +25,8 @@ export function createMcpServerBuilder(
     type: 'node:http-control-plane',
     port: options.port,
   });
-  return Object.freeze({
-    type: 'node:http-control-plane' as const,
+  return Object.freeze<AstBuilder<NodeHttpControlPlaneNode> & NodeHttpControlPlaneNode>({
+    type: 'node:http-control-plane',
     port: options.port,
     toAST(): NodeHttpControlPlaneNode {
       return astNode;

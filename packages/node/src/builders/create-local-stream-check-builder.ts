@@ -5,13 +5,14 @@ import {
   type MaybeBuilder,
   type NodeRunnerNode,
 } from '@harness-dsl/core';
-import {
-  compileLocalStreamCheckNode,
-  compileLocalStreamCheckToolBuilder,
-} from './internal/compile-local-stream-check-ast.js';
+import { compileLocalStreamCheckNode } from './internal/compile-local-stream-check-node.js';
+import { compileLocalStreamCheckToolBuilder } from './internal/compile-local-stream-check-tool-builder.js';
+import { compileStreamCheckCircuitBreaker } from './internal/compile-stream-check-circuit-breaker.js';
 import type { LocalStreamCheckBuilderState } from './internal/local-stream-check-builder-state.js';
-import type { LocalStreamCheckBuilder } from './local-stream-check-builder.js';
-import type { LocalStreamCheckCircuitBreakerOptions } from './local-stream-check-circuit-breaker-options.js';
+import type {
+  LocalStreamCheckBuilder,
+  LocalStreamCheckCircuitBreakerOptions,
+} from './local-stream-check-builder.js';
 
 /**
  * Creates a fluent `LocalStreamCheckBuilder` for `local.streamCheck(id)`.
@@ -69,20 +70,9 @@ export function createLocalStreamCheckBuilder<THandle = unknown>(
       pattern: RegExp | string,
       options: LocalStreamCheckCircuitBreakerOptions,
     ): LocalStreamCheckBuilder<THandle> {
-      if (!Number.isInteger(options.graceLinesAfterMatch) || options.graceLinesAfterMatch < 0) {
-        throw new Error(
-          `local.streamCheck('${id}').circuitBreakWhenStdout requires non-negative integer graceLinesAfterMatch.`,
-        );
-      }
-      const source = typeof pattern === 'string' ? pattern : pattern.source;
-      const flags = typeof pattern === 'string' || pattern.flags.length === 0 ? undefined : pattern.flags;
       return createLocalStreamCheckBuilder(id, {
         ...state,
-        circuitBreaker: Object.freeze({
-          pattern: source,
-          flags,
-          graceLinesAfterMatch: options.graceLinesAfterMatch,
-        }),
+        circuitBreaker: compileStreamCheckCircuitBreaker(id, pattern, options),
       });
     },
     asTool() {

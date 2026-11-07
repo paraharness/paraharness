@@ -25,23 +25,31 @@ export { createLocalStreamCheckBuilder } from './builders/create-local-stream-ch
 export { createMcpServerBuilder } from './builders/create-mcp-server-builder.js';
 export { createMcpSseBuilder } from './builders/create-mcp-sse-builder.js';
 export { createMcpStdioBuilder } from './builders/create-mcp-stdio-builder.js';
-export type { LocalCommandBuilder } from './builders/local-command-builder.js';
-export type { LocalCommandUnrepeatableOptions } from './builders/local-command-unrepeatable-options.js';
-export type { LocalDaemonBuilder } from './builders/local-daemon-builder.js';
 export type {
+  LocalCommandBuilder,
+  LocalCommandUnrepeatableOptions,
+} from './builders/local-command-builder.js';
+export type {
+  LocalDaemonBuilder,
   LocalDaemonCommandContext,
   LocalDaemonInteractOptions,
   LocalDaemonRegexDescriptor,
-} from './builders/local-daemon-interact-options.js';
-export type { LocalNamespace } from './builders/local-namespace-contract.js';
+} from './builders/local-daemon-builder.js';
+export type {
+  LocalNamespace,
+  LocalRunnerOptions,
+} from './builders/local-namespace-contract.js';
 export { local } from './builders/local-namespace.js';
 export type { LocalRunnerBuilder } from './builders/local-runner-builder.js';
-export type { LocalRunnerOptions } from './builders/local-runner-options.js';
-export type { LocalStreamCheckBuilder } from './builders/local-stream-check-builder.js';
-export type { LocalStreamCheckCircuitBreakerOptions } from './builders/local-stream-check-circuit-breaker-options.js';
-export type { McpNamespace } from './builders/mcp-namespace-contract.js';
+export type {
+  LocalStreamCheckBuilder,
+  LocalStreamCheckCircuitBreakerOptions,
+} from './builders/local-stream-check-builder.js';
+export type {
+  McpNamespace,
+  McpServerOptions,
+} from './builders/mcp-namespace-contract.js';
 export { mcp } from './builders/mcp-namespace.js';
-export type { McpServerOptions } from './builders/mcp-server-options.js';
 export { createNodeExecutors } from './executors/create-node-executors.js';
 export {
   allocateDynamicPorts,

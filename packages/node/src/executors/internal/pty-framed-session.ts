@@ -1,12 +1,35 @@
 import * as pty from 'node-pty';
 import PQueue from 'p-queue';
+import type { LocalDaemonRegexDescriptor } from '../../builders/local-daemon-builder.js';
+import { enqueueWithQueuedAbortSignal } from './enqueue-with-queued-abort-signal.js';
+import { ensureNodePtySpawnHelperExecutable } from './ensure-node-pty-spawn-helper.js';
+import { matchesPtyFrameDelimiter } from './matches-pty-frame-delimiter.js';
 import {
-  ensureNodePtySpawnHelperExecutable,
-  matchesPtyFrameDelimiter,
-  stripPtyFrameDelimiter,
-} from './ensure-node-pty-spawn-helper.js';
-import { terminatePidTreeWithGrace } from './process-group-lifecycle.js';
-import type { PtyFramedSessionOptions } from './pty-framed-session-options.js';
+  terminatePidTreeWithGrace,
+  type ResolvedSubprocessEnvironment,
+} from './process-group-lifecycle.js';
+import { stripPtyFrameDelimiter } from './strip-pty-frame-delimiter.js';
+
+/**
+ * Configuration options for initializing a `PtyFramedInteractiveSession`.
+ *
+ * Supplies the tool name, interactive CLI `argv`, resolved environment, frame delimiter,
+ * output settle quiet window, and per-turn timeout.
+ */
+export interface PtyFramedSessionOptions {
+  /** Unique interaction tool name for diagnostic messages. */
+  readonly toolName: string;
+  /** Command argument vector spawned inside the `ECHO`-disabled wrapper. */
+  readonly argv: readonly string[];
+  /** Resolved working directory and environment variables. */
+  readonly resolvedEnv: ResolvedSubprocessEnvironment;
+  /** Prompt delimiter string or regex descriptor marking the end of each output frame. */
+  readonly frameDelimiter: string | LocalDaemonRegexDescriptor;
+  /** Quiet window in milliseconds after `frameDelimiter` matches before settling a frame. */
+  readonly idleSettleMs: number;
+  /** Maximum timeout in seconds for draining the startup banner or completing a turn. */
+  readonly timeoutSeconds: number;
+}
 
 /**
  * Stateful `ECHO`-disabled OS pseudo-terminal session managing framed turn-based CLI communication (`local.daemon.interact`).
@@ -55,7 +78,10 @@ export class PtyFramedInteractiveSession {
     this.delimiterRegex =
       typeof options.frameDelimiter === 'string'
         ? undefined
-        : new RegExp(options.frameDelimiter.pattern, (options.frameDelimiter.flags ?? '').replace(/[gy]/g, ''));
+        : new RegExp(
+            options.frameDelimiter.pattern,
+            (options.frameDelimiter.flags ?? '').replace(/[gy]/g, ''),
+          );
   }
 
   /**
@@ -70,29 +96,13 @@ export class PtyFramedInteractiveSession {
    * @returns {Promise<string>} Settled output frame with the trailing prompt delimiter stripped.
    */
   async sendTurn(input: string, signal?: AbortSignal): Promise<string> {
-    signal?.throwIfAborted();
-    const waitController = new AbortController();
-    let onWaitAbort: (() => void) | undefined;
-    if (signal !== undefined) {
-      onWaitAbort = (): void => waitController.abort();
-      signal.addEventListener('abort', onWaitAbort, { once: true });
-    }
-    try {
-      return await this.turnQueue.add<string>(
-        async () => {
-          if (onWaitAbort !== undefined && signal !== undefined) {
-            signal.removeEventListener('abort', onWaitAbort);
-            onWaitAbort = undefined;
-          }
-          return this.executeSerializedTurn(input, signal);
-        },
-        { signal: waitController.signal },
-      );
-    } finally {
-      if (onWaitAbort !== undefined && signal !== undefined) {
-        signal.removeEventListener('abort', onWaitAbort);
-      }
-    }
+    return enqueueWithQueuedAbortSignal<string>({
+      queue: this.turnQueue,
+      runnerId: this.options.toolName,
+      resourceLabel: 'pty-turn',
+      signal,
+      task: () => this.executeSerializedTurn(input, signal),
+    });
   }
 
   /**
@@ -107,14 +117,19 @@ export class PtyFramedInteractiveSession {
     this.exitDisposable?.dispose();
     this.dataDisposable = undefined;
     this.exitDisposable = undefined;
-    if (this.ptyProcess === undefined) return;
+    if (this.ptyProcess === undefined) {
+      return;
+    }
     const activePty = this.ptyProcess;
     this.ptyProcess = undefined;
     this.bannerDrained = false;
     try {
       activePty.kill();
-    } catch {}
-    await terminatePidTreeWithGrace(activePty.pid);
+    } catch {
+      return;
+    } finally {
+      await terminatePidTreeWithGrace(activePty.pid);
+    }
   }
 
   /**
@@ -126,6 +141,8 @@ export class PtyFramedInteractiveSession {
    * @param {AbortSignal} [signal] - Optional abort signal.
    *
    * @returns {Promise<string>} Settled output frame for the turn.
+   *
+   * @throws {Error} If the PTY process is not writable or frame settlement fails.
    */
   private async executeSerializedTurn(input: string, signal?: AbortSignal): Promise<string> {
     signal?.throwIfAborted();
@@ -150,7 +167,13 @@ export class PtyFramedInteractiveSession {
    */
   private spawnInteractiveProcess(): void {
     ensureNodePtySpawnHelperExecutable();
-    const wrappedArgv = ['sh', '-c', 'stty -echo -onlcr 2>/dev/null || true; exec "$@"', '_', ...this.options.argv];
+    const wrappedArgv = [
+      'sh',
+      '-c',
+      'stty -echo -onlcr 2>/dev/null || true; exec "$@"',
+      '_',
+      ...this.options.argv,
+    ];
     this.currentBuffer = '';
     this.ptyExited = false;
     const ptyProc = pty.spawn(wrappedArgv[0] ?? 'sh', wrappedArgv.slice(1), {
@@ -185,27 +208,38 @@ export class PtyFramedInteractiveSession {
   private waitForFrameSettle(signal?: AbortSignal): Promise<string> {
     const timeoutMs = this.options.timeoutSeconds * 1000;
     const settleMs = Math.max(1, this.options.idleSettleMs);
+    const timers: {
+      settleTimer?: ReturnType<typeof setTimeout>;
+      timeoutTimer?: ReturnType<typeof setTimeout>;
+    } = {};
     return new Promise<string>((resolve, reject) => {
-      let settleTimer: ReturnType<typeof setTimeout> | undefined;
-      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-      let onAbort: (() => void) | undefined;
+      const onAbort = (): void => {
+        cleanup();
+        void this.close().finally(() =>
+          reject(new Error(`Interactive tool '${this.options.toolName}' aborted by AbortSignal.`)),
+        );
+      };
       const cleanup = (): void => {
         this.onDataCallback = undefined;
         this.onExitCallback = undefined;
-        if (settleTimer !== undefined) clearTimeout(settleTimer);
-        if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
-        if (onAbort !== undefined && signal !== undefined) signal.removeEventListener('abort', onAbort);
+        if (timers.settleTimer !== undefined) clearTimeout(timers.settleTimer);
+        if (timers.timeoutTimer !== undefined) clearTimeout(timers.timeoutTimer);
+        signal?.removeEventListener('abort', onAbort);
       };
       const onPrematureClose = (code: number, sig?: number): void => {
         cleanup();
         this.ptyProcess = undefined;
         this.bannerDrained = false;
-        reject(new Error(`Interactive tool '${this.options.toolName}' exited prematurely (code ${String(code)}, signal ${String(sig ?? null)}) before matching frame delimiter.`));
+        reject(
+          new Error(
+            `Interactive tool '${this.options.toolName}' exited prematurely (code ${String(code)}, signal ${String(sig ?? null)}) before matching frame delimiter.`,
+          ),
+        );
       };
       const scheduleCheck = (): void => {
-        if (settleTimer !== undefined) clearTimeout(settleTimer);
+        if (timers.settleTimer !== undefined) clearTimeout(timers.settleTimer);
         if (!matchesPtyFrameDelimiter(this.currentBuffer, this.options.frameDelimiter, this.delimiterRegex)) return;
-        settleTimer = setTimeout(() => {
+        timers.settleTimer = setTimeout(() => {
           if (!matchesPtyFrameDelimiter(this.currentBuffer, this.options.frameDelimiter, this.delimiterRegex)) return;
           const output = stripPtyFrameDelimiter(this.currentBuffer, this.options.frameDelimiter, this.delimiterRegex);
           this.currentBuffer = '';
@@ -219,16 +253,16 @@ export class PtyFramedInteractiveSession {
         onPrematureClose(this.lastExitCode, this.lastExitSignal);
         return;
       }
-      if (signal !== undefined) {
-        onAbort = (): void => {
-          cleanup();
-          void this.close().finally(() => reject(new Error(`Interactive tool '${this.options.toolName}' aborted by AbortSignal.`)));
-        };
-        signal.addEventListener('abort', onAbort, { once: true });
-      }
-      timeoutTimer = setTimeout(() => {
+      signal?.addEventListener('abort', onAbort, { once: true });
+      timers.timeoutTimer = setTimeout(() => {
         cleanup();
-        void this.close().finally(() => reject(new Error(`Interactive tool '${this.options.toolName}' timed out after ${String(this.options.timeoutSeconds)}s waiting for frame delimiter.`)));
+        void this.close().finally(() =>
+          reject(
+            new Error(
+              `Interactive tool '${this.options.toolName}' timed out after ${String(this.options.timeoutSeconds)}s waiting for frame delimiter.`,
+            ),
+          ),
+        );
       }, timeoutMs);
       scheduleCheck();
     });

@@ -7,11 +7,9 @@ import type {
   NodeMcpStdioNode,
   RuntimeDriverContext,
 } from '@harness-dsl/core';
-import { startHttpControlPlaneServer } from './internal/mcp-http-request-handler.js';
-import {
-  buildControlPlaneMcpServer,
-  connectStdioControlPlaneTransport,
-} from './internal/mcp-server-transport-helpers.js';
+import { buildControlPlaneMcpServer } from './internal/build-control-plane-mcp-server.js';
+import { connectStdioControlPlaneTransport } from './internal/connect-stdio-control-plane-transport.js';
+import { startHttpControlPlaneServer } from './internal/start-http-control-plane-server.js';
 
 /**
  * Creates a `ControlPlaneAdapter` for `NodeHttpControlPlaneNode` (`mcp.server({ port })`).
