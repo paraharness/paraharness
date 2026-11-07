@@ -43,10 +43,11 @@ export async function drainContiguousForkSlice<TIn, TOut, THandle>(
   remainingCalls: RemainingToolCallRecord[],
   completedResults: CompletedToolBatchResultRecord[],
 ): Promise<boolean> {
+  const forksByToolName = new Map((session.node.capabilities?.forks ?? []).map((f) => [f.toolName, f] as const));
   const forkCalls: ForkDispatchCallItem<THandle>[] = [];
   while (remainingCalls.length > 0) {
     const head = remainingCalls[0];
-    const forkCap = head !== undefined ? session.node.capabilities?.forks.find((f) => f.toolName === head.toolName) : undefined;
+    const forkCap = head !== undefined ? forksByToolName.get(head.toolName) : undefined;
     if (head === undefined || forkCap === undefined) break;
     remainingCalls.shift();
     const args = JSON.parse(head.argsJson || '{}') as Record<string, unknown>;
@@ -96,7 +97,7 @@ export async function evaluateAndAdjudicatePreFlightCall<TIn, TOut, THandle>(
   const call = remainingCalls[0];
   if (call === undefined || session.node.policy === undefined) return Object.freeze({ status: 'proceed' });
   const requiredSkillId = session.skillOwnerByToolName.get(call.toolName);
-  if (requiredSkillId !== undefined && !session.agentFrame.activeSkillIds.includes(requiredSkillId)) return Object.freeze({ status: 'proceed' });
+  if (requiredSkillId !== undefined && !new Set(session.agentFrame.activeSkillIds).has(requiredSkillId)) return Object.freeze({ status: 'proceed' });
   const toolNode = session.toolsByName.get(call.toolName);
   if (toolNode === undefined || toolNode.effectTracking !== 'declared') return Object.freeze({ status: 'proceed' });
   const preEval = await evaluatePreFlightToolBatch({ policy: session.node.policy, remainingCalls, toolsByName: session.toolsByName, activeLeases: session.agentFrame.activeLeases, ctx: session.ctx });
@@ -106,7 +107,7 @@ export async function evaluateAndAdjudicatePreFlightCall<TIn, TOut, THandle>(
     state.completedResults.push(Object.freeze<CompletedToolBatchResultRecord>({ callId: call.callId, content: preEval.deniedErrorMessage ?? 'Denied', isError: true }));
     return Object.freeze({ status: 'denied-in-band' });
   }
-  if (call.blockedPreFlight === true && (preEval.violatedClauseId === undefined || call.adjudicatedClauseIds?.includes(preEval.violatedClauseId) === true)) {
+  if (call.blockedPreFlight === true && (preEval.violatedClauseId === undefined || new Set(call.adjudicatedClauseIds).has(preEval.violatedClauseId))) {
     remainingCalls.shift();
     state.completedResults.push(Object.freeze<CompletedToolBatchResultRecord>({ callId: call.callId, content: `[Lease Denied: ${state.adjudicationFeedback ?? ''}]`, isError: true }));
     return Object.freeze({ status: 'lease-denied' });

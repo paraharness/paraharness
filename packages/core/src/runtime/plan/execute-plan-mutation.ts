@@ -52,7 +52,7 @@ export async function executeSpawnTasks<THandle = unknown>(
   if (params.agentFrame !== undefined && params.pendingToolBatch !== undefined) {
     const suspendedFrame: AgentContinuationFrame = Object.freeze({ ...params.agentFrame, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'prerequisite-wait', pendingToolBatch: params.pendingToolBatch }) });
     const stack: readonly ContinuationFrame[] = Object.freeze([...(params.outerFrames ?? []), suspendedFrame]);
-    await params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, stack);
+    await (params.continuationQueue !== undefined ? params.continuationQueue.enqueueUpdate(params.ctx.stepExecId, () => params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, stack)) : params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, stack));
     await params.ledgerStore.recordStepTransition({ stepExecId: params.ctx.stepExecId, status: 'SUSPENDED', headScopeCheckpoint: headCkpt, telemetryJson: JSON.stringify({ turnsTaken: params.agentFrame.turnsTaken, costUsd: params.agentFrame.costUsd }) });
   }
   return Object.freeze<PlanMutationResult>({ prerequisiteItemKeys: Object.freeze(itemKeys), latestTipItemKey: rollingTip, suspended: true, headScopeCheckpoint: headCkpt, toolResultText: JSON.stringify({ spawnedItemKeys: itemKeys, tipKey: rollingTip, status: 'SUSPENDED' }) });
@@ -87,7 +87,8 @@ export async function executeAddDependencies<THandle = unknown>(
     headCkpt = params.checkpointScope !== undefined ? await params.checkpointScope.serializeCheckpoint(params.ctx.scopeHandle) : undefined;
     if (params.agentFrame !== undefined && params.pendingToolBatch !== undefined) {
       const suspendedFrame: AgentContinuationFrame = Object.freeze({ ...params.agentFrame, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'prerequisite-wait', pendingToolBatch: params.pendingToolBatch }) });
-      await params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, Object.freeze([...(params.outerFrames ?? []), suspendedFrame]));
+      const stack: readonly ContinuationFrame[] = Object.freeze([...(params.outerFrames ?? []), suspendedFrame]);
+      await (params.continuationQueue !== undefined ? params.continuationQueue.enqueueUpdate(params.ctx.stepExecId, () => params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, stack)) : params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, stack));
       await params.ledgerStore.recordStepTransition({ stepExecId: params.ctx.stepExecId, status: 'SUSPENDED', headScopeCheckpoint: headCkpt, telemetryJson: JSON.stringify({ turnsTaken: params.agentFrame.turnsTaken, costUsd: params.agentFrame.costUsd }) });
     }
   }
@@ -131,18 +132,19 @@ export async function executeUpdatePartitionContract<THandle = unknown>(
  */
 export async function syncSuspendedRunPrerequisites<THandle = unknown>(params: SyncPrerequisitesParams<THandle>): Promise<SyncPrerequisitesResult> {
   const receiptsMap = await params.ledgerStore.getRunTerminalReceipts(params.prerequisiteItemKeys);
-  const syncNotes: string[] = [], prereqReceipts: Record<string, unknown>[] = [], prereqRunIds: string[] = [...(params.prerequisiteRunIds ?? [])];
+  const syncNotes: string[] = [], prereqReceipts: Record<string, unknown>[] = [], prereqRunIdSet = new Set<string>(params.prerequisiteRunIds ?? []);
   let allSucceeded = true;
   for (const key of params.prerequisiteItemKeys) {
     const rec = receiptsMap.get(key);
     if (rec === undefined) continue;
-    if (!prereqRunIds.includes(rec.runId)) prereqRunIds.push(rec.runId);
+    prereqRunIdSet.add(rec.runId);
     if (rec.terminalState === 'failed' || rec.terminalState === 'errored' || rec.terminalState === 'cancelled') {
       allSucceeded = false;
       syncNotes.push(`[PREREQUISITE_FAILED] Prerequisite '${key}' (run '${rec.runId}') exited in state '${rec.terminalState}'.`);
     } else if (rec.scopeReceiptJson !== undefined) prereqReceipts.push(JSON.parse(rec.scopeReceiptJson) as Record<string, unknown>);
   }
-  if (prereqRunIds.length > 0 && params.topologyStore !== undefined) {
+  if (prereqRunIdSet.size > 0 && params.topologyStore !== undefined) {
+    const prereqRunIds = Array.from(prereqRunIdSet);
     await params.topologyStore.syncRunOverlays(params.runId, prereqRunIds);
     syncNotes.push(`[TOPOLOGY_SYNC] Merged topology overlays from prerequisite runs: ${prereqRunIds.join(', ')}.`);
   }
@@ -161,11 +163,9 @@ export async function syncSuspendedRunPrerequisites<THandle = unknown>(params: S
     const nextLeases = conflictLease !== undefined ? Object.freeze([...updatedFrame.activeLeases, conflictLease]) : updatedFrame.activeLeases;
     const prevBatch = updatedFrame.pauseState.kind === 'prerequisite-wait' || updatedFrame.pauseState.kind === 'tool-batch' ? updatedFrame.pauseState.pendingToolBatch : undefined, headCall = prevBatch?.remainingCalls[0];
     const settledCompleted = prevBatch !== undefined ? (headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies' ? [...prevBatch.completedResults, Object.freeze({ callId: headCall.callId, content: syncNotes.join('\n') || '{"status":"RESUMED"}', isError: !allSucceeded })] : prevBatch.completedResults.map((r, i) => i === prevBatch.completedResults.length - 1 && syncNotes.length > 0 ? Object.freeze({ ...r, content: `${r.content}\n${syncNotes.join('\n')}` }) : r)) : [];
-    const nextPauseState = prevBatch !== undefined
-      ? Object.freeze({ kind: 'tool-batch' as const, pendingToolBatch: Object.freeze({ ...prevBatch, completedResults: Object.freeze(settledCompleted), remainingCalls: headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies' ? Object.freeze(prevBatch.remainingCalls.slice(1)) : prevBatch.remainingCalls }) })
-      : updatedFrame.pauseState;
-    updatedFrame = Object.freeze({ ...updatedFrame, activeLeases: nextLeases, conflictCheckArmed, syncedToPrerequisiteCheckpoint: postCkpt, pauseState: nextPauseState });
-    await params.ledgerStore.updateContinuationStack(params.runId, params.stepExecId, Object.freeze([...(params.outerFrames ?? []), updatedFrame]));
+    const nextPauseState = prevBatch !== undefined ? Object.freeze({ kind: 'tool-batch' as const, pendingToolBatch: Object.freeze({ ...prevBatch, completedResults: Object.freeze(settledCompleted), remainingCalls: headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies' ? Object.freeze(prevBatch.remainingCalls.slice(1)) : prevBatch.remainingCalls }) }) : updatedFrame.pauseState;
+    const stack: readonly ContinuationFrame[] = Object.freeze([...(params.outerFrames ?? []), (updatedFrame = Object.freeze({ ...updatedFrame, activeLeases: nextLeases, conflictCheckArmed, syncedToPrerequisiteCheckpoint: postCkpt, pauseState: nextPauseState }))]);
+    await (params.continuationQueue !== undefined ? params.continuationQueue.enqueueUpdate(params.stepExecId, () => params.ledgerStore.updateContinuationStack(params.runId, params.stepExecId, stack)) : params.ledgerStore.updateContinuationStack(params.runId, params.stepExecId, stack));
   }
   return Object.freeze<SyncPrerequisitesResult>({ allPrerequisitesSucceeded: allSucceeded, syncNotes: Object.freeze(syncNotes), conflictLease, conflictCheckArmed, updatedAgentFrame: updatedFrame });
 }

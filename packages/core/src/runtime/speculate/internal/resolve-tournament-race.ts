@@ -107,11 +107,14 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(params:
   const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, humanAdaptersById: params.humanAdaptersById, outerFrames: [...params.outerFrames, frame] }));
   const branch = frame.branches.find((b) => b.branchIndex === unparkCtx.branchIndex);
   if (branch === undefined) throw new Error(`Parked branch '${String(unparkCtx.branchIndex)}' not found.`);
-  const interruptId = branch.parkedInterruptId ?? 'unknown', payload = branch.parkedEscalationPayloadJson !== undefined ? JSON.parse(branch.parkedEscalationPayloadJson) : undefined;
-  const workerAgent = params.capability.workerExecutable.type === 'harness:agent' ? params.capability.workerExecutable : params.capability.workerExecutable.actStep.actor;
-  const directAsk = workerAgent.onInterruptHandlers.find((h) => h.mode === 'ask' && h.interrupt.id === interruptId);
-  const nestedAsk = workerAgent.onInterruptHandlers.flatMap((h) => h.mode === 'adjudicate' ? h.onInterruptHandlers : []).find((nh) => nh.mode === 'ask' && nh.interrupt.id === interruptId);
-  const escCap = workerAgent.capabilities?.escalations.find((e) => e.interrupt.id === interruptId) ?? (directAsk?.mode === 'ask' ? directAsk : undefined) ?? (nestedAsk?.mode === 'ask' ? nestedAsk : undefined);
+  const interruptId = branch.parkedInterruptId ?? 'unknown', payload = branch.parkedEscalationPayloadJson !== undefined ? JSON.parse(branch.parkedEscalationPayloadJson) : undefined, workerAgent = params.capability.workerExecutable.type === 'harness:agent' ? params.capability.workerExecutable : params.capability.workerExecutable.actStep.actor;
+  let matchedAsk: Extract<(typeof workerAgent.onInterruptHandlers)[number], { readonly mode: 'ask' }> | undefined;
+  for (const h of workerAgent.onInterruptHandlers) {
+    if (h.mode === 'ask' && h.interrupt.id === interruptId && matchedAsk === undefined) matchedAsk = h;
+    if (h.mode !== 'adjudicate' || matchedAsk !== undefined) continue;
+    for (const nh of h.onInterruptHandlers) if (nh.mode === 'ask' && nh.interrupt.id === interruptId && matchedAsk === undefined) matchedAsk = nh;
+  }
+  const escCap = workerAgent.capabilities?.escalations.find((e) => e.interrupt.id === interruptId) ?? matchedAsk;
   if (escCap === undefined) return Object.freeze({ status: 'aborted-on-child-interrupt', updatedFrame: frame, abortResultJson: JSON.stringify({ status: 'ABORTED_ON_CHILD_INTERRUPT', branchIndex: branch.branchIndex, interruptId, payload }) });
   const requestId = `spec-esc:${params.ctx.runId}:${params.callId}:${String(branch.branchIndex)}:${String(frame.humanRulingsHistory.length)}`;
   const stackWithReqId = branch.continuationStack.map((f) => f.kind === 'agent-frame' ? Object.freeze<AgentContinuationFrame>({ ...f, pauseState: Object.freeze({ kind: 'adjudication', pendingToolBatch: f.pauseState.kind === 'tool-batch' ? f.pauseState.pendingToolBatch : undefined, pendingAdjudication: Object.freeze({ interruptId, interruptPayloadJson: branch.parkedEscalationPayloadJson ?? 'null', humanRequestId: requestId }) }) }) : f);
@@ -127,9 +130,7 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(params:
     if (f.kind === 'loop-frame') return grantedLease !== undefined ? Object.freeze<LoopContinuationFrame>({ ...f, grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, grantedLease]) }) : f;
     if (f.kind !== 'agent-frame') return f;
     const prevBatch = f.pauseState.kind === 'adjudication' ? f.pauseState.pendingToolBatch : undefined;
-    const nextBatch = prevBatch !== undefined
-      ? (prevBatch.remainingCalls[0]?.blockedPreFlight === true ? Object.freeze({ ...prevBatch, adjudicationFeedback: feedback, remainingCalls: Object.freeze(prevBatch.remainingCalls.map((c, idx) => idx === 0 ? Object.freeze({ ...c, blockedPreFlight: undefined, adjudicatedClauseIds: undefined }) : c)) }) : prevBatch.remainingCalls[0] !== undefined ? Object.freeze({ ...prevBatch, completedResults: Object.freeze([...prevBatch.completedResults, Object.freeze({ callId: prevBatch.remainingCalls[0].callId, content: feedback, isError: false })]), remainingCalls: Object.freeze(prevBatch.remainingCalls.slice(1)) }) : prevBatch)
-      : undefined;
+    const nextBatch = prevBatch !== undefined ? (prevBatch.remainingCalls[0]?.blockedPreFlight === true ? Object.freeze({ ...prevBatch, adjudicationFeedback: feedback, remainingCalls: Object.freeze(prevBatch.remainingCalls.map((c, idx) => idx === 0 ? Object.freeze({ ...c, blockedPreFlight: undefined, adjudicatedClauseIds: undefined }) : c)) }) : prevBatch.remainingCalls[0] !== undefined ? Object.freeze({ ...prevBatch, completedResults: Object.freeze([...prevBatch.completedResults, Object.freeze({ callId: prevBatch.remainingCalls[0].callId, content: feedback, isError: false })]), remainingCalls: Object.freeze(prevBatch.remainingCalls.slice(1)) }) : prevBatch) : undefined;
     return Object.freeze<AgentContinuationFrame>({ ...f, activeLeases: grantedLease !== undefined ? Object.freeze([...f.activeLeases, grantedLease]) : f.activeLeases, pauseState: nextBatch !== undefined ? Object.freeze({ kind: 'tool-batch', pendingToolBatch: nextBatch }) : Object.freeze({ kind: 'active-turn' }) });
   });
   const parentRt = (params.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};

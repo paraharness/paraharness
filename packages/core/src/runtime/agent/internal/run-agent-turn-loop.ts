@@ -36,23 +36,27 @@ export async function initializeAgentContinuationFrame<TIn, TOut, THandle>(
   session: AgentTurnSessionState<TIn, TOut, THandle>,
 ): Promise<void> {
   if (session.agentFrame.leafMessageId !== null || session.agentFrame.turnsTaken > 0) return;
-  const injectedIds = [...session.agentFrame.injectedScopedRuleIds];
+  const injectedIdSet = new Set<string>(session.agentFrame.injectedScopedRuleIds), activePartitionSet = new Set<string>(session.ctx.activePartitions);
   const partitionDirectives: Array<{ readonly id: string; readonly directive: string }> = [];
   for (const rule of session.scopedRules) {
-    if (injectedIds.includes(rule.id)) continue;
-    if ((rule.when.partitions ?? []).some((p) => session.ctx.activePartitions.includes(p))) {
-      injectedIds.push(rule.id);
+    if (injectedIdSet.has(rule.id)) continue;
+    let matchesPartition = false;
+    for (const p of rule.when.partitions ?? []) if (activePartitionSet.has(p)) matchesPartition = true;
+    if (matchesPartition) {
+      injectedIdSet.add(rule.id);
       partitionDirectives.push(Object.freeze({ id: rule.id, directive: typeof rule.directive === 'string' ? rule.directive : JSON.stringify(rule.directive) }));
     }
   }
   const skillCatalog: SkillCatalogEntryRecord[] = [];
   for (const skill of session.skillsById.values()) {
-    skillCatalog.push(Object.freeze<SkillCatalogEntryRecord>({ skillId: skill.id, description: skill.description, highlighted: (skill.when?.partitions ?? []).some((p) => session.ctx.activePartitions.includes(p)) }));
+    let highlighted = false;
+    for (const p of skill.when?.partitions ?? []) if (activePartitionSet.has(p)) highlighted = true;
+    skillCatalog.push(Object.freeze<SkillCatalogEntryRecord>({ skillId: skill.id, description: skill.description, highlighted }));
   }
   const topologyPartitions: TopologyPartitionState[] = [];
   if (session.topologyStore !== undefined) {
     const parts = await session.topologyStore.getPartitions(session.ctx.runId);
-    for (const [pid, state] of parts.entries()) if (session.ctx.activePartitions.includes(pid)) topologyPartitions.push(state);
+    for (const [pid, state] of parts.entries()) if (activePartitionSet.has(pid)) topologyPartitions.push(state);
   }
   const updatedGroundingDiffs = session.wirePrefix !== undefined && session.node.prefixGroup !== undefined
     ? await computeInRunGroundingDiffs({ prefixGroup: session.node.prefixGroup, compiledPrefix: session.wirePrefix, scopeHandle: session.ctx.scopeHandle, registry: session.ctx.registry, resolutionContext: session.ctx })
@@ -64,7 +68,7 @@ export async function initializeAgentContinuationFrame<TIn, TOut, THandle>(
   });
   const userPrompt = `${roleContextText}\n\n[INPUT]\n${session.agentFrame.inputJson}`, turn0MsgId = `msg:${session.ctx.stepExecId}:turn-0`;
   if (session.ledgerStore !== undefined) await session.ledgerStore.appendMessageFrame(session.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: turn0MsgId, parentMessageId: null, vendorId: session.modelNode.vendor, rawWireFrame: new TextEncoder().encode(userPrompt), canonical: Object.freeze({ role: 'user', visibleText: userPrompt }), prefixDigest: session.wirePrefix?.systemDigest ?? 'unpinned' }));
-  session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, leafMessageId: turn0MsgId, injectedScopedRuleIds: Object.freeze(injectedIds) });
+  session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, leafMessageId: turn0MsgId, injectedScopedRuleIds: Object.freeze(Array.from(injectedIdSet)) });
 }
 
 /**

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { openSqliteConnection, SqliteLedgerStore, SqliteTopologyStore } from '@harness-dsl/sqlite';
+import { openSqliteConnection } from '@harness-dsl/sqlite';
 import type { IntegrationWorkspaceHandle } from './integration-workspace-handle.js';
 
 /**
@@ -15,13 +15,9 @@ import type { IntegrationWorkspaceHandle } from './integration-workspace-handle.
  * @returns {Promise<IntegrationWorkspaceHandle>} Initialized workspace handle with `readCreatedPrs()` and `cleanup()`.
  */
 export async function createIntegrationWorkspaceFixture(): Promise<IntegrationWorkspaceHandle> {
-  const previousCwd = process.cwd();
-  const previousPath = process.env['PATH'] ?? '';
+  const previousCwd = process.cwd(), previousPath = process.env['PATH'] ?? '';
   const tempRootDir = await mkdtemp(path.join(os.tmpdir(), 'harness-m4-e2e-'));
-  const repoDir = path.join(tempRootDir, 'repo');
-  const remoteBareDir = path.join(tempRootDir, 'origin.git');
-  const binDir = path.join(tempRootDir, 'bin');
-  const ghPrsLogPath = path.join(tempRootDir, 'gh-prs.json');
+  const repoDir = path.join(tempRootDir, 'repo'), remoteBareDir = path.join(tempRootDir, 'origin.git'), binDir = path.join(tempRootDir, 'bin'), ghPrsLogPath = path.join(tempRootDir, 'gh-prs.json');
   const dirs = [
     remoteBareDir, binDir, path.join(repoDir, 'packages/db/src'), path.join(repoDir, 'packages/db/migrations'),
     path.join(repoDir, 'packages/api/src'), path.join(repoDir, 'packages/api/test'), path.join(repoDir, 'packages/web/src'),
@@ -71,12 +67,12 @@ export async function createIntegrationWorkspaceFixture(): Promise<IntegrationWo
     ['commit', '-m', 'Initial monorepo seed'], ['push', '-u', 'origin', 'main'],
   ];
   for (const args of gitCmds) execFileSync('git', args, { cwd: args[1] === '--bare' ? tempRootDir : repoDir, stdio: 'ignore' });
-  const sqlitePath = path.join(repoDir, '.harness/state.sqlite');
-  await new SqliteLedgerStore(sqlitePath).getInterruptedStepsOnBoot();
-  await new SqliteTopologyStore(sqlitePath).getPartitions();
-  const db = openSqliteConnection(sqlitePath);
-  db.exec("CREATE TABLE IF NOT EXISTS owner_global_rules (id TEXT PRIMARY KEY, directive TEXT NOT NULL); INSERT OR IGNORE INTO owner_global_rules (id, directive) VALUES ('owner-rule-1', 'Maintain backwards compatibility unless approved by owner.');");
-  db.close();
+  const sqlitePath = path.join(repoDir, '.harness/state.sqlite'), db = openSqliteConnection(sqlitePath);
+  try {
+    db.exec("CREATE TABLE IF NOT EXISTS owner_global_rules (id TEXT PRIMARY KEY, directive TEXT NOT NULL); INSERT OR IGNORE INTO owner_global_rules (id, directive) VALUES ('owner-rule-1', 'Maintain backwards compatibility unless approved by owner.');");
+  } finally {
+    db.close();
+  }
   const nextPath = `${binDir}${path.delimiter}${previousPath}`;
   process.env['PATH'] = nextPath;
   process.chdir(repoDir);
