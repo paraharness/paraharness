@@ -6,7 +6,11 @@ import {
   type SignalNode,
   extractAST,
 } from '@harness-dsl/core';
-import type { CompactionConfigBuilder } from './compaction-config-builder.js';
+import type {
+  CompactionConfigBuilder,
+  CompactionSignalTriggerOptions,
+  CompactionTerminalExitOptions,
+} from './compaction-config-builder.js';
 import type { CompactionConfigBuilderState } from './internal/compaction-config-builder-state.js';
 
 /**
@@ -30,10 +34,7 @@ export function createCompactionConfigBuilder(
   return Object.freeze<CompactionConfigBuilder>({
     onSignal<TSig>(
       signal: MaybeBuilder<SignalNode<TSig>>,
-      options: {
-        readonly correlateBy: (sig: TSig) => string;
-        readonly afterGracePeriodHours: number;
-      },
+      options: CompactionSignalTriggerOptions<TSig>,
     ): CompactionConfigBuilder {
       if (!Number.isFinite(options.afterGracePeriodHours) || options.afterGracePeriodHours < 0) {
         throw new Error(
@@ -53,7 +54,7 @@ export function createCompactionConfigBuilder(
     },
     onTerminalExit(
       states: readonly string[],
-      options: { readonly afterGracePeriodHours: number },
+      options: CompactionTerminalExitOptions,
     ): CompactionConfigBuilder {
       if (!Number.isFinite(options.afterGracePeriodHours) || options.afterGracePeriodHours < 0) {
         throw new Error(
@@ -92,3 +93,4 @@ export function createCompactionConfigBuilder(
     },
   });
 }
+

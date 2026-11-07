@@ -1,7 +1,7 @@
 import type { SqliteRulesSourceNode } from '@harness-dsl/core';
 import { assertValidSqlIdentifier } from '../ddl/internal/open-sqlite-connection.js';
 import type { SqliteGlobalRulesBuilder } from './sqlite-global-rules-builder.js';
-import type { SqliteGlobalRulesOptions } from './sqlite-global-rules-options.js';
+import type { SqliteGlobalRulesOptions } from './sqlite-namespace-contract.js';
 
 /**
  * Creates an immutable `SqliteGlobalRulesBuilder` for `uri` and `options.table`.

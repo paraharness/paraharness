@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
+import type { PostgresPinnedClient } from '../../src/ddl/postgres-pinned-client.js';
 import type { PostgresPoolFactory } from '../../src/ddl/postgres-pool-factory.js';
-import type { PostgresQueryClient } from '../../src/ddl/postgres-query-client.js';
-import type { PostgresQueryResult } from '../../src/ddl/postgres-query-result.js';
+import type { PostgresQueryClient, PostgresQueryResult } from '../../src/ddl/postgres-query-client.js';
 
 /**
  * Real `@electric-sql/pglite`-backed implementation of `PostgresQueryClient` and `PostgresPoolFactory` for deterministic tests.
@@ -9,16 +9,16 @@ import type { PostgresQueryResult } from '../../src/ddl/postgres-query-result.js
  * Wraps a single WASM PostgreSQL instance per test file (`beforeAll`), supports fast inter-test state reset
  * via `TRUNCATE ... RESTART IDENTITY CASCADE` (`beforeEach`), and deterministically frees WASM linear memory on `close()` (`afterAll`).
  */
-export class PgliteTestClient implements PostgresQueryClient, PostgresPoolFactory {
+export class PglitePoolFactory implements PostgresQueryClient, PostgresPoolFactory {
   /** Underlying `@electric-sql/pglite` WASM PostgreSQL engine instance. */
   private readonly db: PGlite;
   /** Last connection URI requested via `getClient(connectionUri)`. */
   public lastRequestedUri: string | undefined;
 
   /**
-   * Initializes a new in-memory `PgliteTestClient` instance backed by `@electric-sql/pglite`.
+   * Initializes a new in-memory `PglitePoolFactory` instance backed by `@electric-sql/pglite`.
    *
-   * Instantiate at most one `PgliteTestClient` per test file inside `beforeAll` and close it in `afterAll`.
+   * Instantiate at most one `PglitePoolFactory` per test file inside `beforeAll` and close it in `afterAll`.
    */
   constructor() {
     this.db = new PGlite();
@@ -31,11 +31,29 @@ export class PgliteTestClient implements PostgresQueryClient, PostgresPoolFactor
    *
    * @param {string} connectionUri - Resolved PostgreSQL connection URI.
    *
-   * @returns {PostgresQueryClient} This `PgliteTestClient` instance.
+   * @returns {PostgresQueryClient} This `PglitePoolFactory` instance.
    */
   getClient(connectionUri: string): PostgresQueryClient {
     this.lastRequestedUri = connectionUri;
     return this;
+  }
+
+  /**
+   * Checks out a pinned client wrapper bound to this `PGlite` engine for transactional execution.
+   *
+   * @returns {Promise<PostgresPinnedClient>} Pinned client adapter delegating queries to `this.query` with a no-op `release()`.
+   */
+  async connect(): Promise<PostgresPinnedClient> {
+    const self = this;
+    return Object.freeze<PostgresPinnedClient>({
+      query<TRow = Record<string, unknown>>(
+        sql: string,
+        params?: readonly unknown[],
+      ): Promise<PostgresQueryResult<TRow>> {
+        return self.query<TRow>(sql, params);
+      },
+      release(): void {},
+    });
   }
 
   /**
@@ -95,7 +113,7 @@ export class PgliteTestClient implements PostgresQueryClient, PostgresPoolFactor
   /**
    * Closes the underlying `PGlite` WASM instance and frees its linear memory.
    *
-   * Must be called unconditionally inside `afterAll` in every test suite using `PgliteTestClient`.
+   * Must be called unconditionally inside `afterAll` in every test suite using `PglitePoolFactory`.
    *
    * @returns {Promise<void>} Resolves once the `PGlite` database is closed.
    */

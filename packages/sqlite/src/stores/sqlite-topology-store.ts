@@ -12,6 +12,7 @@ import {
   sealOverlayForRun,
 } from './internal/sqlite-topology-commit-ops.js';
 import {
+  type ResetRunOverlayOptions,
   getPartitionsWithOverlay,
   resetOverlayByScope,
   syncPrerequisiteOverlays,
@@ -51,7 +52,9 @@ export class SqliteTopologyStore implements TopologyStore {
    * @returns {Promise<ReadonlyMap<string, TopologyPartitionState>>} Map of `partitionId` to partition state.
    */
   getPartitions(runId?: string): Promise<ReadonlyMap<string, TopologyPartitionState>> {
-    return this.queue.add(() => this.db.transaction(() => getPartitionsWithOverlay(this.db, runId))());
+    return this.queue.add(() =>
+      this.db.transaction(() => getPartitionsWithOverlay(this.db, runId))(),
+    );
   }
 
   /**
@@ -93,7 +96,9 @@ export class SqliteTopologyStore implements TopologyStore {
    */
   syncRunOverlays(targetRunId: string, prerequisiteRunIds: readonly string[]): Promise<void> {
     return this.queue.add(() => {
-      this.db.transaction(() => syncPrerequisiteOverlays(this.db, targetRunId, prerequisiteRunIds))();
+      this.db.transaction(() =>
+        syncPrerequisiteOverlays(this.db, targetRunId, prerequisiteRunIds),
+      )();
     });
   }
 
@@ -102,15 +107,12 @@ export class SqliteTopologyStore implements TopologyStore {
    *
    * Preserves completed step mutations when `scope === 'step'` and rolls back the entire run overlay when `scope === 'run'`.
    *
-   * @param {string}                                                            runId  - Target flow run identifier.
-   * @param {{ readonly scope?: 'step' | 'run'; readonly stepExecId?: string }} [opts] - Reset scope options.
+   * @param {string}                 runId  - Target flow run identifier.
+   * @param {ResetRunOverlayOptions} [opts] - Reset scope options.
    *
    * @returns {Promise<void>} Resolves once matching uncommitted overlay mutations are rolled back.
    */
-  resetRunOverlay(
-    runId: string,
-    opts?: { readonly scope?: 'step' | 'run'; readonly stepExecId?: string },
-  ): Promise<void> {
+  resetRunOverlay(runId: string, opts?: ResetRunOverlayOptions): Promise<void> {
     return this.queue.add(() => {
       this.db.transaction(() => resetOverlayByScope(this.db, runId, opts))();
     });
@@ -142,7 +144,9 @@ export class SqliteTopologyStore implements TopologyStore {
    * @returns {Promise<CommitRunOverlayResult>} Committed run IDs and newly allocated base epoch numbers.
    */
   commitRunOverlay(runId: string): Promise<CommitRunOverlayResult> {
-    return this.queue.add(() => this.db.transaction(() => commitOverlayThreeWayMerge(this.db, runId))());
+    return this.queue.add(() =>
+      this.db.transaction(() => commitOverlayThreeWayMerge(this.db, runId))(),
+    );
   }
 
   /**

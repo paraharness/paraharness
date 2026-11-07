@@ -1,7 +1,7 @@
 import type { EnvRef, PostgresRulesSourceNode } from '@harness-dsl/core';
 import { assertValidPostgresIdentifier } from '../ddl/internal/resolve-postgres-client.js';
 import type { PostgresGlobalRulesBuilder } from './postgres-global-rules-builder.js';
-import type { PostgresGlobalRulesOptions } from './postgres-global-rules-options.js';
+import type { PostgresGlobalRulesOptions } from './postgres-namespace-contract.js';
 
 /**
  * Creates a pure, side-effect-free `PostgresGlobalRulesBuilder` for `postgres.globalRules(uri, options)`.

@@ -1,11 +1,16 @@
-import type { LessonOutcome, LessonRecord, LessonStore } from '@harness-dsl/core';
+import type { LessonRecord, LessonStore } from '@harness-dsl/core';
 import type Database from 'better-sqlite3';
 import PQueue from 'p-queue';
 import { openSqliteConnection } from '../ddl/internal/open-sqlite-connection.js';
+import type { AdmitLessonParams } from './internal/admit-lesson-params.js';
 import {
+  type LessonOutcomeEntryParams,
+  type QueryLessonCandidatesParams,
   admitLessonInSqlite,
+  markLessonSignalEmittedInSqlite,
   queryLessonCandidatesInSqlite,
   recordLessonOutcomesInSqlite,
+  retireLessonsInSqlite,
   syncLessonEpochsInSqlite,
 } from './internal/sqlite-lesson-ops.js';
 
@@ -37,14 +42,11 @@ export class SqliteLessonStore implements LessonStore {
    *
    * Populates `relevanceScore` in `[0, 1]` on each returned `LessonRecord`.
    *
-   * @param {{ readonly queryText: string; readonly partitions: readonly string[] }} req - Search query and active partitions.
+   * @param {QueryLessonCandidatesParams} req - Search query and active partitions.
    *
    * @returns {Promise<readonly LessonRecord[]>} Candidate lesson records with `relevanceScore` populated.
    */
-  queryCandidates(req: {
-    readonly queryText: string;
-    readonly partitions: readonly string[];
-  }): Promise<readonly LessonRecord[]> {
+  queryCandidates(req: QueryLessonCandidatesParams): Promise<readonly LessonRecord[]> {
     return this.queue.add(() => queryLessonCandidatesInSqlite(this.db, req));
   }
 
@@ -53,16 +55,11 @@ export class SqliteLessonStore implements LessonStore {
    *
    * Deduplicates identical `(partition, directive)` entries and records `epochAtCreation` and `createdByRunId`.
    *
-   * @param {{ readonly partition?: string; readonly directive: string; readonly epochAtCreation: number; readonly createdByRunId?: string }} lesson - Lesson definition to admit.
+   * @param {AdmitLessonParams} lesson - Lesson definition to admit.
    *
    * @returns {Promise<string>} Newly assigned or content-addressed `lessonId`.
    */
-  admit(lesson: {
-    readonly partition?: string;
-    readonly directive: string;
-    readonly epochAtCreation: number;
-    readonly createdByRunId?: string;
-  }): Promise<string> {
+  admit(lesson: AdmitLessonParams): Promise<string> {
     return this.queue.add(() => this.db.transaction(() => admitLessonInSqlite(this.db, lesson))());
   }
 
@@ -71,13 +68,11 @@ export class SqliteLessonStore implements LessonStore {
    *
    * Increments `totalCleanPasses` or `totalViolated` and updates each lesson's `recentOutcomes` window.
    *
-   * @param {ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>} outcomes - Batch of `(lessonId, outcome)` pairs.
+   * @param {readonly LessonOutcomeEntryParams[]} outcomes - Batch of `(lessonId, outcome)` pairs.
    *
    * @returns {Promise<readonly LessonRecord[]>} Updated lesson records reflecting the recorded outcomes.
    */
-  recordOutcomes(
-    outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>,
-  ): Promise<readonly LessonRecord[]> {
+  recordOutcomes(outcomes: readonly LessonOutcomeEntryParams[]): Promise<readonly LessonRecord[]> {
     return this.queue.add(() =>
       this.db.transaction(() => recordLessonOutcomesInSqlite(this.db, outcomes))(),
     );
@@ -116,20 +111,7 @@ export class SqliteLessonStore implements LessonStore {
   markSignalEmitted(lessonId: string, signalId: string, emittedAt: string): Promise<void> {
     return this.queue.add(() => {
       this.db.transaction(() => {
-        const row = this.db
-          .prepare('SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = ?')
-          .get(lessonId) as { readonly signal_last_emitted_at_json: string | null } | undefined;
-        if (row === undefined) {
-          return;
-        }
-        const map: Record<string, string> =
-          row.signal_last_emitted_at_json !== null
-            ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
-            : {};
-        map[signalId] = emittedAt;
-        this.db
-          .prepare('UPDATE harness_lessons SET signal_last_emitted_at_json = ? WHERE id = ?')
-          .run(JSON.stringify(map), lessonId);
+        markLessonSignalEmittedInSqlite(this.db, { lessonId, signalId, emittedAt });
       })();
     });
   }
@@ -146,10 +128,7 @@ export class SqliteLessonStore implements LessonStore {
   retire(lessonIds: readonly string[]): Promise<void> {
     return this.queue.add(() => {
       this.db.transaction(() => {
-        const stmt = this.db.prepare('UPDATE harness_lessons SET retired = 1 WHERE id = ?');
-        for (const lessonId of lessonIds) {
-          stmt.run(lessonId);
-        }
+        retireLessonsInSqlite(this.db, lessonIds);
       })();
     });
   }

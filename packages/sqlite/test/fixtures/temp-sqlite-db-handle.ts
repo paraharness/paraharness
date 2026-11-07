@@ -7,6 +7,8 @@
 export interface TempSqliteDbHandle {
   /** Absolute filesystem path to the temporary SQLite database file. */
   readonly dbPath: string;
+  /** Database connection URI matching `dbPath` for `sqlite.*` AST builder invocations. */
+  readonly uri: string;
 
   /**
    * Deletes the temporary directory and any SQLite database or WAL/SHM files created inside it.

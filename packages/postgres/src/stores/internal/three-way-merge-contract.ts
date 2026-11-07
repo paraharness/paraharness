@@ -1,6 +1,18 @@
 import { diff3Merge } from 'node-diff3';
 
 /**
+ * Three-way conflict region produced by `diff3Merge` (`node-diff3`).
+ */
+export interface Diff3ConflictRegionParams {
+  /** Lines from the left branch (`currentBaseText`). */
+  readonly a: readonly string[];
+  /** Lines from the common ancestor (`baseAtAcquire`). */
+  readonly o: readonly string[];
+  /** Lines from the right branch (`overlayText`). */
+  readonly b: readonly string[];
+}
+
+/**
  * Splits a contract text string into an array of lines for 3-way line-level merging.
  *
  * Returns an empty array when `text` is empty so empty baselines do not introduce phantom blank lines.
@@ -19,33 +31,24 @@ function splitContractLines(text: string): string[] {
  *
  * Handles both adjacent-line hunk merges in `node-diff3` and concurrent same-line modifications (`SPEC.md` §3.3).
  *
- * @param {string[]}                                                                                        target   - Mutable output line buffer.
- * @param {{ readonly a: readonly string[]; readonly o: readonly string[]; readonly b: readonly string[] }} conflict - Conflict region from `diff3Merge`.
+ * @param {string[]}                  target   - Mutable output line buffer.
+ * @param {Diff3ConflictRegionParams} conflict - Conflict region from `diff3Merge`.
  *
  * @returns {void} Appends resolved lines to `target` in-place.
  */
-function resolveConflictRegion(
-  target: string[],
-  conflict: {
-    readonly a: readonly string[];
-    readonly o: readonly string[];
-    readonly b: readonly string[];
-  },
-): void {
+function resolveConflictRegion(target: string[], conflict: Diff3ConflictRegionParams): void {
   const oSet = new Set<string>(conflict.o);
   const aSet = new Set<string>(conflict.a);
   const bSet = new Set<string>(conflict.b);
   const seen = new Set<string>();
   for (const line of conflict.a) {
-    if (oSet.has(line) && !bSet.has(line)) continue;
-    if (!seen.has(line)) {
+    if ((!oSet.has(line) || bSet.has(line)) && !seen.has(line)) {
       target.push(line);
       seen.add(line);
     }
   }
   for (const line of conflict.b) {
-    if (oSet.has(line) && !aSet.has(line)) continue;
-    if (!seen.has(line)) {
+    if ((!oSet.has(line) || aSet.has(line)) && !seen.has(line)) {
       target.push(line);
       seen.add(line);
     }
@@ -86,9 +89,7 @@ export function threeWayMergeContract(
       for (const line of region.ok) {
         mergedLines.push(line);
       }
-      continue;
-    }
-    if (region.conflict !== undefined) {
+    } else if (region.conflict !== undefined) {
       resolveConflictRegion(mergedLines, region.conflict);
     }
   }

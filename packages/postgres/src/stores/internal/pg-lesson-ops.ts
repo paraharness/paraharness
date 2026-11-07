@@ -6,38 +6,98 @@ import { computeNormalizedRelevanceScores } from './compute-normalized-relevance
 import type { PgLessonRow } from './pg-lesson-row.js';
 
 /**
+ * Parameters for querying candidate lessons in `queryCandidates` in PostgreSQL.
+ */
+export interface QueryPgLessonCandidatesParams {
+  /** Free-text search query $Q$ for BM25 relevance scoring. */
+  readonly queryText: string;
+  /** Active topology partition identifiers for filtering partition-scoped lessons. */
+  readonly partitions: readonly string[];
+}
+
+/**
+ * Single `(lessonId, outcome)` entry passed to `recordOutcomes` in PostgreSQL.
+ */
+export interface PgLessonOutcomeEntryParams {
+  /** Target lesson identifier. */
+  readonly lessonId: string;
+  /** Recorded 4-state execution outcome. */
+  readonly outcome: LessonOutcome;
+}
+
+/**
+ * Parameters for recording a promotion signal emission timestamp in `markLessonSignalEmittedInPg`.
+ */
+export interface MarkPgLessonSignalEmittedParams {
+  /** Identifier of the lesson that triggered the promotion signal. */
+  readonly lessonId: string;
+  /** Identifier of the emitted signal. */
+  readonly signalId: string;
+  /** ISO-8601 timestamp string of the emission. */
+  readonly emittedAt: string;
+}
+
+/**
+ * Maps a persisted `PgLessonRow` into an immutable `LessonRecord` with optional `relevanceScore`.
+ *
+ * Parses `recent_outcomes_json` and `signal_last_emitted_at_json` into frozen structures.
+ *
+ * @param {PgLessonRow}        row            - Persisted lesson row from `harness_lessons`.
+ * @param {number | undefined} relevanceScore - Optional normalized relevance score $R(L, Q) \in [0, 1]$.
+ *
+ * @returns {LessonRecord} Frozen lesson record.
+ */
+function mapPgRowToLessonRecord(
+  row: PgLessonRow,
+  relevanceScore: number | undefined,
+): LessonRecord {
+  const signalMap =
+    row.signal_last_emitted_at_json !== null
+      ? Object.freeze(JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
+      : undefined;
+  return Object.freeze<LessonRecord>({
+    id: row.id,
+    partition: row.partition ?? undefined,
+    directive: row.directive,
+    epochAtCreation: row.epoch_at_creation,
+    createdByRunId: row.created_by_run_id ?? undefined,
+    recentOutcomes: Object.freeze(JSON.parse(row.recent_outcomes_json) as LessonOutcome[]),
+    totalCleanPasses: row.total_clean_passes,
+    totalViolated: row.total_violated,
+    relevanceScore,
+    signalLastEmittedAt: signalMap,
+  });
+}
+
+/**
  * Queries non-retired candidate lessons matching `req.partitions` and computes `relevanceScore` $R(L, Q) \in [0, 1]$ in PostgreSQL.
  *
  * Includes global lessons (`partition IS NULL`) and lessons whose `partition` is in `req.partitions`.
  *
- * @param {PostgresQueryClient}                                                      client - Active PostgreSQL query client.
- * @param {{ readonly queryText: string; readonly partitions: readonly string[] }}   req    - Search query and active partitions.
+ * @param {PostgresQueryClient}           client - Active PostgreSQL query client.
+ * @param {QueryPgLessonCandidatesParams} req    - Search query and active partitions.
  *
  * @returns {Promise<readonly LessonRecord[]>} Candidate lessons sorted by descending `relevanceScore`.
  */
 export async function queryLessonCandidatesInPg(
   client: PostgresQueryClient,
-  req: { readonly queryText: string; readonly partitions: readonly string[] },
+  req: QueryPgLessonCandidatesParams,
 ): Promise<readonly LessonRecord[]> {
-  const queryResult = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE retired = 0 ORDER BY id ASC');
+  const queryResult = await client.query<PgLessonRow>(
+    'SELECT * FROM harness_lessons WHERE retired = 0 ORDER BY id ASC',
+  );
   const partitionSet = new Set<string>(req.partitions);
   const matchingRows: PgLessonRow[] = [];
   for (const row of queryResult.rows) {
-    if (row.partition !== null && !partitionSet.has(row.partition)) continue;
-    matchingRows.push(row);
+    if (row.partition === null || partitionSet.has(row.partition)) {
+      matchingRows.push(row);
+    }
   }
   const relevanceById = computeNormalizedRelevanceScores(matchingRows, req.queryText);
   const candidates: LessonRecord[] = [];
   for (const row of matchingRows) {
     const relevanceScore = relevanceById.get(row.id) ?? 0;
-    const signalMap = row.signal_last_emitted_at_json !== null ? Object.freeze(JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>) : undefined;
-    candidates.push(Object.freeze<LessonRecord>({
-      id: row.id, partition: row.partition ?? undefined, directive: row.directive,
-      epochAtCreation: row.epoch_at_creation, createdByRunId: row.created_by_run_id ?? undefined,
-      recentOutcomes: Object.freeze(JSON.parse(row.recent_outcomes_json) as LessonOutcome[]),
-      totalCleanPasses: row.total_clean_passes, totalViolated: row.total_violated,
-      relevanceScore, signalLastEmittedAt: signalMap,
-    }));
+    candidates.push(mapPgRowToLessonRecord(row, relevanceScore));
   }
   candidates.sort((left, right) => (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0));
   return Object.freeze(candidates);
@@ -57,9 +117,15 @@ export async function admitLessonInPg(
   client: PostgresQueryClient,
   lesson: AdmitLessonParams,
 ): Promise<string> {
-  const hashHex = createHash('sha256').update(`${lesson.partition ?? ''}:${lesson.directive}`, 'utf8').digest('hex').slice(0, 16);
+  const hashHex = createHash('sha256')
+    .update(`${lesson.partition ?? ''}:${lesson.directive}`, 'utf8')
+    .digest('hex')
+    .slice(0, 16);
   const lessonId = `lesson_${hashHex}`;
-  const existingQueryResult = await client.query<{ readonly id: string }>('SELECT id FROM harness_lessons WHERE id = $1', [lessonId]);
+  const existingQueryResult = await client.query<{ readonly id: string }>(
+    'SELECT id FROM harness_lessons WHERE id = $1',
+    [lessonId],
+  );
   if (existingQueryResult.rows[0] !== undefined) {
     await client.query(
       'UPDATE harness_lessons SET epoch_at_creation = $1, created_by_run_id = COALESCE($2, created_by_run_id), retired = 0 WHERE id = $3',
@@ -69,7 +135,13 @@ export async function admitLessonInPg(
   }
   await client.query(
     "INSERT INTO harness_lessons (id, partition, directive, epoch_at_creation, created_by_run_id, recent_outcomes_json, total_clean_passes, total_violated, signal_last_emitted_at_json, retired) VALUES ($1, $2, $3, $4, $5, '[]', 0, 0, NULL, 0)",
-    [lessonId, lesson.partition ?? null, lesson.directive, lesson.epochAtCreation, lesson.createdByRunId ?? null],
+    [
+      lessonId,
+      lesson.partition ?? null,
+      lesson.directive,
+      lesson.epochAtCreation,
+      lesson.createdByRunId ?? null,
+    ],
   );
   return lessonId;
 }
@@ -79,40 +151,44 @@ export async function admitLessonInPg(
  *
  * Increments `total_clean_passes` on `'clean_pass'` and `total_violated` on `'violated'`.
  *
- * @param {PostgresQueryClient}                                                             client   - Active PostgreSQL query client.
- * @param {ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>}   outcomes - Recorded outcomes batch.
+ * @param {PostgresQueryClient}                 client   - Active PostgreSQL query client.
+ * @param {readonly PgLessonOutcomeEntryParams[]} outcomes - Recorded outcomes batch.
  *
  * @returns {Promise<readonly LessonRecord[]>} Updated lesson records for the affected lessons.
  */
 export async function recordLessonOutcomesInPg(
   client: PostgresQueryClient,
-  outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>,
+  outcomes: readonly PgLessonOutcomeEntryParams[],
 ): Promise<readonly LessonRecord[]> {
   const touchedIds = new Set<string>();
   for (const entry of outcomes) {
-    const queryResult = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE id = $1', [entry.lessonId]);
+    const queryResult = await client.query<PgLessonRow>(
+      'SELECT * FROM harness_lessons WHERE id = $1',
+      [entry.lessonId],
+    );
     const row = queryResult.rows[0];
-    if (row === undefined) continue;
-    const recent = JSON.parse(row.recent_outcomes_json) as LessonOutcome[];
-    recent.push(entry.outcome);
-    const cleanPasses = row.total_clean_passes + (entry.outcome === 'clean_pass' ? 1 : 0);
-    const violated = row.total_violated + (entry.outcome === 'violated' ? 1 : 0);
-    await client.query('UPDATE harness_lessons SET recent_outcomes_json = $1, total_clean_passes = $2, total_violated = $3 WHERE id = $4', [JSON.stringify(recent), cleanPasses, violated, entry.lessonId]);
-    touchedIds.add(entry.lessonId);
+    if (row !== undefined) {
+      const recent = JSON.parse(row.recent_outcomes_json) as LessonOutcome[];
+      recent.push(entry.outcome);
+      const cleanPasses = row.total_clean_passes + (entry.outcome === 'clean_pass' ? 1 : 0);
+      const violated = row.total_violated + (entry.outcome === 'violated' ? 1 : 0);
+      await client.query(
+        'UPDATE harness_lessons SET recent_outcomes_json = $1, total_clean_passes = $2, total_violated = $3 WHERE id = $4',
+        [JSON.stringify(recent), cleanPasses, violated, entry.lessonId],
+      );
+      touchedIds.add(entry.lessonId);
+    }
   }
   const updatedRecords: LessonRecord[] = [];
   for (const id of touchedIds) {
-    const queryResult = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE id = $1', [id]);
+    const queryResult = await client.query<PgLessonRow>(
+      'SELECT * FROM harness_lessons WHERE id = $1',
+      [id],
+    );
     const row = queryResult.rows[0];
-    if (row === undefined) continue;
-    const signalMap = row.signal_last_emitted_at_json !== null ? Object.freeze(JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>) : undefined;
-    updatedRecords.push(Object.freeze<LessonRecord>({
-      id: row.id, partition: row.partition ?? undefined, directive: row.directive,
-      epochAtCreation: row.epoch_at_creation, createdByRunId: row.created_by_run_id ?? undefined,
-      recentOutcomes: Object.freeze(JSON.parse(row.recent_outcomes_json) as LessonOutcome[]),
-      totalCleanPasses: row.total_clean_passes, totalViolated: row.total_violated,
-      relevanceScore: undefined, signalLastEmittedAt: signalMap,
-    }));
+    if (row !== undefined) {
+      updatedRecords.push(mapPgRowToLessonRecord(row, undefined));
+    }
   }
   return Object.freeze(updatedRecords);
 }
@@ -140,5 +216,56 @@ export async function syncLessonEpochsInPg(
         [newEpoch, runId, partitionId],
       );
     }
+  }
+}
+
+/**
+ * Records the ISO-8601 timestamp when a promotion signal was emitted for `params.lessonId` in PostgreSQL.
+ *
+ * Updates `signal_last_emitted_at_json[signalId] = emittedAt` on `harness_lessons`.
+ *
+ * @param {PostgresQueryClient}             client - Active PostgreSQL query client.
+ * @param {MarkPgLessonSignalEmittedParams} params - Lesson ID, signal ID, and emission timestamp.
+ *
+ * @returns {Promise<void>} Resolves once the timestamp is persisted.
+ */
+export async function markLessonSignalEmittedInPg(
+  client: PostgresQueryClient,
+  params: MarkPgLessonSignalEmittedParams,
+): Promise<void> {
+  const queryResult = await client.query<{
+    readonly signal_last_emitted_at_json: string | null;
+  }>('SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = $1', [params.lessonId]);
+  const row = queryResult.rows[0];
+  if (row === undefined) {
+    return;
+  }
+  const map: Record<string, string> =
+    row.signal_last_emitted_at_json !== null
+      ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
+      : {};
+  map[params.signalId] = params.emittedAt;
+  await client.query('UPDATE harness_lessons SET signal_last_emitted_at_json = $1 WHERE id = $2', [
+    JSON.stringify(map),
+    params.lessonId,
+  ]);
+}
+
+/**
+ * Permanently marks the specified `lessonIds` as retired (`retired = 1`) in `harness_lessons` in PostgreSQL.
+ *
+ * Excludes retired lessons from all subsequent `queryCandidates()` recalls.
+ *
+ * @param {PostgresQueryClient} client    - Active PostgreSQL query client.
+ * @param {readonly string[]}   lessonIds - Identifiers of lessons to retire.
+ *
+ * @returns {Promise<void>} Resolves once all specified lessons are retired.
+ */
+export async function retireLessonsInPg(
+  client: PostgresQueryClient,
+  lessonIds: readonly string[],
+): Promise<void> {
+  for (const id of lessonIds) {
+    await client.query('UPDATE harness_lessons SET retired = 1 WHERE id = $1', [id]);
   }
 }

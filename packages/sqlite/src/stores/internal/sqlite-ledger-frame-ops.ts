@@ -1,6 +1,10 @@
-import type { CanonicalMessage, WireFrameRecord } from '@harness-dsl/core';
+import type { WireFrameRecord } from '@harness-dsl/core';
 import type Database from 'better-sqlite3';
 import type { MarkFrameTombstoneParams } from './mark-frame-tombstone-params.js';
+import {
+  mapSqliteRowToWireFrameRecord,
+  serializeFrameTombstonesJson,
+} from './sqlite-ledger-frame-operations.js';
 import type { SqliteWireFrameRow } from './sqlite-wire-frame-row.js';
 
 /**
@@ -19,8 +23,7 @@ export function appendMessageFrameInSqlite(
   runId: string,
   frame: WireFrameRecord,
 ): void {
-  const tombstonesJson =
-    frame.compactedTombstones !== undefined ? JSON.stringify(frame.compactedTombstones) : null;
+  const tombstonesJson = serializeFrameTombstonesJson(frame);
   db.prepare(
     'INSERT INTO harness_wire_frames (message_id, run_id, parent_message_id, vendor_id, raw_wire_frame, canonical_json, prefix_digest, compacted_tombstones_json, is_compacted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)',
   ).run(
@@ -51,8 +54,7 @@ export function replaceMessageFrameInSqlite(
   runId: string,
   frame: WireFrameRecord,
 ): void {
-  const tombstonesJson =
-    frame.compactedTombstones !== undefined ? JSON.stringify(frame.compactedTombstones) : null;
+  const tombstonesJson = serializeFrameTombstonesJson(frame);
   const updateResult = db
     .prepare(
       'UPDATE harness_wire_frames SET raw_wire_frame = ?, canonical_json = ?, prefix_digest = ?, compacted_tombstones_json = COALESCE(?, compacted_tombstones_json) WHERE message_id = ? AND run_id = ?',
@@ -66,7 +68,9 @@ export function replaceMessageFrameInSqlite(
       runId,
     );
   if (updateResult.changes === 0) {
-    throw new Error(`Cannot replace message frame '${frame.messageId}' for runId '${runId}': frame not found.`);
+    throw new Error(
+      `Cannot replace message frame '${frame.messageId}' for runId '${runId}': frame not found.`,
+    );
   }
 }
 
@@ -85,18 +89,25 @@ export function markFrameTombstoneInSqlite(
   params: MarkFrameTombstoneParams,
 ): void {
   const row = db
-    .prepare('SELECT compacted_tombstones_json FROM harness_wire_frames WHERE message_id = ? AND run_id = ?')
-    .get(params.messageId, params.runId) as { readonly compacted_tombstones_json: string | null } | undefined;
+    .prepare(
+      'SELECT compacted_tombstones_json FROM harness_wire_frames WHERE message_id = ? AND run_id = ?',
+    )
+    .get(params.messageId, params.runId) as
+    | { readonly compacted_tombstones_json: string | null }
+    | undefined;
   if (row === undefined) {
-    throw new Error(`Cannot mark tombstone on unknown messageId '${params.messageId}' in runId '${params.runId}'.`);
+    throw new Error(
+      `Cannot mark tombstone on unknown messageId '${params.messageId}' in runId '${params.runId}'.`,
+    );
   }
   const tombstones: Record<string, string> =
     row.compacted_tombstones_json !== null
       ? (JSON.parse(row.compacted_tombstones_json) as Record<string, string>)
       : {};
   tombstones[params.callId] = params.compactedTombstone;
-  db.prepare('UPDATE harness_wire_frames SET compacted_tombstones_json = ? WHERE message_id = ? AND run_id = ?')
-    .run(JSON.stringify(tombstones), params.messageId, params.runId);
+  db.prepare(
+    'UPDATE harness_wire_frames SET compacted_tombstones_json = ? WHERE message_id = ? AND run_id = ?',
+  ).run(JSON.stringify(tombstones), params.messageId, params.runId);
 }
 
 /**
@@ -118,18 +129,15 @@ export function getMessageChainFromSqlite(
   const visited = new Set<string>();
   let currentId: string | null = leafMessageId;
   while (currentId !== null) {
-    if (visited.has(currentId)) throw new Error(`Cycle detected in wire frame parent chain at messageId '${currentId}'.`);
+    if (visited.has(currentId)) {
+      throw new Error(`Cycle detected in wire frame parent chain at messageId '${currentId}'.`);
+    }
     visited.add(currentId);
     const row = stmt.get(currentId) as SqliteWireFrameRow | undefined;
-    if (row === undefined) break;
-    const tombstones = row.compacted_tombstones_json !== null
-      ? Object.freeze(JSON.parse(row.compacted_tombstones_json) as Record<string, string>)
-      : undefined;
-    reversedChain.push(Object.freeze<WireFrameRecord>({
-      messageId: row.message_id, parentMessageId: row.parent_message_id, vendorId: row.vendor_id,
-      rawWireFrame: new Uint8Array(row.raw_wire_frame), canonical: JSON.parse(row.canonical_json) as CanonicalMessage,
-      prefixDigest: row.prefix_digest, compactedTombstones: tombstones,
-    }));
+    if (row === undefined) {
+      break;
+    }
+    reversedChain.push(mapSqliteRowToWireFrameRecord(row));
     currentId = row.parent_message_id;
   }
   reversedChain.reverse();

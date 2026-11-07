@@ -4,17 +4,23 @@ export type {
   SqliteRulesSourceNode,
   SqliteTopologyNode,
 } from '@harness-dsl/core';
-export type { CompactionConfigBuilder } from './builders/compaction-config-builder.js';
+export type {
+  CompactionConfigBuilder,
+  CompactionSignalTriggerOptions,
+  CompactionTerminalExitOptions,
+} from './builders/compaction-config-builder.js';
 export { createCompactionConfigBuilder } from './builders/create-compaction-config-builder.js';
 export { createSqliteGlobalRulesBuilder } from './builders/create-sqlite-global-rules-builder.js';
 export { createSqliteLedgerBuilder } from './builders/create-sqlite-ledger-builder.js';
 export { createSqliteLessonsBuilder } from './builders/create-sqlite-lessons-builder.js';
 export { createSqliteTopologyBuilder } from './builders/create-sqlite-topology-builder.js';
 export type { SqliteGlobalRulesBuilder } from './builders/sqlite-global-rules-builder.js';
-export type { SqliteGlobalRulesOptions } from './builders/sqlite-global-rules-options.js';
 export type { SqliteLedgerBuilder } from './builders/sqlite-ledger-builder.js';
 export type { SqliteLessonsBuilder } from './builders/sqlite-lessons-builder.js';
-export type { SqliteNamespace } from './builders/sqlite-namespace-contract.js';
+export type {
+  SqliteGlobalRulesOptions,
+  SqliteNamespace,
+} from './builders/sqlite-namespace-contract.js';
 export { sqlite } from './builders/sqlite-namespace.js';
 export type { SqliteTopologyBuilder } from './builders/sqlite-topology-builder.js';
 export {
@@ -36,3 +42,4 @@ export {
 export { SqliteLedgerStore } from './stores/sqlite-ledger-store.js';
 export { SqliteLessonStore } from './stores/sqlite-lesson-store.js';
 export { SqliteTopologyStore } from './stores/sqlite-topology-store.js';
+

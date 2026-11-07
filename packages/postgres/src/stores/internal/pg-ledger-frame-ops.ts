@@ -1,8 +1,14 @@
-import type { CanonicalMessage, WireFrameRecord } from '@harness-dsl/core';
-import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
-import type { PostgresQueryResult } from '../../ddl/postgres-query-result.js';
+import type { WireFrameRecord } from '@harness-dsl/core';
+import type {
+  PostgresQueryClient,
+  PostgresQueryResult,
+} from '../../ddl/postgres-query-client.js';
 import type { MarkFrameTombstoneParams } from './mark-frame-tombstone-params.js';
 import type { PgWireFrameRow } from './pg-wire-frame-row.js';
+import {
+  mapPgRowToWireFrameRecord,
+  serializePgFrameTombstonesJson,
+} from './postgres-ledger-frame-operations.js';
 
 /**
  * Appends a new `WireFrameRecord` to `harness_wire_frames` for `runId` in PostgreSQL.
@@ -21,8 +27,7 @@ export async function appendMessageFrameInPg(
   runId: string,
   frame: WireFrameRecord,
 ): Promise<void> {
-  const tombstonesJson =
-    frame.compactedTombstones !== undefined ? JSON.stringify(frame.compactedTombstones) : null;
+  const tombstonesJson = serializePgFrameTombstonesJson(frame);
   await client.query(
     'INSERT INTO harness_wire_frames (message_id, run_id, parent_message_id, vendor_id, raw_wire_frame, canonical_json, prefix_digest, compacted_tombstones_json, compacted) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0) ON CONFLICT (message_id) DO UPDATE SET run_id = EXCLUDED.run_id, parent_message_id = EXCLUDED.parent_message_id, vendor_id = EXCLUDED.vendor_id, raw_wire_frame = EXCLUDED.raw_wire_frame, canonical_json = EXCLUDED.canonical_json, prefix_digest = EXCLUDED.prefix_digest, compacted_tombstones_json = EXCLUDED.compacted_tombstones_json, compacted = 0',
     [
@@ -55,8 +60,7 @@ export async function replaceMessageFrameInPg(
   runId: string,
   frame: WireFrameRecord,
 ): Promise<void> {
-  const tombstonesJson =
-    frame.compactedTombstones !== undefined ? JSON.stringify(frame.compactedTombstones) : null;
+  const tombstonesJson = serializePgFrameTombstonesJson(frame);
   const updateResult = await client.query(
     'UPDATE harness_wire_frames SET raw_wire_frame = $1, canonical_json = $2, prefix_digest = $3, compacted_tombstones_json = COALESCE($4, compacted_tombstones_json) WHERE message_id = $5 AND run_id = $6',
     [
@@ -69,7 +73,9 @@ export async function replaceMessageFrameInPg(
     ],
   );
   if (updateResult.rowCount === 0) {
-    throw new Error(`Cannot replace message frame '${frame.messageId}' for runId '${runId}': frame not found.`);
+    throw new Error(
+      `Cannot replace message frame '${frame.messageId}' for runId '${runId}': frame not found.`,
+    );
   }
 }
 
@@ -93,7 +99,9 @@ export async function markFrameTombstoneInPg(
   );
   const row = queryResult.rows[0];
   if (row === undefined) {
-    throw new Error(`Cannot mark tombstone on unknown messageId '${params.messageId}' in runId '${params.runId}'.`);
+    throw new Error(
+      `Cannot mark tombstone on unknown messageId '${params.messageId}' in runId '${params.runId}'.`,
+    );
   }
   const currentMap: Record<string, string> =
     row.compacted_tombstones_json !== null
@@ -133,22 +141,10 @@ export async function getMessageChainFromPg(
       [currentId],
     );
     const row: PgWireFrameRow | undefined = queryResult.rows[0];
-    if (row === undefined) break;
-    const tombstones =
-      row.compacted_tombstones_json !== null
-        ? Object.freeze(JSON.parse(row.compacted_tombstones_json) as Record<string, string>)
-        : undefined;
-    reversed.push(
-      Object.freeze<WireFrameRecord>({
-        messageId: row.message_id,
-        parentMessageId: row.parent_message_id,
-        vendorId: row.vendor_id,
-        rawWireFrame: new Uint8Array(row.raw_wire_frame),
-        canonical: Object.freeze(JSON.parse(row.canonical_json) as CanonicalMessage),
-        prefixDigest: row.prefix_digest,
-        compactedTombstones: tombstones,
-      }),
-    );
+    if (row === undefined) {
+      break;
+    }
+    reversed.push(mapPgRowToWireFrameRecord(row));
     currentId = row.parent_message_id;
   }
   reversed.reverse();

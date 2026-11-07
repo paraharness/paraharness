@@ -18,6 +18,7 @@ export function createTempSqliteDb(fileName = 'test-state.sqlite'): TempSqliteDb
   const dbPath = join(dirPath, fileName);
   return Object.freeze<TempSqliteDbHandle>({
     dbPath,
+    uri: dbPath,
     cleanup(): void {
       rmSync(dirPath, { recursive: true, force: true });
     },

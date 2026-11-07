@@ -1,9 +1,20 @@
 import type { EnvRef } from '@harness-dsl/core';
 import type { PostgresGlobalRulesBuilder } from './postgres-global-rules-builder.js';
-import type { PostgresGlobalRulesOptions } from './postgres-global-rules-options.js';
 import type { PostgresLedgerBuilder } from './postgres-ledger-builder.js';
 import type { PostgresLessonsBuilder } from './postgres-lessons-builder.js';
 import type { PostgresTopologyBuilder } from './postgres-topology-builder.js';
+
+/**
+ * Options passed to `postgres.globalRules(uri, options)`.
+ *
+ * Specifies the relational table name storing `(id, directive)` rows and an optional source identifier.
+ */
+export interface PostgresGlobalRulesOptions {
+  /** Relational PostgreSQL table name storing `(id, directive)` global rule rows. */
+  readonly table: string;
+  /** Optional explicit source node identifier. */
+  readonly id?: string;
+}
 
 /**
  * Public `postgres` adapter builder namespace contract (`@harness-dsl/postgres`).
@@ -55,5 +66,8 @@ export interface PostgresNamespace {
    *
    * @returns {PostgresGlobalRulesBuilder} Fluent builder compiling to `PostgresRulesSourceNode`.
    */
-  globalRules(uri: string | EnvRef, options: PostgresGlobalRulesOptions): PostgresGlobalRulesBuilder;
+  globalRules(
+    uri: string | EnvRef,
+    options: PostgresGlobalRulesOptions,
+  ): PostgresGlobalRulesBuilder;
 }

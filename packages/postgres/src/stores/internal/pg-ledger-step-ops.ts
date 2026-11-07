@@ -1,7 +1,12 @@
-import type { ContinuationFrame, InterruptedStepBootRecord, RecordStepStartInput, RecordStepTransitionInput } from '@harness-dsl/core';
+import type {
+  InterruptedStepBootRecord,
+  RecordStepStartInput,
+  RecordStepTransitionInput,
+} from '@harness-dsl/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { PgRunRow } from './pg-run-row.js';
 import type { PgStepRow } from './pg-step-row.js';
+import { mapInterruptedBootRecordFromPg } from './postgres-ledger-step-operations.js';
 import type { UpdateContinuationStackParams } from './update-continuation-stack-params.js';
 
 /**
@@ -21,9 +26,21 @@ export async function recordStepStartInPg(
   const now = new Date().toISOString();
   await client.query(
     'INSERT INTO harness_steps (step_exec_id, run_id, step_id, executable_id, input_msg_id, status, output_json, base_scope_checkpoint, head_scope_checkpoint, continuation_stack_json, telemetry_json) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, NULL, $8, NULL) ON CONFLICT (step_exec_id) DO UPDATE SET run_id = EXCLUDED.run_id, step_id = EXCLUDED.step_id, executable_id = EXCLUDED.executable_id, input_msg_id = EXCLUDED.input_msg_id, status = EXCLUDED.status, base_scope_checkpoint = EXCLUDED.base_scope_checkpoint, continuation_stack_json = EXCLUDED.continuation_stack_json',
-    [step.stepExecId, step.runId, step.stepId, step.executableId ?? null, step.inputMsgId, 'RUNNING', step.baseScopeCheckpoint ?? null, JSON.stringify(step.continuationStack)],
+    [
+      step.stepExecId,
+      step.runId,
+      step.stepId,
+      step.executableId ?? null,
+      step.inputMsgId,
+      'RUNNING',
+      step.baseScopeCheckpoint ?? null,
+      JSON.stringify(step.continuationStack),
+    ],
   );
-  await client.query("UPDATE harness_runs SET current_step_id = $1, status = 'RUNNING', updated_at = $2 WHERE run_id = $3", [step.stepId, now, step.runId]);
+  await client.query(
+    "UPDATE harness_runs SET current_step_id = $1, status = 'RUNNING', updated_at = $2 WHERE run_id = $3",
+    [step.stepId, now, step.runId],
+  );
 }
 
 /**
@@ -46,12 +63,12 @@ export async function updateContinuationStackInPg(
       'UPDATE harness_steps SET continuation_stack_json = $1, base_scope_checkpoint = $2 WHERE step_exec_id = $3 AND run_id = $4',
       [stackJson, params.baseScopeCheckpoint, params.stepExecId, params.runId],
     );
-  } else {
-    await client.query(
-      'UPDATE harness_steps SET continuation_stack_json = $1 WHERE step_exec_id = $2 AND run_id = $3',
-      [stackJson, params.stepExecId, params.runId],
-    );
+    return;
   }
+  await client.query(
+    'UPDATE harness_steps SET continuation_stack_json = $1 WHERE step_exec_id = $2 AND run_id = $3',
+    [stackJson, params.stepExecId, params.runId],
+  );
 }
 
 /**
@@ -68,17 +85,32 @@ export async function recordStepTransitionInPg(
   client: PostgresQueryClient,
   transition: RecordStepTransitionInput,
 ): Promise<void> {
-  const stepQueryResult = await client.query<{ readonly run_id: string }>('SELECT run_id FROM harness_steps WHERE step_exec_id = $1', [transition.stepExecId]);
+  const stepQueryResult = await client.query<{ readonly run_id: string }>(
+    'SELECT run_id FROM harness_steps WHERE step_exec_id = $1',
+    [transition.stepExecId],
+  );
   const stepRow = stepQueryResult.rows[0];
   if (stepRow === undefined) {
-    throw new Error(`Cannot transition unknown stepExecId '${transition.stepExecId}' in PostgreSQL ledger.`);
+    throw new Error(
+      `Cannot transition unknown stepExecId '${transition.stepExecId}' in PostgreSQL ledger.`,
+    );
   }
   await client.query(
     'UPDATE harness_steps SET status = $1, output_json = COALESCE($2, output_json), base_scope_checkpoint = COALESCE($3, base_scope_checkpoint), head_scope_checkpoint = COALESCE($4, head_scope_checkpoint), telemetry_json = $5 WHERE step_exec_id = $6',
-    [transition.status, transition.outputJson ?? null, transition.baseScopeCheckpoint ?? null, transition.headScopeCheckpoint ?? null, transition.telemetryJson, transition.stepExecId],
+    [
+      transition.status,
+      transition.outputJson ?? null,
+      transition.baseScopeCheckpoint ?? null,
+      transition.headScopeCheckpoint ?? null,
+      transition.telemetryJson,
+      transition.stepExecId,
+    ],
   );
   if (transition.status === 'SUSPENDED' || transition.status === 'RUNNING') {
-    await client.query('UPDATE harness_runs SET status = $1, updated_at = $2 WHERE run_id = $3', [transition.status, new Date().toISOString(), stepRow.run_id]);
+    await client.query(
+      'UPDATE harness_runs SET status = $1, updated_at = $2 WHERE run_id = $3',
+      [transition.status, new Date().toISOString(), stepRow.run_id],
+    );
   }
 }
 
@@ -94,25 +126,23 @@ export async function recordStepTransitionInPg(
 export async function getInterruptedStepsOnBootFromPg(
   client: PostgresQueryClient,
 ): Promise<readonly InterruptedStepBootRecord[]> {
-  const runQueryResult = await client.query<PgRunRow>("SELECT * FROM harness_runs WHERE status IN ('QUEUED', 'RUNNING', 'WAITING', 'SUSPENDED') ORDER BY created_at ASC");
+  const runQueryResult = await client.query<PgRunRow>(
+    "SELECT * FROM harness_runs WHERE status IN ('QUEUED', 'RUNNING', 'WAITING', 'SUSPENDED') ORDER BY created_at ASC",
+  );
   const results: InterruptedStepBootRecord[] = [];
   for (const runRow of runQueryResult.rows) {
-    const stepQueryResult = await client.query<PgStepRow>('SELECT * FROM harness_steps WHERE run_id = $1 ORDER BY seq DESC LIMIT 1', [runRow.run_id]);
-    const stepRow = stepQueryResult.rows[0];
-    const active = stepRow !== undefined && (stepRow.status === 'RUNNING' || stepRow.status === 'SUSPENDED');
-    const laneQueryResult = await client.query<{ readonly depends_on_json: string }>('SELECT depends_on_json FROM harness_lane_items WHERE lane_id = $1 AND item_key = $2', [runRow.lane_id, runRow.item_key]);
+    const stepQueryResult = await client.query<PgStepRow>(
+      'SELECT * FROM harness_steps WHERE run_id = $1 ORDER BY seq DESC LIMIT 1',
+      [runRow.run_id],
+    );
+    const laneQueryResult = await client.query<{ readonly depends_on_json: string }>(
+      'SELECT depends_on_json FROM harness_lane_items WHERE lane_id = $1 AND item_key = $2',
+      [runRow.lane_id, runRow.item_key],
+    );
     const laneRow = laneQueryResult.rows[0];
-    const dependsOn = laneRow !== undefined ? (JSON.parse(laneRow.depends_on_json) as string[]) : [];
-    const stack: readonly ContinuationFrame[] = active ? (JSON.parse(stepRow.continuation_stack_json) as ContinuationFrame[]) : [];
-    results.push(Object.freeze<InterruptedStepBootRecord>({
-      runId: runRow.run_id, laneId: runRow.lane_id, itemKey: runRow.item_key, inputJson: runRow.input_json,
-      status: runRow.status as 'QUEUED' | 'RUNNING' | 'WAITING' | 'SUSPENDED', dependsOn: Object.freeze([...dependsOn]),
-      stepExecId: active ? stepRow.step_exec_id : null, stepId: active ? stepRow.step_id : null,
-      executableId: active ? (stepRow.executable_id ?? undefined) : undefined,
-      baseScopeCheckpoint: active ? (stepRow.base_scope_checkpoint ?? undefined) : undefined,
-      headScopeCheckpoint: active ? (stepRow.head_scope_checkpoint ?? undefined) : undefined,
-      continuationStack: Object.freeze([...stack]),
-    }));
+    const dependsOn =
+      laneRow !== undefined ? (JSON.parse(laneRow.depends_on_json) as string[]) : [];
+    results.push(mapInterruptedBootRecordFromPg(runRow, stepQueryResult.rows[0], dependsOn));
   }
   return Object.freeze(results);
 }

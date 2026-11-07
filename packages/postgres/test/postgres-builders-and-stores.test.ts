@@ -24,7 +24,7 @@ import {
   postgres,
   postgresExecutors,
 } from '../src/index.js';
-import { PgliteTestClient } from './fixtures/pglite-test-client.js';
+import { PglitePoolFactory } from './fixtures/pglite-pool-factory.js';
 
 function createSampleWireFrame(
   messageId: string,
@@ -48,13 +48,13 @@ function createSampleWireFrame(
 }
 
 describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, and global-rules executor', () => {
-  let pgClient: PgliteTestClient;
+  let pgClient: PglitePoolFactory;
   let ledgerStore: PostgresLedgerStore;
   let topologyStore: PostgresTopologyStore;
   let lessonStore: PostgresLessonStore;
 
   beforeAll(() => {
-    pgClient = new PgliteTestClient();
+    pgClient = new PglitePoolFactory();
   });
 
   beforeEach(async () => {

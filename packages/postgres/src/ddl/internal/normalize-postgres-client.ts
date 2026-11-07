@@ -1,11 +1,18 @@
 import { Pool } from 'pg';
 import type { PostgresPinnedClient } from '../postgres-pinned-client.js';
-import type { PostgresQueryClient } from '../postgres-query-client.js';
-import type { PostgresQueryResult } from '../postgres-query-result.js';
+import type { PostgresQueryClient, PostgresQueryResult } from '../postgres-query-client.js';
 import {
   POSTGRES_POOL_WRAPPERS,
   POSTGRES_URI_POOLS,
 } from '../postgres-schema.constants.js';
+
+/**
+ * Backing `pg.Pool` or `pg.PoolClient` query target passed to `executePgTargetQuery`.
+ */
+export interface PgQueryableTargetParams {
+  /** Parameterized `node-postgres` query method. */
+  readonly query: Pool['query'];
+}
 
 /**
  * Executes a parameterized query against a `pg.Pool` or `pg.PoolClient` and normalizes the returned rows and row count.
@@ -14,14 +21,14 @@ import {
  *
  * @template TRow Expected row record shape.
  *
- * @param {{ query: Pool['query'] }} target - Backing `pg.Pool` or `pg.PoolClient` instance.
- * @param {string}                   sql    - Parameterized SQL query string.
- * @param {readonly unknown[]}       [args] - Optional positional parameter array.
+ * @param {PgQueryableTargetParams} target - Backing `pg.Pool` or `pg.PoolClient` instance.
+ * @param {string}                  sql    - Parameterized SQL query string.
+ * @param {readonly unknown[]}      [args] - Optional positional parameter array.
  *
  * @returns {Promise<PostgresQueryResult<TRow>>} Normalized query result.
  */
 async function executePgTargetQuery<TRow = Record<string, unknown>>(
-  target: { query: Pool['query'] },
+  target: PgQueryableTargetParams,
   sql: string,
   args?: readonly unknown[],
 ): Promise<PostgresQueryResult<TRow>> {
@@ -46,7 +53,9 @@ async function executePgTargetQuery<TRow = Record<string, unknown>>(
  */
 export function adaptPgPoolToQueryClient(pool: Pool): PostgresQueryClient {
   const existing = POSTGRES_POOL_WRAPPERS.get(pool);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined) {
+    return existing;
+  }
   const adapted = Object.freeze<PostgresQueryClient>({
     query<TRow = Record<string, unknown>>(
       sql: string,
@@ -94,7 +103,9 @@ export function normalizePostgresClient(
       throw new Error('Cannot open PostgreSQL connection: connection URI string is empty.');
     }
     const existing = POSTGRES_URI_POOLS.get(trimmed);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      return existing;
+    }
     const created = adaptPgPoolToQueryClient(new Pool({ connectionString: trimmed }));
     POSTGRES_URI_POOLS.set(trimmed, created);
     return created;

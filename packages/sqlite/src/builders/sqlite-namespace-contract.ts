@@ -1,8 +1,19 @@
 import type { SqliteGlobalRulesBuilder } from './sqlite-global-rules-builder.js';
-import type { SqliteGlobalRulesOptions } from './sqlite-global-rules-options.js';
 import type { SqliteLedgerBuilder } from './sqlite-ledger-builder.js';
 import type { SqliteLessonsBuilder } from './sqlite-lessons-builder.js';
 import type { SqliteTopologyBuilder } from './sqlite-topology-builder.js';
+
+/**
+ * Options passed to `sqlite.globalRules(uri, options)`.
+ *
+ * Specifies the relational table name storing `(id, directive)` rows and an optional source identifier.
+ */
+export interface SqliteGlobalRulesOptions {
+  /** Relational SQLite table name storing `(id, directive)` global rule rows. */
+  readonly table: string;
+  /** Optional explicit source node identifier. */
+  readonly id?: string;
+}
 
 /**
  * Public builder namespace contract exported as `sqlite` from `@harness-dsl/sqlite`.
@@ -55,3 +66,4 @@ export interface SqliteNamespace {
    */
   globalRules(uri: string, options: SqliteGlobalRulesOptions): SqliteGlobalRulesBuilder;
 }
+

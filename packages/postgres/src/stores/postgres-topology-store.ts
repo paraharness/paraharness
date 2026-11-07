@@ -17,6 +17,7 @@ import {
   sealPgOverlayForRun,
 } from './internal/pg-topology-commit-ops.js';
 import {
+  type ResetPgRunOverlayOptions,
   getPartitionsWithPgOverlay,
   resetPgOverlayByScope,
   syncPrerequisitePgOverlays,
@@ -77,7 +78,9 @@ export class PostgresTopologyStore implements TopologyStore {
    */
   getPartitions(runId?: string): Promise<ReadonlyMap<string, TopologyPartitionState>> {
     return this.queue.add(async () =>
-      runInPostgresTransaction(await this.ensureReady(), (tx) => getPartitionsWithPgOverlay(tx, runId)),
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        getPartitionsWithPgOverlay(tx, runId),
+      ),
     );
   }
 
@@ -138,17 +141,16 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * Preserves completed step mutations when `scope === 'step'` and rolls back the entire run overlay when `scope === 'run'`.
    *
-   * @param {string}                                                            runId  - Target flow run identifier.
-   * @param {{ readonly scope?: 'step' | 'run'; readonly stepExecId?: string }} [opts] - Reset scope options.
+   * @param {string}                  runId  - Target flow run identifier.
+   * @param {ResetPgRunOverlayOptions} [opts] - Reset scope options.
    *
    * @returns {Promise<void>} Resolves once matching uncommitted overlay mutations are rolled back.
    */
-  resetRunOverlay(
-    runId: string,
-    opts?: { readonly scope?: 'step' | 'run'; readonly stepExecId?: string },
-  ): Promise<void> {
+  resetRunOverlay(runId: string, opts?: ResetPgRunOverlayOptions): Promise<void> {
     return this.queue.add(async () =>
-      runInPostgresTransaction(await this.ensureReady(), (tx) => resetPgOverlayByScope(tx, runId, opts)),
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        resetPgOverlayByScope(tx, runId, opts),
+      ),
     );
   }
 
@@ -177,7 +179,9 @@ export class PostgresTopologyStore implements TopologyStore {
    */
   commitRunOverlay(runId: string): Promise<CommitRunOverlayResult> {
     return this.queue.add(async () =>
-      runInPostgresTransaction(await this.ensureReady(), (tx) => commitPgOverlayThreeWayMerge(tx, runId)),
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        commitPgOverlayThreeWayMerge(tx, runId),
+      ),
     );
   }
 

@@ -1,4 +1,4 @@
-import type { LessonOutcome, LessonRecord, LessonStore } from '@harness-dsl/core';
+import type { LessonRecord, LessonStore } from '@harness-dsl/core';
 import PQueue from 'p-queue';
 import type { Pool } from 'pg';
 import { normalizePostgresClient } from '../ddl/internal/normalize-postgres-client.js';
@@ -7,10 +7,15 @@ import {
   runInPostgresTransaction,
 } from '../ddl/internal/resolve-postgres-client.js';
 import type { PostgresQueryClient } from '../ddl/postgres-query-client.js';
+import type { AdmitLessonParams } from './internal/admit-lesson-params.js';
 import {
+  type PgLessonOutcomeEntryParams,
+  type QueryPgLessonCandidatesParams,
   admitLessonInPg,
+  markLessonSignalEmittedInPg,
   queryLessonCandidatesInPg,
   recordLessonOutcomesInPg,
+  retireLessonsInPg,
   syncLessonEpochsInPg,
 } from './internal/pg-lesson-ops.js';
 
@@ -61,14 +66,11 @@ export class PostgresLessonStore implements LessonStore {
    *
    * Computes normalized text similarity `relevanceScore` in `[0, 1]` for each candidate lesson.
    *
-   * @param {{ readonly queryText: string; readonly partitions: readonly string[] }} req - Search query and active partitions.
+   * @param {QueryPgLessonCandidatesParams} req - Search query and active partitions.
    *
    * @returns {Promise<readonly LessonRecord[]>} Candidate lesson records with `relevanceScore` populated.
    */
-  queryCandidates(req: {
-    readonly queryText: string;
-    readonly partitions: readonly string[];
-  }): Promise<readonly LessonRecord[]> {
+  queryCandidates(req: QueryPgLessonCandidatesParams): Promise<readonly LessonRecord[]> {
     return this.queue.add(async () => queryLessonCandidatesInPg(await this.ensureReady(), req));
   }
 
@@ -77,16 +79,11 @@ export class PostgresLessonStore implements LessonStore {
    *
    * Deduplicates identical `(partition, directive)` entries and records `epochAtCreation` and `createdByRunId`.
    *
-   * @param {{ readonly partition?: string; readonly directive: string; readonly epochAtCreation: number; readonly createdByRunId?: string }} lesson - Lesson definition to admit.
+   * @param {AdmitLessonParams} lesson - Lesson definition to admit.
    *
    * @returns {Promise<string>} Newly assigned or content-addressed `lessonId`.
    */
-  admit(lesson: {
-    readonly partition?: string;
-    readonly directive: string;
-    readonly epochAtCreation: number;
-    readonly createdByRunId?: string;
-  }): Promise<string> {
+  admit(lesson: AdmitLessonParams): Promise<string> {
     return this.queue.add(async () =>
       runInPostgresTransaction(await this.ensureReady(), (tx) => admitLessonInPg(tx, lesson)),
     );
@@ -97,15 +94,17 @@ export class PostgresLessonStore implements LessonStore {
    *
    * Increments `totalCleanPasses` or `totalViolated` and updates each lesson's `recentOutcomes` window.
    *
-   * @param {ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>} outcomes - Batch of `(lessonId, outcome)` pairs.
+   * @param {readonly PgLessonOutcomeEntryParams[]} outcomes - Batch of `(lessonId, outcome)` pairs.
    *
    * @returns {Promise<readonly LessonRecord[]>} Updated lesson records reflecting the recorded outcomes.
    */
   recordOutcomes(
-    outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>,
+    outcomes: readonly PgLessonOutcomeEntryParams[],
   ): Promise<readonly LessonRecord[]> {
     return this.queue.add(async () =>
-      runInPostgresTransaction(await this.ensureReady(), (tx) => recordLessonOutcomesInPg(tx, outcomes)),
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        recordLessonOutcomesInPg(tx, outcomes),
+      ),
     );
   }
 
@@ -143,23 +142,9 @@ export class PostgresLessonStore implements LessonStore {
    */
   markSignalEmitted(lessonId: string, signalId: string, emittedAt: string): Promise<void> {
     return this.queue.add(async () =>
-      runInPostgresTransaction(await this.ensureReady(), async (tx) => {
-        const queryResult = await tx.query<{ readonly signal_last_emitted_at_json: string | null }>(
-          'SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = $1',
-          [lessonId],
-        );
-        const row = queryResult.rows[0];
-        if (row === undefined) return;
-        const map: Record<string, string> =
-          row.signal_last_emitted_at_json !== null
-            ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
-            : {};
-        map[signalId] = emittedAt;
-        await tx.query(
-          'UPDATE harness_lessons SET signal_last_emitted_at_json = $1 WHERE id = $2',
-          [JSON.stringify(map), lessonId],
-        );
-      }),
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        markLessonSignalEmittedInPg(tx, { lessonId, signalId, emittedAt }),
+      ),
     );
   }
 
@@ -174,11 +159,7 @@ export class PostgresLessonStore implements LessonStore {
    */
   retire(lessonIds: readonly string[]): Promise<void> {
     return this.queue.add(async () =>
-      runInPostgresTransaction(await this.ensureReady(), async (tx) => {
-        for (const id of lessonIds) {
-          await tx.query('UPDATE harness_lessons SET retired = 1 WHERE id = $1', [id]);
-        }
-      }),
+      runInPostgresTransaction(await this.ensureReady(), (tx) => retireLessonsInPg(tx, lessonIds)),
     );
   }
 }
