@@ -12,7 +12,6 @@ import {
 import {
   NetSuiteDraftScopeDriver,
   netsuiteExecutors,
-  type DraftJournalReceipt,
   type NetSuiteDraftHandle,
 } from '@harness-dsl/netsuite';
 import { SqliteLedgerStore, sqliteExecutors } from '@harness-dsl/sqlite';
@@ -39,8 +38,8 @@ function assertDeepFrozen(value: unknown, seen = new Set<unknown>()): void {
   if (!Object.isFrozen(value)) {
     throw new Error('Expected AST container to be frozen.');
   }
-  for (const [, prop] of Object.entries(value)) {
-    assertDeepFrozen(prop, seen);
+  for (const key of Reflect.ownKeys(value)) {
+    assertDeepFrozen(Reflect.get(value, key), seen);
   }
 }
 
@@ -246,9 +245,10 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
         journalEntryId: 'je-us-east-101',
         reconciledAmountUsd: 1200.3,
       });
-      const receipt = result.scopeReceipt as DraftJournalReceipt;
-      expect(receipt.lineCount).toBe(3);
-      expect(receipt.netBalanceUsd).toBe(0);
+      expect(result.scopeReceipt).toMatchObject({
+        lineCount: 3,
+        netBalanceUsd: 0,
+      });
       expect(humanAdapter.decisionRequests).toHaveLength(1);
     } finally {
       await scopeDriver.release(scopeHandle);
@@ -377,9 +377,10 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
         journalEntryId: 'je-eu-west-manual-202',
         reconciledAmountUsd: 450.05,
       });
-      const receipt = result.scopeReceipt as DraftJournalReceipt;
-      expect(receipt.lineCount).toBe(3);
-      expect(receipt.netBalanceUsd).toBe(0);
+      expect(result.scopeReceipt).toMatchObject({
+        lineCount: 3,
+        netBalanceUsd: 0,
+      });
       expect(scopeHandle.entries.every((e) => e.accountId !== '9999-unbalanced-dirty')).toBe(true);
     } finally {
       await scopeDriver.release(scopeHandle);

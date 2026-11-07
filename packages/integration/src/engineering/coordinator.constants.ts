@@ -8,6 +8,8 @@ import {
   workItem,
   workReceipt,
 } from './engineering-schemas.schema.js';
+import { buildRefinedWinnerWorkItem } from './internal/build-refined-winner-work-item.js';
+import { buildSpeculativeCandidateBranches } from './internal/build-speculative-candidate-branches.js';
 import { coordinatorPolicy } from './policies.constants.js';
 import {
   opus,
@@ -62,7 +64,7 @@ export const coordinator = H.agent('coordinator')
             ref: parentItem.ref,
             title: `${parentItem.title} [${req.partition}]`,
             description: `${req.objective}\n\nContext:\n${req.contextNotes}`,
-            routingTier: 'leaf-only' as const,
+            routingTier: 'leaf-only',
             targetPartitions: [req.partition],
             dependsOn: [],
           }))
@@ -78,20 +80,7 @@ export const coordinator = H.agent('coordinator')
         $s
           .requestSchema(speculateRequestSchema)
           .worker(verifiedWorkerLoop)
-          .branches(2, (parentItem, req) => [
-            {
-              ...parentItem,
-              routingTier: 'leaf-only' as const,
-              targetPartitions: [req.partition],
-              description: `${req.problemStatement}\n\nImplement Strategy A:\n${req.strategyA}`,
-            },
-            {
-              ...parentItem,
-              routingTier: 'leaf-only' as const,
-              targetPartitions: [req.partition],
-              description: `${req.problemStatement}\n\nImplement Strategy B:\n${req.strategyB}`,
-            },
-          ])
+          .branches(2, buildSpeculativeCandidateBranches)
           .crossVerifyWith(crossTester)
           .arbiter(candidateArbiter, {
             resolveDecision: (verdict) => verdict,
@@ -99,41 +88,7 @@ export const coordinator = H.agent('coordinator')
           .refineWinnerWhen(
             (verdict) => verdict.decision === 'select-winner' && verdict.followUpDeficits.length > 0,
             verifiedWorkerLoop.withTools(git.candidateComparisonTools(runner)),
-            (parentItem, verdict, candidates) => {
-              const selectedWinnerIndex =
-                verdict.decision === 'select-winner' ? verdict.winnerBranchIndex : 0;
-              const followUpDeficits =
-                verdict.decision === 'select-winner' ? verdict.followUpDeficits : [];
-              let baseWinnerInput = parentItem;
-              let loserSummaryLines: readonly string[] = [];
-              for (const candidate of candidates) {
-                if (candidate.status !== 'COMPLETED') continue;
-                if (candidate.branchIndex === selectedWinnerIndex) {
-                  baseWinnerInput = candidate.input;
-                } else {
-                  loserSummaryLines = [
-                    `Losing branch (branchIndex: ${candidate.branchIndex}, git ref: ${candidate.scopeReceipt.headRef}) for inspection via candidateComparisonTools.`,
-                    `Losing branch diff stat:\n${candidate.scopeReceipt.diffStat}`,
-                  ];
-                }
-              }
-              const descriptionLines: string[] = [
-                baseWinnerInput.description,
-                '',
-                'Apply cross-pollination deficits from speculative arbitration:',
-              ];
-              for (const deficit of followUpDeficits) {
-                descriptionLines.push(`- ${deficit}`);
-              }
-              for (const line of loserSummaryLines) {
-                descriptionLines.push(line);
-              }
-              return {
-                ...baseWinnerInput,
-                routingTier: 'leaf-only' as const,
-                description: descriptionLines.join('\n'),
-              };
-            },
+            buildRefinedWinnerWorkItem,
           ),
       )
       .mutatePlan(($m) =>

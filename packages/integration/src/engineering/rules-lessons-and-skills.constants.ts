@@ -3,6 +3,7 @@ import { fs } from '@harness-dsl/fs';
 import { md } from '@harness-dsl/markdown';
 import { sqlite } from '@harness-dsl/sqlite';
 import { workItem } from './engineering-schemas.schema.js';
+import { mapHighLeverageLessonSignalPayload } from './internal/map-high-leverage-lesson-signal-payload.js';
 import {
   browserSandbox,
   drizzleGenerate,
@@ -96,20 +97,7 @@ export const repoLessons = H.lessons('repo-lessons')
   .emitSignalWhen(
     highLeverageLessonSignal,
     ($t) => $t.minCleanPasses(10).maxViolations(0).cooldownHours(72),
-    (lesson) => ({
-      lessonId: lesson.id,
-      directive: lesson.directive,
-      partition:
-        lesson.partition === 'db'
-          ? ('db' as const)
-          : lesson.partition === 'api'
-            ? ('api' as const)
-            : lesson.partition === 'web'
-              ? ('web' as const)
-              : undefined,
-      cleanPassCount: lesson.totalCleanPasses,
-      violatedCount: lesson.totalViolated,
-    }),
+    mapHighLeverageLessonSignalPayload,
   );
 
 /**

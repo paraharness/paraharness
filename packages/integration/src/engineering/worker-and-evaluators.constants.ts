@@ -8,6 +8,8 @@ import {
   workItem,
   workReceipt,
 } from './engineering-schemas.schema.js';
+import { collectSpeculationPartitions } from './internal/collect-speculation-partitions.js';
+import { isValidTestLeaseVerdict } from './internal/is-valid-test-lease-verdict.js';
 import { readOnlyPolicy, workerBasePolicy } from './policies.constants.js';
 import {
   opus,
@@ -136,15 +138,7 @@ export const candidateArbiter = H.agent('candidate-arbiter')
       z.union([normativeEscalation.schema, contractViolation.schema]),
     ),
   )
-  .partitions((speculationInput) => {
-    const partitions = new Set<'db' | 'api' | 'web'>();
-    for (const candidate of speculationInput.candidates) {
-      for (const partition of candidate.input.targetPartitions) {
-        partitions.add(partition);
-      }
-    }
-    return Array.from(partitions);
-  })
+  .partitions(collectSpeculationPartitions)
   .output(arbiterVerdictSchema);
 
 /**
@@ -171,16 +165,7 @@ export const guardedWorker = worker
           ),
       )
       .elevateLeaseWhen(
-        (_item, req, verdict) => {
-          if (!verdict.approved || verdict.unlockedGlobs.length === 0) return false;
-          const requestedSet = new Set<string>(req.requestedPaths);
-          for (const globPattern of verdict.unlockedGlobs) {
-            if (!/\.test\.tsx?$/.test(globPattern) || !requestedSet.has(globPattern)) {
-              return false;
-            }
-          }
-          return true;
-        },
+        isValidTestLeaseVerdict,
         (_item, _req, verdict) => fs.allowWriteGlobs(verdict.unlockedGlobs),
       )
       .resumeWith((_item, _req, verdict) => verdict.ruling),

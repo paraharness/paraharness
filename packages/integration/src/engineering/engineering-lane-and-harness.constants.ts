@@ -4,6 +4,7 @@ import { github } from '@harness-dsl/github';
 import { mcp } from '@harness-dsl/node';
 import { engineeringFlow } from './delivery-and-flow.constants.js';
 import { workItem } from './engineering-schemas.schema.js';
+import { mapGithubIssueToWorkItem } from './internal/map-github-issue-to-work-item.js';
 import {
   claudeAccounts,
   githubMergeStream,
@@ -38,34 +39,7 @@ export const engineeringLane = H.lane('engineering')
   .tracker(issuesTracker, ($) =>
     $
       .everySeconds(60)
-      .from((issue) => {
-        const labelSet = new Set<string>(issue.labels);
-        if (!labelSet.has('agent-ready')) return undefined;
-
-        const partitions: Array<'db' | 'api' | 'web'> = [];
-        for (const label of issue.labels) {
-          if (label === 'partition:db') {
-            partitions.push('db');
-          } else if (label === 'partition:api') {
-            partitions.push('api');
-          } else if (label === 'partition:web') {
-            partitions.push('web');
-          }
-        }
-
-        const hasDeepLabel =
-          labelSet.has('epic') || labelSet.has('architecture') || labelSet.has('deep');
-        const routingTier = hasDeepLabel || partitions.length > 1 ? 'deep' : 'auto';
-
-        return {
-          ref: `#${issue.number}`,
-          title: issue.title,
-          description: issue.body ?? '',
-          routingTier,
-          targetPartitions: partitions,
-          dependsOn: [],
-        };
-      })
+      .from(mapGithubIssueToWorkItem)
       .onQueued('queued')
       .onRunning('in-progress')
       .onWaiting('needs-human')
@@ -90,9 +64,12 @@ export const engineeringLane = H.lane('engineering')
   .onSignal(steerSignal, ($) =>
     $
       .update((cur, sig) => ({
-        ...cur,
-        routingTier: 'deep' as const,
+        ref: cur.ref,
+        title: cur.title,
         description: `${cur.description}\n\nOwner steering note: ${sig.note}`,
+        routingTier: 'deep',
+        targetPartitions: cur.targetPartitions,
+        dependsOn: cur.dependsOn,
       }))
       .rewindTo('execute-work', { onRewind: git.keepWorktree() }),
   );

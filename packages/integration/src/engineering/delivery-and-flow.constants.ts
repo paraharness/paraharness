@@ -9,6 +9,9 @@ import {
   workItem,
   workReceipt,
 } from './engineering-schemas.schema.js';
+import { promoteFastPathContractViolationToCoordinator } from './internal/promote-fast-path-contract-violation-to-coordinator.js';
+import { promoteFastPathTripwireToCoordinator } from './internal/promote-fast-path-tripwire-to-coordinator.js';
+import { promoteLeafContractViolationToCoordinator } from './internal/promote-leaf-contract-violation-to-coordinator.js';
 import { fastPathPolicy } from './policies.constants.js';
 import { runner } from './pools-and-services.constants.js';
 import {
@@ -97,21 +100,7 @@ export const engineeringFlow = H.flow('adaptive-engineering')
             $step.onInterrupt(contractViolation, ($promote) =>
               $promote
                 .onAbort(git.snapshotAndReset())
-                .replaceWith(coordinator, (item, violation, telemetry) => ({
-                  ...item,
-                  routingTier: 'deep' as const,
-                  targetPartitions: Array.from(
-                    new Set([...item.targetPartitions, violation.partition]),
-                  ),
-                  description: [
-                    item.description,
-                    `--- ESCALATED CONTRACT VIOLATION (${violation.partition}) ---`,
-                    `Broken invariant: ${violation.brokenInvariant}`,
-                    `Proof: ${violation.proof}`,
-                    `Proposed patch: ${violation.proposedPatch}`,
-                    `Aborted snapshot ref (inspect via git.refReaderTools): ${telemetry.abortMeta?.abortedSnapshotRef ?? 'none'}`,
-                  ].join('\n'),
-                })),
+                .replaceWith(coordinator, promoteLeafContractViolationToCoordinator),
             ),
           ),
       )
@@ -121,40 +110,12 @@ export const engineeringFlow = H.flow('adaptive-engineering')
             .onInterrupt(scopeTripwire, ($promote) =>
               $promote
                 .onAbort(git.snapshotAndReset())
-                .replaceWith(coordinator, (item, tripwire, telemetry) => ({
-                  ...item,
-                  routingTier: 'deep' as const,
-                  targetPartitions: tripwire.implicatedPartitions,
-                  description: [
-                    item.description,
-                    `--- FAST-PATH RECONNAISSANCE ---`,
-                    `Reason aborted: ${tripwire.reason}`,
-                    `Partitions implicated: ${tripwire.implicatedPartitions.join(', ')}`,
-                    `Files inspected: ${telemetry.custom.filesRead.join(', ')}`,
-                    `Aborted snapshot ref (inspect via git.refReaderTools): ${telemetry.abortMeta?.abortedSnapshotRef ?? 'none'}`,
-                    `Findings: ${tripwire.findings}`,
-                  ].join('\n'),
-                })),
+                .replaceWith(coordinator, promoteFastPathTripwireToCoordinator),
             )
             .onInterrupt(contractViolation, ($promote) =>
               $promote
                 .onAbort(git.snapshotAndReset())
-                .replaceWith(coordinator, (item, violation, telemetry) => ({
-                  ...item,
-                  routingTier: 'deep' as const,
-                  targetPartitions: Array.from(
-                    new Set([...item.targetPartitions, violation.partition]),
-                  ),
-                  description: [
-                    item.description,
-                    `--- FAST-PATH CONTRACT VIOLATION (${violation.partition}) ---`,
-                    `Broken invariant: ${violation.brokenInvariant}`,
-                    `Proof: ${violation.proof}`,
-                    `Proposed patch: ${violation.proposedPatch}`,
-                    `Files inspected: ${telemetry.custom.filesRead.join(', ')}`,
-                    `Aborted snapshot ref (inspect via git.refReaderTools): ${telemetry.abortMeta?.abortedSnapshotRef ?? 'none'}`,
-                  ].join('\n'),
-                })),
+                .replaceWith(coordinator, promoteFastPathContractViolationToCoordinator),
             ),
         ),
       ),

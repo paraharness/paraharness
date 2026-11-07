@@ -1,6 +1,7 @@
 import { H } from '@harness-dsl/core';
 import { fs } from '@harness-dsl/fs';
 import { git } from '@harness-dsl/git';
+import { mapLeaseRequestViolation } from './internal/map-lease-request-violation.js';
 import { leaseRequest, scopeTripwire } from './signals-and-interrupts.constants.js';
 import { repoPartitions } from './topology-and-workspace.constants.js';
 
@@ -44,22 +45,7 @@ export const workerBasePolicy = H.policy('worker-base')
       onlyExistingAtBaseRef: true,
     }),
   )
-  .onViolation('raise-interrupt', leaseRequest, (violation) => {
-    const requestedPaths: string[] = [];
-    for (const eff of violation.violatedEffects) {
-      const rawPaths = eff.attributes?.['paths'];
-      if (!Array.isArray(rawPaths)) continue;
-      for (const candidatePath of rawPaths) {
-        if (typeof candidatePath === 'string') {
-          requestedPaths.push(candidatePath);
-        }
-      }
-    }
-    return {
-      requestedPaths,
-      justification: violation.violationSummary,
-    };
-  })
+  .onViolation('raise-interrupt', leaseRequest, mapLeaseRequestViolation)
   .onAbort(git.snapshotAndReset());
 
 /**

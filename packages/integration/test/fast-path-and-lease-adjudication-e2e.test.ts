@@ -1,98 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  createExecutorRegistry,
-  executeFlow,
-  PoolManager,
-  ScopeLockManager,
-  ServiceSessionRegistry,
-  StepContinuationQueue,
-  type FlowExecutionContext,
-  type GitScopeReceipt,
-  type GitWorktreeHandle,
-  type HumanAdapter,
-} from '@harness-dsl/core';
-import { FsJsonlLessonStore, fsExecutors } from '@harness-dsl/fs';
-import { GitCowWorktreeScopeDriver, gitExecutors } from '@harness-dsl/git';
-import { githubExecutors } from '@harness-dsl/github';
-import { markdownExecutors } from '@harness-dsl/markdown';
-import { nodeExecutors } from '@harness-dsl/node';
-import { postgresExecutors } from '@harness-dsl/postgres';
-import { slackExecutors } from '@harness-dsl/slack';
-import { SqliteLedgerStore, SqliteTopologyStore, sqliteExecutors } from '@harness-dsl/sqlite';
+import { executeFlow } from '@harness-dsl/core';
+import { git, GitCowWorktreeScopeDriver } from '@harness-dsl/git';
 import { describe, expect, it } from 'vitest';
-import {
-  engineeringFlow,
-  engineeringPrefix,
-  repoLessons,
-  workspace,
-  type WorkItem,
-} from '../src/index.js';
+import { workspace } from '../src/index.js';
+import { createEngineeringTestFlowContext } from './fixtures/create-engineering-test-flow-context.js';
 import { createIntegrationWorkspaceFixture } from './fixtures/create-integration-workspace-fixture.js';
 import { ScriptedIntegrationHumanAdapter } from './fixtures/scripted-integration-human-adapter.js';
 import { ScriptedIntegrationModelDriver } from './fixtures/scripted-integration-model-driver.js';
-
-function buildEngineeringTestFlowContext(params: {
-  readonly fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>;
-  readonly runId: string;
-  readonly currentInput: WorkItem;
-  readonly modelDriver: ScriptedIntegrationModelDriver;
-  readonly humanAdapter: ScriptedIntegrationHumanAdapter;
-  readonly scopeHandle: GitWorktreeHandle;
-  readonly scopeDriver: GitCowWorktreeScopeDriver;
-}): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
-  const { fixture, runId, currentInput, modelDriver, humanAdapter, scopeHandle, scopeDriver } = params;
-  const lessonStoreNode = repoLessons.toAST().store;
-  if (lessonStoreNode.type !== 'fs:jsonl-lesson-store') {
-    throw new Error('Expected fs:jsonl-lesson-store');
-  }
-  const registry = createExecutorRegistry(
-    sqliteExecutors,
-    postgresExecutors,
-    fsExecutors,
-    markdownExecutors,
-    nodeExecutors,
-    gitExecutors,
-    githubExecutors,
-    slackExecutors,
-    {
-      models: { 'claude:model': () => modelDriver },
-      humanChannels: {
-        'slack:approver': () => humanAdapter,
-        'slack:notifier': () => humanAdapter,
-      },
-    },
-  );
-  return {
-    runId,
-    laneId: 'engineering-throughput',
-    itemKey: currentInput.ref,
-    flow: { ...engineeringFlow.toAST(), scope: { ...workspace.toAST(), repo: fixture.repoDir } },
-    currentInput,
-    scopeHandle,
-    scopeDriver,
-    registry,
-    env: fixture.env,
-    ledgerStore: new SqliteLedgerStore(fixture.sqlitePath),
-    topologyStore: new SqliteTopologyStore(fixture.sqlitePath),
-    lessonStore: new FsJsonlLessonStore(lessonStoreNode, fixture.repoDir),
-    lockManager: new ScopeLockManager(),
-    continuationQueue: new StepContinuationQueue(),
-    poolManager: new PoolManager(),
-    serviceRegistry: new ServiceSessionRegistry(),
-    humanAdaptersById: new Map<string, HumanAdapter>([
-      ['owner', humanAdapter],
-      ['slack-bot', humanAdapter],
-    ]),
-    prefixGroups: [engineeringPrefix.toAST()],
-    wirePrefixesByGroupId: new Map(),
-    completedStepOutputs: new Map(),
-    observedRunEffects: [],
-    activeStepId: null,
-    activeStepExecId: null,
-    activeStepAbortController: new AbortController(),
-  };
-}
 
 describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripwire promotion E2E', () => {
   it('intercepts existing .test.ts mutation via fs.writeGuard, escalates normativeEscalation to owner, elevates lease across loop, runs real node-pty browser-ctl daemon, and lands PR', async () => {
@@ -219,7 +134,7 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-fast-lease-101';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildEngineeringTestFlowContext({
+      const flowCtx = createEngineeringTestFlowContext({
         fixture,
         runId,
         currentInput: {
@@ -245,7 +160,7 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
         const compiledPrefix = flowCtx.wirePrefixesByGroupId.get('engineering-prefix');
         expect(compiledPrefix?.toolsMode).toBe('role-scoped');
         expect(compiledPrefix?.wireToolSchemasByRoleKey['evaluator']?.some((t) => t.name === 'browser-ctl')).toBe(true);
-        const receipt = result.scopeReceipt as GitScopeReceipt;
+        const receipt = git.ScopeReceiptSchema.parse(result.scopeReceipt);
         expect(receipt.mutatedFiles).toEqual(
           expect.arrayContaining([
             'PRODUCT_SPEC.md',
@@ -348,7 +263,7 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-fast-tripwire-102';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildEngineeringTestFlowContext({
+      const flowCtx = createEngineeringTestFlowContext({
         fixture,
         runId,
         currentInput: {

@@ -126,7 +126,9 @@ export const reconciliationFlow = H.flow('reconcile-discrepancy')
         $limit
           .onAbort(netsuite.rollbackDraftJournal())
           .replaceWith(manualEscalationAgent, (item, payload) => ({
-            ...item,
+            discrepancyId: item.discrepancyId,
+            accountRegion: item.accountRegion,
+            varianceUsd: item.varianceUsd,
             priorFailureSummary: payload.summary,
           })),
       ),

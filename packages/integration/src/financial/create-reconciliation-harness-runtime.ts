@@ -1,23 +1,11 @@
-import { claudeExecutors } from '@harness-dsl/claude';
 import {
-  createExecutorRegistry,
   createRuntime,
   H,
   type HarnessRuntime,
   type HarnessRuntimeOptions,
 } from '@harness-dsl/core';
-import { fsExecutors } from '@harness-dsl/fs';
-import { geminiExecutors } from '@harness-dsl/gemini';
-import { gitExecutors } from '@harness-dsl/git';
-import { githubExecutors } from '@harness-dsl/github';
-import { markdownExecutors } from '@harness-dsl/markdown';
-import { netsuiteExecutors } from '@harness-dsl/netsuite';
-import { nodeExecutors } from '@harness-dsl/node';
-import { openaiExecutors } from '@harness-dsl/openai';
-import { postgresExecutors } from '@harness-dsl/postgres';
-import { slackExecutors } from '@harness-dsl/slack';
-import { sqlite, sqliteExecutors } from '@harness-dsl/sqlite';
-import { stripeExecutors } from '@harness-dsl/stripe';
+import { sqlite } from '@harness-dsl/sqlite';
+import { createAllIntegrationExecutorsRegistry } from '../internal/create-all-integration-executors-registry.js';
 import { reconciliationFlow } from './reconciliation-harness.constants.js';
 import { discrepancyItem } from './reconciliation-schemas.schema.js';
 
@@ -34,26 +22,7 @@ import { discrepancyItem } from './reconciliation-schemas.schema.js';
 export function createReconciliationHarnessRuntime(
   options?: HarnessRuntimeOptions,
 ): HarnessRuntime {
-  const defaultSlices = [
-    sqliteExecutors,
-    postgresExecutors,
-    fsExecutors,
-    markdownExecutors,
-    nodeExecutors,
-    gitExecutors,
-    claudeExecutors,
-    openaiExecutors,
-    geminiExecutors,
-    githubExecutors,
-    slackExecutors,
-    stripeExecutors,
-    netsuiteExecutors,
-  ];
-  const registry =
-    options?.registry !== undefined
-      ? createExecutorRegistry(defaultSlices, options.registry)
-      : createExecutorRegistry(defaultSlices);
-
+  const registry = createAllIntegrationExecutorsRegistry(options?.registry);
   const ledgerUri = options?.env?.['RECONCILIATION_LEDGER_PATH'] ?? ':memory:';
   const reconciliationLane = H.lane('reconciliation-lane')
     .input(discrepancyItem)

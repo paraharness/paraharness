@@ -1,40 +1,26 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  createExecutorRegistry,
   createRuntime,
   executeFlow,
+  executeHierarchicalRewindDrain,
   LaneScheduler,
-  PoolManager,
   recoverInterruptedRunOnBoot,
-  ScopeLockManager,
-  ServiceSessionRegistry,
-  StepContinuationQueue,
   type AgentContinuationFrame,
-  type FlowExecutionContext,
-  type GitScopeReceipt,
-  type GitWorktreeHandle,
-  type HumanAdapter,
 } from '@harness-dsl/core';
-import { FsJsonlLessonStore, fsExecutors } from '@harness-dsl/fs';
-import { GitCowWorktreeScopeDriver, gitExecutors } from '@harness-dsl/git';
-import { githubExecutors } from '@harness-dsl/github';
-import { markdownExecutors } from '@harness-dsl/markdown';
-import { nodeExecutors } from '@harness-dsl/node';
-import { postgresExecutors } from '@harness-dsl/postgres';
-import { slackExecutors } from '@harness-dsl/slack';
-import { SqliteLedgerStore, SqliteTopologyStore, sqliteExecutors } from '@harness-dsl/sqlite';
+import { FsJsonlLessonStore } from '@harness-dsl/fs';
+import { git, GitCowWorktreeScopeDriver } from '@harness-dsl/git';
+import { SqliteLedgerStore, SqliteTopologyStore } from '@harness-dsl/sqlite';
 import { describe, expect, it } from 'vitest';
 import {
   appHarness,
-  engineeringFlow,
   engineeringLane,
-  engineeringPrefix,
   repoLessons,
   repoTopology,
   workspace,
   type WorkItem,
 } from '../src/index.js';
+import { createEngineeringTestFlowContext } from './fixtures/create-engineering-test-flow-context.js';
 import { createIntegrationWorkspaceFixture } from './fixtures/create-integration-workspace-fixture.js';
 import { ScriptedIntegrationHumanAdapter } from './fixtures/scripted-integration-human-adapter.js';
 import { ScriptedIntegrationModelDriver } from './fixtures/scripted-integration-model-driver.js';
@@ -45,71 +31,6 @@ function createFixtureLessonStore(repoDir: string): FsJsonlLessonStore {
     throw new Error('Expected fs:jsonl-lesson-store');
   }
   return new FsJsonlLessonStore(storeNode, repoDir);
-}
-
-function buildFlowContextForRecoveryTest(params: {
-  readonly fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>;
-  readonly runId: string;
-  readonly currentInput: WorkItem;
-  readonly modelDriver: ScriptedIntegrationModelDriver;
-  readonly humanAdapter: ScriptedIntegrationHumanAdapter;
-  readonly scopeHandle: GitWorktreeHandle;
-  readonly scopeDriver: GitCowWorktreeScopeDriver;
-  readonly stores: {
-    readonly ledgerStore: SqliteLedgerStore;
-    readonly topologyStore: SqliteTopologyStore;
-    readonly lessonStore: FsJsonlLessonStore;
-  };
-}): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
-  const { fixture, runId, currentInput, modelDriver, humanAdapter, scopeHandle, scopeDriver, stores } = params;
-  const registry = createExecutorRegistry(
-    sqliteExecutors,
-    postgresExecutors,
-    fsExecutors,
-    markdownExecutors,
-    nodeExecutors,
-    gitExecutors,
-    githubExecutors,
-    slackExecutors,
-    {
-      ledgers: { 'sqlite:ledger': () => stores.ledgerStore },
-      models: { 'claude:model': () => modelDriver },
-      humanChannels: {
-        'slack:approver': () => humanAdapter,
-        'slack:notifier': () => humanAdapter,
-      },
-    },
-  );
-  return {
-    runId,
-    laneId: 'engineering-throughput',
-    itemKey: currentInput.ref,
-    flow: { ...engineeringFlow.toAST(), scope: { ...workspace.toAST(), repo: fixture.repoDir } },
-    currentInput,
-    scopeHandle,
-    scopeDriver,
-    registry,
-    env: fixture.env,
-    ledgerStore: stores.ledgerStore,
-    topologyStore: stores.topologyStore,
-    lessonStore: stores.lessonStore,
-    lockManager: new ScopeLockManager(),
-    continuationQueue: new StepContinuationQueue(),
-    poolManager: new PoolManager(),
-    serviceRegistry: new ServiceSessionRegistry(),
-    humanAdaptersById: new Map<string, HumanAdapter>([
-      ['owner', humanAdapter],
-      ['slack-bot', humanAdapter],
-    ]),
-    prefixGroups: [engineeringPrefix.toAST()],
-    wirePrefixesByGroupId: new Map(),
-    completedStepOutputs: new Map(),
-    stepBaseCheckpointsByStepId: new Map(),
-    observedRunEffects: [],
-    activeStepId: null,
-    activeStepExecId: null,
-    activeStepAbortController: new AbortController(),
-  };
 }
 
 describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverlayWhen) and steerSignal / crash recovery E2E', () => {
@@ -186,7 +107,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       const parentRunId = 'run-parent-301';
       const parentHandle = await scopeDriver.acquireRoot(parentRunId);
       const parentInput: WorkItem = { ref: '#301', title: 'Stacked tenant API feature', description: 'Requires prerequisite #102 DB module', routingTier: 'deep', targetPartitions: ['api'], dependsOn: [] };
-      const parentFlowCtx = buildFlowContextForRecoveryTest({ fixture, runId: parentRunId, currentInput: parentInput, modelDriver, humanAdapter, scopeHandle: parentHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
+      const parentFlowCtx = createEngineeringTestFlowContext({ fixture, runId: parentRunId, currentInput: parentInput, modelDriver, humanAdapter, scopeHandle: parentHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
 
       const firstPass = await executeFlow(parentFlowCtx);
       expect(firstPass.exitState).toBe('SUSPENDED');
@@ -195,7 +116,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       const prereqRunId = 'run-prereq-102';
       const prereqHandle = await scopeDriver.acquireRoot(prereqRunId);
       const prereqInput: WorkItem = { ref: '#102', title: 'Add tenant helper to db', description: 'Prerequisite DB module for #301', routingTier: 'leaf-only', targetPartitions: ['db'], dependsOn: [] };
-      const prereqFlowCtx = buildFlowContextForRecoveryTest({ fixture, runId: prereqRunId, currentInput: prereqInput, modelDriver, humanAdapter, scopeHandle: prereqHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
+      const prereqFlowCtx = createEngineeringTestFlowContext({ fixture, runId: prereqRunId, currentInput: prereqInput, modelDriver, humanAdapter, scopeHandle: prereqHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
 
       await topologyStore.updateContract(prereqRunId, 'db', 'db exports UserRecord, queryUser, and TENANT_DB_READY', `${prereqRunId}:step-1`);
       const prereqResult = await executeFlow(prereqFlowCtx);
@@ -223,7 +144,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       try {
         const resumedParentResult = await executeFlow(parentFlowCtx);
         expect(resumedParentResult.exitState).toBe('done');
-        const parentReceipt = resumedParentResult.scopeReceipt as GitScopeReceipt;
+        const parentReceipt = git.ScopeReceiptSchema.parse(resumedParentResult.scopeReceipt);
         expect(parentReceipt.baseBranch).toBe('fix/#102');
         await ledgerStore.recordRunTerminalReceipt(parentRunId, '#301', 'done', JSON.stringify({ ...parentReceipt, prerequisiteRunId: prereqRunId }));
       } finally {
@@ -277,7 +198,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       const runId = 'run:engineering-throughput:#302';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
       const initialInput: WorkItem = { ref: '#302', title: 'Initial fast-path task', description: 'Original description', routingTier: 'auto', targetPartitions: ['api'], dependsOn: [] };
-      const flowCtx = buildFlowContextForRecoveryTest({ fixture, runId, currentInput: initialInput, modelDriver, humanAdapter, scopeHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
+      const flowCtx = createEngineeringTestFlowContext({ fixture, runId, currentInput: initialInput, modelDriver, humanAdapter, scopeHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
 
       try {
         const cleanCkpt = await scopeDriver.serializeCheckpoint(scopeHandle);
@@ -300,7 +221,6 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
         });
         const itemState = await scheduler.enqueueItem({ input: initialInput, runId });
         itemState.status = 'RUNNING';
-        itemState.activeFlowCtx = flowCtx as FlowExecutionContext<WorkItem, unknown>;
         await ledgerStore.recordStepStart({
           runId,
           stepExecId: flowCtx.activeStepExecId,
@@ -313,6 +233,12 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
 
         const rewound = await scheduler.handleSignalRewind('steer', { note: 'Pivot to deep coordinator architecture' }, '#302');
         expect(rewound).toBe(true);
+        await executeHierarchicalRewindDrain({
+          flowCtx,
+          rewindToStepId: 'execute-work',
+          updatedInput: itemState.input,
+          onRewindHook: git.keepWorktree().toAST(),
+        });
         expect(flowCtx.currentInput.routingTier).toBe('deep');
         expect(flowCtx.currentInput.description).toContain('Owner steering note: Pivot to deep coordinator architecture');
         expect(flowCtx.pendingRewindToStepId).toBe('execute-work');

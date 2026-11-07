@@ -9,6 +9,8 @@ import type {
   PrepareForkTarget,
   WireFrameRecord,
 } from '@harness-dsl/core';
+import { appendNotesToWireFrame } from './internal/append-notes-to-wire-frame.js';
+import { cloneForkWireFrames } from './internal/clone-fork-wire-frames.js';
 
 /**
  * Deterministic `ModelDriver` test double orchestrating scripted multi-turn tool calls and structured outputs (`M4-integration.md` §5).
@@ -18,16 +20,19 @@ import type {
  */
 export class ScriptedIntegrationModelDriver implements ModelDriver {
   /** Primary vendor identifier (`'anthropic'`). */
-  readonly vendorId = 'anthropic' as const;
+  readonly vendorId: 'anthropic' = 'anthropic';
 
   /** Vendor alias matching `vendorId`. */
-  readonly vendor = 'anthropic' as const;
+  readonly vendor: 'anthropic' = 'anthropic';
 
   /** Ordered list of all `ModelTurnRequest` payloads received by this driver instance. */
   readonly recordedRequests: ModelTurnRequest[] = [];
 
   /** Recorded `prepareFork` calls for verifying fork history modes and tombstone substitution. */
-  readonly recordedForkCalls: Array<{ readonly ctx: ForkContext; readonly target: PrepareForkTarget }> = [];
+  readonly recordedForkCalls: Array<{
+    readonly ctx: ForkContext;
+    readonly target: PrepareForkTarget;
+  }> = [];
 
   /** User-supplied turn responder callback invoked on each `invokeTurn` call. */
   private readonly turnResponder: (
@@ -78,20 +83,16 @@ export class ScriptedIntegrationModelDriver implements ModelDriver {
    *
    * @returns {Promise<readonly WireFrameRecord[]>} Initial child fork wire frames.
    */
-  prepareFork(ctx: ForkContext, target: PrepareForkTarget): Promise<readonly WireFrameRecord[]> {
+  prepareFork(
+    ctx: ForkContext,
+    target: PrepareForkTarget,
+  ): Promise<readonly WireFrameRecord[]> {
     const forkSeq = this.recordedForkCalls.length + 1;
     this.recordedForkCalls.push(Object.freeze({ ctx, target }));
     if (ctx.historyMode === 'shared-prefix-only') {
       return Promise.resolve(Object.freeze([]));
     }
-    let prevId: string | null = null;
-    const cloned: WireFrameRecord[] = [];
-    for (const frame of ctx.parentChain) {
-      const nextId = `${frame.messageId}:fork:${String(forkSeq)}`;
-      cloned.push(Object.freeze<WireFrameRecord>({ ...frame, messageId: nextId, parentMessageId: prevId }));
-      prevId = nextId;
-    }
-    return Promise.resolve(Object.freeze(cloned));
+    return Promise.resolve(cloneForkWireFrames(ctx.parentChain, forkSeq));
   }
 
   /**
@@ -112,38 +113,12 @@ export class ScriptedIntegrationModelDriver implements ModelDriver {
     targetCallId?: string,
     opts?: AppendToolResultNotesOptions,
   ): Promise<WireFrameRecord> {
-    const joinedNotes = notes.join('\n');
-    const prevResults = frame.canonical.toolResults ?? [];
-    const nextResults: Array<{ readonly callId: string; readonly content: string; readonly isError: boolean }> = [];
-    for (const tr of prevResults) {
-      if (targetCallId === undefined || tr.callId === targetCallId) {
-        nextResults.push(
-          Object.freeze({
-            callId: tr.callId,
-            content: `${tr.content}\n${joinedNotes}`,
-            isError: opts?.isError ?? tr.isError,
-          }),
-        );
-      } else {
-        nextResults.push(tr);
-      }
-    }
-    const nextVisibleText =
-      prevResults.length === 0
-        ? `${frame.canonical.visibleText}\n${joinedNotes}`.trim()
-        : frame.canonical.visibleText;
-    const nextCanonical: CanonicalMessage = Object.freeze({
-      role: frame.canonical.role,
-      visibleText: nextVisibleText,
-      toolCalls: frame.canonical.toolCalls,
-      toolResults: nextResults.length > 0 ? Object.freeze(nextResults) : frame.canonical.toolResults,
-    });
-    const rawBytes = new TextEncoder().encode(JSON.stringify(nextCanonical));
     return Promise.resolve(
-      Object.freeze<WireFrameRecord>({
-        ...frame,
-        rawWireFrame: rawBytes,
-        canonical: nextCanonical,
+      appendNotesToWireFrame({
+        frame,
+        notes,
+        targetCallId,
+        opts,
       }),
     );
   }

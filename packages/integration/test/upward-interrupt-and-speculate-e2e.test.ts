@@ -1,92 +1,18 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  createExecutorRegistry,
-  executeFlow,
-  PoolManager,
-  ScopeLockManager,
-  ServiceSessionRegistry,
-  StepContinuationQueue,
-  type FlowExecutionContext,
-  type GitScopeReceipt,
-  type GitWorktreeHandle,
-  type HumanAdapter,
-} from '@harness-dsl/core';
-import { FsJsonlLessonStore, fsExecutors } from '@harness-dsl/fs';
-import { git, GitCowWorktreeScopeDriver, gitExecutors } from '@harness-dsl/git';
-import { githubExecutors } from '@harness-dsl/github';
-import { markdownExecutors } from '@harness-dsl/markdown';
-import { nodeExecutors } from '@harness-dsl/node';
-import { postgresExecutors } from '@harness-dsl/postgres';
-import { slackExecutors } from '@harness-dsl/slack';
-import { SqliteLedgerStore, SqliteTopologyStore, sqliteExecutors } from '@harness-dsl/sqlite';
+import { executeFlow, z, type StepExecutionContext } from '@harness-dsl/core';
+import { git, GitCowWorktreeScopeDriver } from '@harness-dsl/git';
 import { describe, expect, it } from 'vitest';
-import { engineeringFlow, engineeringPrefix, repoLessons, workspace, type WorkItem } from '../src/index.js';
+import { workspace } from '../src/index.js';
+import { createEngineeringTestFlowContext } from './fixtures/create-engineering-test-flow-context.js';
 import { createIntegrationWorkspaceFixture } from './fixtures/create-integration-workspace-fixture.js';
 import { ScriptedIntegrationHumanAdapter } from './fixtures/scripted-integration-human-adapter.js';
 import { ScriptedIntegrationModelDriver } from './fixtures/scripted-integration-model-driver.js';
 
-function buildDeepCoordinatorFlowContext(params: {
-  readonly fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>;
-  readonly runId: string;
-  readonly currentInput: WorkItem;
-  readonly modelDriver: ScriptedIntegrationModelDriver;
-  readonly humanAdapter: ScriptedIntegrationHumanAdapter;
-  readonly scopeHandle: GitWorktreeHandle;
-  readonly scopeDriver: GitCowWorktreeScopeDriver;
-}): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
-  const { fixture, runId, currentInput, modelDriver, humanAdapter, scopeHandle, scopeDriver } = params;
-  const lessonStoreNode = repoLessons.toAST().store;
-  if (lessonStoreNode.type !== 'fs:jsonl-lesson-store') {
-    throw new Error('Expected fs:jsonl-lesson-store');
-  }
-  const registry = createExecutorRegistry(
-    sqliteExecutors,
-    postgresExecutors,
-    fsExecutors,
-    markdownExecutors,
-    nodeExecutors,
-    gitExecutors,
-    githubExecutors,
-    slackExecutors,
-    {
-      models: { 'claude:model': () => modelDriver },
-      humanChannels: {
-        'slack:approver': () => humanAdapter,
-        'slack:notifier': () => humanAdapter,
-      },
-    },
-  );
-  return {
-    runId,
-    laneId: 'engineering-throughput',
-    itemKey: currentInput.ref,
-    flow: { ...engineeringFlow.toAST(), scope: { ...workspace.toAST(), repo: fixture.repoDir } },
-    currentInput,
-    scopeHandle,
-    scopeDriver,
-    registry,
-    env: fixture.env,
-    ledgerStore: new SqliteLedgerStore(fixture.sqlitePath),
-    topologyStore: new SqliteTopologyStore(fixture.sqlitePath),
-    lessonStore: new FsJsonlLessonStore(lessonStoreNode, fixture.repoDir),
-    lockManager: new ScopeLockManager(),
-    continuationQueue: new StepContinuationQueue(),
-    poolManager: new PoolManager(),
-    serviceRegistry: new ServiceSessionRegistry(),
-    humanAdaptersById: new Map<string, HumanAdapter>([
-      ['owner', humanAdapter],
-      ['slack-bot', humanAdapter],
-    ]),
-    prefixGroups: [engineeringPrefix.toAST()],
-    wirePrefixesByGroupId: new Map(),
-    completedStepOutputs: new Map(),
-    observedRunEffects: [],
-    activeStepId: null,
-    activeStepExecId: null,
-    activeStepAbortController: new AbortController(),
-  };
-}
+const suspendedForkToolResultSchema = z.object({
+  suspendedForkId: z.string().optional(),
+  pausedSiblingForkIds: z.array(z.string()).optional(),
+});
 
 describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculative Tournament) E2E', () => {
   it('handles parallel delegate-partition forks, pauses sibling on contractViolation, updates TECH_DESIGN.md and topology contract, and resumes via resumeFork', async () => {
@@ -126,10 +52,9 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
             const lastToolFrame = req.history[req.history.length - 1];
             const apiForkResult = lastToolFrame?.canonical.toolResults?.find((tr) => tr.callId === 'fork-api-call');
             expect(apiForkResult?.content).toContain('SUSPENDED_ON_INTERRUPT');
-            const parsedApiFork = JSON.parse(apiForkResult?.content ?? '{}') as {
-              readonly suspendedForkId?: string;
-              readonly pausedSiblingForkIds?: readonly string[];
-            };
+            const parsedApiFork = suspendedForkToolResultSchema.parse(
+              JSON.parse(apiForkResult?.content ?? '{}'),
+            );
             const suspendedIds = [
               ...(parsedApiFork.suspendedForkId !== undefined ? [parsedApiFork.suspendedForkId] : []),
               ...(parsedApiFork.pausedSiblingForkIds ?? []),
@@ -224,7 +149,7 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-upward-interrupt-201';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildDeepCoordinatorFlowContext({
+      const flowCtx = createEngineeringTestFlowContext({
         fixture, runId,
         currentInput: { ref: '#201', title: 'Add role endpoint across db and api', description: 'Expose queryUserRole in db and getRoleEndpoint in api', routingTier: 'deep', targetPartitions: ['db', 'api'], dependsOn: [] },
         modelDriver, humanAdapter, scopeHandle, scopeDriver,
@@ -233,7 +158,7 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
       try {
         const result = await executeFlow(flowCtx);
         expect(result.exitState).toBe('done');
-        const receipt = result.scopeReceipt as GitScopeReceipt;
+        const receipt = git.ScopeReceiptSchema.parse(result.scopeReceipt);
         expect(receipt.mutatedFiles).toEqual(
           expect.arrayContaining(['TECH_DESIGN.md', 'packages/db/src/index.ts', 'packages/db/src/role-helper.ts', 'packages/api/src/role-endpoint.ts']),
         );
@@ -365,7 +290,7 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-speculate-202';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildDeepCoordinatorFlowContext({
+      const flowCtx = createEngineeringTestFlowContext({
         fixture, runId,
         currentInput: { ref: '#202', title: 'Explore candidate API approaches', description: 'Run speculative tournament across 2 candidate approaches', routingTier: 'deep', targetPartitions: ['api'], dependsOn: [] },
         modelDriver, humanAdapter, scopeHandle, scopeDriver,
@@ -383,8 +308,31 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
         const diagContent = await readFile(path.join(scopeHandle.worktreePath, 'packages/api/src/branch1-diag.ts'), 'utf8');
         expect(diagContent).toContain('cross-pollinated');
         const patchNode = git.patchEquivalence().toAST();
+        const stepCtx: StepExecutionContext<unknown> = {
+          runId,
+          stepExecId: `${runId}:patch-eq`,
+          scopeHandle,
+          activePartitions: ['api'],
+          activeLeases: [],
+          observedEffects: [],
+          registry: flowCtx.registry,
+          resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]),
+          getRunner: (rNode) => {
+            const factory = flowCtx.registry.runners[rNode.type];
+            if (factory === undefined) {
+              throw new Error(`Missing runner factory for '${rNode.type}'.`);
+            }
+            return factory(rNode);
+          },
+          recordEffects: () => undefined,
+        };
         const patchEqReports = await flowCtx.registry.crossVerifiers['git:patch-equivalence']?.(
-          patchNode, [{ branchIndex: 0, scopeHandle, scopeReceipt: {} }, { branchIndex: 1, scopeHandle, scopeReceipt: {} }], flowCtx as never,
+          patchNode,
+          [
+            { branchIndex: 0, scopeHandle, scopeReceipt: {} },
+            { branchIndex: 1, scopeHandle, scopeReceipt: {} },
+          ],
+          stepCtx,
         );
         expect(patchNode.reportSchema.parse(patchEqReports?.[0]).equivalentBranchIndices).toEqual([0, 1]);
       } finally {

@@ -10,15 +10,28 @@ export class ScriptedIntegrationHumanAdapter implements HumanAdapter {
   /** Ordered list of outbound notification strings delivered via `notify(message)`. */
   readonly notifications: string[] = [];
 
-  /** Ordered list of interactive `HumanDecisionRequest` payloads received via `requestDecision(req)`. */
-  readonly decisionRequests: Array<HumanDecisionRequest<unknown, unknown>> = [];
+  /** Ordered list of interactive decision request summaries received via `requestDecision(req)`. */
+  readonly decisionRequests: Array<{
+    readonly runId: string;
+    readonly requestId: string;
+    readonly humanId: string;
+    readonly payload: unknown;
+  }> = [];
 
   /** Ordered list of `(runId, requestId)` pairs cancelled via `cancelDecision(runId, requestId)`. */
-  readonly cancelledDecisions: Array<{ readonly runId: string; readonly requestId: string }> = [];
+  readonly cancelledDecisions: Array<{
+    readonly runId: string;
+    readonly requestId: string;
+  }> = [];
 
   /** Callback invoked to produce a decision response for each `requestDecision` call. */
   private readonly decisionResponder: (
-    req: HumanDecisionRequest<unknown, unknown>,
+    req: {
+      readonly runId: string;
+      readonly requestId: string;
+      readonly humanId: string;
+      readonly payload: unknown;
+    },
     index: number,
   ) => unknown | Promise<unknown>;
 
@@ -27,11 +40,16 @@ export class ScriptedIntegrationHumanAdapter implements HumanAdapter {
    *
    * Invokes `decisionResponder(req, index)` whenever an actor or interrupt edge pages the human authority.
    *
-   * @param {(req: HumanDecisionRequest<unknown, unknown>, index: number) => unknown | Promise<unknown>} decisionResponder - Callback returning the unvalidated or validated decision object.
+   * @param {(req: { readonly runId: string; readonly requestId: string; readonly humanId: string; readonly payload: unknown }, index: number) => unknown | Promise<unknown>} decisionResponder - Callback returning the unvalidated or validated decision object.
    */
   constructor(
     decisionResponder: (
-      req: HumanDecisionRequest<unknown, unknown>,
+      req: {
+        readonly runId: string;
+        readonly requestId: string;
+        readonly humanId: string;
+        readonly payload: unknown;
+      },
       index: number,
     ) => unknown | Promise<unknown>,
   ) {
@@ -55,7 +73,7 @@ export class ScriptedIntegrationHumanAdapter implements HumanAdapter {
   /**
    * Records an interactive human decision request and returns the schema-validated scripted response.
    *
-   * Invokes `this.decisionResponder(req, index)` and parses the result with `req.responseSchema`.
+   * Invokes `this.decisionResponder(recordedReq, index)` and parses the result with `req.responseSchema`.
    *
    * @template TRequest  Request brief payload type.
    * @template TResponse Validated decision response type.
@@ -68,11 +86,14 @@ export class ScriptedIntegrationHumanAdapter implements HumanAdapter {
     req: HumanDecisionRequest<TRequest, TResponse>,
   ): Promise<TResponse> {
     const index = this.decisionRequests.length;
-    this.decisionRequests.push(req as HumanDecisionRequest<unknown, unknown>);
-    const rawDecision = await this.decisionResponder(
-      req as HumanDecisionRequest<unknown, unknown>,
-      index,
-    );
+    const recordedReq = Object.freeze({
+      runId: req.runId,
+      requestId: req.requestId,
+      humanId: req.humanId,
+      payload: req.payload,
+    });
+    this.decisionRequests.push(recordedReq);
+    const rawDecision = await this.decisionResponder(recordedReq, index);
     return req.responseSchema.parse(rawDecision);
   }
 
