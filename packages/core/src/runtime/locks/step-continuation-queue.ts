@@ -32,9 +32,27 @@ export class StepContinuationQueue {
   ): Promise<TResult> {
     signal?.throwIfAborted();
     const queue = this.getOrCreateQueue(stepExecId);
+    const waitController = new AbortController();
+    let onWaitAbort: (() => void) | undefined;
+    if (signal !== undefined) {
+      onWaitAbort = (): void => waitController.abort(signal.reason);
+      signal.addEventListener('abort', onWaitAbort, { once: true });
+    }
     try {
-      return await queue.add(() => task(), { signal });
+      return await queue.add(
+        () => {
+          if (onWaitAbort !== undefined && signal !== undefined) {
+            signal.removeEventListener('abort', onWaitAbort);
+            onWaitAbort = undefined;
+          }
+          return task();
+        },
+        { signal: waitController.signal },
+      );
     } finally {
+      if (onWaitAbort !== undefined && signal !== undefined) {
+        signal.removeEventListener('abort', onWaitAbort);
+      }
       await Promise.resolve();
       await Promise.resolve();
       this.evictIfIdle(stepExecId, queue);

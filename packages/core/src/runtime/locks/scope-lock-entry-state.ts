@@ -3,11 +3,14 @@ import type PQueue from 'p-queue';
 /**
  * Queued shared-read waiter entry inside a `ScopeLockReaderBatchState`.
  *
- * Stores the continuation callback invoked when the enclosing reader batch turn starts in `PQueue`.
+ * Tracks the reader batch currently owning this waiter and the continuation callback
+ * invoked when the reader lease is granted on an active batch.
  */
 export interface ScopeLockQueueWaiter {
-  /** Synchronous callback that resolves the reader's acquisition promise with its release handle. */
-  readonly grant: () => void;
+  /** Reader batch that currently holds this waiter in its `waiters` set. */
+  batch: ScopeLockReaderBatchState;
+  /** Synchronous callback that resolves the reader's acquisition promise on `grantedBatch`. */
+  readonly grant: (grantedBatch: ScopeLockReaderBatchState) => void;
 }
 
 /**
@@ -21,12 +24,25 @@ export interface ScopeLockReaderBatchState {
   started: boolean;
   /** Count of currently active (granted and unreleased) readers belonging to this batch. */
   activeCount: number;
-  /** Controller used to cancel the queued `PQueue` turn if all waiters abort before the batch starts. */
+  /** Controller used to cancel the queued `PQueue` turn if all waiters abort or coalesce before start. */
   readonly waitController: AbortController;
   /** Set of pending reader waiters awaiting the start of this batch turn in `PQueue`. */
   readonly waiters: Set<ScopeLockQueueWaiter>;
   /** Resolver callback that completes the batch's `PQueue` turn once `activeCount` drops to zero. */
   finishTurn: (() => void) | undefined;
+}
+
+/**
+ * Ordered queued turn descriptor in `ScopeLockEntryState.queuedTurns`.
+ *
+ * Represents either a pending exclusive writer turn or a pending shared reader-batch turn
+ * awaiting execution in `ScopeLockEntryState.queue`.
+ */
+export interface ScopeLockQueuedTurn {
+  /** Discriminator indicating whether this queued turn is an exclusive writer or shared reader batch. */
+  readonly kind: 'writer' | 'readers';
+  /** Associated reader batch state when `kind === 'readers'`, or `undefined` for writers. */
+  readonly batch: ScopeLockReaderBatchState | undefined;
 }
 
 /**
@@ -40,6 +56,8 @@ export interface ScopeLockEntryState {
   readonly handle: unknown;
   /** Single-concurrency `PQueue` (`concurrency: 1`) serializing writer turns and reader-batch turns. */
   readonly queue: PQueue;
+  /** Ordered list of pending writer and reader-batch turns currently queued in `queue`. */
+  readonly queuedTurns: ScopeLockQueuedTurn[];
   /** Number of currently active shared-read leases held on this scope handle. */
   activeReaders: number;
   /** True when an exclusive-write lease is currently held on this scope handle. */

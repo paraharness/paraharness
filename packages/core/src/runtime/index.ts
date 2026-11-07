@@ -109,7 +109,12 @@ export { evaluateLessonSignalTriggers, evaluateLessonSignalTriggers as evaluateL
 export type { LessonScoreContextParams } from './lessons/lesson-score-context-params.js';
 export { DEFAULT_LESSON_SCORING_WEIGHTS, LESSON_OUTCOME_PRECEDENCE_RANK } from './lessons/lesson-scoring.constants.js';
 export { computeLessonScore, mergeLessonOutcomePrecedence, selectRecalledLessons, selectRecalledLessons as scoreAndRecallLessons, shouldRetireLesson } from './lessons/lesson-scoring.js';
-export type { ScopeLockEntryState, ScopeLockQueueWaiter, ScopeLockReaderBatchState } from './locks/scope-lock-entry-state.js';
+export type {
+  ScopeLockEntryState,
+  ScopeLockQueueWaiter,
+  ScopeLockQueuedTurn,
+  ScopeLockReaderBatchState,
+} from './locks/scope-lock-entry-state.js';
 export { ScopeLockManager } from './locks/scope-lock-manager.js';
 export { StepContinuationQueue } from './locks/step-continuation-queue.js';
 export { executeLoop } from './loop/execute-loop.js';

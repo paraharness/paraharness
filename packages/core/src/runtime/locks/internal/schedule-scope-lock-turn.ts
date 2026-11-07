@@ -1,8 +1,13 @@
 import type {
   ScopeLockEntryState,
   ScopeLockQueueWaiter,
+  ScopeLockQueuedTurn,
   ScopeLockReaderBatchState,
 } from '../scope-lock-entry-state.js';
+import {
+  reconcileScopeQueuedTurns,
+  removeScopeQueuedTurn,
+} from './coalesce-scope-reader-batches.js';
 
 /**
  * Evicts `entry` from `entries` when all active readers, writers, and `PQueue` tasks have drained.
@@ -82,11 +87,14 @@ export function enqueueScopeReaderBatchTurn(
     waiters: new Set<ScopeLockQueueWaiter>(),
     finishTurn: undefined,
   };
+  const queuedTurn: ScopeLockQueuedTurn = { kind: 'readers', batch };
+  entry.queuedTurns.push(queuedTurn);
   entry.openReaderBatch = batch;
   void entry.queue
     .add(
       () =>
         new Promise<void>((resolveTurn) => {
+          removeScopeQueuedTurn(entry, queuedTurn);
           if (batch.waiters.size === 0 && batch.activeCount === 0 && entry.openReaderBatch !== batch) {
             resolveTurn();
             return;
@@ -96,7 +104,7 @@ export function enqueueScopeReaderBatchTurn(
           batch.finishTurn = resolveTurn;
           for (const waiter of batch.waiters) {
             batch.waiters.delete(waiter);
-            waiter.grant();
+            waiter.grant(batch);
           }
         }),
       { signal: batch.waitController.signal },
@@ -120,40 +128,37 @@ export function enqueueScopeReaderBatchTurn(
  * @returns {Promise<() => void>} Resolves to an idempotent write lease release callback.
  */
 export function enqueueScopeWriterTurn(
-  entries: Map<unknown, ScopeLockEntryState>,
-  entry: ScopeLockEntryState,
-  signal?: AbortSignal,
+  entries: Map<unknown, ScopeLockEntryState>, entry: ScopeLockEntryState, signal?: AbortSignal,
 ): Promise<() => void> {
   entry.openReaderBatch = undefined;
   entry.pendingWriters += 1;
+  const queuedTurn: ScopeLockQueuedTurn = { kind: 'writer', batch: undefined };
+  entry.queuedTurns.push(queuedTurn);
   const waitController = new AbortController();
-  let onWaitAbort: (() => void) | undefined;
-  if (signal !== undefined) {
-    onWaitAbort = (): void => waitController.abort(signal.reason);
-    signal.addEventListener('abort', onWaitAbort, { once: true });
-  }
+  const onWaitAbort = (): void => {
+    removeScopeQueuedTurn(entry, queuedTurn);
+    waitController.abort(signal?.reason);
+    reconcileScopeQueuedTurns(entry);
+  };
+  signal?.addEventListener('abort', onWaitAbort, { once: true });
   return new Promise<() => void>((resolveGrant, rejectGrant) => {
     void entry.queue
-      .add(
-        () =>
-          new Promise<void>((resolveTurn) => {
-            if (onWaitAbort !== undefined && signal !== undefined) signal.removeEventListener('abort', onWaitAbort);
-            entry.pendingWriters = Math.max(0, entry.pendingWriters - 1);
-            entry.writerActive = true;
-            let released = false;
-            resolveGrant((): void => {
-              if (released) return;
-              released = true;
-              entry.writerActive = false;
-              resolveTurn();
-              evictIdleScopeLockEntry(entries, entry);
-            });
-          }),
-        { signal: waitController.signal },
-      )
+      .add(() => new Promise<void>((resolveTurn) => {
+        signal?.removeEventListener('abort', onWaitAbort);
+        removeScopeQueuedTurn(entry, queuedTurn);
+        entry.writerActive = true;
+        let released = false;
+        resolveGrant((): void => {
+          if (released) return;
+          released = true;
+          entry.writerActive = false;
+          resolveTurn();
+          evictIdleScopeLockEntry(entries, entry);
+        });
+      }), { signal: waitController.signal })
       .catch((error: unknown) => {
-        if (onWaitAbort !== undefined && signal !== undefined) signal.removeEventListener('abort', onWaitAbort);
-        entry.pendingWriters = Math.max(0, entry.pendingWriters - 1);
+        signal?.removeEventListener('abort', onWaitAbort);
+        removeScopeQueuedTurn(entry, queuedTurn);
         evictIdleScopeLockEntry(entries, entry);
         rejectGrant(error);
       });

@@ -1,11 +1,19 @@
 import PQueue from 'p-queue';
 import {
+  reconcileScopeQueuedTurns,
+  removeScopeQueuedTurn,
+} from './internal/coalesce-scope-reader-batches.js';
+import {
   createScopeReadLeaseReleaser,
   enqueueScopeReaderBatchTurn,
   enqueueScopeWriterTurn,
   evictIdleScopeLockEntry,
 } from './internal/schedule-scope-lock-turn.js';
-import type { ScopeLockEntryState, ScopeLockQueueWaiter } from './scope-lock-entry-state.js';
+import type {
+  ScopeLockEntryState,
+  ScopeLockQueueWaiter,
+  ScopeLockReaderBatchState,
+} from './scope-lock-entry-state.js';
 
 /**
  * Per-handle asynchronous shared-read / exclusive-write lock manager (`SPEC.md` §3.7.2).
@@ -50,19 +58,22 @@ export class ScopeLockManager {
     return new Promise<() => void>((resolve, reject) => {
       let onAbort: (() => void) | undefined;
       const waiter: ScopeLockQueueWaiter = {
-        grant: (): void => {
+        batch: targetBatch,
+        grant: (grantedBatch: ScopeLockReaderBatchState): void => {
           if (onAbort !== undefined && signal !== undefined) signal.removeEventListener('abort', onAbort);
-          targetBatch.activeCount += 1;
+          grantedBatch.activeCount += 1;
           entry.activeReaders += 1;
-          resolve(createScopeReadLeaseReleaser(this.entries, entry, targetBatch));
+          resolve(createScopeReadLeaseReleaser(this.entries, entry, grantedBatch));
         },
       };
       if (signal !== undefined) {
         onAbort = (): void => {
-          targetBatch.waiters.delete(waiter);
-          if (targetBatch.waiters.size === 0 && !targetBatch.started) {
-            if (entry.openReaderBatch === targetBatch) entry.openReaderBatch = undefined;
-            targetBatch.waitController.abort(signal.reason);
+          const currentBatch = waiter.batch;
+          currentBatch.waiters.delete(waiter);
+          if (currentBatch.waiters.size === 0 && !currentBatch.started) {
+            removeScopeQueuedTurn(entry, currentBatch);
+            currentBatch.waitController.abort(signal.reason);
+            reconcileScopeQueuedTurns(entry);
           }
           evictIdleScopeLockEntry(this.entries, entry);
           reject(signal.reason);
@@ -190,6 +201,7 @@ export class ScopeLockManager {
     const created: ScopeLockEntryState = {
       handle,
       queue,
+      queuedTurns: [],
       activeReaders: 0,
       writerActive: false,
       pendingWriters: 0,

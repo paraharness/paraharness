@@ -46,77 +46,88 @@ function makeOutTurn<T>(output: T) {
 }
 
 describe('ScopeLockManager & StepContinuationQueue', () => {
-  it('enforces concurrent shared reads, writer-preference fairness, AbortSignal cancellation while queued, and idle entry eviction', async () => {
+  it('enforces concurrent shared reads, writer-preference fairness, queued writer/reader abort reconciliation, and idle eviction', async () => {
     const locks = new ScopeLockManager(), events: string[] = [];
-    const r1Started = createDeferred(), r2Started = createDeferred(), releaseReaders = createDeferred(), w1Started = createDeferred(), releaseW1 = createDeferred();
-    const r1 = locks.withReadLock('scope-1', async () => {
-      events.push('r1:enter');
-      r1Started.resolve();
-      await releaseReaders.promise;
-      events.push('r1:exit');
-    });
-    const r2 = locks.withReadLock('scope-1', async () => {
-      events.push('r2:enter');
-      r2Started.resolve();
-      await releaseReaders.promise;
-      events.push('r2:exit');
-    });
-    await Promise.all([r1Started.promise, r2Started.promise]);
-    expect(events).toEqual(['r1:enter', 'r2:enter']);
+    const releaseR1 = await locks.acquireRead('scope-1'), releaseR2 = await locks.acquireRead('scope-1');
     expect(locks.hasLockEntry('scope-1')).toBe(true);
-
-    const wAbort = new AbortController(), rAbort = new AbortController();
-    const abortedWriter = locks.withWriteLock('scope-1', async () => events.push('w-aborted:enter'), wAbort.signal);
+    const wAbort = new AbortController(), rAbort = new AbortController(), w2Abort = new AbortController();
+    const abortedWriter = locks.acquireWrite('scope-1', wAbort.signal), rPromoted = locks.acquireRead('scope-1');
+    wAbort.abort(new Error('writer-cancelled'));
+    const rSyncAfterAbort = locks.acquireRead('scope-1');
+    await expect(abortedWriter).rejects.toThrow('writer-cancelled');
+    const [releasePromoted, releaseSync] = await Promise.all([rPromoted, rSyncAfterAbort]);
+    releaseR1();
+    releaseR2();
+    expect(locks.hasLockEntry('scope-1')).toBe(true);
+    const w1Started = createDeferred(), releaseW1 = createDeferred();
     const w1 = locks.withWriteLock('scope-1', async () => {
       events.push('w1:enter');
       w1Started.resolve();
       await releaseW1.promise;
       events.push('w1:exit');
     });
-    const abortedReader = locks.withReadLock('scope-1', async () => events.push('r-aborted:enter'), rAbort.signal);
-    const r3 = locks.withReadLock('scope-1', async () => events.push('r3:enter'));
-
-    wAbort.abort(new Error('writer-cancelled'));
+    const abortedReader = locks.acquireRead('scope-1', rAbort.signal);
     rAbort.abort(new Error('reader-cancelled'));
-    await expect(abortedWriter).rejects.toThrow('writer-cancelled');
     await expect(abortedReader).rejects.toThrow('reader-cancelled');
-
-    releaseReaders.resolve();
+    expect(events).toEqual([]);
+    releasePromoted();
+    releaseSync();
     await w1Started.promise;
-    expect(events).toEqual(['r1:enter', 'r2:enter', 'r1:exit', 'r2:exit', 'w1:enter']);
+    expect(events).toEqual(['w1:enter']);
+    const b1Entered = createDeferred(), b2Entered = createDeferred(), releaseBatch = createDeferred();
+    const b1 = locks.withReadLock('scope-1', async () => {
+      b1Entered.resolve();
+      await Promise.all([b2Entered.promise, releaseBatch.promise]);
+      events.push('b1:exit');
+    });
+    const w2 = locks.acquireWrite('scope-1', w2Abort.signal);
+    const b2 = locks.withReadLock('scope-1', async () => {
+      b2Entered.resolve();
+      await Promise.all([b1Entered.promise, releaseBatch.promise]);
+      events.push('b2:exit');
+    });
+    w2Abort.abort(new Error('w2-cancelled'));
+    await expect(w2).rejects.toThrow('w2-cancelled');
     releaseW1.resolve();
-    await Promise.all([r1, r2, w1, r3]);
-    expect(events).toEqual(['r1:enter', 'r2:enter', 'r1:exit', 'r2:exit', 'w1:enter', 'w1:exit', 'r3:enter']);
-    expect(locks.hasLockEntry('scope-1')).toBe(false);
+    await Promise.all([b1Entered.promise, b2Entered.promise]);
+    releaseBatch.resolve();
+    await Promise.all([w1, b1, b2]);
+    expect([events, locks.hasLockEntry('scope-1')]).toEqual([['w1:enter', 'w1:exit', 'b1:exit', 'b2:exit'], false]);
   });
 
-  it('serializes StepContinuationQueue updates per stepExecId via p-queue, honours AbortSignal, and evicts idle queues', async () => {
-    const queue = new StepContinuationQueue(), order: string[] = [], gate = createDeferred(), abortCtrl = new AbortController();
+  it('serializes StepContinuationQueue updates per stepExecId, honours queued AbortSignal without mid-flight eviction, and evicts idle queues', async () => {
+    const queue = new StepContinuationQueue(), order: string[] = [];
+    const t1Started = createDeferred(), gate = createDeferred(), soloStarted = createDeferred(), soloGate = createDeferred();
+    const t1Abort = new AbortController(), queuedAbort = new AbortController(), soloAbort = new AbortController();
     const p1 = queue.enqueueUpdate('step-1', async () => {
+      t1Started.resolve();
       await gate.promise;
       order.push('first');
       return 1;
-    });
-    const pAborted = queue.enqueueUpdate('step-1', async () => order.push('aborted'), abortCtrl.signal);
+    }, t1Abort.signal);
+    const pAborted = queue.enqueueUpdate('step-1', async () => order.push('aborted'), queuedAbort.signal);
     const p2 = queue.enqueueUpdate('step-1', async () => {
       order.push('second-throws');
       throw new Error('simulated stack failure');
     });
-    const p3 = queue.enqueueUpdate('step-1', async () => {
-      order.push('third');
-      return 3;
-    });
-
+    const p3 = queue.enqueueUpdate('step-1', async () => order.push('third'));
+    const pSolo = queue.enqueueUpdate('step-solo', async () => {
+      soloStarted.resolve();
+      await soloGate.promise;
+      return 'solo-ok';
+    }, soloAbort.signal);
+    await Promise.all([t1Started.promise, soloStarted.promise]);
     expect(queue.hasStepQueue('step-1')).toBe(true);
-    abortCtrl.abort(new Error('step-update-aborted'));
+    queuedAbort.abort(new Error('step-update-aborted'));
     await expect(pAborted).rejects.toThrow('step-update-aborted');
-    expect(order).toEqual([]);
+    t1Abort.abort(new Error('mid-flight-abort'));
+    soloAbort.abort(new Error('solo-mid-flight-abort'));
+    await Promise.resolve();
+    expect([order, queue.hasStepQueue('step-1'), queue.hasStepQueue('step-solo')]).toEqual([[], true, true]);
     gate.resolve();
-    await expect(p1).resolves.toBe(1);
-    await expect(p2).rejects.toThrow('simulated stack failure');
-    await expect(p3).resolves.toBe(3);
-    expect(order).toEqual(['first', 'second-throws', 'third']);
-    expect(queue.hasStepQueue('step-1')).toBe(false);
+    soloGate.resolve();
+    await Promise.all([expect(p1).resolves.toBe(1), expect(pSolo).resolves.toBe('solo-ok'), expect(p2).rejects.toThrow('simulated stack failure'), expect(p3).resolves.toBe(3)]);
+    expect([order, queue.hasStepQueue('step-1'), queue.hasStepQueue('step-solo')]).toEqual([['first', 'second-throws', 'third'], false, false]);
   });
 });
 
