@@ -97,13 +97,12 @@ export type { StandardPoolStrategyNode } from './ast/standard-pool-strategy-node
 export type { StreamNode } from './ast/stream-node.js';
 export type { TopologyBuilder } from './ast/topology-builder.js';
 export type { TopologyCommitOverlayConfig, TopologyNode, TopologyPartitionConstraint, TopologySignalCorrelation } from './ast/topology-node.js';
-export type { AdjudicateInterruptBuilder, AdjudicateInterruptBuilder as AdjudicateInterruptEdgeBuilder } from './builders/adjudicate-interrupt-builder.js';
 export type { AgentBuilder } from './builders/agent-builder.js';
 export type { AgentCapabilitiesBuilder } from './builders/agent-capabilities-builder.js';
-export type { AskInterruptBuilder, AskInterruptBuilder as AskInterruptEdgeBuilder } from './builders/ask-interrupt-builder.js';
+export { DEFAULT_AGENT_MAX_TURNS, DEFAULT_LESSON_MIN_SCORE, DEFAULT_LESSON_SCORING, DEFAULT_LESSON_TOP_K, DEFAULT_LESSON_WEIGHTS } from './builders/builder-defaults.constants.js';
 export type { ChildInterruptHandlerBuilder, ChildInterruptHandlerBuilder as ChildInterruptBuilder } from './builders/child-interrupt-handler-builder.js';
 export type { CommandBuilder } from './builders/command-builder.js';
-export type { CommandConfigOptions } from './builders/command-config-options.js';
+export type { CommandConfigOptions, CommandConfigOptions as DirectCommandConfig } from './builders/command-config-options.js';
 export type { CompactionConfigBuilder } from './builders/compaction-config-builder.js';
 export { createAgentBuilder } from './builders/create-agent-builder.js';
 export type { CreateAgentCapabilitiesBuilderOptions, CreateAgentCapabilitiesBuilderOptions as CreateAgentCapabilitiesBuilderState } from './builders/create-agent-capabilities-builder-options.js';
@@ -149,21 +148,16 @@ export type { EscalateCapabilityBuilder } from './builders/escalate-capability-b
 export type { EscalateOnRetryStrategyBuilder } from './builders/escalate-on-retry-strategy-builder.js';
 export type { FlowBranchBuilder } from './builders/flow-branch-builder.js';
 export type { FlowBuilder } from './builders/flow-builder.js';
-export type {
-  ExtractAbortMeta, ExtractEvalScopeReceipt, ExtractScopeHandle, ExtractScopeReceipt, ExtractSpeculationCandidate,
-  ExtractStepInput, ExtractStepOutput, ExtractTelemetryMetrics, ExtractTrackerExternal, ExtractTrackerState,
-} from './builders/flow-extraction.types.js';
+export type { ExtractAbortMeta, ExtractEvalScopeReceipt, ExtractScopeHandle, ExtractScopeReceipt, ExtractSpeculationCandidate, ExtractStepInput, ExtractStepOutput, ExtractTelemetryMetrics, ExtractTrackerExternal, ExtractTrackerState } from './builders/flow-extraction.types.js';
 export type { FlowStepConfigBuilder } from './builders/flow-step-config-builder.js';
 export type { FlowSubBranchBuilder } from './builders/flow-sub-branch-builder.js';
 export type { ForkCapabilityBuilder } from './builders/fork-capability-builder.js';
 export type { ForkModelRoutingBuilder } from './builders/fork-model-routing-builder.js';
 export type { ForkModelRoutingOtherwiseBuilder } from './builders/fork-model-routing-otherwise-builder.js';
-export { H } from './builders/h-namespace.constants.js';
 export type { HarnessBuilder } from './builders/harness-builder.js';
-export type { HarnessNamespace, HarnessNamespace as HNamespace } from './builders/harness-namespace.js';
 export type { HarnessSignalNotificationBuilder } from './builders/harness-signal-notification-builder.js';
 export type { HumanBuilder } from './builders/human-builder.js';
-export type { InterruptEdgeBuilder } from './builders/interrupt-edge-builder.js';
+export type { AdjudicateInterruptBuilder, AdjudicateInterruptBuilder as AdjudicateInterruptEdgeBuilder, AskInterruptBuilder, AskInterruptBuilder as AskInterruptEdgeBuilder, InterruptEdgeBuilder } from './builders/interrupt-edge-builder.js';
 export type { InterruptPayloadBuilder, InterruptPayloadBuilder as ConfigurableInterruptBuilder } from './builders/interrupt-payload-builder.js';
 export type { LaneBuilder } from './builders/lane-builder.js';
 export type { LaneRetryConfigBuilder, LaneRetryConfigBuilder as LaneRetryBuilder } from './builders/lane-retry-config-builder.js';
@@ -178,9 +172,7 @@ export type { LoopActConfigBuilder } from './builders/loop-act-config-builder.js
 export type { LoopBuilder } from './builders/loop-builder.js';
 export type { LoopEvaluateOptions } from './builders/loop-evaluate-options.js';
 export type { MutatePlanCapabilityBuilder } from './builders/mutate-plan-capability-builder.js';
-export type { PolicyBuilder } from './builders/policy-builder.js';
-export type { PolicyGuardClauseBuilder, PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder } from './builders/policy-guard-clause-builder.js';
-export type { PolicyLimitExceededBuilder } from './builders/policy-limit-exceeded-builder.js';
+export type { PolicyBuilder, PolicyGuardClauseBuilder, PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder, PolicyLimitExceededBuilder } from './builders/policy-builder.js';
 export type { PoolBuilder } from './builders/pool-builder.js';
 export type { PoolStrategyBuilder, PoolStrategyBuilder as PoolStrategyConfigurator } from './builders/pool-strategy-builder.js';
 export type { PrefixGroupBuilder } from './builders/prefix-group-builder.js';
@@ -197,6 +189,8 @@ export type { SpeculateCapabilityBuilder } from './builders/speculate-capability
 export type { StreamBuilder } from './builders/stream-builder.js';
 export type { TopologyCommitOverlayBuilderInput } from './builders/topology-commit-overlay-builder-input.js';
 export type { TopologyConfigBuilder, TopologyConfigBuilder as ConfigurableTopologyBuilder } from './builders/topology-config-builder.js';
+export type { HNamespace, HNamespace as HarnessNamespace } from './h-namespace-contract.js';
+export { H } from './h-namespace.js';
 export {
   type AbortHookExecutionInput, type ActiveRunSummary, type ActiveTurnPauseState, type AdjudicationPauseState,
   type AgentContinuationFrame, type AgentPauseState, type AppendToolResultNotesOptions,

@@ -8,10 +8,12 @@ import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.type
 import type { InterruptNode } from '../../ast/interrupt-node.js';
 import type { ReplaceInterruptHandlerNode } from '../../ast/replace-interrupt-handler-node.js';
 import type { UniversalStepTelemetry } from '../../ports/universal-step-telemetry.js';
-import type { AdjudicateInterruptBuilder } from '../adjudicate-interrupt-builder.js';
-import type { AskInterruptBuilder } from '../ask-interrupt-builder.js';
 import type { ExtractAbortMeta } from '../flow-extraction.types.js';
-import type { InterruptEdgeBuilder } from '../interrupt-edge-builder.js';
+import type {
+  AdjudicateInterruptBuilder,
+  AskInterruptBuilder,
+  InterruptEdgeBuilder,
+} from '../interrupt-edge-builder.js';
 import { createAdjudicateEdgeFromState } from './create-adjudicate-edge-from-state.js';
 import { createAskEdgeFromState } from './create-ask-and-child-interrupt-from-state.js';
 import { deepFreeze } from './deep-freeze.js';

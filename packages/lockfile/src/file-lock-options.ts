@@ -13,4 +13,6 @@ export interface FileLockOptions {
   readonly heartbeatIntervalMs?: number;
   /** Polling delay in milliseconds between cross-process `EEXIST` retry attempts. */
   readonly retryDelayMs?: number;
+  /** Optional abort signal cancelling queued lock acquisition before entering the critical section. */
+  readonly signal?: AbortSignal;
 }

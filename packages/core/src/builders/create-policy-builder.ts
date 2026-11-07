@@ -13,9 +13,11 @@ import {
   createPolicyGuardClausePendingBuilder,
   createPolicyLimitExceededBuilder,
 } from './internal/policy-sub-builders.js';
-import type { PolicyBuilder } from './policy-builder.js';
-import type { PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder } from './policy-guard-clause-builder.js';
-import type { PolicyLimitExceededBuilder } from './policy-limit-exceeded-builder.js';
+import type {
+  PolicyBuilder,
+  PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder,
+  PolicyLimitExceededBuilder,
+} from './policy-builder.js';
 
 /**
  * Creates a fluent `PolicyBuilder` for `H.policy(id)`.

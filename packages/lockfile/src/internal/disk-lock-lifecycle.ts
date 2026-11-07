@@ -30,6 +30,7 @@ export function resolveFileLockOptions(options?: FileLockOptions): ResolvedFileL
     staleMs: options?.staleMs ?? DEFAULT_LOCK_STALE_MS,
     heartbeatIntervalMs: options?.heartbeatIntervalMs ?? DEFAULT_LOCK_HEARTBEAT_INTERVAL_MS,
     retryDelayMs: options?.retryDelayMs ?? DEFAULT_LOCK_RETRY_DELAY_MS,
+    signal: options?.signal,
   };
 }
 
@@ -77,10 +78,12 @@ export async function acquireDiskFileLock(
   resolvedLockPath: string,
   options: ResolvedFileLockOptions,
 ): Promise<string> {
+  options.signal?.throwIfAborted();
   await mkdir(path.dirname(resolvedLockPath), { recursive: true });
   const ownerToken = `${process.pid}:${Date.now()}:${randomUUID()}`;
   const startMs = Date.now();
   while (true) {
+    options.signal?.throwIfAborted();
     const payload = JSON.stringify({ pid: process.pid, acquiredAtMs: Date.now(), ownerToken });
     try {
       const handle = await open(resolvedLockPath, 'wx');

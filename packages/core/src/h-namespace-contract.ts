@@ -1,50 +1,50 @@
 import type { z } from 'zod';
-import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
-import type { ASTNode } from '../ast/ast-node.js';
-import type { SourceASTNode } from '../ast/domain-ast.types.js';
-import type { EnvRef } from '../ast/env-ref.js';
-import type { InterruptBuilder } from '../ast/interrupt-builder.js';
-import type { SignalBuilder } from '../ast/signal-builder.js';
-import type { SkillNode } from '../ast/skill-node.types.js';
+import type { MaybeBuilder } from './ast/ast-foundation.types.js';
+import type { ASTNode } from './ast/ast-node.js';
+import type { SourceASTNode } from './ast/domain-ast.types.js';
+import type { EnvRef } from './ast/env-ref.js';
+import type { InterruptBuilder } from './ast/interrupt-builder.js';
+import type { SignalBuilder } from './ast/signal-builder.js';
+import type { SkillNode } from './ast/skill-node.types.js';
+import type { AgentBuilder } from './builders/agent-builder.js';
+import type { CommandBuilder } from './builders/command-builder.js';
+import type { CommandConfigOptions } from './builders/command-config-options.js';
+import type { FlowBuilder } from './builders/flow-builder.js';
+import type { HarnessBuilder } from './builders/harness-builder.js';
+import type { HumanBuilder } from './builders/human-builder.js';
+import type { LaneBuilder } from './builders/lane-builder.js';
+import type { LessonsBuilder } from './builders/lessons-builder.js';
+import type { LoopBuilder } from './builders/loop-builder.js';
+import type { PolicyBuilder } from './builders/policy-builder.js';
+import type { PoolBuilder } from './builders/pool-builder.js';
+import type { PrefixGroupBuilder } from './builders/prefix-group-builder.js';
+import type { RulesBuilder } from './builders/rules-builder.js';
+import type { ScopedRuleBuilder } from './builders/scoped-rule-builder.js';
+import type { SkillBuilder } from './builders/skill-builder.js';
+import type { StreamBuilder } from './builders/stream-builder.js';
+import type { TopologyConfigBuilder } from './builders/topology-config-builder.js';
 import type {
   BudgetApprovalSchema,
   DistilledLessonCandidateSchema,
   ResumeForkInputSchema,
-} from '../schemas/budget-and-lesson.schema.js';
+} from './schemas/budget-and-lesson.schema.js';
 import type {
   GlobalRuleSchema,
   ScopePredicateSchema,
   ScopedRule,
   ScopedRuleSchema,
-} from '../schemas/core-rules.schema.js';
+} from './schemas/core-rules.schema.js';
 import type {
   SpeculationCandidateSchema,
   SpeculationInputSchema,
-} from '../schemas/speculation-schemas.js';
-import type { AgentBuilder } from './agent-builder.js';
-import type { CommandBuilder } from './command-builder.js';
-import type { CommandConfigOptions } from './command-config-options.js';
-import type { FlowBuilder } from './flow-builder.js';
-import type { HarnessBuilder } from './harness-builder.js';
-import type { HumanBuilder } from './human-builder.js';
-import type { LaneBuilder } from './lane-builder.js';
-import type { LessonsBuilder } from './lessons-builder.js';
-import type { LoopBuilder } from './loop-builder.js';
-import type { PolicyBuilder } from './policy-builder.js';
-import type { PoolBuilder } from './pool-builder.js';
-import type { PrefixGroupBuilder } from './prefix-group-builder.js';
-import type { RulesBuilder } from './rules-builder.js';
-import type { ScopedRuleBuilder } from './scoped-rule-builder.js';
-import type { SkillBuilder } from './skill-builder.js';
-import type { StreamBuilder } from './stream-builder.js';
-import type { TopologyConfigBuilder } from './topology-config-builder.js';
+} from './schemas/speculation-schemas.js';
 
 /**
  * Root declarative builder namespace (`H`) for constructing passive MetaHarness AST definitions.
  *
  * Exposes factory methods for every core orchestration construct alongside canonical Zod schemas.
  */
-export interface HarnessNamespace {
+export interface HNamespace {
   /**
    * Creates a symbolic environment variable reference (`EnvRef`) without reading `process.env`.
    *

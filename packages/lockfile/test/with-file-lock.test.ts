@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCK_PATH_QUEUES } from '../src/file-lock.constants.js';
 import { acquireFileLock, withFileLock } from '../src/index.js';
 import { tryReclaimStaleLock } from '../src/internal/stale-lock-helpers.js';
@@ -27,6 +27,7 @@ describe('@harness-dsl/lockfile — cross-process and in-process file locking', 
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     if (tempDir.length > 0) {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -134,6 +135,83 @@ describe('@harness-dsl/lockfile — cross-process and in-process file locking', 
     );
 
     expect(result).toBe('reclaimed-ok');
+  });
+
+  it('renews the lockfile mtime via the .unref()ed utimes heartbeat interval while the lease is held', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const lockPath = path.join(tempDir, 'heartbeat-renewal.lock');
+    const lease = await acquireFileLock(lockPath, { heartbeatIntervalMs: 10 });
+    try {
+      const backdatedMs = Date.now() - 60_000;
+      const backdatedDate = new Date(backdatedMs);
+      await utimes(lockPath, backdatedDate, backdatedDate);
+      const beforeHeartbeatStat = await stat(lockPath);
+      expect(beforeHeartbeatStat.mtimeMs).toBeLessThanOrEqual(backdatedMs + 1_000);
+
+      await vi.advanceTimersByTimeAsync(15);
+      const afterHeartbeatStat = await stat(lockPath);
+      expect(afterHeartbeatStat.mtimeMs).toBeGreaterThan(backdatedMs + 30_000);
+    } finally {
+      await lease.release();
+    }
+  });
+
+  it('cancels queued waiters on AbortSignal without releasing an active critical-section slot early', async () => {
+    const lockPath = path.join(tempDir, 'abort-signal.lock');
+    const events: string[] = [];
+    const holder1Entered = createDeferredLatch();
+    const releaseHolder1 = createDeferredLatch();
+    const holder1Controller = new AbortController();
+    const waiter2Controller = new AbortController();
+    const preAbortedController = new AbortController();
+    preAbortedController.abort(new Error('already-aborted'));
+
+    await expect(
+      acquireFileLock(lockPath, { signal: preAbortedController.signal }),
+    ).rejects.toThrowError('already-aborted');
+
+    const holder1Promise = withFileLock(
+      lockPath,
+      async () => {
+        events.push('holder-1-enter');
+        holder1Entered.resolve();
+        await releaseHolder1.promise;
+        events.push('holder-1-exit');
+        return 'holder-1-done';
+      },
+      { signal: holder1Controller.signal },
+    );
+
+    await holder1Entered.promise;
+
+    const waiter2Promise = withFileLock(
+      lockPath,
+      async () => {
+        events.push('waiter-2-enter');
+        return 'waiter-2-done';
+      },
+      { signal: waiter2Controller.signal },
+    );
+
+    const waiter3Promise = withFileLock(lockPath, async () => {
+      events.push('waiter-3-enter');
+      events.push('waiter-3-exit');
+      return 'waiter-3-done';
+    });
+
+    waiter2Controller.abort(new Error('waiter-2-cancelled'));
+    await expect(waiter2Promise).rejects.toThrowError('waiter-2-cancelled');
+    expect(events).toEqual(['holder-1-enter']);
+
+    holder1Controller.abort(new Error('holder-1-post-entry-abort'));
+    await Promise.resolve();
+    expect(events).toEqual(['holder-1-enter']);
+
+    releaseHolder1.resolve();
+    const [res1, res3] = await Promise.all([holder1Promise, waiter3Promise]);
+    expect(res1).toBe('holder-1-done');
+    expect(res3).toBe('waiter-3-done');
+    expect(events).toEqual(['holder-1-enter', 'holder-1-exit', 'waiter-3-enter', 'waiter-3-exit']);
   });
 
   it('times out when an active holder PID with a fresh heartbeat holds the lockfile beyond timeoutMs', async () => {

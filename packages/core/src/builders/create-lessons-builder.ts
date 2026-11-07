@@ -7,8 +7,8 @@ import type { PoolNode } from '../ast/pool-node.js';
 import type { SignalNode } from '../ast/signal-node.js';
 import type { LessonRecord } from '../ports/lesson-record.js';
 import type { CreateLessonsBuilderOptions } from './create-lessons-builder-options.js';
+import { DEFAULT_LESSON_SCORING } from './builder-defaults.constants.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
-import { DEFAULT_LESSON_SCORING } from './internal/lesson-scoring.constants.js';
 import {
   createLessonDistillationBuilder,
   createLessonRetirementBuilder,

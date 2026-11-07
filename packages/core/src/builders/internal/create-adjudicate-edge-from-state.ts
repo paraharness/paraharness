@@ -9,8 +9,7 @@ import { extractAST } from '../../ast/extract-ast.js';
 import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.types.js';
 import type { InterruptNode } from '../../ast/interrupt-node.js';
 import type { LeaseDelta } from '../../ports/lease-delta.js';
-import type { AdjudicateInterruptBuilder } from '../adjudicate-interrupt-builder.js';
-import type { InterruptEdgeBuilder } from '../interrupt-edge-builder.js';
+import type { AdjudicateInterruptBuilder, InterruptEdgeBuilder } from '../interrupt-edge-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 
 /**

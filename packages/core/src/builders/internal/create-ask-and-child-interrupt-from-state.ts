@@ -7,8 +7,8 @@ import type { ChildInterruptHandlerNode } from '../../ast/child-interrupt-handle
 import type { HumanNode } from '../../ast/human-node.js';
 import type { InterruptNode } from '../../ast/interrupt-node.js';
 import type { LeaseDelta } from '../../ports/lease-delta.js';
-import type { AskInterruptBuilder } from '../ask-interrupt-builder.js';
 import type { ChildInterruptHandlerBuilder } from '../child-interrupt-handler-builder.js';
+import type { AskInterruptBuilder } from '../interrupt-edge-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 
 /**

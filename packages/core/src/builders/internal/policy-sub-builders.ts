@@ -10,9 +10,11 @@ import type { PolicyGuardClauseNode } from '../../ast/policy-guard-clause-node.t
 import type { PolicyLimitExceededConfig } from '../../ast/policy-node.js';
 import type { PolicyViolation } from '../../ast/policy-violation.js';
 import type { RaiseInterruptPolicyGuardClauseNode } from '../../ast/raise-interrupt-policy-guard-clause-node.js';
-import type { PolicyBuilder } from '../policy-builder.js';
-import type { PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder } from '../policy-guard-clause-builder.js';
-import type { PolicyLimitExceededBuilder } from '../policy-limit-exceeded-builder.js';
+import type {
+  PolicyBuilder,
+  PolicyGuardClauseBuilder as PolicyGuardClausePendingBuilder,
+  PolicyLimitExceededBuilder,
+} from '../policy-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 
 /**

@@ -5,15 +5,108 @@ import type {
   PolicyGuardASTNode,
   QuotaTripwireASTNode,
 } from '../ast/domain-ast.types.js';
-import type { PolicyNode } from '../ast/policy-node.js';
-import type { PolicyGuardClauseBuilder } from './policy-guard-clause-builder.js';
-import type { PolicyLimitExceededBuilder } from './policy-limit-exceeded-builder.js';
+import type { InterruptNode } from '../ast/interrupt-node.js';
+import type { PolicyLimitExceededConfig, PolicyNode } from '../ast/policy-node.js';
+import type { PolicyViolation } from '../ast/policy-violation.js';
+
+/**
+ * Fluent configurator for limit-exceeded flush and abort handling (`$limit` in `.onLimitExceeded`).
+ *
+ * Configures the mandatory flush interrupt and optional abort hook invoked when
+ * `maxTurns`, `maxCostUsd`, or `maxDurationSeconds` is breached.
+ *
+ * @template THandle Runtime handle type of the active isolation scope.
+ */
+export interface PolicyLimitExceededBuilder<THandle = unknown> {
+  /**
+   * Binds the mandatory interrupt raised after flushing the in-flight turn on a limit breach.
+   *
+   * Enables downstream `.onInterrupt(interrupt, ...)` edges to adjudicate, ask, or replace the actor.
+   *
+   * @template TPayload Interrupt payload type.
+   *
+   * @param {MaybeBuilder<InterruptNode<TPayload>>} interrupt - Target interrupt AST node or builder.
+   *
+   * @returns {PolicyLimitExceededBuilder<THandle>} Updated immutable builder instance.
+   */
+  flushWithInterrupt<TPayload = unknown>(
+    interrupt: MaybeBuilder<InterruptNode<TPayload>>,
+  ): PolicyLimitExceededBuilder<THandle>;
+
+  /**
+   * Binds an optional abort hook (`git.snapshotAndReset()`) executed before raising the flush interrupt.
+   *
+   * Captures abort metadata into `telemetry.abortMeta` for downstream replacement steps.
+   *
+   * @template TAbortMeta Structured metadata record returned by the abort hook.
+   *
+   * @param {MaybeBuilder<AbortHookASTNode<THandle, TAbortMeta>>} abortHook - Abort hook AST node or builder.
+   *
+   * @returns {PolicyLimitExceededBuilder<THandle>} Updated immutable builder instance.
+   */
+  onAbort<TAbortMeta extends Record<string, unknown> = Record<string, unknown>>(
+    abortHook: MaybeBuilder<AbortHookASTNode<THandle, TAbortMeta>>,
+  ): PolicyLimitExceededBuilder<THandle>;
+
+  /**
+   * Compiles the accumulated limit-exceeded state into an immutable `PolicyLimitExceededConfig`.
+   *
+   * Internal finalize method invoked by `PolicyBuilder.onLimitExceeded`.
+   *
+   * @returns {PolicyLimitExceededConfig<THandle>} Deeply frozen limit-exceeded configuration.
+   */
+  build(): PolicyLimitExceededConfig<THandle>;
+}
+
+/**
+ * Intermediate fluent builder returned by `H.policy(id).guard(...guards)` requiring `.onViolation(...)`.
+ *
+ * Forces callers to explicitly bind either `'deny-with-error'` or `'raise-interrupt'`
+ * for every registered guard clause before returning to `PolicyBuilder`.
+ *
+ * @template THandle Runtime handle type of the active isolation scope.
+ */
+export interface PolicyGuardClauseBuilder<THandle = unknown> {
+  /**
+   * Rejects violating tool calls in-band and returns a structured error string to the model.
+   *
+   * When `messageMapper` is omitted, the runtime injects `violation.violationSummary` into the tool error result.
+   *
+   * @param {'deny-with-error'}                      mode            - In-band error rejection mode.
+   * @param {(violation: PolicyViolation) => string} [messageMapper] - Optional custom error formatter.
+   *
+   * @returns {PolicyBuilder<THandle>} Parent `PolicyBuilder` with the guard clause appended.
+   */
+  onViolation(
+    mode: 'deny-with-error',
+    messageMapper?: (violation: PolicyViolation) => string,
+  ): PolicyBuilder<THandle>;
+
+  /**
+   * Halts the offending tool batch and raises a typed `InterruptNode` into the active interrupt hierarchy.
+   *
+   * Maps the `PolicyViolation` into `TPayload` via `mapViolation` and validates it against `interrupt.schema`.
+   *
+   * @template TPayload Interrupt payload type validated by `interrupt.schema`.
+   *
+   * @param {'raise-interrupt'}                        mode         - Interrupt escalation mode.
+   * @param {MaybeBuilder<InterruptNode<TPayload>>}    interrupt    - Target interrupt AST node or builder.
+   * @param {(violation: PolicyViolation) => TPayload} mapViolation - Violation-to-payload projector.
+   *
+   * @returns {PolicyBuilder<THandle>} Parent `PolicyBuilder` with the guard clause appended.
+   */
+  onViolation<TPayload>(
+    mode: 'raise-interrupt',
+    interrupt: MaybeBuilder<InterruptNode<TPayload>>,
+    mapViolation: (violation: PolicyViolation) => TPayload,
+  ): PolicyBuilder<THandle>;
+}
 
 /**
  * Fluent builder for capability and sandbox policies (`H.policy(id)`).
  *
- * Aggregates ordered `PolicyGuardClauseNode` entries, post-flight `QuotaTripwireASTNode`
- * monitors, quantitative resource ceilings, default abort hooks, and limit-exceeded handlers.
+ * Aggregates ordered guard clauses (`fs.protect`, `fs.readOnly`, `node.allowBinaries`),
+ * quota tripwires (`fs.quotaTripwire`), quantitative turn/cost/duration limits, and `.extend(newId)`.
  *
  * @template THandle Runtime handle type of the active isolation scope.
  */
@@ -22,11 +115,11 @@ export interface PolicyBuilder<THandle = unknown> extends AstBuilder<PolicyNode<
   readonly id: string;
 
   /**
-   * Starts a new guard clause over one or more `PolicyGuardASTNode` descriptors, completed via `.onViolation(...)`.
+   * Starts a new guard clause inspecting pre-flight or post-flight `ToolEffect` lists.
    *
-   * Assigns a deterministic clause identifier `"${policyId}:clause:${clauseIndex}"` in declaration order.
+   * Returns a `PolicyGuardClauseBuilder` requiring `.onViolation(...)` to complete the clause.
    *
-   * @param {...ReadonlyArray<MaybeBuilder<PolicyGuardASTNode>>} guards - Policy guard AST nodes or builders.
+   * @param {...ReadonlyArray<MaybeBuilder<PolicyGuardASTNode>>} guards - Guard AST nodes or builders.
    *
    * @returns {PolicyGuardClauseBuilder<THandle>} Pending clause builder requiring `.onViolation(...)`.
    */
@@ -35,20 +128,22 @@ export interface PolicyBuilder<THandle = unknown> extends AstBuilder<PolicyNode<
   ): PolicyGuardClauseBuilder<THandle>;
 
   /**
-   * Appends one or more domain quota tripwires (`QuotaTripwireASTNode`) evaluated post-flight after each tool call.
+   * Appends stateful `QuotaTripwireASTNode` monitors (`fs.quotaTripwire`) evaluated across cumulative effects.
    *
-   * Breaching any tripwire triggers the policy's `.onLimitExceeded(...)` handler.
+   * Tripwires raise their configured interrupt when cumulative workspace mutations exceed thresholds.
    *
    * @param {...ReadonlyArray<MaybeBuilder<QuotaTripwireASTNode>>} tripwires - Quota tripwire AST nodes or builders.
    *
    * @returns {PolicyBuilder<THandle>} New immutable policy builder.
    */
-  tripwire(...tripwires: ReadonlyArray<MaybeBuilder<QuotaTripwireASTNode>>): PolicyBuilder<THandle>;
+  tripwire(
+    ...tripwires: ReadonlyArray<MaybeBuilder<QuotaTripwireASTNode>>
+  ): PolicyBuilder<THandle>;
 
   /**
-   * Sets the maximum number of LLM generation turns allowed before tripping `onLimitExceeded`.
+   * Sets the maximum number of model turns allowed per actor execution under this policy.
    *
-   * Enforces an upper bound on model turn invocations within a single step execution.
+   * Breaching `turns` triggers `onLimitExceeded` (if configured) or terminates the step.
    *
    * @param {number} turns - Positive integer turn ceiling.
    *
@@ -57,9 +152,9 @@ export interface PolicyBuilder<THandle = unknown> extends AstBuilder<PolicyNode<
   maxTurns(turns: number): PolicyBuilder<THandle>;
 
   /**
-   * Sets the maximum cumulative USD cost allowed before tripping `onLimitExceeded`.
+   * Sets the maximum cumulative USD cost allowed per actor execution under this policy.
    *
-   * Enforces an upper bound on model token and tool execution spend within a step.
+   * Breaching `costUsd` triggers `onLimitExceeded` (if configured) or terminates the step.
    *
    * @param {number} costUsd - Positive USD cost ceiling.
    *
@@ -68,9 +163,9 @@ export interface PolicyBuilder<THandle = unknown> extends AstBuilder<PolicyNode<
   maxCostUsd(costUsd: number): PolicyBuilder<THandle>;
 
   /**
-   * Sets the maximum cumulative wall-clock duration in seconds allowed before tripping `onLimitExceeded`.
+   * Sets the maximum wall-clock duration in seconds allowed per actor execution under this policy.
    *
-   * Enforces a wall-clock timeout before triggering epistemic flush and abort.
+   * Breaching `seconds` triggers `onLimitExceeded` (if configured) or terminates the step.
    *
    * @param {number} seconds - Positive duration ceiling in seconds.
    *
@@ -79,20 +174,20 @@ export interface PolicyBuilder<THandle = unknown> extends AstBuilder<PolicyNode<
   maxDurationSeconds(seconds: number): PolicyBuilder<THandle>;
 
   /**
-   * Binds a default `AbortHookASTNode` executed when the governed step is aborted or replaced.
+   * Binds a policy-level default abort hook (`git.snapshotAndReset()`) for unhooked `.replaceWith()` edges.
    *
-   * Satisfies the Tier-1 `'scope'` abort-hook requirement for `.replaceWith()` interrupt edges.
+   * Satisfies Tier-1 `'scope'` replacement requirements when a step's `.replaceWith()` omits `.onAbort()`.
    *
-   * @param {MaybeBuilder<AbortHookASTNode<THandle, Record<string, unknown>>>} hook - Abort hook AST node or builder.
+   * @param {MaybeBuilder<AbortHookASTNode<THandle, Record<string, unknown>>>} abortHook - Abort hook AST node or builder.
    *
    * @returns {PolicyBuilder<THandle>} New immutable policy builder.
    */
   onAbort(
-    hook: MaybeBuilder<AbortHookASTNode<THandle, Record<string, unknown>>>,
+    abortHook: MaybeBuilder<AbortHookASTNode<THandle, Record<string, unknown>>>,
   ): PolicyBuilder<THandle>;
 
   /**
-   * Configures the epistemic flush turn and abort hook executed when any quantitative limit or tripwire is breached.
+   * Configures the limit-exceeded flush interrupt and optional abort hook when a quantitative limit is reached.
    *
    * Invokes `configure` with a `PolicyLimitExceededBuilder` and stores the compiled config.
    *
@@ -105,13 +200,13 @@ export interface PolicyBuilder<THandle = unknown> extends AstBuilder<PolicyNode<
   ): PolicyBuilder<THandle>;
 
   /**
-   * Creates a derived `PolicyBuilder` with `newId` inheriting all guard clauses, tripwires, limits, and hooks from this policy.
+   * Clones this policy under `newId`, inheriting all existing clauses, tripwires, limits, and hooks.
    *
-   * Re-keys inherited guard clause identifiers to `"${newId}:clause:${i}"` while preserving evaluation order.
+   * Re-keys inherited guard clause IDs deterministically as `"${newId}:clause:${i}"`.
    *
-   * @param {string} newId - Non-empty identifier for the derived policy.
+   * @param {string} newId - Unique identifier for the derived policy.
    *
-   * @returns {PolicyBuilder<THandle>} Derived immutable policy builder.
+   * @returns {PolicyBuilder<THandle>} New immutable policy builder initialized with inherited state.
    */
   extend(newId: string): PolicyBuilder<THandle>;
 }
