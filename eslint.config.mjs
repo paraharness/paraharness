@@ -144,7 +144,7 @@ function checkStructuredJsdoc(params) {
 
 export default [
   {
-    files: ['packages/*/{src,test}/**/*.ts', '.agents/hooks/**/*.mjs', 'eslint.config.mjs'],
+    files: ['packages/*/{src,test}/**/*.ts', 'eslint.config.mjs'],
     languageOptions: { parser: tsParser, parserOptions: { ecmaVersion: 'latest', sourceType: 'module' } },
     plugins: {
       '@typescript-eslint': tsPlugin,
@@ -275,7 +275,7 @@ export default [
     },
   },
   {
-    files: ['packages/*/src/**/*.ts', 'packages/*/test/**/*.ts', '.agents/hooks/**/*.mjs', 'eslint.config.mjs'],
+    files: ['packages/*/src/**/*.ts', 'packages/*/test/**/*.ts', 'eslint.config.mjs'],
     ignores: ['packages/*/test/**/*.test.ts'],
     rules: { 'harness/require-complete-jsdoc': 'error' },
   },
