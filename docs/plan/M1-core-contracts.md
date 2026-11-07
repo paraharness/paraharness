@@ -37,7 +37,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Schema validation & JSON Schema conversion (`zodToJsonSchema`) | `zod` (`z.toJSONSchema()`) | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | `zod-to-json-schema` (deprecated/superseded by native Zod v4 `z.toJSONSchema()`); hand-rolled recursive Zod `_def` walker (forbidden by Rule 3.5) | Pure TypeScript, zero native/WASM overhead; covariant `ZodType<out Output, out Input>` preserves `.default()` output inference across all AST/builder generics | Approved (`Rule 3.5`) |
 | Topology DAG cycle detection & transitive traversal (`H.topology`, `dependentsOf`, `affectedBy`) | `@dagrejs/graphlib` (`Graph`, `alg.findCycles`, `alg.preorder`) | `^4.0.7` (npm `4.0.7`, `MIT`, `0` deprecated, `0` CVEs) | `graphology` (multi-package plugin sprawl for simple cycle/preorder queries); hand-rolled 3-state DFS (forbidden by Rule 3.5) | Pure JS in-memory directed graph; deterministic cycle detection at `.toAST()` build time and transitive dependent queries | Approved (`Rule 3.5`) |
-| In-process per-path FIFO lock serialization (`@harness-dsl/lockfile`) | `p-queue` (`new PQueue({ concurrency: 1 })`) | `^9.1.0` (npm `10.0.0`; `^9.1.0` workspace-pinned, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled promise-chain mutex map (forbidden by Rule 3.5) | Pass a queued-wait-only `AbortController` signal to `PQueue.add` and detach caller `AbortSignal` listener inside the task callback before critical-section execution (`docs/lessons/BUILDER.md`); delete map entry when `queue.size === 0 && queue.pending === 0` | Approved (`Rule 3.5`) |
+| In-process per-path FIFO lock serialization (`@harness-dsl/lockfile`) | `p-queue` (`new PQueue({ concurrency: 1 })`) | `^9.1.0` (`9.3.5` locked in `pnpm-lock.yaml`; npm `10.0.0` — pinned to `^9.1.0` / `9.3.5` for Node `>=22.0.0` engine compatibility and `PQueue` `idle`/`next` event semantics without mutating locked workspace manifests, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled promise-chain mutex map (forbidden by Rule 3.5) | Pass a queued-wait-only `AbortController` signal to `PQueue.add` and detach caller `AbortSignal` listener inside the task callback before critical-section execution (`docs/lessons/BUILDER.md`); delete map entry when `queue.size === 0 && queue.pending === 0` | Approved (`Rule 3.5`) |
 | Cross-process advisory lockfile (`@harness-dsl/lockfile`) | `node:fs/promises` (`open(lockPath, 'wx')`, `utimes`, `stat`, `readFile`, `unlink`) + `process.kill(pid, 0)` | Built-in Node.js `>=22` (`MIT`) | `proper-lockfile` (unmaintained since 2020, timer-race issues); copy-pasting lock helpers across `packages/fs` and `packages/git` (forbidden by `CLAUDE.MD` #2 Step 4) | Standalone `packages/lockfile` workspace package; `.unref()`ed `setInterval` heartbeat (`utimes`), dead-PID (`ESRCH`) and stale-`mtime` reclamation, and deterministic `try / finally` handle close + unlink | Approved (`Rule 3.5`) |
 
 ---
@@ -66,13 +66,19 @@ Every file in `packages/lockfile/src/**`, `packages/core/src/**`, and `packages/
 | File Path | Primary Category | Specification |
 | :--- | :--- | :--- |
 | `pnpm-workspace.yaml` | `workspace` | `packages: ['packages/*']` (zero `#` comments per `CLAUDE.MD`) |
-| `packages/<pkg>/package.json` *(all 16 packages)* | `manifest` | `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`, `"exports": { ".": "./src/index.ts" }` (plus `"./runtime": "./src/runtime/index.ts"` on `@harness-dsl/core`), `"scripts": { "lint": "eslint src test", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir test --passWithNoTests" }`, and exact `"dependencies"` / `"devDependencies"` per §4.0 |
+| `packages/<pkg>/package.json` *(all 16 packages)* | `manifest` | `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`, `"exports": { ".": "./src/index.ts" }` (plus `"./runtime": "./src/runtime/index.ts"` on `@harness-dsl/core`), `"main": "./src/index.ts"`, `"types": "./src/index.ts"`, `"scripts": { "lint": "eslint \"{src,test}/**/*.ts\"", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests" }`, and exact `"dependencies"` / `"devDependencies"` per §4.0 |
 | `packages/<pkg>/tsconfig.json` *(all 16 packages)* | `tsconfig` | `{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["src/**/*.ts", "test/**/*.ts"] }` |
-| `packages/lockfile/src/file-lock.constants.ts` | `const` | `DEFAULT_LOCK_STALE_MS`, `DEFAULT_LOCK_RETRY_DELAY_MS`, `DEFAULT_LOCK_TIMEOUT_MS`, `DEFAULT_LOCK_HEARTBEAT_DIVISOR` |
-| `packages/lockfile/src/internal/lock-owner-metadata.ts` | `function` | `serializeLockMetadata`, `parseLockMetadata`, `isLockOwnerProcessAlive` (plus co-located dedicated `LockOwnerMetadata` interface) |
-| `packages/lockfile/src/internal/reclaim-stale-lock.ts` | `function` | `tryReclaimStaleLock`, `sleepWithAbort` (plus co-located dedicated `TryReclaimStaleLockParams` interface) |
-| `packages/lockfile/src/with-file-lock.ts` | `function` | `withFileLock<T>(targetPath: string, fn: () => Promise<T>, options?: FileLockOptions): Promise<T>` (plus co-located dedicated `FileLockOptions` interface) |
-| `packages/lockfile/src/index.ts` | `barrel` | Pure explicit re-exports of `withFileLock` and `FileLockOptions` |
+| `packages/lockfile/src/file-lock.constants.ts` | `const` | `DEFAULT_LOCK_TIMEOUT_MS`, `DEFAULT_LOCK_STALE_MS`, `DEFAULT_LOCK_HEARTBEAT_INTERVAL_MS`, `DEFAULT_LOCK_RETRY_DELAY_MS`, `LOCK_PATH_QUEUES` |
+| `packages/lockfile/src/file-lock-options.ts` | `interface` | `FileLockOptions` |
+| `packages/lockfile/src/file-lock-lease.ts` | `interface` | `FileLockLease` |
+| `packages/lockfile/src/internal/file-lock-record.ts` | `interface` | `FileLockRecord` |
+| `packages/lockfile/src/internal/resolved-file-lock-options.ts` | `interface` | `ResolvedFileLockOptions` |
+| `packages/lockfile/src/internal/create-heartbeat-lease-params.ts` | `interface` | `CreateHeartbeatLeaseParams` |
+| `packages/lockfile/src/internal/stale-lock-helpers.ts` | `function` | `isProcessAlive`, `readLockRecord`, `isExistingLockStale`, `tryReclaimStaleLock` |
+| `packages/lockfile/src/internal/disk-lock-lifecycle.ts` | `function` | `resolveFileLockOptions`, `getOrCreateLockQueue`, `acquireDiskFileLock`, `createHeartbeatLease` |
+| `packages/lockfile/src/acquire-file-lock.ts` | `function` | `acquireFileLock(lockPath: string, options?: FileLockOptions): Promise<FileLockLease>` |
+| `packages/lockfile/src/with-file-lock.ts` | `function` | `withFileLock<T>(lockPath: string, work: () => Promise<T>, options?: FileLockOptions): Promise<T>` |
+| `packages/lockfile/src/index.ts` | `barrel` | Pure explicit re-exports of `acquireFileLock`, `FileLockLease`, `FileLockOptions`, and `withFileLock` |
 
 ### 3.1 AST Layer (`packages/core/src/ast/**`)
 
@@ -279,7 +285,7 @@ Every file in `packages/lockfile/src/**`, `packages/core/src/**`, and `packages/
 | `src/ports/ledger-store.ts` | `interface` | `LedgerStore` (plus `TSMethodSignature` sub-interfaces `CreateOrResumeRunInput`, `CreateOrResumeRunResult`, `RecordStepStartInput`, `MutateLanePlanRequest`, `RecordStepTransitionInput`, `InterruptedStepBootRecord`) |
 | `src/ports/topology-partition-state.ts` | `interface` | `TopologyPartitionState` |
 | `src/ports/topology-store.ts` | `interface` | `TopologyStore` (plus `TSMethodSignature` sub-interface `CommitRunOverlayResult`) |
-| `src/ports/lesson-outcome.ts` | `interface` | `LessonOutcome` |
+| `src/ports/lesson-outcome.types.ts` | `type` | `LessonOutcome` |
 | `src/ports/distilled-lesson-candidate.ts` | `interface` | `DistilledLessonCandidate` |
 | `src/ports/lesson-record.ts` | `interface` | `LessonRecord` |
 | `src/ports/lesson-store.ts` | `interface` | `LessonStore` |
@@ -326,7 +332,8 @@ Every file in `packages/lockfile/src/**`, `packages/core/src/**`, and `packages/
 | `src/builders/lessons-builder.ts` | `interface` | `LessonsBuilder<TIn>` (plus `TSMethodSignature` sub-interfaces `LessonDistillationBuilder`, `LessonScoringBuilder`, `LessonRetirementBuilder`, `LessonSignalTriggerBuilder`) |
 | `src/builders/create-lessons-builder.ts` | `function` | `createLessonsBuilder` |
 | `src/builders/policy-builder.ts` | `interface` | `PolicyBuilder<THandle>` (plus `TSMethodSignature` sub-interfaces `PolicyGuardClauseBuilder<THandle>`, `PolicyLimitExceededBuilder<THandle, TPayload>`) |
-| `src/builders/create-policy-builder.ts` | `function` | `createPolicyBuilder` (plus co-located dedicated `PolicyBuilderState<THandle>` interface) |
+| `src/builders/create-policy-builder-state.ts` | `interface` | `CreatePolicyBuilderState<THandle>` |
+| `src/builders/create-policy-builder.ts` | `function` | `createPolicyBuilder` |
 | `src/builders/fork-capability-builder.ts` | `interface` | `ForkCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle>` (plus `TSMethodSignature` sub-interface `ForkModelRoutingBuilder<TParentIn, TReq>`) |
 | `src/builders/create-fork-capability-builder.ts` | `function` | `createForkCapabilityBuilder` |
 | `src/builders/mutate-plan-capability-builder.ts` | `interface` | `MutatePlanCapabilityBuilder<TItem>` |
@@ -343,15 +350,19 @@ Every file in `packages/lockfile/src/**`, `packages/core/src/**`, and `packages/
 | `src/builders/command-builder.ts` | `interface` | `CommandBuilder<TIn, TOut, THandle>` (plus `TSMethodSignature` sub-interface `CommandConfigOptions<TIn, TOut, THandle>`) |
 | `src/builders/create-command-builder.ts` | `function` | `createCommandBuilder` |
 | `src/builders/agent-builder.ts` | `interface` | `AgentBuilder<TIn, TOut, THandle>` (plus `TSMethodSignature` sub-interface `ChildInterruptHandlerBuilder<TPayload>`) |
-| `src/builders/create-agent-builder.ts` | `function` | `createAgentBuilder` (plus co-located dedicated `AgentBuilderState<TIn, TOut, THandle>` interface) |
+| `src/builders/internal/agent-builder-state.ts` | `interface` | `AgentBuilderState<TIn, TOut, THandle>` |
+| `src/builders/create-agent-builder.ts` | `function` | `createAgentBuilder` |
 | `src/builders/loop-builder.ts` | `interface` | `LoopBuilder<TIn, TOut, THandle, TActStepId, TReceipt>` (plus `TSMethodSignature` sub-interface `LoopEvaluateOptions<TIn, TOut, THandle, TReceipt, TEvalIn, TEvalOut>`) |
-| `src/builders/create-loop-builder.ts` | `function` | `createLoopBuilder` (plus co-located dedicated `LoopBuilderState<TIn, TOut, THandle, TActStepId>` interface) |
+| `src/builders/internal/loop-builder-state.ts` | `interface` | `LoopBuilderState<TIn, TOut, THandle, TActStepId>` |
+| `src/builders/create-loop-builder.ts` | `function` | `createLoopBuilder` |
 | `src/builders/flow-branch-builder.ts` | `interface` | `FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>` (plus `TSMethodSignature` sub-interface `FlowSubBranchBuilder<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>`) |
 | `src/builders/create-flow-branch-builder.ts` | `function` | `createFlowBranchBuilder` |
 | `src/builders/flow-builder.ts` | `interface` | `FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>` (plus `TSMethodSignature` sub-interface `FlowStepConfigBuilder<TFlowIn, TStepIn, TStepOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>`) |
-| `src/builders/create-flow-builder.ts` | `function` | `createFlowBuilder` (plus co-located dedicated `FlowBuilderState<TIn, THandle, TStepIds>` interface) |
+| `src/builders/internal/flow-builder-state.ts` | `interface` | `FlowBuilderState<TIn, THandle, TStepIds>` |
+| `src/builders/create-flow-builder.ts` | `function` | `createFlowBuilder` |
 | `src/builders/lane-builder.ts` | `interface` | `LaneBuilder<TIn, TStepIds>` (plus `TSMethodSignature` sub-interfaces `LaneTrackerConfigBuilder<TIn, TExternal, TExternalState>`, `LaneRetryConfigBuilder`, `LaneSignalHandlerBuilder<TIn, TStepIds, TPayload>`) |
-| `src/builders/create-lane-builder.ts` | `function` | `createLaneBuilder` (plus co-located dedicated `LaneBuilderState<TIn, TStepIds>` interface) |
+| `src/builders/internal/lane-builder-state.ts` | `interface` | `LaneBuilderState<TIn, TStepIds>` |
+| `src/builders/create-lane-builder.ts` | `function` | `createLaneBuilder` |
 | `src/builders/harness-builder.ts` | `interface` | `HarnessBuilder` (plus `TSMethodSignature` sub-interface `HarnessSignalNotificationBuilder<TPayload>`) |
 | `src/builders/create-harness-builder.ts` | `function` | `createHarnessBuilder` |
 | `src/h-namespace-contract.ts` | `interface` | `HNamespace` |
@@ -368,7 +379,7 @@ Every file in `packages/lockfile/src/**`, `packages/core/src/**`, and `packages/
    - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** share a file in `src/**` or `test/fixtures/**` (Rules 1.1–1.7):
      - `*.schema.ts` pairs a Zod schema `export const FooSchema = z.object(...)` with its `export type Foo = z.infer<typeof FooSchema>`.
      - Each root `interface` lives in its own `kebab-case` file (`<= 250` lines), and secondary interfaces reachable from that root interface via **`TSPropertySignature`, `TSIndexSignature`, `extends`, or `TSMethodSignature` parameter/return types** (such as fluent callback sub-builders `$d`, `$r`, `$t`, `$f`, `$s`, `$intr`, `$b`, `$c`, `$m`, `$l` and dedicated port method input/output records) are co-located in their parent root interface file (`Rule 1.2`).
-     - Dedicated 1:1 `*Params` / `*Options` / `*State` interfaces (and their reachable sub-interfaces) for a single function or class are co-located in the same file as that function or class (`Rules 1.3, 1.6, 3.3`), while multi-caller shared parameter interfaces live in their own interface file.
+     - Dedicated 1:1 `*Params` / `*Options` interfaces (and their reachable sub-interfaces) for a single function or class are co-located in the same file as that function or class (`Rules 1.3, 1.6, 3.3`), while `*State` interfaces and multi-caller shared parameter interfaces live in their own single-interface files.
      - Every builder factory function (`create-*-builder.ts`) gets its own single-function file (`Rule 1.6`).
    - Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) in `src/**` and `test/fixtures/**` must carry the 3-part JSDoc anatomy per `docs/CODING_GUIDELINES.md` Rules 2.1–2.3 (2-paragraph Summary + Detailed description separated by an empty `*` line, followed by `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` where applicable; vertical ASCII column alignment of `@template` and `@param` tags is not required; `private` class methods and small `internal/` helper functions `<= 20` lines require only a 1-paragraph summary + required `@tags`), enforced by `pnpm --filter @harness-dsl/lockfile --filter @harness-dsl/core lint`.
 2. **`pnpm-workspace.yaml`**:
@@ -377,13 +388,25 @@ Every file in `packages/lockfile/src/**`, `packages/core/src/**`, and `packages/
    - Every package manifest includes:
      - `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`.
      - `"exports"`: `{ ".": "./src/index.ts" }` on `@harness-dsl/lockfile` and all adapter/integration packages, and `{ ".": "./src/index.ts", "./runtime": "./src/runtime/index.ts" }` on `@harness-dsl/core` (required under `moduleResolution: "NodeNext"`).
-     - `"scripts"`: `{ "lint": "eslint src test", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir test --passWithNoTests" }` so `pnpm --filter @harness-dsl/<pkg> lint`, `typecheck`, and `test` execute cleanly on that package.
-     - `"dependencies"` and `"devDependencies"` (`docs/CODING_GUIDELINES.md` Rule 3.5):
+     - `"main": "./src/index.ts"`, `"types": "./src/index.ts"`.
+     - `"scripts"`: `{ "lint": "eslint \"{src,test}/**/*.ts\"", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests" }` so `pnpm --filter @harness-dsl/<pkg> lint`, `typecheck`, and `test` execute cleanly on that package.
+     - Base `"devDependencies"`: `{ "@types/node": "^22.9.0", "typescript": "^5.8.2", "vitest": "^3.2.0" }` across all 16 packages, plus package-specific `"dependencies"` and extra `"devDependencies"` (`docs/CODING_GUIDELINES.md` Rule 3.5):
        - `@harness-dsl/lockfile`: `"dependencies": { "p-queue": "^9.1.0" }`.
        - `@harness-dsl/core`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "diff": "^9.0.0", "p-limit": "^7.3.0", "p-queue": "^9.1.0", "zod": "^4.6.7" }`.
-       - `@harness-dsl/sqlite`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@harness-dsl/core": "workspace:*", "better-sqlite3": "^12.8.0", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "zod": "^4.6.7" }`, `"devDependencies": { "@types/better-sqlite3": "^9.6.0" }`.
-       - `@harness-dsl/postgres`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@electric-sql/pglite": "^0.5.15", "@harness-dsl/core": "workspace:*", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "pg": "^8.23.1", "zod": "^4.6.7" }`, `"devDependencies": { "@types/pg": "^8.23.1" }`.
-       - `@harness-dsl/{fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}`: `"dependencies"` with `"zod": "^4.6.7"`, `"@harness-dsl/lockfile": "workspace:*"` (for `fs`, `git`, and `integration`), and the Owner-approved libraries per `docs/CODING_GUIDELINES.md` Rule 3.5.
+       - `@harness-dsl/sqlite`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@harness-dsl/core": "workspace:*", "better-sqlite3": "^12.8.0", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "zod": "^4.6.7" }`; extra `"devDependencies": { "@types/better-sqlite3": "^9.6.0" }`.
+       - `@harness-dsl/postgres`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@electric-sql/pglite": "^0.5.15", "@harness-dsl/core": "workspace:*", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "pg": "^8.23.1", "zod": "^4.6.7" }`; extra `"devDependencies": { "@types/better-sqlite3": "^9.6.0", "@types/pg": "^8.23.1", "better-sqlite3": "^12.8.0" }`.
+       - `@harness-dsl/fs`: `"dependencies": { "@harness-dsl/core": "workspace:*", "@harness-dsl/lockfile": "workspace:*", "minisearch": "^7.2.0", "p-queue": "^9.1.0", "picomatch": "^4.0.3", "tinyglobby": "^0.2.17", "write-file-atomic": "^8.0.0", "zod": "^4.6.7" }`; extra `"devDependencies": { "@types/picomatch": "^4.0.3", "@types/write-file-atomic": "^4.0.3" }`.
+       - `@harness-dsl/markdown`: `"dependencies": { "@harness-dsl/core": "workspace:*", "mdast-util-frontmatter": "^2.0.1", "mdast-util-from-markdown": "^2.1.0", "mdast-util-to-markdown": "^2.2.3", "micromark-extension-frontmatter": "^2.0.0", "picomatch": "^4.0.3", "tinyglobby": "^0.2.17", "yaml": "^2.9.1", "zod": "^4.6.7" }`; extra `"devDependencies": { "@types/picomatch": "^4.0.3" }`.
+       - `@harness-dsl/node`: `"dependencies": { "@harness-dsl/core": "workspace:*", "@modelcontextprotocol/sdk": "^1.32.2", "fkill": "^10.0.3", "get-port": "^7.2.0", "node-pty": "^1.1.0", "p-limit": "^7.3.0", "p-queue": "^9.1.0", "pidtree": "^1.0.0", "wait-on": "^9.5.1", "zod": "^4.6.7" }`; extra `"devDependencies": { "@types/wait-on": "^5.3.4" }`.
+       - `@harness-dsl/git`: `"dependencies": { "@harness-dsl/core": "workspace:*", "@harness-dsl/lockfile": "workspace:*", "es-module-lexer": "^3.0.4", "p-queue": "^9.1.0", "picomatch": "^4.0.3", "write-file-atomic": "^8.0.0", "zod": "^4.6.7" }`; extra `"devDependencies": { "@types/picomatch": "^4.0.3", "@types/write-file-atomic": "^4.0.3" }`.
+       - `@harness-dsl/claude`: `"dependencies": { "@anthropic-ai/sdk": "^1.6.0", "@harness-dsl/core": "workspace:*", "zod": "^4.6.7" }`.
+       - `@harness-dsl/openai`: `"dependencies": { "@harness-dsl/core": "workspace:*", "openai": "^7.53.0", "zod": "^4.6.7" }`.
+       - `@harness-dsl/gemini`: `"dependencies": { "@google/genai": "^3.0.0", "@harness-dsl/core": "workspace:*", "zod": "^4.6.7" }`.
+       - `@harness-dsl/github`: `"dependencies": { "@harness-dsl/core": "workspace:*", "@octokit/rest": "^22.0.1", "@octokit/webhooks": "^14.2.0", "zod": "^4.6.7" }`.
+       - `@harness-dsl/slack`: `"dependencies": { "@harness-dsl/core": "workspace:*", "@slack/socket-mode": "^3.1.1", "@slack/web-api": "^8.3.0", "@slack/webhook": "^8.0.2", "zod": "^4.6.7" }`.
+       - `@harness-dsl/stripe`: `"dependencies": { "@harness-dsl/core": "workspace:*", "stripe": "^23.1.0", "zod": "^4.6.7" }`.
+       - `@harness-dsl/netsuite`: `"dependencies": { "@harness-dsl/core": "workspace:*", "big.js": "^7.0.1", "zod": "^4.6.7" }`; extra `"devDependencies": { "@types/big.js": "^7.0.0" }`.
+       - `@harness-dsl/integration`: `"dependencies": { "@harness-dsl/claude": "workspace:*", "@harness-dsl/core": "workspace:*", "@harness-dsl/fs": "workspace:*", "@harness-dsl/gemini": "workspace:*", "@harness-dsl/git": "workspace:*", "@harness-dsl/github": "workspace:*", "@harness-dsl/lockfile": "workspace:*", "@harness-dsl/markdown": "workspace:*", "@harness-dsl/netsuite": "workspace:*", "@harness-dsl/node": "workspace:*", "@harness-dsl/openai": "workspace:*", "@harness-dsl/postgres": "workspace:*", "@harness-dsl/slack": "workspace:*", "@harness-dsl/sqlite": "workspace:*", "@harness-dsl/stripe": "workspace:*", "zod": "^4.6.7" }`.
 4. **`packages/<pkg>/tsconfig.json` for all 16 workspace packages**:
    - `{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["src/**/*.ts", "test/**/*.ts"] }`.
 
