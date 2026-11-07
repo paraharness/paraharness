@@ -2,10 +2,10 @@ import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/
 
 /**
  * Pluggable transport abstraction for Slack Web API (`chat.postMessage`, `chat.update`),
- * incoming webhooks, and Socket Mode control-plane connections.
+ * incoming webhooks (`@slack/webhook`), and Socket Mode control-plane connections (`@slack/socket-mode`).
  *
  * Allows `SlackApproverAdapter` and `SlackNotifierAdapter` to operate over either
- * `defaultSlackTransport` (`fetch`) or deterministic recorded transports in tests.
+ * `defaultSlackTransport` (`WebClient`, `IncomingWebhook`, `SocketModeClient`) or deterministic test doubles.
  */
 export interface SlackTransport {
   /**
@@ -15,7 +15,7 @@ export interface SlackTransport {
    *
    * @param {string}                            botToken - Resolved Slack bot token (`xoxb-...`).
    * @param {string}                            channel  - Resolved Slack channel identifier.
-   * @param {Readonly<Record<string, unknown>>} payload  - Message body and interactive block fields.
+   * @param {Readonly<Record<string, unknown>>} payload  - Message body and interactive Block Kit fields.
    *
    * @returns {Promise<{ readonly ts: string }>} Slack message timestamp receipt.
    */
@@ -43,7 +43,7 @@ export interface SlackTransport {
   ): Promise<void>;
 
   /**
-   * Posts a one-way text notification to a Slack incoming webhook URL.
+   * Posts a one-way text notification to a Slack incoming webhook URL via `IncomingWebhook`.
    *
    * Used by `SlackNotifierAdapter` (`slack.webhook(url)`).
    *
@@ -55,17 +55,23 @@ export interface SlackTransport {
   postWebhook(webhookUrl: string, message: string): Promise<void>;
 
   /**
-   * Establishes an inbound Slack Socket Mode control-plane connection when provided.
+   * Establishes an inbound Slack Socket Mode control-plane connection via `SocketModeClient`.
    *
-   * Invoked by `SlackApproverAdapter.start(controller)` to bind external slash commands and signals.
+   * Invoked by `SlackApproverAdapter.start(controller)` to bind interactive Block Kit actions and signals.
    *
-   * @param {string}                   appToken   - Resolved Slack app-level token (`xapp-...`).
-   * @param {HarnessRuntimeController} controller - Runtime controller for emitting signals and inspecting active runs.
+   * @param {string}                   appToken              - Resolved Slack app-level token (`xapp-...`).
+   * @param {HarnessRuntimeController} controller            - Runtime controller for emitting signals and inspecting active runs.
+   * @param {Function}                 [onInteractiveAction] - Callback routing interactive Block Kit decisions to `submitDecision`.
    *
    * @returns {Promise<ControlPlaneHandle>} Handle with `.close()` to disconnect Socket Mode.
    */
   connectSocketMode?(
     appToken: string,
     controller: HarnessRuntimeController,
+    onInteractiveAction?: (
+      runId: string,
+      requestId: string,
+      responsePayload: unknown,
+    ) => void,
   ): Promise<ControlPlaneHandle>;
 }

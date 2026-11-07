@@ -1,29 +1,32 @@
+import { SocketModeClient } from '@slack/socket-mode';
+import { WebClient, type ChatPostMessageArguments, type ChatUpdateArguments } from '@slack/web-api';
+import { IncomingWebhook } from '@slack/webhook';
 import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/core';
+import {
+  handleSlackInteractiveEvent,
+  handleSlackSlashCommandEvent,
+} from './internal/build-slack-decision-payload.js';
 import type { SlackTransport } from './slack-transport.js';
 
-/** Default `fetch`-backed Slack Web API and webhook transport. */
+/** Default Slack transport backed by `@slack/web-api`, `@slack/webhook`, and `@slack/socket-mode`. */
 export const defaultSlackTransport: SlackTransport = Object.freeze<SlackTransport>({
   async postMessage(
     botToken: string,
     channel: string,
     payload: Readonly<Record<string, unknown>>,
   ): Promise<{ readonly ts: string }> {
-    const response = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      body: JSON.stringify({ channel, ...payload }),
-    });
-    if (!response.ok) {
-      throw new Error(`Slack chat.postMessage failed with HTTP ${response.status}.`);
+    const client = new WebClient(botToken);
+    const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+    const args: ChatPostMessageArguments = {
+      ...payload,
+      channel,
+      text,
+    };
+    const response = await client.chat.postMessage(args);
+    if (response.ok === false) {
+      throw new Error(`Slack chat.postMessage error: ${String(response.error ?? 'unknown')}`);
     }
-    const body = (await response.json()) as Readonly<Record<string, unknown>>;
-    if (body['ok'] === false) {
-      throw new Error(`Slack chat.postMessage error: ${String(body['error'] ?? 'unknown')}`);
-    }
-    return Object.freeze({ ts: typeof body['ts'] === 'string' ? body['ts'] : '0.0' });
+    return Object.freeze({ ts: typeof response.ts === 'string' ? response.ts : '0.0' });
   },
 
   async updateMessage(
@@ -31,41 +34,46 @@ export const defaultSlackTransport: SlackTransport = Object.freeze<SlackTranspor
     channel: string,
     payload: Readonly<Record<string, unknown>>,
   ): Promise<void> {
-    const response = await fetch('https://slack.com/api/chat.update', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-      body: JSON.stringify({ channel, ...payload }),
-    });
-    if (!response.ok) {
-      throw new Error(`Slack chat.update failed with HTTP ${response.status}.`);
-    }
-    const body = (await response.json()) as Readonly<Record<string, unknown>>;
-    if (body['ok'] === false) {
-      throw new Error(`Slack chat.update error: ${String(body['error'] ?? 'unknown')}`);
+    const client = new WebClient(botToken);
+    const ts = typeof payload['ts'] === 'string' ? payload['ts'] : '0.0';
+    const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+    const args: ChatUpdateArguments = {
+      ...payload,
+      channel,
+      ts,
+      text,
+    };
+    const response = await client.chat.update(args);
+    if (response.ok === false) {
+      throw new Error(`Slack chat.update error: ${String(response.error ?? 'unknown')}`);
     }
   },
 
   async postWebhook(webhookUrl: string, message: string): Promise<void> {
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ text: message }),
-    });
-    if (!response.ok) {
-      throw new Error(`Slack incoming webhook POST failed with HTTP ${response.status}.`);
-    }
+    const webhook = new IncomingWebhook(webhookUrl);
+    await webhook.send({ text: message });
   },
 
   async connectSocketMode(
-    _appToken: string,
-    _controller: HarnessRuntimeController,
+    appToken: string,
+    controller: HarnessRuntimeController,
+    onInteractiveAction?: (
+      runId: string,
+      requestId: string,
+      responsePayload: unknown,
+    ) => void,
   ): Promise<ControlPlaneHandle> {
+    const socketClient = new SocketModeClient({ appToken });
+    socketClient.on('interactive', (event: unknown) => {
+      void handleSlackInteractiveEvent(event, onInteractiveAction);
+    });
+    socketClient.on('slash_commands', (event: unknown) => {
+      void handleSlackSlashCommandEvent(event, controller);
+    });
+    await socketClient.start();
     return Object.freeze<ControlPlaneHandle>({
       async close(): Promise<void> {
-        return undefined;
+        await socketClient.disconnect();
       },
     });
   },

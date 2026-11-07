@@ -3,10 +3,16 @@ import type {
   RuntimeDriverContext,
   TrackerAdapter,
 } from '@harness-dsl/core';
+import { DEFAULT_GITHUB_ISSUES_PER_PAGE } from '../builders/internal/github-builder-defaults.constants.js';
 import { defaultGithubHttpTransport } from './default-github-http-transport.constants.js';
 import type { GithubHttpTransport } from './github-http-transport.js';
 import type { GithubIssueRecord } from './github-issue-record.js';
 import {
+  createGithubOctokitClient,
+  parseGithubRepoSlug,
+} from './internal/create-github-octokit-client.js';
+import {
+  isGithubPullRequestIssueItem,
   normalizeGithubIssueRecord,
   resolveRequiredGithubSecret,
 } from './internal/normalize-github-issue.js';
@@ -14,8 +20,8 @@ import {
 /**
  * Runtime `TrackerAdapter` implementation for `GithubIssuesTrackerNode` (`github:issues`).
  *
- * Polls open issues from `/repos/:owner/:repo/issues` with optional label filters and
- * synchronizes lane lifecycle state transitions back to `/repos/:owner/:repo/issues/:number/labels`.
+ * Polls open issues from `/repos/:owner/:repo/issues` across `per_page: 100` pages via `@octokit/rest`
+ * (filtering out pull requests) and adds lifecycle state labels non-destructively via `issues.addLabels`.
  *
  * @template TExternalState External tracker state string union.
  */
@@ -51,9 +57,9 @@ export class GithubIssuesTrackerAdapter<TExternalState extends string = string>
   }
 
   /**
-   * Polls open issues from `/repos/${repo}/issues` and normalizes them into `GithubIssueRecord` items.
+   * Polls open issues from `/repos/${repo}/issues` across 100-item pages and filters out pull requests.
    *
-   * Appends the `labels` query parameter when `node.labels` is configured and non-empty.
+   * Uses `@octokit/rest` `issues.listForRepo` with `per_page: 100` and excludes entries with `pull_request`.
    *
    * @returns {Promise<readonly GithubIssueRecord[]>} Frozen array of normalized GitHub issue records.
    */
@@ -63,31 +69,48 @@ export class GithubIssuesTrackerAdapter<TExternalState extends string = string>
       (val) => this.ctx.resolveEnv(val),
       `github:issues (${this.node.repo})`,
     );
+    const { owner, repo } = parseGithubRepoSlug(this.node.repo);
+    const octokit = createGithubOctokitClient(token, this.transport);
     const hasLabels = this.node.labels !== undefined && this.node.labels.length > 0;
-    const labelsParam = hasLabels
-      ? `&labels=${encodeURIComponent(this.node.labels.join(','))}`
-      : '';
-    const path = `/repos/${this.node.repo}/issues?state=open${labelsParam}`;
-    const rawIssues = await this.transport.request<readonly unknown[]>('GET', path, { token });
-    if (!Array.isArray(rawIssues)) {
-      throw new Error(`Unexpected non-array response polling issues for '${this.node.repo}'.`);
-    }
+    const labelsFilter = hasLabels ? this.node.labels.join(',') : undefined;
+
     const normalized: GithubIssueRecord[] = [];
-    for (const rawIssue of rawIssues) {
-      normalized.push(normalizeGithubIssueRecord(rawIssue, this.node.repo));
+    let page = 1;
+    while (true) {
+      const response = await octokit.rest.issues.listForRepo({
+        owner,
+        repo,
+        state: 'open',
+        ...(labelsFilter !== undefined ? { labels: labelsFilter } : {}),
+        per_page: DEFAULT_GITHUB_ISSUES_PER_PAGE,
+        page,
+      });
+      const rawIssues: unknown = response.data;
+      if (!Array.isArray(rawIssues)) {
+        throw new Error(`Unexpected non-array response polling issues for '${this.node.repo}'.`);
+      }
+      for (const rawIssue of rawIssues) {
+        if (!isGithubPullRequestIssueItem(rawIssue)) {
+          normalized.push(normalizeGithubIssueRecord(rawIssue, this.node.repo));
+        }
+      }
+      if (rawIssues.length < DEFAULT_GITHUB_ISSUES_PER_PAGE) {
+        break;
+      }
+      page += 1;
     }
     return Object.freeze(normalized);
   }
 
   /**
-   * Updates the external label state on `/repos/${repo}/issues/${issueNumber}/labels`.
+   * Adds the target external state label non-destructively via `@octokit/rest` `issues.addLabels`.
    *
-   * Strips any leading `'#'` prefix from `itemKey` before constructing the issue labels endpoint path.
+   * Strips any leading `'#'` prefix from `itemKey` and preserves existing non-state issue labels.
    *
    * @param {string}         itemKey - Issue key such as `'#42'` or `'42'`.
    * @param {TExternalState} state   - Target external state label to apply.
    *
-   * @returns {Promise<void>} Resolves once the GitHub issue labels have been updated.
+   * @returns {Promise<void>} Resolves once the GitHub issue label has been added.
    */
   async setExternalState(itemKey: string, state: TExternalState): Promise<void> {
     const token = resolveRequiredGithubSecret(
@@ -95,19 +118,20 @@ export class GithubIssuesTrackerAdapter<TExternalState extends string = string>
       (val) => this.ctx.resolveEnv(val),
       `github:issues (${this.node.repo})`,
     );
-    const issueNumber = itemKey.startsWith('#') ? itemKey.slice(1).trim() : itemKey.trim();
-    if (issueNumber.length === 0) {
+    const rawNumber = itemKey.startsWith('#') ? itemKey.slice(1).trim() : itemKey.trim();
+    const issueNumber = Number.parseInt(rawNumber, 10);
+    if (rawNumber.length === 0 || !Number.isInteger(issueNumber) || issueNumber <= 0) {
       throw new Error(
         `Invalid itemKey '${itemKey}' in GithubIssuesTrackerAdapter.setExternalState for '${this.node.repo}'.`,
       );
     }
-    await this.transport.request(
-      'PUT',
-      `/repos/${this.node.repo}/issues/${issueNumber}/labels`,
-      {
-        token,
-        body: { labels: [state] },
-      },
-    );
+    const { owner, repo } = parseGithubRepoSlug(this.node.repo);
+    const octokit = createGithubOctokitClient(token, this.transport);
+    await octokit.rest.issues.addLabels({
+      owner,
+      repo,
+      issue_number: issueNumber,
+      labels: [state],
+    });
   }
 }

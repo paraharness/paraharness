@@ -318,4 +318,70 @@ describe('@harness-dsl/netsuite adapter', () => {
     expect(flowNode.nodes).toHaveLength(1);
     expect(flowNode.exitState).toBe('done');
   });
+
+  it('uses exact big.js decimal arithmetic for 0.1 + 0.2 === 0.3 without IEEE-754 drift and catches sub-cent imbalances', async () => {
+    const scopeNode = netsuite.draftJournalScope();
+    const driverCtx = createNetSuiteDriverContext();
+    const scopeFactory = driverCtx.registry.scopes['netsuite:draft-scope'];
+    if (scopeFactory === undefined) {
+      throw new Error('Expected netsuite:draft-scope factory.');
+    }
+    const scopeDriver = scopeFactory(scopeNode, driverCtx);
+    const handle = (await scopeDriver.acquireRoot('run-fin-decimal')) as NetSuiteDraftHandle;
+    const { ctx } = createNetSuiteStepContext(handle);
+
+    const [addLineTool] = netsuite.journalTools();
+    const toolDriver = ctx.registry.tools['netsuite:journal-tool'];
+    const checkExecutor = ctx.registry.checks['netsuite:balance-zero-check'];
+    if (addLineTool === undefined || toolDriver === undefined || checkExecutor === undefined) {
+      throw new Error('Expected NetSuite tool and check executors.');
+    }
+
+    await toolDriver.execute(
+      addLineTool,
+      { accountId: '1010-CASH', debitUsd: 0.1, creditUsd: 0, postingPeriod: '2026-11' },
+      ctx,
+    );
+    await toolDriver.execute(
+      addLineTool,
+      { accountId: '1010-CASH', debitUsd: 0.2, creditUsd: 0, postingPeriod: '2026-11' },
+      ctx,
+    );
+    await toolDriver.execute(
+      addLineTool,
+      { accountId: '4000-REVENUE', debitUsd: 0, creditUsd: 0.299, postingPeriod: '2026-11' },
+      ctx,
+    );
+
+    const subCentCheck = await checkExecutor(netsuite.balanceZeroCheck(), undefined, ctx);
+    expect(subCentCheck).toEqual({
+      ok: false,
+      deficits: [
+        "Draft journal 'draft-run-fin-decimal' is out of balance by $0.001 USD (debits: $0.3, credits: $0.299).",
+      ],
+    });
+
+    await toolDriver.execute(
+      addLineTool,
+      { accountId: '4000-REVENUE', debitUsd: 0, creditUsd: 0.001, postingPeriod: '2026-11' },
+      ctx,
+    );
+
+    const exactZeroCheck = await checkExecutor(netsuite.balanceZeroCheck(), undefined, ctx);
+    expect(exactZeroCheck).toEqual({
+      ok: true,
+      deficits: [],
+    });
+
+    const receipt = await scopeDriver.inspect(handle);
+    expect(receipt).toEqual({
+      journalId: 'draft-run-fin-decimal',
+      runId: 'run-fin-decimal',
+      status: 'open',
+      totalDebitUsd: 0.3,
+      totalCreditUsd: 0.3,
+      netBalanceUsd: 0,
+      lineCount: 4,
+    });
+  });
 });

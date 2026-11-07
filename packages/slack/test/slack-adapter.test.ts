@@ -12,6 +12,10 @@ import {
   createSlackExecutors,
   slack,
 } from '../src/index.js';
+import {
+  handleSlackInteractiveEvent,
+  handleSlackSlashCommandEvent,
+} from '../src/executors/internal/build-slack-decision-payload.js';
 import { RecordedSlackTransport } from './fixtures/recorded-slack-transport.js';
 
 function createTestDriverContext(
@@ -53,24 +57,16 @@ describe('@harness-dsl/slack adapter', () => {
 
       const transport = new RecordedSlackTransport();
       const ctx = createTestDriverContext(
-        {
-          SLACK_APP_TOKEN: 'xapp-1-token',
-          SLACK_BOT_TOKEN: 'xoxb-bot-token',
-          SLACK_CHANNEL_ID: 'C01234567',
-        },
+        { SLACK_APP_TOKEN: 'xapp-1-token', SLACK_BOT_TOKEN: 'xoxb-bot-token', SLACK_CHANNEL_ID: 'C01234567' },
         transport,
       );
       const adapter = new SlackApproverAdapter(botNode, ctx, transport);
-
       await adapter.notify('High-leverage lesson promoted.');
       expect(transport.postedMessages).toEqual([
         {
           botToken: 'xoxb-bot-token',
           channel: 'C01234567',
-          payload: {
-            kind: 'notification',
-            text: 'High-leverage lesson promoted.',
-          },
+          payload: { kind: 'notification', text: 'High-leverage lesson promoted.' },
           ts: '1000.1',
         },
       ]);
@@ -88,11 +84,7 @@ describe('@harness-dsl/slack adapter', () => {
         const ctx = createTestDriverContext({}, transport);
         const adapter = new SlackApproverAdapter(botNode, ctx, transport);
 
-        const responseSchema = z.object({
-          approved: z.boolean(),
-          note: z.string(),
-        });
-
+        const responseSchema = z.object({ approved: z.boolean(), note: z.string() });
         const decisionPromise = adapter.requestDecision({
           runId: 'run-finance-1',
           requestId: 'req-refund-1',
@@ -101,11 +93,32 @@ describe('@harness-dsl/slack adapter', () => {
           responseSchema,
           keepAliveSeconds: 10,
         });
-
         await vi.advanceTimersByTimeAsync(25_000);
-
         expect(transport.postedMessages).toHaveLength(3);
         expect(transport.postedMessages[0]?.payload['kind']).toBe('decision-request');
+        expect(transport.postedMessages[0]?.payload['metadata']).toMatchObject({
+          requestId: 'req-refund-1',
+          runId: 'run-finance-1',
+          humanId: 'finance-controller',
+        });
+        expect(transport.postedMessages[0]?.payload['blocks']).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'actions',
+              block_id: 'req-refund-1',
+              elements: expect.arrayContaining([
+                expect.objectContaining({
+                  type: 'button',
+                  action_id: 'req-refund-1:approve',
+                }),
+                expect.objectContaining({
+                  type: 'button',
+                  action_id: 'req-refund-1:reject',
+                }),
+              ]),
+            }),
+          ]),
+        );
         expect(transport.postedMessages[1]?.payload['kind']).toBe('heartbeat');
         expect(transport.postedMessages[1]?.payload['thread_ts']).toBe('1000.1');
         expect(transport.postedMessages[2]?.payload['kind']).toBe('heartbeat');
@@ -262,8 +275,26 @@ describe('@harness-dsl/slack adapter', () => {
 
       const handle = await adapter.start(controller);
       expect(transport.socketModeConnections).toEqual([
-        { appToken: 'xapp-ctrl-token', closed: false },
+        expect.objectContaining({ appToken: 'xapp-ctrl-token', closed: false }),
       ]);
+      expect(typeof transport.socketModeConnections[0]?.onInteractiveAction).toBe('function');
+
+      const pendingInteractive = adapter.requestDecision({
+        runId: 'run-active-1',
+        requestId: 'req-socket-1',
+        humanId: 'owner',
+        payload: { question: 'Approve via Socket Mode?' },
+        responseSchema: z.object({ approved: z.boolean(), note: z.string() }),
+      });
+      await Promise.resolve();
+      transport.socketModeConnections[0]?.onInteractiveAction?.('', 'req-socket-1', {
+        approved: true,
+        note: 'Approved via interactive Socket Mode action',
+      });
+      await expect(pendingInteractive).resolves.toEqual({
+        approved: true,
+        note: 'Approved via interactive Socket Mode action',
+      });
 
       await adapter.dispatchSignal('steer-signal', { key: '#42', note: 'Use optimistic locking' });
       expect(emittedSignals).toEqual([
@@ -283,9 +314,41 @@ describe('@harness-dsl/slack adapter', () => {
         },
       ]);
 
+      let acked = 0;
+      const routedActions: Array<{ runId: string; requestId: string; payload: unknown }> = [];
+      await handleSlackInteractiveEvent(
+        {
+          ack: async () => {
+            acked += 1;
+          },
+          body: {
+            actions: [
+              {
+                block_id: 'req-block-1',
+                value: JSON.stringify({ runId: 'run-active-1', requestId: 'req-block-1', approved: true, note: 'ok' }),
+              },
+            ],
+          },
+        },
+        (runId, requestId, payload) => {
+          routedActions.push({ runId, requestId, payload });
+        },
+      );
+      await handleSlackSlashCommandEvent(
+        {
+          ack: async () => {
+            acked += 1;
+          },
+          body: { text: JSON.stringify({ signalId: 'slash-sig', payload: { item: '#42' } }) },
+        },
+        controller,
+      );
+      expect(acked).toBe(2);
+      expect(routedActions).toHaveLength(1);
+      expect(emittedSignals).toHaveLength(2);
       await handle.close();
       expect(transport.socketModeConnections).toEqual([
-        { appToken: 'xapp-ctrl-token', closed: true },
+        expect.objectContaining({ appToken: 'xapp-ctrl-token', closed: true }),
       ]);
       await expect(adapter.dispatchSignal('steer-signal', {})).rejects.toThrow(
         'Slack Socket Mode control plane is not active',

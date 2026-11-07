@@ -1,3 +1,4 @@
+import Big from 'big.js';
 import type {
   CheckEvaluationResult,
   PolicyGuardEvaluationInput,
@@ -167,19 +168,19 @@ export function evaluateNetSuiteBalanceZeroCheck(
       `NetSuite check '${node.id}' requires an active NetSuiteDraftHandle (runId '${ctx.runId}').`,
     );
   }
-  let totalDebitUsd = 0;
-  let totalCreditUsd = 0;
+  let totalDebit = new Big(0);
+  let totalCredit = new Big(0);
   for (const entry of ctx.scopeHandle.entries) {
-    totalDebitUsd += entry.debitUsd;
-    totalCreditUsd += entry.creditUsd;
+    totalDebit = totalDebit.plus(new Big(entry.debitUsd));
+    totalCredit = totalCredit.plus(new Big(entry.creditUsd));
   }
-  const netBalanceUsd = Math.round((totalDebitUsd - totalCreditUsd) * 100) / 100;
-  if (netBalanceUsd !== 0) {
+  const netBalance = totalDebit.minus(totalCredit);
+  if (!netBalance.abs().eq(0)) {
     return Promise.resolve(
       Object.freeze<CheckEvaluationResult>({
         ok: false,
         deficits: Object.freeze([
-          `Draft journal '${ctx.scopeHandle.journalId}' is out of balance by $${String(netBalanceUsd)} USD (debits: $${String(totalDebitUsd)}, credits: $${String(totalCreditUsd)}).`,
+          `Draft journal '${ctx.scopeHandle.journalId}' is out of balance by $${netBalance.toFixed()} USD (debits: $${totalDebit.toFixed()}, credits: $${totalCredit.toFixed()}).`,
         ]),
       }),
     );

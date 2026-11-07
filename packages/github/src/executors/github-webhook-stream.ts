@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { Webhooks } from '@octokit/webhooks';
 import type {
   GithubWebhookStreamNode,
   RuntimeDriverContext,
@@ -19,8 +20,8 @@ import {
 /**
  * Runtime `StreamSource` implementation for `GithubWebhookStreamNode` (`github:webhook-stream`).
  *
- * Listens for HTTP POST webhook deliveries, verifies `X-Hub-Signature-256` HMAC-SHA256 digests,
- * filters by `X-GitHub-Event` / `payload.action` and `payload.repository.full_name`, and invokes `onEvent`.
+ * Listens for HTTP POST webhook deliveries, enforces a 10 MiB body limit (`413`), verifies
+ * `X-Hub-Signature-256` via `@octokit/webhooks`, filters by event/repo, and invokes `onEvent`.
  *
  * @template TEvent Webhook event payload type.
  */
@@ -68,7 +69,7 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
   /**
    * Starts the local HTTP webhook listener and subscribes `onEvent` to verified matching deliveries.
    *
-   * Resolves `node.secret` via `ctx.resolveEnv` and binds to `127.0.0.1` on `node.port ?? 3000`.
+   * Resolves `node.secret` via `ctx.resolveEnv`, initializes `@octokit/webhooks`, and binds to `127.0.0.1`.
    *
    * @param {(event: TEvent) => Promise<void>} onEvent - Async callback invoked for each verified matching webhook event.
    *
@@ -80,11 +81,12 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
       (val) => this.ctx.resolveEnv(val),
       `github:webhook-stream (${this.node.repo ?? '*'})`,
     );
+    const webhooks = new Webhooks({ secret });
     const targetPort = this.node.port ?? DEFAULT_GITHUB_WEBHOOK_PORT;
     const targetPath = this.node.path ?? DEFAULT_GITHUB_WEBHOOK_PATH;
 
     const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-      void this.handleHttpRequest(req, res, { secret, targetPath, onEvent });
+      void this.handleHttpRequest(req, res, { webhooks, targetPath, onEvent });
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -125,12 +127,12 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
   /**
    * Validates and dispatches a single incoming HTTP webhook delivery request.
    *
-   * Responds with `404` on path mismatch, `401` on invalid HMAC signature, `400` on invalid JSON,
-   * `202` when filtered out, `200` once `onEvent` completes, and `500` if reading or handling fails.
+   * Responds with `404` on path mismatch, `413` on oversized body, `401` on invalid signature,
+   * `400` on invalid JSON, `202` when filtered out, `200` once `onEvent` completes, and `500` on error.
    *
    * @param {IncomingMessage} req    - Incoming HTTP request.
    * @param {ServerResponse}  res    - Outgoing HTTP response.
-   * @param {object}          config - Handler configuration with secret, route path, and callback.
+   * @param {object}          config - Handler configuration with `@octokit/webhooks`, route path, and callback.
    *
    * @returns {Promise<void>} Resolves once the HTTP response is finalized.
    */
@@ -138,7 +140,7 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
     req: IncomingMessage,
     res: ServerResponse,
     config: {
-      readonly secret: string;
+      readonly webhooks: Webhooks;
       readonly targetPath: string;
       readonly onEvent: (event: TEvent) => Promise<void>;
     },
@@ -151,9 +153,16 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
         return;
       }
       const rawBody = await readHttpRequestBody(req);
+      if (rawBody === undefined) {
+        res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({ error: 'Payload Too Large' }), () => {
+          req.destroy();
+        });
+        return;
+      }
       const sigHeader = req.headers['x-hub-signature-256'];
       const signature = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
-      if (!verifyGithubWebhookSignature(rawBody, signature, config.secret)) {
+      if (!(await verifyGithubWebhookSignature(rawBody, signature, config.webhooks))) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid X-Hub-Signature-256' }));
         return;

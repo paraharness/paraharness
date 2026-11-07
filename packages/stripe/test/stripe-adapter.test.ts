@@ -12,6 +12,8 @@ import {
   type ToolEffect,
 } from '@harness-dsl/core';
 import {
+  createStripeExecutors,
+  createStripeSdkGateway,
   stripe,
   stripeExecutors,
   type StripeMaxRefundGuardNode,
@@ -230,5 +232,73 @@ describe('@harness-dsl/stripe adapter', () => {
       ctx,
     });
     expect(beyondElevatedLeaseEval.status).toBe('raise-interrupt');
+  });
+
+  it('wires the official stripe SDK into createStripeSdkGateway and createStripeExecutors', async () => {
+    const balanceTransactionsCalls: unknown[] = [];
+    const refundCalls: unknown[] = [];
+    const fakeStripeClient = {
+      balanceTransactions: {
+        async list(params: unknown) {
+          balanceTransactionsCalls.push(params);
+          return { data: [{ id: 'txn_1', amount: 25000 }] };
+        },
+      },
+      refunds: {
+        async create(params: unknown) {
+          refundCalls.push(params);
+          return { id: 're_101', charge: 'ch_101', amount: 30000, status: 'succeeded' };
+        },
+      },
+    };
+
+    const gateway = createStripeSdkGateway(fakeStripeClient);
+    const sdkSlice = createStripeExecutors(gateway);
+    const sdkRegistry = createExecutorRegistry(sdkSlice);
+    const driver = sdkRegistry.tools['stripe:read-tool'];
+    if (driver === undefined) {
+      throw new Error('Expected stripe:read-tool driver.');
+    }
+
+    const { ctx } = createTestStepContext();
+    const tools = stripe.readTools();
+    const listTool = tools[0] as StripeReadToolNode;
+    const refundTool = tools[1] as StripeReadToolNode;
+
+    const listRes = await driver.execute(
+      listTool,
+      { accountRegion: 'us-east', discrepancyId: 'DISC-42' },
+      ctx,
+    );
+    expect(balanceTransactionsCalls).toEqual([{ limit: 25 }]);
+    expect(JSON.parse(listRes.content)).toEqual({
+      tool: 'stripe_list_settlements',
+      status: 'ok',
+      input: { accountRegion: 'us-east', discrepancyId: 'DISC-42' },
+      result: {
+        accountRegion: 'us-east',
+        discrepancyId: 'DISC-42',
+        settlements: [{ id: 'txn_1', amount: 25000 }],
+      },
+    });
+
+    const refundRes = await driver.execute(
+      refundTool,
+      { chargeId: 'ch_101', amountUsd: 300, journalId: 'JRN-100' },
+      ctx,
+    );
+    expect(refundCalls).toEqual([
+      {
+        charge: 'ch_101',
+        amount: 30000,
+        metadata: { journalId: 'JRN-100' },
+      },
+    ]);
+    expect(JSON.parse(refundRes.content)).toEqual({
+      tool: 'stripe_stage_refund',
+      status: 'ok',
+      input: { chargeId: 'ch_101', amountUsd: 300, journalId: 'JRN-100' },
+      result: { id: 're_101', charge: 'ch_101', amount: 30000, status: 'succeeded' },
+    });
   });
 });

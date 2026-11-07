@@ -1,32 +1,40 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
+import { Webhooks } from '@octokit/webhooks';
+import { DEFAULT_MAX_GITHUB_WEBHOOK_BODY_BYTES } from '../../builders/internal/github-builder-defaults.constants.js';
 
 /**
- * Verifies a GitHub `X-Hub-Signature-256` HMAC-SHA256 header against a raw webhook payload body.
+ * Verifies a GitHub `X-Hub-Signature-256` header against a raw webhook payload using `@octokit/webhooks`.
  *
- * Uses constant-time `timingSafeEqual` comparison to prevent timing side-channel attacks.
+ * Delegates HMAC-SHA256 verification to `Webhooks.verify(payload, signature)` and returns `false`
+ * when `signatureHeader` is missing, malformed, or does not match.
  *
- * @param {Buffer}                  rawBody         - Raw HTTP request body bytes.
- * @param {string | undefined}      signatureHeader - Value of the `X-Hub-Signature-256` header.
- * @param {string}                  secret          - Resolved webhook shared secret.
+ * @param {Buffer}             rawBody          - Raw HTTP request body bytes.
+ * @param {string | undefined} signatureHeader  - Value of the `X-Hub-Signature-256` header.
+ * @param {Webhooks | string}  webhooksOrSecret - `@octokit/webhooks` instance or resolved secret string.
  *
- * @returns {boolean} True when `signatureHeader` matches the HMAC-SHA256 digest of `rawBody`.
+ * @returns {Promise<boolean>} True when `signatureHeader` passes `@octokit/webhooks` verification.
  */
-export function verifyGithubWebhookSignature(
+export async function verifyGithubWebhookSignature(
   rawBody: Buffer,
   signatureHeader: string | undefined,
-  secret: string,
-): boolean {
-  if (typeof signatureHeader !== 'string' || !signatureHeader.startsWith('sha256=')) {
+  webhooksOrSecret: Webhooks | string,
+): Promise<boolean> {
+  if (
+    rawBody.length === 0 ||
+    typeof signatureHeader !== 'string' ||
+    !signatureHeader.startsWith('sha256=')
+  ) {
     return false;
   }
-  const expectedSignature = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
-  const actualBuf = Buffer.from(signatureHeader, 'utf8');
-  const expectedBuf = Buffer.from(expectedSignature, 'utf8');
-  if (actualBuf.length !== expectedBuf.length) {
+  const webhooks =
+    typeof webhooksOrSecret === 'string'
+      ? new Webhooks({ secret: webhooksOrSecret })
+      : webhooksOrSecret;
+  try {
+    return await webhooks.verify(rawBody.toString('utf8'), signatureHeader);
+  } catch {
     return false;
   }
-  return timingSafeEqual(actualBuf, expectedBuf);
 }
 
 /**
@@ -73,25 +81,50 @@ export function matchesGithubWebhookFilter(
 }
 
 /**
- * Reads the complete request body stream of a Node `IncomingMessage` into a single `Buffer`.
+ * Reads a Node `IncomingMessage` body up to `maxBytes`, returning `undefined` if the limit is exceeded.
  *
- * Accumulates chunk buffers in-place without intermediate string conversions.
+ * Pauses the stream and discards buffered chunks immediately when accumulated bytes exceed `maxBytes`
+ * so unbounded webhook payloads cannot exhaust process memory.
  *
- * @param {IncomingMessage} req - Node HTTP incoming request stream.
+ * @param {IncomingMessage} [req]                                            - Node HTTP incoming request stream.
+ * @param {number}          [maxBytes=DEFAULT_MAX_GITHUB_WEBHOOK_BODY_BYTES] - Maximum allowed body size in bytes.
  *
- * @returns {Promise<Buffer>} Complete concatenated request body buffer.
+ * @returns {Promise<Buffer | undefined>} Complete body buffer, or `undefined` if `maxBytes` was exceeded.
  */
-export function readHttpRequestBody(req: IncomingMessage): Promise<Buffer> {
-  return new Promise<Buffer>((resolve, reject) => {
+export function readHttpRequestBody(
+  req: IncomingMessage,
+  maxBytes: number = DEFAULT_MAX_GITHUB_WEBHOOK_BODY_BYTES,
+): Promise<Buffer | undefined> {
+  return new Promise<Buffer | undefined>((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let settled = false;
     req.on('data', (chunk: Buffer | string) => {
-      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk);
+      if (settled) {
+        return;
+      }
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      totalBytes += buf.length;
+      if (totalBytes > maxBytes) {
+        settled = true;
+        chunks.length = 0;
+        req.pause();
+        resolve(undefined);
+        return;
+      }
+      chunks.push(buf);
     });
     req.on('end', () => {
-      resolve(Buffer.concat(chunks));
+      if (!settled) {
+        settled = true;
+        resolve(Buffer.concat(chunks));
+      }
     });
     req.on('error', (err: Error) => {
-      reject(err);
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
     });
   });
 }

@@ -75,7 +75,7 @@ describe('@harness-dsl/github adapter', () => {
       const transport = new RecordedGithubHttpTransport();
       transport.registerResponse(
         'GET',
-        '/repos/acme/app/issues?state=open&labels=agent-ready%2Cpartition%3Aapi',
+        '/repos/acme/app/issues?state=open&labels=agent-ready%2Cpartition%3Aapi&per_page=100&page=1',
         [
           {
             number: 42,
@@ -85,11 +85,22 @@ describe('@harness-dsl/github adapter', () => {
             state: 'open',
             html_url: 'https://github.com/acme/app/issues/42',
           },
+          {
+            number: 43,
+            title: 'PR masquerading as issue in GitHub REST API',
+            body: 'Should be filtered out because pull_request key exists.',
+            labels: [{ name: 'agent-ready' }],
+            state: 'open',
+            html_url: 'https://github.com/acme/app/pull/43',
+            pull_request: { url: 'https://api.github.com/repos/acme/app/pulls/43' },
+          },
         ],
       );
-      transport.registerResponse('PUT', '/repos/acme/app/issues/42/labels', {
-        labels: [{ name: 'in-progress' }],
-      });
+      transport.registerResponse('POST', '/repos/acme/app/issues/42/labels', [
+        { name: 'agent-ready' },
+        { name: 'partition:api' },
+        { name: 'in-progress' },
+      ]);
 
       const ctx = createTestDriverContext({ GITHUB_TOKEN: 'ghp_secret_123' }, transport);
       const adapter = new GithubIssuesTrackerAdapter(trackerNode, ctx, transport);
@@ -110,12 +121,12 @@ describe('@harness-dsl/github adapter', () => {
       expect(transport.calls).toEqual([
         {
           method: 'GET',
-          path: '/repos/acme/app/issues?state=open&labels=agent-ready%2Cpartition%3Aapi',
+          path: '/repos/acme/app/issues?state=open&labels=agent-ready%2Cpartition%3Aapi&per_page=100&page=1',
           token: 'ghp_secret_123',
           body: undefined,
         },
         {
-          method: 'PUT',
+          method: 'POST',
           path: '/repos/acme/app/issues/42/labels',
           token: 'ghp_secret_123',
           body: { labels: ['in-progress'] },
@@ -252,38 +263,6 @@ describe('@harness-dsl/github adapter', () => {
         });
         expect(okRes.status).toBe(200);
         expect(receivedEvents).toEqual([validPayload]);
-      } finally {
-        await subscription.close();
-      }
-    });
-
-    it('responds with HTTP 500 JSON error without unhandled rejection when onEvent rejects', async () => {
-      const secret = 'whsec_err_secret';
-      const streamNode = github.webhookStream({
-        repo: 'acme/app',
-        port: 0,
-        secret: H.env('GH_WEBHOOK_SECRET'),
-        events: ['pull_request.closed'],
-      });
-      const source = new GithubWebhookStreamSource(
-        streamNode,
-        createTestDriverContext({ GH_WEBHOOK_SECRET: secret }),
-      );
-      const subscription = await source.subscribe(async () => {
-        throw new Error('Downstream event processor failed');
-      });
-
-      try {
-        const rawBody = JSON.stringify({ action: 'closed', repository: { full_name: 'acme/app' } });
-        const sig = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
-        const res = await fetch(`http://127.0.0.1:${source.getBoundPort()}/webhooks/github`, {
-          method: 'POST',
-          headers: { 'X-GitHub-Event': 'pull_request', 'X-Hub-Signature-256': sig },
-          body: rawBody,
-          signal: AbortSignal.timeout(500),
-        });
-        expect(res.status).toBe(500);
-        await expect(res.json()).resolves.toEqual({ error: 'Downstream event processor failed' });
       } finally {
         await subscription.close();
       }

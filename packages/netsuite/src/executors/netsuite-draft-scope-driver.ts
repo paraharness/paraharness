@@ -1,3 +1,4 @@
+import Big from 'big.js';
 import type { IsolationScope, z } from '@harness-dsl/core';
 import type { DraftJournalReceipt } from '../nodes/draft-journal-receipt.js';
 import type { NetSuiteDraftHandle } from '../nodes/netsuite-draft-handle.js';
@@ -90,13 +91,16 @@ export class NetSuiteDraftScopeDriver
    * @returns {Promise<DraftJournalReceipt>} Schema-validated draft journal inspection receipt.
    */
   inspect(handle: NetSuiteDraftHandle): Promise<DraftJournalReceipt> {
-    let totalDebitUsd = 0;
-    let totalCreditUsd = 0;
+    let totalDebit = new Big(0);
+    let totalCredit = new Big(0);
     for (const entry of handle.entries) {
-      totalDebitUsd += entry.debitUsd;
-      totalCreditUsd += entry.creditUsd;
+      totalDebit = totalDebit.plus(new Big(entry.debitUsd));
+      totalCredit = totalCredit.plus(new Big(entry.creditUsd));
     }
-    const netBalanceUsd = Math.round((totalDebitUsd - totalCreditUsd) * 100) / 100;
+    const netBalance = totalDebit.minus(totalCredit);
+    const totalDebitUsd = Number(totalDebit.round(2).toFixed(2));
+    const totalCreditUsd = Number(totalCredit.round(2).toFixed(2));
+    const netBalanceUsd = Number(netBalance.round(2).toFixed(2));
     const receipt = this.receiptSchema.parse({
       journalId: handle.journalId,
       runId: handle.runId,

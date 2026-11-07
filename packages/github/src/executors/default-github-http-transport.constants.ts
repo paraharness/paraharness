@@ -1,7 +1,8 @@
+import { Octokit } from '@octokit/rest';
 import { DEFAULT_GITHUB_API_BASE_URL } from '../builders/internal/github-builder-defaults.constants.js';
 import type { GithubHttpTransport } from './github-http-transport.js';
 
-/** Default `fetch`-backed HTTP transport targeting `https://api.github.com`. */
+/** Default `@octokit/rest`-backed HTTP transport targeting `https://api.github.com`. */
 export const defaultGithubHttpTransport: GithubHttpTransport = Object.freeze<GithubHttpTransport>({
   async request<TResponse = unknown>(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -11,24 +12,15 @@ export const defaultGithubHttpTransport: GithubHttpTransport = Object.freeze<Git
       readonly body?: unknown;
     },
   ): Promise<TResponse> {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${options.token}`,
-      Accept: 'application/vnd.github+json',
-    };
-    if (options.body !== undefined) {
-      headers['Content-Type'] = 'application/json';
-    }
-    const response = await fetch(`${DEFAULT_GITHUB_API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    const octokit = new Octokit({
+      auth: options.token,
+      baseUrl: DEFAULT_GITHUB_API_BASE_URL,
     });
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `GitHub REST API request '${method} ${path}' failed with HTTP ${response.status}: ${errorText}`,
-      );
-    }
-    return (await response.json()) as TResponse;
+    const requestParams: Record<string, unknown> =
+      typeof options.body === 'object' && options.body !== null
+        ? { ...(options.body as Record<string, unknown>) }
+        : {};
+    const response = await octokit.request(`${method} ${path}`, requestParams);
+    return response.data as TResponse;
   },
 });

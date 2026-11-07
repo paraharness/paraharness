@@ -3,6 +3,7 @@ import type {
   HumanAdapter, HumanDecisionRequest, RuntimeDriverContext, SlackApproverNode,
 } from '@harness-dsl/core';
 import { defaultSlackTransport } from './default-slack-transport.constants.js';
+import { buildSlackDecisionMessagePayload } from './internal/build-slack-decision-payload.js';
 import type { PendingSlackDecisionEntry } from './internal/pending-slack-decision-entry.js';
 import {
   buildSlackDecisionKey, cleanupPendingSlackDecision,
@@ -13,7 +14,7 @@ import type { SlackTransport } from './slack-transport.js';
 /**
  * Bidirectional Slack Socket Mode `HumanAdapter` and `ControlPlaneAdapter` (`slack:approver`).
  *
- * Delivers outbound notifications, posts interactive decision blocks with optional keep-alive
+ * Delivers outbound notifications, posts interactive Block Kit decision blocks with optional keep-alive
  * heartbeats, cancels superseded prompts via `cancelDecision`, and bridges Socket Mode control-plane signals.
  */
 export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
@@ -25,6 +26,8 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
   private readonly transport: SlackTransport;
   /** Pre-indexed map of pending interactive decisions keyed by `"${runId}:${requestId}"`. */
   private readonly pendingByKey = new Map<string, PendingSlackDecisionEntry>();
+  /** Pre-indexed lookup from `requestId` to composite `"${runId}:${requestId}"` key for $O(1)$ Socket Mode routing. */
+  private readonly pendingKeyByRequestId = new Map<string, string>();
   /** Active `HarnessRuntimeController` bound while the Socket Mode control plane is running. */
   private activeController: HarnessRuntimeController | undefined;
 
@@ -63,7 +66,7 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
   }
 
   /**
-   * Posts an interactive decision block to Slack and awaits a schema-validated human response.
+   * Posts an interactive Block Kit decision block to Slack and awaits a schema-validated human response.
    *
    * Emits periodic thread heartbeat pings when `req.keepAliveSeconds` is configured and cleans
    * up deterministic timers and `AbortSignal` listeners inside `finally`.
@@ -82,14 +85,7 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
     const botToken = resolveRequiredSlackSecret(this.node.botToken, (v) => this.ctx.resolveEnv(v), 'botToken');
     const channel = resolveRequiredSlackSecret(this.node.channel, (v) => this.ctx.resolveEnv(v), 'channel');
     const key = buildSlackDecisionKey(req.runId, req.requestId);
-    const posted = await this.transport.postMessage(botToken, channel, {
-      kind: 'decision-request',
-      runId: req.runId,
-      requestId: req.requestId,
-      humanId: req.humanId,
-      payload: req.payload,
-      text: `[Decision Request ${req.requestId}] Run '${req.runId}' awaits '${req.humanId}'.`,
-    });
+    const posted = await this.transport.postMessage(botToken, channel, buildSlackDecisionMessagePayload(req));
     const heartbeatTimer = startSlackDecisionHeartbeat(req, this.transport, {
       botToken,
       channel,
@@ -99,23 +95,18 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
     try {
       return await new Promise<TResponse>((resolve, reject) => {
         this.pendingByKey.set(key, {
-          runId: req.runId,
-          requestId: req.requestId,
-          botToken,
-          channel,
-          messageTs: posted.ts,
-          responseSchema: req.responseSchema,
-          heartbeatTimer,
-          resolve: (val: unknown) => resolve(val as TResponse),
-          reject,
+          runId: req.runId, requestId: req.requestId, botToken, channel,
+          messageTs: posted.ts, responseSchema: req.responseSchema, heartbeatTimer,
+          resolve: (val: unknown) => resolve(val as TResponse), reject,
         });
+        this.pendingKeyByRequestId.set(req.requestId, key);
         if (req.signal !== undefined) {
           onAbort = (): void => {
+            this.pendingKeyByRequestId.delete(req.requestId);
             const removed = cleanupPendingSlackDecision(this.pendingByKey, key);
             if (removed !== undefined) {
               void this.transport.updateMessage(botToken, channel, {
-                ts: removed.messageTs,
-                status: 'aborted',
+                ts: removed.messageTs, status: 'aborted',
                 text: `[ABORTED] Decision request '${req.requestId}' for run '${req.runId}' was aborted.`,
               });
             }
@@ -128,6 +119,7 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
       if (onAbort !== undefined && req.signal !== undefined) {
         req.signal.removeEventListener('abort', onAbort);
       }
+      this.pendingKeyByRequestId.delete(req.requestId);
       cleanupPendingSlackDecision(this.pendingByKey, key);
     }
   }
@@ -144,15 +136,13 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
    */
   async cancelDecision(runId: string, requestId: string): Promise<void> {
     const key = buildSlackDecisionKey(runId, requestId);
+    this.pendingKeyByRequestId.delete(requestId);
     const removed = cleanupPendingSlackDecision(this.pendingByKey, key);
     if (removed === undefined) {
       return;
     }
     await this.transport.updateMessage(removed.botToken, removed.channel, {
-      ts: removed.messageTs,
-      status: 'cancelled',
-      runId,
-      requestId,
+      ts: removed.messageTs, status: 'cancelled', runId, requestId,
       text: `[CANCELLED] Decision request '${requestId}' for run '${runId}' was superseded.`,
     });
     removed.reject(
@@ -165,27 +155,31 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
    *
    * Invoked by the Socket Mode interaction handler when a human operator submits a decision block.
    *
-   * @param {string}  runId       - Enclosing harness run identifier.
+   * @param {string}  runId       - Enclosing harness run identifier (or `''` to resolve via `requestId` index).
    * @param {string}  requestId   - Decision request identifier.
    * @param {unknown} rawResponse - Raw response payload submitted by the human operator.
    *
    * @returns {void}
    */
   submitDecision(runId: string, requestId: string, rawResponse: unknown): void {
-    const key = buildSlackDecisionKey(runId, requestId);
-    const entry = this.pendingByKey.get(key);
+    const directKey = buildSlackDecisionKey(runId, requestId);
+    const resolvedKey = this.pendingByKey.has(directKey)
+      ? directKey
+      : (this.pendingKeyByRequestId.get(requestId) ?? directKey);
+    const entry = this.pendingByKey.get(resolvedKey);
     if (entry === undefined) {
       throw new Error(`No pending Slack decision request found for run '${runId}', request '${requestId}'.`);
     }
     const validated = entry.responseSchema.parse(rawResponse);
-    cleanupPendingSlackDecision(this.pendingByKey, key);
+    this.pendingKeyByRequestId.delete(entry.requestId);
+    cleanupPendingSlackDecision(this.pendingByKey, resolvedKey);
     entry.resolve(validated);
   }
 
   /**
    * Starts the Slack Socket Mode control-plane listener bound to `runtime`.
    *
-   * Resolves `appToken` via `ctx.resolveEnv` and connects Socket Mode for inbound signal and status commands.
+   * Resolves `appToken` via `ctx.resolveEnv` and connects Socket Mode for inbound interactive actions and signals.
    *
    * @param {HarnessRuntimeController} runtime - Active runtime controller for signals and run queries.
    *
@@ -196,7 +190,9 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
     this.activeController = runtime;
     const underlyingHandle =
       this.transport.connectSocketMode !== undefined
-        ? await this.transport.connectSocketMode(appToken, runtime)
+        ? await this.transport.connectSocketMode(appToken, runtime, (runId, requestId, responsePayload) => {
+            this.submitDecision(runId, requestId, responsePayload);
+          })
         : undefined;
     return Object.freeze<ControlPlaneHandle>({
       close: async (): Promise<void> => {

@@ -1,10 +1,14 @@
 import type { GithubCreateOrUpdatePrNode, StepExecutionContext } from '@harness-dsl/core';
 import { DEFAULT_GITHUB_BASE_BRANCH } from '../../builders/internal/github-builder-defaults.constants.js';
 import type { GithubHttpTransport } from '../github-http-transport.js';
+import {
+  createGithubOctokitClient,
+  parseGithubRepoSlug,
+} from './create-github-octokit-client.js';
 import { resolveRequiredGithubSecret } from './normalize-github-issue.js';
 
 /**
- * Executes a `GithubCreateOrUpdatePrNode` step against a provided `GithubHttpTransport`.
+ * Executes a `GithubCreateOrUpdatePrNode` step via `@octokit/rest` (`pulls.list`, `pulls.update`, `pulls.create`).
  *
  * Queries open pull requests matching `head: <owner>:<branch>`, updates the existing pull request
  * if one is already open, or creates a new pull request against `baseBranch` otherwise.
@@ -37,7 +41,8 @@ export async function executeGithubPrStepWithTransport<
     (val) => runtime.ctx.resolveEnv(val),
     `github:create-or-update-pr (${node.id})`,
   );
-  const owner = node.repo.split('/')[0] ?? '';
+  const { owner, repo } = parseGithubRepoSlug(node.repo);
+  const octokit = createGithubOctokitClient(token, runtime.transport);
   const headBranch = node.branch(validatedInput);
   const baseBranch =
     node.baseBranch !== undefined
@@ -46,30 +51,36 @@ export async function executeGithubPrStepWithTransport<
   const title = node.title(validatedInput);
   const body = node.body(validatedInput);
 
-  const queryPath = `/repos/${node.repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${headBranch}`)}`;
-  const existingPrs = await runtime.transport.request<readonly Readonly<Record<string, unknown>>[]>(
-    'GET',
-    queryPath,
-    { token },
-  );
+  const existingPrsResponse = await octokit.rest.pulls.list({
+    owner,
+    repo,
+    state: 'open',
+    head: `${owner}:${headBranch}`,
+  });
+  const existingPrs = existingPrsResponse.data;
   const firstExisting = Array.isArray(existingPrs) ? existingPrs[0] : undefined;
 
   let rawResult: unknown;
-  if (firstExisting !== undefined && typeof firstExisting['number'] === 'number') {
-    const prNumber = firstExisting['number'];
-    rawResult = await runtime.transport.request(
-      'PATCH',
-      `/repos/${node.repo}/pulls/${prNumber}`,
-      {
-        token,
-        body: { title, body, base: baseBranch },
-      },
-    );
-  } else {
-    rawResult = await runtime.transport.request('POST', `/repos/${node.repo}/pulls`, {
-      token,
-      body: { title, body, head: headBranch, base: baseBranch },
+  if (firstExisting !== undefined && typeof firstExisting.number === 'number') {
+    const updated = await octokit.rest.pulls.update({
+      owner,
+      repo,
+      pull_number: firstExisting.number,
+      title,
+      body,
+      base: baseBranch,
     });
+    rawResult = updated.data;
+  } else {
+    const created = await octokit.rest.pulls.create({
+      owner,
+      repo,
+      title,
+      body,
+      head: headBranch,
+      base: baseBranch,
+    });
+    rawResult = created.data;
   }
   return node.outputSchema.parse(rawResult);
 }

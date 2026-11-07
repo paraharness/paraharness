@@ -33,6 +33,11 @@ export class RecordedSlackTransport implements SlackTransport {
   public readonly socketModeConnections: Array<{
     readonly appToken: string;
     readonly closed: boolean;
+    readonly onInteractiveAction?: (
+      runId: string,
+      requestId: string,
+      responsePayload: unknown,
+    ) => void;
   }> = [];
 
   /** Monotonic message counter for deterministic Slack `ts` values. */
@@ -98,16 +103,22 @@ export class RecordedSlackTransport implements SlackTransport {
    *
    * Flips the connection entry's `closed` flag to `true` when `.close()` is invoked.
    *
-   * @param {string}                   appToken    - Resolved Slack app-level token.
-   * @param {HarnessRuntimeController} _controller - Runtime controller bound to Socket Mode.
+   * @param {string}                   appToken              - Resolved Slack app-level token.
+   * @param {HarnessRuntimeController} _controller           - Runtime controller bound to Socket Mode.
+   * @param {Function}                 [onInteractiveAction] - Optional interactive decision callback.
    *
    * @returns {Promise<ControlPlaneHandle>} Handle marking the connection closed on `.close()`.
    */
   async connectSocketMode(
     appToken: string,
     _controller: HarnessRuntimeController,
+    onInteractiveAction?: (
+      runId: string,
+      requestId: string,
+      responsePayload: unknown,
+    ) => void,
   ): Promise<ControlPlaneHandle> {
-    const entry = { appToken, closed: false };
+    const entry = { appToken, closed: false, onInteractiveAction };
     this.socketModeConnections.push(entry);
     return Object.freeze<ControlPlaneHandle>({
       async close(): Promise<void> {
