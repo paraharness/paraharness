@@ -133,7 +133,7 @@ export interface AgentBuilder<TIn = unknown, TOut = unknown, THandle = unknown>
   /**
    * Binds the Zod validation schema for the agent's input payload.
    *
-   * Resets input-dependent `partitions`, `capabilities`, and `onInterrupt` handlers when changed.
+   * Preserves all previously configured `partitions`, `capabilities`, and `onInterrupt` bindings.
    * @template TNewIn Validated actor input payload type.
    * @param {z.ZodType<TNewIn>} schema - Zod schema validating agent input.
    * @returns {AgentBuilder<TNewIn, TOut, THandle>} New immutable agent builder.

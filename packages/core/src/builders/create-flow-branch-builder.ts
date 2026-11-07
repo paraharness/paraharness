@@ -1,6 +1,6 @@
 import type { FlowBranchBuilder } from './flow-branch-builder.js';
+import { createFlowBranchFromState } from './internal/create-flow-branch-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
-import { createFlowBranchFromState } from './internal/flow-branch-sub-builders.js';
 
 /**
  * Creates a fluent `FlowBranchBuilder` for `flow.branch(id, $b => ...)`.

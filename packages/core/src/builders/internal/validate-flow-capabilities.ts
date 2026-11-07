@@ -43,7 +43,10 @@ function validateReplaceHandlersHaveAbortSupport(
       validateStepExecutableAgainstScope(flowNode, handler.adjudicator);
       validateReplaceHandlersHaveAbortSupport(
         flowNode,
-        { id: owner.id, hasPolicyAbort: false },
+        {
+          id: handler.adjudicator.id,
+          hasPolicyAbort: stepHasPolicyAbortHook(handler.adjudicator) || owner.hasPolicyAbort,
+        },
         handler.onInterruptHandlers,
       );
     }

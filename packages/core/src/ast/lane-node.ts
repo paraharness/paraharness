@@ -89,9 +89,11 @@ export interface LaneSignalHandlerConfig<
   /** Synchronous reducer updating the active run's input from `(currentInput, signalPayload)`. */
   readonly updateMapper: BivariantCallback<[current: TIn, payload: TPayload], TIn>;
   /** Literal target step or branch ID in `flow.nodes` to rewind execution to. */
-  readonly rewindToStepId: TStepIds;
+  readonly rewindToStepId: string;
   /** Optional scope rewind hook executed during Step 4 of the Hierarchical Rewind Drain Barrier. */
   readonly onRewind?: ScopeRewindHookASTNode<unknown>;
+  /** Phantom bivariant brand preserving `TStepIds` across copy-on-write state transitions. */
+  readonly __stepIdsBrand?: BivariantCallback<[stepId: TStepIds], void>;
 }
 
 /**

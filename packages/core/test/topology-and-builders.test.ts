@@ -298,6 +298,37 @@ describe('H.agent, H.loop, canonical roleKey derivation, and createExecutorRegis
     expect(loopWithTools.roleKey).toBe('coder+tools:ast_grep,git_compare');
     expect(loopWithPolicy.actStep.actor.policy?.id).toBe('replacement-policy');
     expect(loopWithPolicy.actStep.actor.onInterruptHandlers.length).toBe(1);
+
+    const outOfOrderAgent = H.agent<GitWorktreeHandle>('out-of-order-coder')
+      .model(SAMPLE_MODEL_NODE)
+      .partitions(() => ['db'])
+      .onInterrupt(escalateIntr, ($i) => $i.ask(human, z.object({ answer: z.string() })).resumeWith((d: { readonly answer: string }) => d.answer))
+      .capabilities(($c) => $c.mutatePlan(($m) => $m.canAddDependencies()))
+      .input(actorInSchema)
+      .output(actorOutSchema)
+      .toAST();
+    expect(outOfOrderAgent.onInterruptHandlers.length).toBe(1);
+    expect(outOfOrderAgent.capabilities?.mutatePlan?.canAddDependencies).toBe(true);
+    expect(outOfOrderAgent.extractPartitions?.({ issueId: '1', partitions: ['db'] })).toEqual(['db']);
+
+    const outOfOrderLoop = H.loop<GitWorktreeHandle>('out-of-order-loop')
+      .partitions(() => ['api'])
+      .act('code', baseCoder)
+      .evaluate('review', evaluator, {
+        mapInput: (_loopIn: unknown, actOut: z.output<typeof actorOutSchema>, receipt: GitScopeReceipt) => ({
+          summary: actOut.summary,
+          scopeReceipt: receipt,
+        }),
+        acceptWhen: (verdict: z.output<typeof evalOutSchema>) => verdict.passed,
+        feedbackMapper: (verdict: z.output<typeof evalOutSchema>) => verdict.feedback,
+      })
+      .returnOutputFrom('code')
+      .input(actorInSchema)
+      .output(actorOutSchema)
+      .toAST();
+    expect(outOfOrderLoop.actStep.stepId).toBe('code');
+    expect(outOfOrderLoop.evaluateStep.stepId).toBe('review');
+    expect(outOfOrderLoop.extractPartitions?.({ issueId: '1', partitions: ['api'] })).toEqual(['api']);
   });
 
   it('merges partial executor slices and supports nested slice arrays in createExecutorRegistry', () => {

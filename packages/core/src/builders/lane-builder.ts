@@ -32,7 +32,7 @@ export interface LaneBuilder<TIn = unknown, TStepIds extends string = string>
   /**
    * Binds the Zod validation schema for work items entering the lane.
    *
-   * Resets input-dependent `key`, `tracker`, `flow`, `waitFor`, and `onSignal` bindings when changed.
+   * Preserves all previously configured `key`, `tracker`, `flow`, `waitFor`, and `onSignal` bindings.
    *
    * @template TNewIn Validated lane work item input type.
    *

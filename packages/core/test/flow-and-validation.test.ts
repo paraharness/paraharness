@@ -297,6 +297,54 @@ describe('Static build-time validation rejections', () => {
     ).toThrowError(
       "Flow 'tier1-replace-flow' step 'run' configures .replaceWith() on interrupt 'normative-esc' without .onAbort() on a Tier-1 'scope' (sample:tier1-scope); bind .onAbort() or use a 'checkpointable' or 'branchable' scope.",
     );
+
+    const abortHookPolicy = H.policy('adj-abort-policy').onAbort(SAMPLE_ABORT_HOOK_NODE);
+    const hookedAdjudicator = H.agent('hooked-adjudicator')
+      .model(SAMPLE_MODEL_NODE)
+      .policy(abortHookPolicy)
+      .input(z.object({ question: z.string() }))
+      .output(z.object({ verdict: z.string() }));
+    const unhookedAdjudicator = H.agent('unhooked-adjudicator')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ question: z.string() }))
+      .output(z.object({ verdict: z.string() }));
+
+    const nestedHookedFlow = H.flow('tier1-nested-hooked-replace')
+      .input(SimpleSchema)
+      .scope(SAMPLE_TIER1_SCOPE_NODE)
+      .step('run', SimpleAgent, ($s) =>
+        $s.onInterrupt(EscalationInterrupt, ($i) =>
+          $i
+            .adjudicateWith(hookedAdjudicator, (_in: { readonly id: string }, p: { readonly question: string }) => p)
+            .onInterrupt(EscalationInterrupt, ($nested) =>
+              $nested.replaceWith(SimpleAgent, () => ({ id: 'replaced' })),
+            )
+            .resumeWith((_in: { readonly id: string }, _p: { readonly question: string }, v: { readonly verdict: string }) => v.verdict),
+        ),
+      )
+      .exit('done')
+      .toAST();
+    expect(nestedHookedFlow.id).toBe('tier1-nested-hooked-replace');
+
+    expect(() =>
+      H.flow('tier1-nested-unhooked-replace')
+        .input(SimpleSchema)
+        .scope(SAMPLE_TIER1_SCOPE_NODE)
+        .step('run', SimpleAgent, ($s) =>
+          $s.onInterrupt(EscalationInterrupt, ($i) =>
+            $i
+              .adjudicateWith(unhookedAdjudicator, (_in: { readonly id: string }, p: { readonly question: string }) => p)
+              .onInterrupt(EscalationInterrupt, ($nested) =>
+                $nested.replaceWith(SimpleAgent, () => ({ id: 'replaced' })),
+              )
+              .resumeWith((_in: { readonly id: string }, _p: { readonly question: string }, v: { readonly verdict: string }) => v.verdict),
+          ),
+        )
+        .exit('done')
+        .toAST(),
+    ).toThrowError(
+      "Flow 'tier1-nested-unhooked-replace' step 'unhooked-adjudicator' configures .replaceWith() on interrupt 'normative-esc' without .onAbort() on a Tier-1 'scope' (sample:tier1-scope); bind .onAbort() or use a 'checkpointable' or 'branchable' scope.",
+    );
   });
 
   it('rejects clone-transcript forks across distinct roleKeys when prefixGroup uses role-scoped toolsMode', () => {
@@ -384,6 +432,33 @@ describe('Static build-time validation rejections', () => {
       untypedLane.onSignal(RewindSignal, ($s) => $s.update((cur: { readonly id: string }) => cur).rewindTo('non-existent-step')),
     ).toThrowError(
       "Lane 'bad-rewind-lane' signal handler on 'ci-failed' rewinds to unknown step ID 'non-existent-step' not present in flow 'valid-flow'.",
+    );
+
+    const outOfOrderFlow = H.flow('out-of-order-flow')
+      .step('step-one', SimpleAgent)
+      .input(SimpleSchema)
+      .scope(SAMPLE_TIER1_SCOPE_NODE)
+      .exit('done')
+      .toAST();
+    expect(outOfOrderFlow.nodes.map((n) => n.id)).toEqual(['step-one']);
+
+    const outOfOrderLane = H.lane('out-of-order-lane')
+      .key(() => 'item-1')
+      .waitFor(() => ['dep-1'], 'abandoned')
+      .onSignal(RewindSignal, ($s) => $s.update((cur: unknown) => cur).rewindTo('step-one'))
+      .runs(outOfOrderFlow)
+      .input(SimpleSchema)
+      .toAST();
+    expect(outOfOrderLane.onSignalHandlers.length).toBe(1);
+    expect(outOfOrderLane.waitFor?.onAbandonedState).toBe('abandoned');
+    expect(outOfOrderLane.flow.id).toBe('out-of-order-flow');
+
+    expect(() =>
+      H.lane('out-of-order-bad-rewind')
+        .onSignal(RewindSignal, ($s) => $s.update((cur: unknown) => cur).rewindTo('non-existent-step'))
+        .runs(validFlow),
+    ).toThrowError(
+      "Lane 'out-of-order-bad-rewind' signal handler on 'ci-failed' rewinds to unknown step ID 'non-existent-step' not present in flow 'valid-flow'.",
     );
   });
 });

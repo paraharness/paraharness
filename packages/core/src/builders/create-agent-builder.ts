@@ -1,5 +1,5 @@
 import type { AgentBuilder } from './agent-builder.js';
-import { createAgentFromState } from './internal/agent-and-loop-sub-builders.js';
+import { createAgentFromState } from './internal/create-agent-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 
 /**

@@ -1,3 +1,5 @@
+import type { BivariantCallback } from '../ast-foundation.types.js';
+
 /**
  * Domain-agnostic base AST node contract for external content and rule/skill sources (`SourceASTNode`).
  *
@@ -13,5 +15,5 @@ export interface BaseSourceASTNode<TType extends string = string, T = unknown> {
   /** Logical identifier of the source descriptor. */
   readonly id: string;
   /** Phantom type brand preserving the resolved content type `T`. */
-  readonly __dataType?: T;
+  readonly __dataType?: BivariantCallback<[data: T], void>;
 }

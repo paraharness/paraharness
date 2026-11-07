@@ -8,8 +8,8 @@ import type { InterruptHandlerNode } from '../../ast/interrupt-handler-node.type
 import type { InterruptNode } from '../../ast/interrupt-node.js';
 import type { FlowStepConfigBuilder } from '../flow-step-config-builder.js';
 import type { InterruptEdgeBuilder } from '../interrupt-edge-builder.js';
+import { createInterruptEdgeFromState } from './create-interrupt-edge-from-state.js';
 import { deepFreeze } from './deep-freeze.js';
-import { createInterruptEdgeFromState } from './interrupt-edge-sub-builders.js';
 
 /**
  * Creates a copy-on-write immutable `FlowStepConfigBuilder` from an internal state snapshot.

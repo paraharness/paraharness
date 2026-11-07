@@ -1,5 +1,5 @@
+import { createLaneFromState } from './internal/create-lane-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
-import { createLaneFromState } from './internal/lane-sub-builders.js';
 import type { LaneBuilder } from './lane-builder.js';
 
 /**

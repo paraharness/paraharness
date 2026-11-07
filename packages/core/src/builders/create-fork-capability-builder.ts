@@ -3,7 +3,7 @@ import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import { extractAST } from '../ast/extract-ast.js';
 import type { LoopNode } from '../ast/loop-node.js';
 import type { ForkCapabilityBuilder } from './fork-capability-builder.js';
-import { createForkCapabilityFromState } from './internal/capability-sub-builders.js';
+import { createForkCapabilityFromState } from './internal/create-fork-capability-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 
 /**

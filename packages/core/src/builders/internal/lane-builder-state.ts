@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { BivariantCallback } from '../../ast/ast-foundation.types.js';
 import type { FlowNode } from '../../ast/flow-node.js';
 import type {
   LaneMaxCostConfig,
@@ -23,7 +24,7 @@ export interface LaneBuilderState<TIn = unknown, TStepIds extends string = strin
   /** Zod schema validating work items entering the lane. */
   readonly inputSchema?: z.ZodType<TIn>;
   /** Synchronous extractor returning the deduplication `itemKey` for each work item. */
-  readonly keyMapper?: (input: TIn) => string;
+  readonly keyMapper?: BivariantCallback<[input: TIn], string>;
   /** Optional external issue tracker polling and state mapping configuration. */
   readonly tracker?: LaneTrackerConfig<TIn>;
   /** Bound workflow AST node executed for each work item. */

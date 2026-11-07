@@ -1,7 +1,7 @@
 import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import { extractAST } from '../ast/extract-ast.js';
 import type { InterruptNode } from '../ast/interrupt-node.js';
-import { createInterruptEdgeFromState } from './internal/interrupt-edge-sub-builders.js';
+import { createInterruptEdgeFromState } from './internal/create-interrupt-edge-from-state.js';
 import type { InterruptEdgeBuilder } from './interrupt-edge-builder.js';
 
 /**

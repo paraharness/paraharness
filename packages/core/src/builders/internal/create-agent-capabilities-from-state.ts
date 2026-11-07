@@ -15,11 +15,11 @@ import type { EscalateCapabilityBuilder } from '../escalate-capability-builder.j
 import type { ForkCapabilityBuilder } from '../fork-capability-builder.js';
 import type { MutatePlanCapabilityBuilder } from '../mutate-plan-capability-builder.js';
 import type { SpeculateCapabilityBuilder } from '../speculate-capability-builder.js';
-import { createForkCapabilityFromState } from './capability-sub-builders.js';
 import { createEscalateFromState } from './create-escalate-from-state.js';
+import { createForkCapabilityFromState } from './create-fork-capability-from-state.js';
+import { createSpeculateFromState } from './create-speculate-from-state.js';
 import { assertNonEmptyIdentifier, deepFreeze } from './deep-freeze.js';
 import { createMutatePlanFromState } from './mutate-plan-and-escalate-sub-builders.js';
-import { createSpeculateFromState } from './speculate-sub-builder.js';
 
 /**
  * Creates a copy-on-write immutable `AgentCapabilitiesBuilder` from an internal state snapshot.

@@ -34,7 +34,7 @@ export interface LoopBuilder<
   /**
    * Binds the Zod validation schema for the loop's input payload.
    *
-   * Resets dependent `extractPartitions`, `actStep`, and `evaluateStep` bindings when changed.
+   * Preserves all previously configured `extractPartitions`, `actStep`, and `evaluateStep` bindings.
    *
    * @template TNewIn Validated loop input payload type.
    *
@@ -49,7 +49,7 @@ export interface LoopBuilder<
   /**
    * Binds the Zod validation schema for the loop's output payload.
    *
-   * Resets dependent `actStep` and `evaluateStep` bindings when changed.
+   * Preserves all previously configured `actStep` and `evaluateStep` bindings.
    *
    * @template TNewOut Validated loop output payload type.
    *
@@ -115,16 +115,18 @@ export interface LoopBuilder<
    * Narrows `TActStepId` to `TNewActStepId` and updates `roleKey` to `actor.roleKey`.
    *
    * @template TNewActStepId Literal step identifier string of the action step.
+   * @template TActIn        Validated action step input payload type.
+   * @template TActOut       Validated action step output payload type.
    *
-   * @param {TNewActStepId}                               stepId - Action step identifier.
-   * @param {MaybeBuilder<AgentNode<TIn, TOut, THandle>>} actor  - Action agent AST node or builder.
+   * @param {TNewActStepId}                                     stepId - Action step identifier.
+   * @param {MaybeBuilder<AgentNode<TActIn, TActOut, THandle>>} actor  - Action agent AST node or builder.
    *
-   * @returns {LoopBuilder<TIn, TOut, THandle, TNewActStepId>} New immutable loop builder narrowed to `TNewActStepId`.
+   * @returns {LoopBuilder<TActIn, TActOut, THandle, TNewActStepId>} New immutable loop builder narrowed to `TNewActStepId`.
    */
-  act<TNewActStepId extends string>(
+  act<TNewActStepId extends string, TActIn = TIn, TActOut = TOut>(
     stepId: TNewActStepId,
-    actor: MaybeBuilder<AgentNode<TIn, TOut, THandle>>,
-  ): LoopBuilder<TIn, TOut, THandle, TNewActStepId>;
+    actor: MaybeBuilder<AgentNode<TActIn, TActOut, THandle>>,
+  ): LoopBuilder<TActIn, TActOut, THandle, TNewActStepId>;
 
   /**
    * Binds the read-only adversarial evaluation step executed after `.act()` passes `beforeStop`.

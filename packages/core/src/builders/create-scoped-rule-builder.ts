@@ -2,7 +2,7 @@ import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { SourceASTNode } from '../ast/domain-ast.types.js';
 import type { ScopedRule } from '../schemas/core-rules.schema.js';
 import type { CreateScopedRuleBuilderState as CreateScopedRuleBuilderOptions } from './create-scoped-rule-builder-state.js';
-import { buildScopedRuleFromState } from './internal/rules-sub-builders.js';
+import { buildScopedRuleFromState } from './internal/build-scoped-rule-from-state.js';
 import type { ScopedRuleBuilder } from './scoped-rule-builder.js';
 
 /**

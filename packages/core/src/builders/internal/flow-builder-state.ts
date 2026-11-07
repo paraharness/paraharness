@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { BivariantCallback } from '../../ast/ast-foundation.types.js';
 import type {
   IsolationScopeASTNode,
   TelemetryCollectorASTNode,
@@ -31,9 +32,11 @@ export interface FlowBuilderState<
   readonly telemetry?: TelemetryCollectorASTNode;
   /** Ordered sequence of sequential steps and conditional branches in the flow. */
   readonly nodes: ReadonlyArray<
-    | FlowStepNode<unknown, unknown, THandle, TStepIds>
-    | FlowBranchNode<TIn, unknown, THandle, TStepIds>
+    | FlowStepNode<unknown, unknown, THandle, string>
+    | FlowBranchNode<TIn, unknown, THandle, string>
   >;
   /** Terminal exit state label recorded when the flow completes its final node. */
   readonly exitState?: string;
+  /** Phantom bivariant brand preserving `TStepIds` across copy-on-write state transitions. */
+  readonly __stepIdsBrand?: BivariantCallback<[stepId: TStepIds], void>;
 }

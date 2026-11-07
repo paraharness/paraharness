@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { BivariantCallback } from '../ast-foundation.types.js';
 
 /**
  * Static wire tool schema descriptor declared by a lifecycle-bound `BaseServiceASTNode`.
@@ -34,5 +35,5 @@ export interface BaseServiceASTNode<TType extends string = string, THandle = unk
   /** Up-front tool schema descriptors for all interaction tools exposed by this service. */
   readonly toolSchemas: readonly ServiceToolSchemaDescriptor[];
   /** Phantom type brand binding the service to its compatible scope handle type. */
-  readonly __handleBrand?: THandle;
+  readonly __handleBrand?: BivariantCallback<[handle: THandle], void>;
 }

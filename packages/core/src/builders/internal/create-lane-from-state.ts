@@ -1,9 +1,9 @@
 import type { z } from 'zod';
-import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
+import type { BivariantCallback, MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type { TrackerASTNode } from '../../ast/domain-ast.types.js';
 import { extractAST } from '../../ast/extract-ast.js';
 import type { FlowNode } from '../../ast/flow-node.js';
-import type { LaneNode } from '../../ast/lane-node.js';
+import type { LaneNode, LaneSignalHandlerConfig } from '../../ast/lane-node.js';
 import type { ScopedHumanTargetNode } from '../../ast/scoped-human-target-node.js';
 import type { SignalNode } from '../../ast/signal-node.js';
 import type { BudgetApproval } from '../../schemas/budget-and-lesson.schema.js';
@@ -12,11 +12,15 @@ import type { LaneBuilder } from '../lane-builder.js';
 import type { LaneRetryConfigBuilder as LaneRetryBuilder } from '../lane-retry-config-builder.js';
 import type { LaneSignalHandlerBuilder } from '../lane-signal-handler-builder.js';
 import type { LaneTrackerConfigBuilder as LaneTrackerBuilder } from '../lane-tracker-config-builder.js';
-import { compileLaneStateToNode, createLaneRetryFromState } from './create-lane-retry-from-state.js';
+import {
+  collectFlowNodeIds,
+  compileLaneStateToNode,
+  createLaneRetryFromState,
+} from './create-lane-retry-from-state.js';
 import { createLaneSignalHandlerFromState } from './create-lane-signal-handler-from-state.js';
+import { createLaneTrackerFromState } from './create-lane-tracker-from-state.js';
 import { assertNonEmptyIdentifier } from './deep-freeze.js';
 import type { LaneBuilderState } from './lane-builder-state.js';
-import { createLaneTrackerFromState } from './lane-config-sub-builders.js';
 import { validateBidirectionalHumanChannel } from './validate-agent-and-human-capabilities.js';
 
 /**
@@ -38,16 +42,44 @@ export function createLaneFromState<TIn = unknown, TStepIds extends string = str
 ): LaneBuilder<TIn, TStepIds> {
   return Object.freeze<LaneBuilder<TIn, TStepIds>>({
     id: state.id,
-    input: <TNewIn>(schema: z.ZodType<TNewIn>): LaneBuilder<TNewIn, TStepIds> =>
-      createLaneFromState<TNewIn, TStepIds>({
+    input: <TNewIn>(schema: z.ZodType<TNewIn>): LaneBuilder<TNewIn, TStepIds> => {
+      const wideFlow: FlowNode<unknown, unknown, TStepIds> | undefined =
+        state.flow !== undefined ? { ...state.flow, inputSchema: schema } : undefined;
+      const prevTracker = state.tracker;
+      const wideState: LaneBuilderState<unknown, TStepIds> = {
         ...state,
-        inputSchema: schema,
-        keyMapper: undefined,
+        inputSchema: undefined,
         tracker: undefined,
         flow: undefined,
-        waitFor: undefined,
         onSignalHandlers: [],
-      }),
+      };
+      return createLaneFromState<TNewIn, TStepIds>({
+        ...wideState,
+        inputSchema: schema,
+        tracker:
+          prevTracker !== undefined
+            ? {
+                ...prevTracker,
+                fromIssue: (external: unknown): TNewIn | undefined => {
+                  const mapped = prevTracker.fromIssue(external);
+                  return mapped !== undefined ? schema.parse(mapped) : undefined;
+                },
+              }
+            : undefined,
+        flow: wideFlow !== undefined ? { ...wideFlow, inputSchema: schema } : undefined,
+        onSignalHandlers: state.onSignalHandlers.map((handler) => {
+          const wideMapper: BivariantCallback<[current: unknown, payload: unknown], unknown> = handler.updateMapper;
+          const wideHandler: LaneSignalHandlerConfig<unknown, TStepIds, unknown> = {
+            ...handler,
+            updateMapper: wideMapper,
+          };
+          return {
+            ...wideHandler,
+            updateMapper: (current: TNewIn, payload: unknown): TNewIn => schema.parse(wideMapper(current, payload)),
+          };
+        }),
+      });
+    },
     key: (mapper: (input: TIn) => string): LaneBuilder<TIn, TStepIds> =>
       createLaneFromState<TIn, TStepIds>({ ...state, keyMapper: mapper }),
     tracker: <TAdapter extends TrackerASTNode>(
@@ -65,10 +97,32 @@ export function createLaneFromState<TIn = unknown, TStepIds extends string = str
       ).toAST();
       return createLaneFromState<TIn, TStepIds>({ ...state, tracker: trackerConfig });
     },
-    flow: <TFlowStepIds extends string>(flow: MaybeBuilder<FlowNode<TIn, unknown, TFlowStepIds>>): LaneBuilder<TIn, TFlowStepIds> =>
-      createLaneFromState<TIn, TFlowStepIds>({ ...state, flow: extractAST(flow), onSignalHandlers: [] }),
-    runs: <TFlowStepIds extends string>(flow: MaybeBuilder<FlowNode<TIn, unknown, TFlowStepIds>>): LaneBuilder<TIn, TFlowStepIds> =>
-      createLaneFromState<TIn, TFlowStepIds>({ ...state, flow: extractAST(flow), onSignalHandlers: [] }),
+    flow: <TFlowStepIds extends string>(flow: MaybeBuilder<FlowNode<TIn, unknown, TFlowStepIds>>): LaneBuilder<TIn, TFlowStepIds> => {
+      const flowNode = extractAST(flow);
+      const knownStepIds = collectFlowNodeIds(flowNode);
+      for (const handler of state.onSignalHandlers) {
+        if (!knownStepIds.has(handler.rewindToStepId)) {
+          throw new Error(
+            `Lane '${state.id}' signal handler on '${handler.signal.id}' rewinds to unknown step ID '${handler.rewindToStepId}' not present in flow '${flowNode.id}'.`,
+          );
+        }
+      }
+      const wideState: LaneBuilderState<TIn, string> = { ...state, flow: undefined };
+      return createLaneFromState<TIn, TFlowStepIds>({ ...wideState, flow: flowNode });
+    },
+    runs: <TFlowStepIds extends string>(flow: MaybeBuilder<FlowNode<TIn, unknown, TFlowStepIds>>): LaneBuilder<TIn, TFlowStepIds> => {
+      const flowNode = extractAST(flow);
+      const knownStepIds = collectFlowNodeIds(flowNode);
+      for (const handler of state.onSignalHandlers) {
+        if (!knownStepIds.has(handler.rewindToStepId)) {
+          throw new Error(
+            `Lane '${state.id}' signal handler on '${handler.signal.id}' rewinds to unknown step ID '${handler.rewindToStepId}' not present in flow '${flowNode.id}'.`,
+          );
+        }
+      }
+      const wideState: LaneBuilderState<TIn, string> = { ...state, flow: undefined };
+      return createLaneFromState<TIn, TFlowStepIds>({ ...wideState, flow: flowNode });
+    },
     concurrency: (limit: number): LaneBuilder<TIn, TStepIds> => {
       if (!Number.isInteger(limit) || limit < 1) {
         throw new Error(`Lane '${state.id}' requires concurrency >= 1 (received ${limit}).`);

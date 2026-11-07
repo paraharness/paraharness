@@ -1,3 +1,5 @@
+import type { BivariantCallback } from '../ast-foundation.types.js';
+
 /**
  * Domain-agnostic base AST node contract for lane signal rewind hooks (`ScopeRewindHookASTNode`).
  *
@@ -15,5 +17,5 @@ export interface BaseScopeRewindHookASTNode<TType extends string = string, THand
   /** Whether executing this rewind hook also resets uncommitted run topology overlay mutations. */
   readonly resetsRunOverlay?: boolean;
   /** Phantom type brand binding the hook to its compatible scope handle type. */
-  readonly __handleBrand?: THandle;
+  readonly __handleBrand?: BivariantCallback<[handle: THandle], void>;
 }

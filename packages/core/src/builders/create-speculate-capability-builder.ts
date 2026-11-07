@@ -1,5 +1,5 @@
+import { createSpeculateFromState } from './internal/create-speculate-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
-import { createSpeculateFromState } from './internal/speculate-sub-builder.js';
 import type { SpeculateCapabilityBuilder } from './speculate-capability-builder.js';
 
 /**

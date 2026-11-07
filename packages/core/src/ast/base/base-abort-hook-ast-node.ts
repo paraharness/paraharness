@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { BivariantCallback } from '../ast-foundation.types.js';
 
 /**
  * Domain-agnostic base AST node contract for step abort hooks (`AbortHookASTNode`).
@@ -22,5 +23,5 @@ export interface BaseAbortHookASTNode<
   /** Zod schema validating metadata returned by the abort hook executor. */
   readonly metaSchema: z.ZodType<TAbortMeta>;
   /** Phantom type brand binding the hook to its compatible scope handle type. */
-  readonly __handleBrand?: THandle;
+  readonly __handleBrand?: BivariantCallback<[handle: THandle], void>;
 }

@@ -10,34 +10,24 @@ import { createEscalateOnRetryBuilder } from './create-escalate-on-retry-builder
 import { deepFreeze } from './deep-freeze.js';
 
 /**
- * Attempts to evaluate a 0- or 1-argument function as a `PoolStrategyBuilder` configurator callback.
+ * Creates a pure, stateless `PoolStrategyBuilder<TItem>` configurator bound to `poolId`.
  *
- * Returns the compiled `PoolStrategyNode<TItem>` when the callback invokes `$.escalateOnRetry()` or
- * `$.custom(...)` (or returns a strategy builder/node), or `undefined` when the callback behaves as
- * a direct `PoolSelectorFn<TItem>`.
+ * Exposes `.escalateOnRetry()` and `.custom(...)` sub-builders without mutating outer closure variables.
  *
  * @template TItem Pool item type.
  *
- * @param {string}                                                         poolId   - Owning pool identifier.
- * @param {($: PoolStrategyBuilder<TItem>) => MaybeBuilder<PoolStrategyNode<TItem>>} callback - Candidate configurator callback.
+ * @param {string} poolId - Owning pool identifier.
  *
- * @returns {PoolStrategyNode<TItem> | undefined} Compiled strategy node, or `undefined` if `callback` is a selector function.
+ * @returns {PoolStrategyBuilder<TItem>} Frozen `PoolStrategyBuilder` configurator instance.
  */
-function tryResolveConfiguratorStrategy<TItem>(
-  poolId: string,
-  callback: ($: PoolStrategyBuilder<TItem>) => MaybeBuilder<PoolStrategyNode<TItem>>,
-): PoolStrategyNode<TItem> | undefined {
-  let usedConfigurator = false;
-  const configurator: PoolStrategyBuilder<TItem> = {
-    escalateOnRetry: (): EscalateOnRetryStrategyBuilder<TItem> => {
-      usedConfigurator = true;
-      return createEscalateOnRetryBuilder<TItem>(poolId, undefined, undefined);
-    },
+function createPoolStrategyBuilder<TItem>(poolId: string): PoolStrategyBuilder<TItem> {
+  return Object.freeze<PoolStrategyBuilder<TItem>>({
+    escalateOnRetry: (): EscalateOnRetryStrategyBuilder<TItem> =>
+      createEscalateOnRetryBuilder<TItem>(poolId, undefined, undefined),
     custom: (
       selectorOrNode: PoolSelectorFn<TItem> | PoolStrategyNode<TItem>,
-    ): AstBuilder<PoolStrategyNode<TItem>> => {
-      usedConfigurator = true;
-      return Object.freeze<AstBuilder<PoolStrategyNode<TItem>>>({
+    ): AstBuilder<PoolStrategyNode<TItem>> =>
+      Object.freeze<AstBuilder<PoolStrategyNode<TItem>>>({
         toAST: (): PoolStrategyNode<TItem> =>
           typeof selectorOrNode === 'function'
             ? deepFreeze<CustomPoolStrategyNode<TItem>>({
@@ -47,24 +37,55 @@ function tryResolveConfiguratorStrategy<TItem>(
                 selectFn: selectorOrNode,
               })
             : deepFreeze<PoolStrategyNode<TItem>>(selectorOrNode),
-      });
-    },
-  };
+      }),
+  });
+}
+
+/**
+ * Type guard verifying whether an unknown callback return value is a `PoolStrategyNode` or `AstBuilder<PoolStrategyNode>`.
+ *
+ * Distinguishes configurator callbacks (`$ => $.escalateOnRetry()`) from 1-argument `PoolSelectorFn` callbacks.
+ *
+ * @template TItem Pool item type.
+ *
+ * @param {unknown} value - Candidate return value from a 0- or 1-argument strategy callback.
+ *
+ * @returns {value is MaybeBuilder<PoolStrategyNode<TItem>>} True when `value` is a pool strategy node or builder.
+ */
+function isPoolStrategyArtifact<TItem>(
+  value: unknown,
+): value is MaybeBuilder<PoolStrategyNode<TItem>> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (('toAST' in value && typeof value.toAST === 'function') ||
+      ('type' in value && value.type === 'harness:pool-strategy'))
+  );
+}
+
+/**
+ * Attempts to evaluate a 0- or 1-argument function as a `PoolStrategyBuilder` configurator callback.
+ *
+ * Returns the compiled `PoolStrategyNode<TItem>` when the callback returns a strategy builder or node,
+ * or `undefined` when the callback behaves as a direct `PoolSelectorFn<TItem>`.
+ *
+ * @template TItem Pool item type.
+ *
+ * @param {string}                                                                   poolId   - Owning pool identifier.
+ * @param {($: PoolStrategyBuilder<TItem>) => MaybeBuilder<PoolStrategyNode<TItem>>} callback - Candidate configurator callback.
+ *
+ * @returns {PoolStrategyNode<TItem> | undefined} Compiled strategy node, or `undefined` if `callback` is a selector function.
+ */
+function tryResolveConfiguratorStrategy<TItem>(
+  poolId: string,
+  callback: ($: PoolStrategyBuilder<TItem>) => MaybeBuilder<PoolStrategyNode<TItem>>,
+): PoolStrategyNode<TItem> | undefined {
   try {
-    const built = callback(configurator);
-    const isStrategyResult =
-      usedConfigurator ||
-      (typeof built === 'object' &&
-        built !== null &&
-        (('toAST' in built && typeof built.toAST === 'function') ||
-          ('type' in built && built.type === 'harness:pool-strategy')));
-    if (isStrategyResult && typeof built === 'object' && built !== null) {
-      return extractAST(built);
-    }
+    const built = callback(createPoolStrategyBuilder<TItem>(poolId));
+    return isPoolStrategyArtifact<TItem>(built) ? extractAST(built) : undefined;
   } catch {
     return undefined;
   }
-  return undefined;
 }
 
 /**

@@ -1,7 +1,25 @@
+import type { FlowNode } from '../../ast/flow-node.js';
 import type { LaneNode, LaneRetryConfig } from '../../ast/lane-node.js';
 import type { LaneRetryConfigBuilder as LaneRetryBuilder } from '../lane-retry-config-builder.js';
 import { deepFreeze } from './deep-freeze.js';
 import type { LaneBuilderState } from './lane-builder-state.js';
+
+/**
+ * Collects the set of top-level step and branch identifiers registered on a `FlowNode`.
+ *
+ * Used to validate `.onSignal().rewindTo(stepId)` targets when binding a flow or compiling a lane.
+ *
+ * @param {FlowNode<unknown, unknown, string>} flow - Target flow AST node.
+ *
+ * @returns {ReadonlySet<string>} Set of step and branch IDs present in `flow.nodes`.
+ */
+export function collectFlowNodeIds(flow: FlowNode<unknown, unknown, string>): ReadonlySet<string> {
+  const knownStepIds = new Set<string>();
+  for (const node of flow.nodes) {
+    knownStepIds.add(node.id);
+  }
+  return knownStepIds;
+}
 
 /**
  * Creates an immutable `LaneRetryBuilder` from an internal state snapshot.
@@ -59,10 +77,7 @@ export function compileLaneStateToNode<TIn, TStepIds extends string>(
       `Lane '${state.id}' is missing required .input(schema), .key(mapper), or .flow(flow) configuration.`,
     );
   }
-  const knownStepIds = new Set<string>();
-  for (const node of state.flow.nodes) {
-    knownStepIds.add(node.id);
-  }
+  const knownStepIds = collectFlowNodeIds(state.flow);
   for (const handler of state.onSignalHandlers) {
     if (!knownStepIds.has(handler.rewindToStepId)) {
       throw new Error(

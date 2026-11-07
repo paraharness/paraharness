@@ -1,6 +1,6 @@
 import type { FlowBuilder } from './flow-builder.js';
+import { createFlowFromState } from './internal/create-flow-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
-import { createFlowFromState } from './internal/flow-sub-builders.js';
 
 /**
  * Creates a fluent `FlowBuilder` for `H.flow(id)`.

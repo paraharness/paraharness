@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { BivariantCallback } from '../../ast/ast-foundation.types.js';
 import type { LessonsNode } from '../../ast/lessons-node.js';
 import type { LoopActStepConfig, LoopEvaluateStepConfig } from '../../ast/loop-node.js';
 
@@ -28,7 +29,7 @@ export interface LoopBuilderState<
   /** Zod schema validating loop output payloads. */
   readonly outputSchema?: z.ZodType<TOut>;
   /** Optional synchronous partition extractor mapping `TIn` to active partition IDs. */
-  readonly extractPartitions?: (input: TIn) => readonly string[];
+  readonly extractPartitions?: BivariantCallback<[input: TIn], readonly string[]>;
   /** Maximum number of `.act() -> .evaluate()` iterations before failing the loop. */
   readonly maxIterations: number;
   /** Whether rejected iterations resume the `.act()` actor's existing conversation transcript. */

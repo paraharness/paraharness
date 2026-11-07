@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { BivariantCallback } from '../ast-foundation.types.js';
 
 /**
  * Domain-agnostic base AST node contract for speculative cross-verifiers (`CrossVerifierASTNode`).
@@ -24,7 +25,7 @@ export interface BaseCrossVerifierASTNode<
   /** Zod schema validating the cross-verification report attached to each candidate. */
   readonly reportSchema: z.ZodType<TCrossReport>;
   /** Phantom type brand binding the verifier to its compatible scope handle type. */
-  readonly __handleBrand?: THandle;
+  readonly __handleBrand?: BivariantCallback<[handle: THandle], void>;
   /** Phantom type brand binding the verifier to its compatible scope receipt type. */
-  readonly __receiptBrand?: TReceipt;
+  readonly __receiptBrand?: BivariantCallback<[receipt: TReceipt], void>;
 }

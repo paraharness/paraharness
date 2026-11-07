@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import type { AgentCapabilitiesNode } from '../../ast/agent-capabilities-node.js';
 import type { AgentLessonsMount } from '../../ast/agent-node.js';
-import type { SourceValue } from '../../ast/ast-foundation.types.js';
+import type { BivariantCallback, SourceValue } from '../../ast/ast-foundation.types.js';
 import type { ChildInterruptHandlerNode } from '../../ast/child-interrupt-handler-node.js';
 import type {
   CheckASTNode,
@@ -64,7 +64,7 @@ export interface AgentBuilderState<TIn = unknown, TOut = unknown, THandle = unkn
   /** Zod schema validating actor output payloads. */
   readonly outputSchema?: z.ZodType<TOut>;
   /** Optional synchronous partition extractor mapping `TIn` to active partition IDs. */
-  readonly extractPartitions?: (input: TIn) => readonly string[];
+  readonly extractPartitions?: BivariantCallback<[input: TIn], readonly string[]>;
   /** Voluntary interrupts the actor is permitted to raise. */
   readonly canRaiseInterrupts: readonly InterruptNode<unknown>[];
   /** Optional hierarchical orchestration capabilities container. */

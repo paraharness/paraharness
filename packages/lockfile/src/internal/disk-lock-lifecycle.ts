@@ -12,6 +12,7 @@ import {
   LOCK_PATH_QUEUES,
 } from '../file-lock.constants.js';
 import type { CreateHeartbeatLeaseParams } from './create-heartbeat-lease-params.js';
+import type { ExecuteQueuedLockSlotParams } from './execute-queued-lock-slot-params.js';
 import type { ResolvedFileLockOptions } from './resolved-file-lock-options.js';
 import {
   isExistingLockStale,
@@ -163,24 +164,15 @@ export function createHeartbeatLease(params: CreateHeartbeatLeaseParams): FileLo
 }
 
 /**
- * Acquires the on-disk lockfile inside a reserved `PQueue` slot, resolves `resolveLease` with the
+ * Acquires the on-disk lockfile inside a reserved `PQueue` slot, resolves `params.resolveLease` with the
  * active `FileLockLease`, and holds the queue slot open until `lease.release()` completes.
  *
- * @param {PQueue}                         queue            - Single-concurrency queue for `resolvedLockPath`.
- * @param {string}                         resolvedLockPath - Canonical absolute path of the lockfile.
- * @param {ResolvedFileLockOptions}        resolvedOptions  - Normalized timeout, stale, and heartbeat settings.
- * @param {(lease: FileLockLease) => void} resolveLease     - Callback resolving the caller's lease promise.
- * @param {(error: unknown) => void}       rejectLease      - Callback rejecting the caller's lease promise on failure.
+ * @param {ExecuteQueuedLockSlotParams} params - Queue, canonical lock path, normalized options, and settlement callbacks.
  *
  * @returns {Promise<void>} Resolves once the lease is released or acquisition fails.
  */
-export async function executeQueuedLockSlot(
-  queue: PQueue,
-  resolvedLockPath: string,
-  resolvedOptions: ResolvedFileLockOptions,
-  resolveLease: (lease: FileLockLease) => void,
-  rejectLease: (error: unknown) => void,
-): Promise<void> {
+export async function executeQueuedLockSlot(params: ExecuteQueuedLockSlotParams): Promise<void> {
+  const { queue, resolvedLockPath, resolvedOptions, resolveLease, rejectLease } = params;
   let releaseQueueSlot: (() => void) | undefined;
   const queueSlotReleased = new Promise<void>((resolveSlot) => {
     releaseQueueSlot = resolveSlot;

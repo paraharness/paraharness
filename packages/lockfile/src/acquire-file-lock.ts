@@ -47,7 +47,13 @@ export function acquireFileLock(lockPath: string, options?: FileLockOptions): Pr
       .add(
         async () => {
           callerSignal?.removeEventListener('abort', onCallerAbort);
-          await executeQueuedLockSlot(queue, resolvedLockPath, resolvedOptions, resolveLease, rejectLease);
+          await executeQueuedLockSlot({
+            queue,
+            resolvedLockPath,
+            resolvedOptions,
+            resolveLease,
+            rejectLease,
+          });
         },
         { signal: waitController.signal },
       )

@@ -22,7 +22,7 @@ import { createAgentCapabilitiesFromState } from './create-agent-capabilities-fr
 import { createChildInterruptFromState } from './create-ask-and-child-interrupt-from-state.js';
 import { deriveCanonicalRoleKey } from './derive-canonical-role-key.js';
 import { compileAgentStateToNode, flattenExtractedNodes, flattenSourceStrings } from './flatten-builder-inputs.js';
-import { createInterruptEdgeFromState } from './interrupt-edge-sub-builders.js';
+import { createInterruptEdgeFromState } from './create-interrupt-edge-from-state.js';
 
 /**
  * Creates a copy-on-write immutable `AgentBuilder` from an internal state snapshot.
@@ -71,14 +71,10 @@ export function createAgentFromState<TIn = unknown, TOut = unknown, THandle = un
     timeoutMinutes: (minutes: number) => createAgentFromState({ ...state, timeoutMinutes: minutes }),
     beforeStop: (...checks: ReadonlyArray<MaybeBuilder<CheckASTNode<THandle>> | ReadonlyArray<MaybeBuilder<CheckASTNode<THandle>>>>) =>
       createAgentFromState({ ...state, beforeStopChecks: [...state.beforeStopChecks, ...flattenExtractedNodes<CheckASTNode<THandle>>(checks)] }),
-    input: <TNewIn>(schema: z.ZodType<TNewIn>) =>
-      createAgentFromState<TNewIn, TOut, THandle>({
-        ...state,
-        inputSchema: schema,
-        extractPartitions: undefined,
-        capabilities: undefined,
-        onInterruptHandlers: [],
-      }),
+    input: <TNewIn>(schema: z.ZodType<TNewIn>) => {
+      const wideState: AgentBuilderState<unknown, TOut, THandle> = { ...state, inputSchema: undefined };
+      return createAgentFromState<TNewIn, TOut, THandle>({ ...wideState, inputSchema: schema });
+    },
     partitions: (extractor: (input: TIn) => readonly string[]) => createAgentFromState({ ...state, extractPartitions: extractor }),
     output: <TNewOut>(schema: z.ZodType<TNewOut>) =>
       createAgentFromState<TIn, TNewOut, THandle>({ ...state, outputSchema: schema }),

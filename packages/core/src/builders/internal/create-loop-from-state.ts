@@ -37,10 +37,40 @@ export function createLoopFromState<TIn = unknown, TOut = unknown, THandle = unk
   return Object.freeze<LoopBuilder<TIn, TOut, THandle, TActStepId>>({
     id: state.id,
     roleKey: state.roleKey,
-    input: <TNewIn>(schema: z.ZodType<TNewIn>) =>
-      createLoopFromState<TNewIn, TOut, THandle, TActStepId>({ ...state, inputSchema: schema, extractPartitions: undefined, actStep: undefined, evaluateStep: undefined }),
-    output: <TNewOut>(schema: z.ZodType<TNewOut>) =>
-      createLoopFromState<TIn, TNewOut, THandle, TActStepId>({ ...state, outputSchema: schema, actStep: undefined, evaluateStep: undefined }),
+    input: <TNewIn>(schema: z.ZodType<TNewIn>) => {
+      const wideActActor: AgentNode<unknown, TOut, THandle> | undefined =
+        state.actStep !== undefined ? deepFreeze<AgentNode<unknown, TOut, THandle>>({ ...state.actStep.actor, inputSchema: schema }) : undefined;
+      const wideState: LoopBuilderState<unknown, TOut, THandle, TActStepId> = {
+        ...state,
+        inputSchema: undefined,
+        actStep: state.actStep !== undefined && wideActActor !== undefined ? { stepId: state.actStep.stepId, actor: wideActActor } : undefined,
+      };
+      return createLoopFromState<TNewIn, TOut, THandle, TActStepId>({
+        ...wideState,
+        inputSchema: schema,
+        actStep:
+          state.actStep !== undefined && wideActActor !== undefined
+            ? { stepId: state.actStep.stepId, actor: deepFreeze<AgentNode<TNewIn, TOut, THandle>>({ ...wideActActor, inputSchema: schema }) }
+            : undefined,
+      });
+    },
+    output: <TNewOut>(schema: z.ZodType<TNewOut>) => {
+      const wideActActor: AgentNode<TIn, unknown, THandle> | undefined =
+        state.actStep !== undefined ? deepFreeze<AgentNode<TIn, unknown, THandle>>({ ...state.actStep.actor, outputSchema: schema }) : undefined;
+      const wideState: LoopBuilderState<TIn, unknown, THandle, TActStepId> = {
+        ...state,
+        outputSchema: undefined,
+        actStep: state.actStep !== undefined && wideActActor !== undefined ? { stepId: state.actStep.stepId, actor: wideActActor } : undefined,
+      };
+      return createLoopFromState<TIn, TNewOut, THandle, TActStepId>({
+        ...wideState,
+        outputSchema: schema,
+        actStep:
+          state.actStep !== undefined && wideActActor !== undefined
+            ? { stepId: state.actStep.stepId, actor: deepFreeze<AgentNode<TIn, TNewOut, THandle>>({ ...wideActActor, outputSchema: schema }) }
+            : undefined,
+      });
+    },
     partitions: (extractor: (input: TIn) => readonly string[]) => createLoopFromState({ ...state, extractPartitions: extractor }),
     maxIterations: (count: number) => {
       if (!Number.isInteger(count) || count < 1) throw new Error(`Loop '${state.id}' requires maxIterations >= 1 (received ${count}).`);
@@ -48,11 +78,23 @@ export function createLoopFromState<TIn = unknown, TOut = unknown, THandle = unk
     },
     preserveActorSession: (preserve: boolean) => createLoopFromState({ ...state, preserveActorSession: preserve }),
     distillLessonsInto: (lessons: MaybeBuilder<LessonsNode<unknown>>) => createLoopFromState({ ...state, distillLessons: extractAST(lessons) }),
-    act: <TNewActStepId extends string>(stepId: TNewActStepId, actor: MaybeBuilder<AgentNode<TIn, TOut, THandle>>) => {
+    act: <TNewActStepId extends string, TActIn = TIn, TActOut = TOut>(
+      stepId: TNewActStepId,
+      actor: MaybeBuilder<AgentNode<TActIn, TActOut, THandle>>,
+    ) => {
       assertNonEmptyIdentifier('H.loop.act', stepId);
       const actorNode = extractAST(actor);
-      return createLoopFromState<TIn, TOut, THandle, TNewActStepId>({
+      const wideState: LoopBuilderState<unknown, unknown, THandle, string> = {
         ...state,
+        inputSchema: undefined,
+        outputSchema: undefined,
+        actStep: undefined,
+        returnOutputFromStepId: undefined,
+      };
+      return createLoopFromState<TActIn, TActOut, THandle, TNewActStepId>({
+        ...wideState,
+        inputSchema: state.inputSchema !== undefined ? actorNode.inputSchema : undefined,
+        outputSchema: state.outputSchema !== undefined ? actorNode.outputSchema : undefined,
         roleKey: actorNode.roleKey,
         actStep: { stepId, actor: actorNode },
         returnOutputFromStepId: undefined,

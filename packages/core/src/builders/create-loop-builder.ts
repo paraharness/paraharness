@@ -1,5 +1,5 @@
+import { createLoopFromState } from './internal/create-loop-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
-import { createLoopFromState } from './internal/loop-sub-builders.js';
 import type { LoopBuilder } from './loop-builder.js';
 
 /**
