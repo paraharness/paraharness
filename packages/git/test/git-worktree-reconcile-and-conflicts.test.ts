@@ -1,0 +1,271 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import type { StepExecutionContext, GitWorktreeHandle } from '@harness-dsl/core';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  GitCowWorktreeScopeDriver,
+  executeGitCleanWorkingTreeCheck,
+  git,
+} from '../src/index.js';
+import {
+  readHarnessMeta,
+  runGitCommand,
+  writeHarnessMeta,
+} from '../src/executors/internal/git-cli-runner.js';
+import { createTempGitHostRepo } from './fixtures/temp-git-host-repo.js';
+import type { TempGitHostRepoHandle } from './fixtures/temp-git-host-repo-handle.js';
+
+function createMockStepCtx(handle: GitWorktreeHandle): StepExecutionContext<GitWorktreeHandle> {
+  return {
+    runId: 'run-reconcile',
+    stepExecId: 'step-1',
+    scopeHandle: handle,
+    activePartitions: [],
+    activeLeases: [],
+    observedEffects: [],
+    resolveEnv: (v) => (typeof v === 'string' ? v : undefined),
+    getRunner: () => ({
+      id: 'mock-runner',
+      withSlot: (fn) => fn(),
+      withDaemonSlot: (fn) => fn(() => undefined),
+    }),
+    recordEffects: () => undefined,
+    registry: {} as StepExecutionContext<GitWorktreeHandle>['registry'],
+  };
+}
+
+describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-tree, and crash reattachment', () => {
+  let hostRepo: TempGitHostRepoHandle;
+
+  beforeAll(async () => {
+    hostRepo = await createTempGitHostRepo();
+  });
+
+  afterAll(async () => {
+    await hostRepo.cleanup();
+  });
+
+  it('auto-flushes parent dirty edits before forkChild, inspects non-mutatingly, and pins candidate and completed refs', async () => {
+    const scopeNode = git
+      .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .toAST();
+    const scope = new GitCowWorktreeScopeDriver(scopeNode);
+    const root = await scope.acquireRoot('run-fork-pin');
+    const initialBaseRef = root.baseRef;
+
+    await writeFile(
+      path.join(root.worktreePath, 'src/parent-note.md'),
+      'Parent note\n=======\nSection body\n',
+      'utf8',
+    );
+
+    const [child0, child1] = await Promise.all([
+      scope.forkChild(root, 'call-1:branch:0'),
+      scope.forkChild(root, 'call-1:branch:1'),
+    ]);
+
+    expect(root.baseRef).toBe(initialBaseRef);
+    expect(root.headRef).not.toBe(initialBaseRef);
+    expect(await readFile(path.join(child0.worktreePath, 'src/parent-note.md'), 'utf8')).toContain(
+      'Section body',
+    );
+    expect(await readFile(path.join(child1.worktreePath, 'src/parent-note.md'), 'utf8')).toContain(
+      'Section body',
+    );
+
+    await writeFile(
+      path.join(child0.worktreePath, 'src/candidate0.ts'),
+      'export const c0 = true;\n',
+      'utf8',
+    );
+    const headBeforeInspect = (
+      await runGitCommand({ cwd: child0.worktreePath, args: ['rev-parse', 'HEAD'] })
+    ).stdout.trim();
+    const receipt0 = await scope.inspect(child0);
+    const headAfterInspect = (
+      await runGitCommand({ cwd: child0.worktreePath, args: ['rev-parse', 'HEAD'] })
+    ).stdout.trim();
+
+    expect(headAfterInspect).toBe(headBeforeInspect);
+    expect(receipt0.mutatedFiles).toContain('src/candidate0.ts');
+    const pinnedCandidate = (
+      await runGitCommand({
+        cwd: hostRepo.repoPath,
+        args: ['rev-parse', 'refs/harness/candidates/run-fork-pin/0'],
+      })
+    ).stdout.trim();
+    expect(pinnedCandidate).toBe(receipt0.headRef);
+
+    const cleanCheckRes = await executeGitCleanWorkingTreeCheck(
+      { type: 'git:clean-working-tree', id: 'clean-check' },
+      undefined,
+      createMockStepCtx(root),
+    );
+    expect(cleanCheckRes.ok).toBe(true);
+
+    await scope.release(child0);
+    await scope.release(child1);
+    await scope.release(root);
+
+    const pinnedCompletedFork = (
+      await runGitCommand({
+        cwd: hostRepo.repoPath,
+        args: ['rev-parse', 'refs/harness/completed/forks/run-fork-pin/call-1_branch_0'],
+      })
+    ).stdout.trim();
+    expect(pinnedCompletedFork).toBe(receipt0.headRef);
+    const pinnedCompletedRoot = (
+      await runGitCommand({
+        cwd: hostRepo.repoPath,
+        args: ['rev-parse', 'refs/harness/completed/roots/run-fork-pin'],
+      })
+    ).stdout.trim();
+    expect(pinnedCompletedRoot.length).toBeGreaterThan(10);
+  });
+
+  it('reconciles clean and conflicted commitChild via stateless merge-tree, populates unresolvedConflictPaths, and grants getConflictLease', async () => {
+    const scopeNode = git
+      .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .toAST();
+    const scope = new GitCowWorktreeScopeDriver(scopeNode);
+    const parent = await scope.acquireRoot('run-conflict-merge');
+    expect(scope.getConflictLease(parent)).toBeUndefined();
+
+    const childA = await scope.forkChild(parent, 'worker-a');
+    const childB = await scope.forkChild(parent, 'worker-b');
+
+    await writeFile(
+      path.join(childA.worktreePath, 'src/index.ts'),
+      'export function add(a: number, b: number): number {\n  return a + b + 1;\n}\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(childB.worktreePath, 'src/index.ts'),
+      'export function add(a: number, b: number): number {\n  return a + b + 99;\n}\n',
+      'utf8',
+    );
+
+    const resA = await scope.commitChild(childA, parent);
+    expect(resA.status).toBe('clean');
+    expect(await readFile(path.join(parent.worktreePath, 'src/index.ts'), 'utf8')).toContain(
+      'a + b + 1',
+    );
+
+    const parentHeadAfterA = parent.headRef;
+    const resB = await scope.commitChild(childB, parent);
+    expect(resB.status).toBe('conflict');
+    expect(parent.headRef).toBe(parentHeadAfterA);
+    expect(await readFile(path.join(parent.worktreePath, 'src/index.ts'), 'utf8')).toContain(
+      'a + b + 1',
+    );
+    expect(Object.keys(childB.unresolvedConflictPaths)).toEqual(['src/index.ts']);
+    expect(childB.baseRef).toBe(parentHeadAfterA);
+
+    const lease = scope.getConflictLease(childB);
+    expect(lease?.type).toBe('harness:lease-delta');
+    expect(lease?.grantedMatchers).toEqual([
+      {
+        type: 'fs:match-globs',
+        id: 'git-conflict-globs:worker-b',
+        globs: ['src/index.ts'],
+        mode: 'write',
+      },
+    ]);
+
+    const conflictedCheck = await executeGitCleanWorkingTreeCheck(
+      { type: 'git:clean-working-tree', id: 'clean-check' },
+      undefined,
+      createMockStepCtx(childB),
+    );
+    expect(conflictedCheck.ok).toBe(false);
+    expect(conflictedCheck.deficits[0]).toContain('src/index.ts');
+
+    const retryConflict = await scope.commitChild(childB, parent);
+    expect(retryConflict.status).toBe('conflict');
+
+    await writeFile(
+      path.join(childB.worktreePath, 'src/index.ts'),
+      'export function add(a: number, b: number): number {\n  return a + b + 100;\n}\n',
+      'utf8',
+    );
+    const resolvedCheck = await executeGitCleanWorkingTreeCheck(
+      { type: 'git:clean-working-tree', id: 'clean-check' },
+      undefined,
+      createMockStepCtx(childB),
+    );
+    expect(resolvedCheck.ok).toBe(true);
+    expect(scope.getConflictLease(childB)).toBeUndefined();
+
+    const resBResolved = await scope.commitChild(childB, parent);
+    expect(resBResolved.status).toBe('clean');
+    expect(await readFile(path.join(parent.worktreePath, 'src/index.ts'), 'utf8')).toContain(
+      'a + b + 100',
+    );
+
+    await scope.release(childA);
+    await scope.release(childB);
+    await scope.release(parent);
+  });
+
+  it('executes syncChild, syncRoot stacked prerequisite lineage, and reattachRoot/reattachChild crash recovery', async () => {
+    const scopeNode = git
+      .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .toAST();
+    const scope = new GitCowWorktreeScopeDriver(scopeNode);
+
+    const prereqRoot = await scope.acquireRoot('run-prereq');
+    await writeFile(
+      path.join(prereqRoot.worktreePath, 'src/prereq.ts'),
+      'export const PREREQ = "v1";\n',
+      'utf8',
+    );
+    const prereqReceipt = {
+      ...(await scope.inspect(prereqRoot)),
+      branchName: 'feat/prereq-1',
+    };
+
+    const downstreamRoot = await scope.acquireRoot('run-downstream');
+    const pausedChild = await scope.forkChild(downstreamRoot, 'child-sync');
+    await writeFile(
+      path.join(pausedChild.worktreePath, 'src/child-local.ts'),
+      'export const LOCAL = 42;\n',
+      'utf8',
+    );
+
+    const syncRootRes = await scope.syncRoot(downstreamRoot, [prereqReceipt]);
+    expect(syncRootRes.status).toBe('clean');
+    expect(syncRootRes.data.rebasedOntoRef).toBe(prereqReceipt.headRef);
+    expect(downstreamRoot.baseBranch).toBe('feat/prereq-1');
+    expect(await readFile(path.join(downstreamRoot.worktreePath, 'src/prereq.ts'), 'utf8')).toContain(
+      'PREREQ = "v1"',
+    );
+
+    const syncChildRes = await scope.syncChild(downstreamRoot, pausedChild);
+    expect(syncChildRes.status).toBe('clean');
+    expect(await readFile(path.join(pausedChild.worktreePath, 'src/prereq.ts'), 'utf8')).toContain(
+      'PREREQ = "v1"',
+    );
+    expect(await readFile(path.join(pausedChild.worktreePath, 'src/child-local.ts'), 'utf8')).toContain(
+      'LOCAL = 42',
+    );
+
+    const metaBeforeCrash = await readHarnessMeta(downstreamRoot.gitDirPath);
+    await writeHarnessMeta(downstreamRoot.gitDirPath, {
+      ...metaBeforeCrash,
+      pendingParentHeadSha: prereqReceipt.headRef,
+    });
+    const reattachedRoot = await scope.reattachRoot('run-downstream');
+    const metaAfterReattach = await readHarnessMeta(reattachedRoot.gitDirPath);
+    expect(metaAfterReattach.pendingParentHeadSha).toBeUndefined();
+    expect(reattachedRoot.headRef).toBe(prereqReceipt.headRef);
+
+    const reattachedChild = await scope.reattachChild(reattachedRoot, 'child-sync');
+    expect(await readFile(path.join(reattachedChild.worktreePath, 'src/child-local.ts'), 'utf8')).toContain(
+      'LOCAL = 42',
+    );
+
+    await scope.release(pausedChild);
+    await scope.release(prereqRoot);
+    await scope.release(downstreamRoot);
+  });
+});
