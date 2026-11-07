@@ -8,12 +8,8 @@ import type {
   StepExecutionContext,
   ToolDriver,
 } from '@harness-dsl/core';
-import picomatch from 'picomatch';
 import { runGitCommand } from './internal/git-cli-runner.js';
-import {
-  collectCandidateBoundaryTests,
-  runTransplantedTestsOnTarget,
-} from './internal/git-tool-and-verifier-helpers.js';
+import { runPublicSurfaceCrossVerification } from './internal/git-cross-test-import-scanner.js';
 import {
   dispatchCandidateComparisonToolCall,
   dispatchRefReaderToolCall,
@@ -35,35 +31,39 @@ export async function executeGitPublicSurfaceCrossTester(
   candidates: ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>,
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<Readonly<Record<number, unknown>>> {
-  const matchers: Array<(candidatePath: string) => boolean> = [];
-  for (const part of Object.values(node.partitionMap.mapping)) {
-    for (const glob of part.boundaryGlobs) matchers.push(picomatch(glob, { dot: true }));
-  }
-  const isBoundaryPath = (candidatePath: string): boolean => {
-    for (const isMatch of matchers) if (isMatch(candidatePath)) return true;
-    return false;
-  };
-  const runVerifier = async (): Promise<Readonly<Record<number, unknown>>> => {
-    const testsByBranch = new Map<number, ReadonlyMap<string, string>>();
-    for (const cand of candidates) {
-      testsByBranch.set(cand.branchIndex, await collectCandidateBoundaryTests(cand, isBoundaryPath));
-    }
-    const reports: Record<number, unknown> = {};
-    for (const target of candidates) {
-      const mergedTests = new Map<string, string>();
-      for (const [sourceIdx, testMap] of testsByBranch) {
-        if (sourceIdx === target.branchIndex) continue;
-        for (const [relPath, content] of testMap) mergedTests.set(relPath, content);
-      }
-      const rawReport = await runTransplantedTestsOnTarget(target, mergedTests);
-      reports[target.branchIndex] = node.reportSchema.parse(rawReport);
-    }
-    return Object.freeze(reports);
-  };
+  const runVerifier = (): Promise<Readonly<Record<number, unknown>>> =>
+    runPublicSurfaceCrossVerification(node, candidates);
   if (node.runner !== undefined && typeof ctx.getRunner === 'function') {
     return ctx.getRunner(node.runner).withSlot(runVerifier, ctx.signal);
   }
   return runVerifier();
+}
+
+/**
+ * Computes the normalized `git patch-id --stable` digest for a single speculative candidate branch.
+ *
+ * @param {CrossVerifierBranchCandidate<GitWorktreeHandle>} candidate - Speculative candidate descriptor.
+ *
+ * @returns {Promise<string>} Stable normalized patch digest, or `'EMPTY_PATCH'` when the diff is empty.
+ */
+async function computeCandidatePatchDigest(
+  candidate: CrossVerifierBranchCandidate<GitWorktreeHandle>,
+): Promise<string> {
+  const cwd = candidate.scopeHandle.worktreePath;
+  const headSha = typeof candidate.scopeReceipt['headRef'] === 'string'
+    ? candidate.scopeReceipt['headRef']
+    : (candidate.scopeHandle.headRef ?? candidate.scopeHandle.baseRef);
+  const diffOutput = await runGitCommand({
+    cwd,
+    args: ['diff', '--no-ext-diff', '--no-color', candidate.scopeHandle.baseRef, headSha],
+  });
+  if (diffOutput.stdout.trim().length === 0) return 'EMPTY_PATCH';
+  const patchOutput = await runGitCommand({
+    cwd,
+    args: ['patch-id', '--stable'],
+    stdin: diffOutput.stdout,
+  });
+  return patchOutput.stdout.trim().split(/\s+/)[0] || 'EMPTY_PATCH';
 }
 
 /**
@@ -86,11 +86,7 @@ export async function executeGitPatchEquivalence(
   const branchesByDigest = new Map<string, number[]>();
   const groupIndexByDigest = new Map<string, number>();
   for (const cand of candidates) {
-    const cwd = cand.scopeHandle.worktreePath;
-    const headSha = typeof cand.scopeReceipt['headRef'] === 'string' ? cand.scopeReceipt['headRef'] : (cand.scopeHandle.headRef ?? cand.scopeHandle.baseRef);
-    const diffRes = await runGitCommand({ cwd, args: ['diff', '--no-ext-diff', '--no-color', cand.scopeHandle.baseRef, headSha] });
-    const patchRes = diffRes.stdout.trim().length > 0 ? await runGitCommand({ cwd, args: ['patch-id', '--stable'], stdin: diffRes.stdout }) : undefined;
-    const digest = (patchRes?.stdout.trim().split(/\s+/)[0] || 'EMPTY_PATCH');
+    const digest = await computeCandidatePatchDigest(cand);
     digestByBranch.set(cand.branchIndex, digest);
     const existingGroup = branchesByDigest.get(digest);
     if (existingGroup !== undefined) existingGroup.push(cand.branchIndex);
@@ -104,7 +100,11 @@ export async function executeGitPatchEquivalence(
     const digest = digestByBranch.get(cand.branchIndex) ?? '';
     const equivalenceGroupIndex = groupIndexByDigest.get(digest) ?? 0;
     const equivalentBranchIndices = branchesByDigest.get(digest) ?? [cand.branchIndex];
-    reports[cand.branchIndex] = node.reportSchema.parse({ equivalenceGroupIndex, equivalentBranchIndices, normalizedPatchDigest: digest });
+    reports[cand.branchIndex] = node.reportSchema.parse({
+      equivalenceGroupIndex,
+      equivalentBranchIndices,
+      normalizedPatchDigest: digest,
+    });
   }
   return Object.freeze(reports);
 }

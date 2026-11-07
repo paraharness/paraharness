@@ -10,6 +10,8 @@ import {
   copyFileCowOrValue,
 } from './file-digest-and-globs.js';
 import { readHarnessMeta, runGitCommand } from './git-cli-runner.js';
+import type { StagedCheckpointTreeResult } from './staged-checkpoint-tree-result.js';
+import type { WorktreeIntegrityVerdict } from './worktree-integrity-verdict.js';
 import type { WorktreeStatusSnapshot } from './worktree-status-snapshot.js';
 
 /**
@@ -21,17 +23,13 @@ import type { WorktreeStatusSnapshot } from './worktree-status-snapshot.js';
  * @param {WorktreeStatusSnapshot} snapshot          - Porcelain v2 status snapshot of the worktree.
  * @param {number}                 maxUntrackedBytes - Byte threshold above which untracked files spill to `harness-ckpt-blobs/`.
  *
- * @returns {Promise<{ readonly headSha: string; readonly treeSha: string; readonly oversizedUntrackedBlobs: Readonly<Record<string, OversizedUntrackedBlobRecord>> }>} Synthesized tree SHA and spilled blob map.
+ * @returns {Promise<StagedCheckpointTreeResult>} Synthesized tree SHA and spilled blob map.
  */
 export async function stageCheckpointTreeAndOversizedBlobs(
   handle: GitWorktreeHandle,
   snapshot: WorktreeStatusSnapshot,
   maxUntrackedBytes: number,
-): Promise<{
-  readonly headSha: string;
-  readonly treeSha: string;
-  readonly oversizedUntrackedBlobs: Readonly<Record<string, OversizedUntrackedBlobRecord>>;
-}> {
+): Promise<StagedCheckpointTreeResult> {
   const headSha = (await runGitCommand({ cwd: handle.worktreePath, args: ['rev-parse', 'HEAD'] })).stdout.trim();
   const tmpIndex = path.join(handle.gitDirPath, `harness-ckpt-idx.${process.pid}.${Date.now()}`);
   const toAdd: string[] = [];
@@ -56,8 +54,8 @@ export async function stageCheckpointTreeAndOversizedBlobs(
     }
     if (toRemove.length > 0) await runGitCommand({ cwd: handle.worktreePath, args: ['update-index', '--force-remove', '-z', '--stdin'], env: { GIT_INDEX_FILE: tmpIndex }, stdin: `${toRemove.join('\0')}\0` });
     if (toAdd.length > 0) await runGitCommand({ cwd: handle.worktreePath, args: ['update-index', '--add', '-z', '--stdin'], env: { GIT_INDEX_FILE: tmpIndex }, stdin: `${toAdd.join('\0')}\0` });
-    const treeRes = await runGitCommand({ cwd: handle.worktreePath, args: ['write-tree'], env: { GIT_INDEX_FILE: tmpIndex } });
-    return Object.freeze({ headSha, treeSha: treeRes.stdout.trim(), oversizedUntrackedBlobs: Object.freeze(oversized) });
+    const treeOutput = await runGitCommand({ cwd: handle.worktreePath, args: ['write-tree'], env: { GIT_INDEX_FILE: tmpIndex } });
+    return Object.freeze<StagedCheckpointTreeResult>({ headSha, treeSha: treeOutput.stdout.trim(), oversizedUntrackedBlobs: Object.freeze(oversized) });
   } finally {
     await rm(tmpIndex, { force: true });
   }
@@ -71,19 +69,19 @@ export async function stageCheckpointTreeAndOversizedBlobs(
  * @param {GitWorktreeHandle}    handle         - Active worktree handle.
  * @param {GitCheckpointPayload} fromCheckpoint - Parsed baseline checkpoint payload.
  *
- * @returns {Promise<{ readonly intact: boolean; readonly reason?: string }>} Integrity verification result.
+ * @returns {Promise<WorktreeIntegrityVerdict>} Integrity verification result.
  */
 export async function verifyWorktreeLocalGitIntegrity(
   handle: GitWorktreeHandle,
   fromCheckpoint: GitCheckpointPayload,
-): Promise<{ readonly intact: boolean; readonly reason?: string }> {
+): Promise<WorktreeIntegrityVerdict> {
   try {
     const headRaw = await readFile(path.join(handle.gitDirPath, 'HEAD'), 'utf8');
     if (headRaw !== fromCheckpoint.headRawContent) return { intact: false, reason: '<gitdir>/HEAD raw content was modified' };
-    const headRes = await runGitCommand({ cwd: handle.worktreePath, args: ['rev-parse', 'HEAD'], allowNonZeroExit: true });
-    if (headRes.exitCode !== 0 || headRes.stdout.trim() !== fromCheckpoint.headSha) return { intact: false, reason: 'HEAD commit SHA was mutated' };
-    const idxTreeRes = await runGitCommand({ cwd: handle.worktreePath, args: ['write-tree'], allowNonZeroExit: true });
-    if (idxTreeRes.exitCode !== 0 || idxTreeRes.stdout.trim() !== fromCheckpoint.indexTreeSha) return { intact: false, reason: '<gitdir>/index was mutated' };
+    const headOutput = await runGitCommand({ cwd: handle.worktreePath, args: ['rev-parse', 'HEAD'], allowNonZeroExit: true });
+    if (headOutput.exitCode !== 0 || headOutput.stdout.trim() !== fromCheckpoint.headSha) return { intact: false, reason: 'HEAD commit SHA was mutated' };
+    const idxTreeOutput = await runGitCommand({ cwd: handle.worktreePath, args: ['write-tree'], allowNonZeroExit: true });
+    if (idxTreeOutput.exitCode !== 0 || idxTreeOutput.stdout.trim() !== fromCheckpoint.indexTreeSha) return { intact: false, reason: '<gitdir>/index was mutated' };
     const infoExclude = await readFile(path.join(handle.gitDirPath, 'info', 'exclude'), 'utf8').catch(() => null);
     if (infoExclude !== fromCheckpoint.infoExcludeContent) return { intact: false, reason: '<gitdir>/info/exclude was mutated' };
     const meta = await readHarnessMeta(handle.gitDirPath);
@@ -110,12 +108,12 @@ export async function listTreePaths(
   worktreePath: string,
   treeOrCommit: string,
 ): Promise<ReadonlySet<string>> {
-  const res = await runGitCommand({
+  const lsTreeOutput = await runGitCommand({
     cwd: worktreePath,
     args: ['ls-tree', '-r', '--name-only', '-z', treeOrCommit],
   });
   const paths = new Set<string>();
-  for (const entry of res.stdout.split('\0')) {
+  for (const entry of lsTreeOutput.stdout.split('\0')) {
     if (entry.length > 0) paths.add(entry);
   }
   return paths;

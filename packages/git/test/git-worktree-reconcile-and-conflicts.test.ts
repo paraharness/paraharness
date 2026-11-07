@@ -13,7 +13,7 @@ import {
   runGitCommand,
   writeHarnessMeta,
 } from '../src/executors/internal/git-cli-runner.js';
-import { extractRelativeImports } from '../src/executors/internal/git-tool-and-verifier-helpers.js';
+import { extractRelativeImports } from '../src/executors/internal/git-cross-test-import-scanner.js';
 import { createTempGitHostRepo } from './fixtures/temp-git-host-repo.js';
 import type { TempGitHostRepoHandle } from './fixtures/temp-git-host-repo-handle.js';
 
@@ -334,7 +334,7 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
       'import { add, type AddOpts } from "../src/index.js";',
       '/* import { secret } from "../src/internal/secret.js"; */',
       'const tpl = `from "../src/internal/secret.js"`;',
-      'const val: number = add(1, 2);',
+      'const sumValue: number = add(1, 2);',
     ].join('\n');
     const extracted = await extractRelativeImports(tsTestSource, 'test/unit.test.ts');
     expect(extracted).toEqual(['src/index.js', 'src/index.js']);

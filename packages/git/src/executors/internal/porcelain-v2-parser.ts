@@ -10,18 +10,47 @@ import { runGitCommand } from './git-cli-runner.js';
 import type { WorktreeStatusSnapshot } from './worktree-status-snapshot.js';
 
 /**
+ * Expands a newly ignored directory or file entry (`! <relPath>`) into its underlying files and records their digests.
+ *
+ * @param {string}                          worktreePath - Worktree directory path.
+ * @param {string}                          relPath      - Newly ignored relative path from porcelain v2.
+ * @param {(candidate: string) => boolean}  isExcluded   - Compiled exclusion glob predicate.
+ * @param {Record<string, string>}          statusMap    - Mutable status map receiving discovered ignored files.
+ *
+ * @returns {Promise<void>} Resolves once all matching ignored files under `relPath` are hashed into `statusMap`.
+ */
+async function collectNewlyIgnoredFiles(
+  worktreePath: string,
+  relPath: string,
+  isExcluded: (candidate: string) => boolean,
+  statusMap: Record<string, string>,
+): Promise<void> {
+  const lsFilesOutput = await runGitCommand({
+    cwd: worktreePath,
+    args: ['ls-files', '--others', '-i', '--exclude-standard', '-z', '--', relPath],
+  });
+  for (const subPath of lsFilesOutput.stdout.split('\0')) {
+    if (subPath.length > 0 && !isExcluded(subPath)) {
+      statusMap[subPath] = await computePathModeAndSha256(path.join(worktreePath, subPath));
+    }
+  }
+}
+
+/**
  * Parses NUL-delimited `git status --porcelain=v2 -z --no-renames --untracked-files=all` output into `WorktreeStatusSnapshot`.
  *
  * Hashes every dirty tracked and untracked file via `computePathModeAndSha256` while filtering out `excludeGlobs`.
  *
- * @param {string}                               worktreePath - Worktree directory path.
- * @param {string}                               rawStdout    - Raw NUL-delimited stdout from `git status --porcelain=v2 -z`.
- * @param {ComputeWorktreeStatusOptions}         [options]    - Optional exclusion globs and baseline ignored path set.
+ * @param {string}                       worktreePath - Worktree directory path.
+ * @param {string}                       rawStdout    - Raw NUL-delimited stdout from `git status --porcelain=v2 -z`.
+ * @param {ComputeWorktreeStatusOptions} [options]    - Optional exclusion globs and baseline ignored path set.
  *
  * @returns {Promise<WorktreeStatusSnapshot>} Parsed worktree status snapshot.
  */
 export async function parsePorcelainV2Records(
-  worktreePath: string, rawStdout: string, options?: ComputeWorktreeStatusOptions,
+  worktreePath: string,
+  rawStdout: string,
+  options?: ComputeWorktreeStatusOptions,
 ): Promise<WorktreeStatusSnapshot> {
   const isExcluded = compileWorktreeExcludeMatcher(options?.excludeGlobs);
   const statusMap: Record<string, string> = {};
@@ -35,25 +64,25 @@ export async function parsePorcelainV2Records(
       if (isExcluded(relPath)) continue;
       untrackedPaths.add(relPath);
       statusMap[relPath] = await computePathModeAndSha256(path.join(worktreePath, relPath));
-    } else if (record.startsWith('! ')) {
+      continue;
+    }
+    if (record.startsWith('! ')) {
       const relPath = record.slice(2);
       ignoredPaths.push(relPath);
       if (options?.includeMatchingIgnored && !options.baselineIgnoredPaths?.has(relPath) && !isExcluded(relPath)) {
-        const lsRes = await runGitCommand({ cwd: worktreePath, args: ['ls-files', '--others', '-i', '--exclude-standard', '-z', '--', relPath] });
-        for (const subPath of lsRes.stdout.split('\0')) {
-          if (subPath.length > 0 && !isExcluded(subPath)) statusMap[subPath] = await computePathModeAndSha256(path.join(worktreePath, subPath));
-        }
+        await collectNewlyIgnoredFiles(worktreePath, relPath, isExcluded, statusMap);
       }
-    } else if (record.startsWith('1 ') || record.startsWith('u ')) {
-      const spaceIdx = record.startsWith('1 ') ? nthSpaceIndex(record, 8) : nthSpaceIndex(record, 10);
-      if (spaceIdx === -1) continue;
-      const relPath = record.slice(spaceIdx + 1);
-      if (isExcluded(relPath)) continue;
-      const rawDigest = await computePathModeAndSha256(path.join(worktreePath, relPath));
-      const digest = rawDigest === '040000:directory' ? 'DELETED' : rawDigest;
-      statusMap[relPath] = digest;
-      if (digest === 'DELETED') deletedPaths.add(relPath);
+      continue;
     }
+    if (!record.startsWith('1 ') && !record.startsWith('u ')) continue;
+    const spaceIdx = record.startsWith('1 ') ? nthSpaceIndex(record, 8) : nthSpaceIndex(record, 10);
+    if (spaceIdx === -1) continue;
+    const relPath = record.slice(spaceIdx + 1);
+    if (isExcluded(relPath)) continue;
+    const rawDigest = await computePathModeAndSha256(path.join(worktreePath, relPath));
+    const digest = rawDigest === '040000:directory' ? 'DELETED' : rawDigest;
+    statusMap[relPath] = digest;
+    if (digest === 'DELETED') deletedPaths.add(relPath);
   }
   return Object.freeze({ statusMap: Object.freeze(statusMap), untrackedPaths, deletedPaths, ignoredPaths: Object.freeze(ignoredPaths) });
 }

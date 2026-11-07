@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import {
-  lstat,
   link,
+  lstat,
   mkdir,
   readdir,
   readFile,
@@ -19,6 +20,45 @@ import {
   copyFileCowOrValue,
 } from './file-digest-and-globs.js';
 import { buildIsolatedWorktreeGitEnv, runGitCommand } from './git-cli-runner.js';
+
+/**
+ * Clones a single directory entry inside `node_modules` using symlink recreation, `.prisma` value copy, or hardlinking.
+ *
+ * @param {Dirent}   entry    - Directory entry read from `srcRoot`.
+ * @param {string}   childRel - Repository-relative path of `entry`.
+ * @param {string}   srcRoot  - Source repository or parent worktree root path.
+ * @param {string}   destRoot - Destination worktree root path.
+ * @param {string[]} stack    - DFS directory traversal stack to push subdirectories onto.
+ *
+ * @returns {Promise<void>} Resolves once the entry is cloned or pushed onto `stack`.
+ */
+async function cloneSingleNodeModulesEntry(
+  entry: Dirent,
+  childRel: string,
+  srcRoot: string,
+  destRoot: string,
+  stack: string[],
+): Promise<void> {
+  if (entry.isDirectory()) {
+    stack.push(childRel);
+    return;
+  }
+  const srcAbs = path.join(srcRoot, childRel);
+  const destAbs = path.join(destRoot, childRel);
+  if (entry.isSymbolicLink()) {
+    await mkdir(path.dirname(destAbs), { recursive: true });
+    await rm(destAbs, { force: true });
+    await symlink(await readlink(srcAbs, 'utf8'), destAbs);
+    return;
+  }
+  if (childRel.includes('/.prisma/')) {
+    await copyFileCowOrValue(srcAbs, destAbs);
+    return;
+  }
+  await mkdir(path.dirname(destAbs), { recursive: true });
+  await rm(destAbs, { force: true });
+  await link(srcAbs, destAbs).catch(() => copyFileCowOrValue(srcAbs, destAbs));
+}
 
 /**
  * Recursively clones `srcNodeModules` into `destNodeModules` using hardlinks (`link`) for regular files and `symlink` for links.
@@ -48,21 +88,7 @@ export async function cloneNodeModulesTree(
     for (const entry of entries) {
       const childRel = `${relDir}/${entry.name}`;
       if (isExcluded(childRel)) continue;
-      const srcAbs = path.join(srcRoot, childRel);
-      const destAbs = path.join(destRoot, childRel);
-      if (entry.isSymbolicLink()) {
-        await mkdir(path.dirname(destAbs), { recursive: true });
-        await rm(destAbs, { force: true });
-        await symlink(await readlink(srcAbs, 'utf8'), destAbs);
-      } else if (entry.isDirectory()) {
-        stack.push(childRel);
-      } else if (childRel.includes('/.prisma/')) {
-        await copyFileCowOrValue(srcAbs, destAbs);
-      } else {
-        await mkdir(path.dirname(destAbs), { recursive: true });
-        await rm(destAbs, { force: true });
-        await link(srcAbs, destAbs).catch(() => copyFileCowOrValue(srcAbs, destAbs));
-      }
+      await cloneSingleNodeModulesEntry(entry, childRel, srcRoot, destRoot, stack);
     }
   }
 }
@@ -119,8 +145,8 @@ export async function evaluateLockfileGateHit(
   if (wtLockBuf === null || hostLockBuf === null) return false;
   const wtHash = createHash('sha256').update(wtLockBuf).digest('hex');
   const hostHash = createHash('sha256').update(hostLockBuf).digest('hex');
-  const gitCommonRes = await runGitCommand({ cwd: repoPath, args: ['rev-parse', '--git-common-dir'] });
-  const commonGitDir = path.resolve(repoPath, gitCommonRes.stdout.trim());
+  const gitCommonOutput = await runGitCommand({ cwd: repoPath, args: ['rev-parse', '--git-common-dir'] });
+  const commonGitDir = path.resolve(repoPath, gitCommonOutput.stdout.trim());
   const cacheFile = path.join(commonGitDir, 'harness-warm-lockfile.sha256');
   const lockPath = path.join(commonGitDir, 'harness-warm-lockfile.lock');
   return withFileLock(lockPath, async () => {
@@ -158,13 +184,14 @@ export async function executeSetupCommandNode(
   const env = buildIsolatedWorktreeGitEnv(worktreePath);
   await new Promise<void>((resolve, reject) => {
     const child = spawn(bin, argv.slice(1), { cwd: worktreePath, env, stdio: 'pipe' });
-    let stderr = '';
+    const stderrChunks: Buffer[] = [];
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8'));
     });
     child.on('error', reject);
     child.on('close', (code: number | null) => {
-      if ((code ?? 1) !== 0) reject(new Error(`Worktree setup command '${argv.join(' ')}' failed (exit ${code ?? 1}): ${stderr.trim()}`));
+      const stderrText = Buffer.concat(stderrChunks).toString('utf8').trim();
+      if ((code ?? 1) !== 0) reject(new Error(`Worktree setup command '${argv.join(' ')}' failed (exit ${code ?? 1}): ${stderrText}`));
       else resolve();
     });
     child.stdin.end();

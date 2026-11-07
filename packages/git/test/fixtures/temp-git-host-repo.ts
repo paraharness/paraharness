@@ -7,7 +7,7 @@ import type { TempGitHostRepoHandle } from './temp-git-host-repo-handle.js';
 /**
  * Creates a real local Git repository (`main` branch) paired with a local bare `origin` remote.
  *
- * Seeds initial multi-partition files (`src/index.ts`, `src/internal/math.ts`, `pnpm-lock.yaml`, and `.gitignore`),
+ * Seeds initial multi-partition files (`src/index.ts`, `src/internal/helper.ts`, `pnpm-lock.yaml`, and `.gitignore`),
  * pushes `main` to `origin`, and returns a `TempGitHostRepoHandle` for deterministic test suites.
  *
  * @param {Readonly<Record<string, string>>} [initialFiles] - Optional additional files included in the initial commit.
@@ -63,9 +63,12 @@ export async function createTempGitHostRepo(
   return Object.freeze<TempGitHostRepoHandle>({
     rootTmpDir,
     repoPath,
+    hostRepoPath: repoPath,
     originPath,
+    remoteRepoPath: originPath,
     worktreesDir,
     initialCommitSha,
+    baseSha: initialCommitSha,
     commitFiles,
     cleanup: async (): Promise<void> => {
       await rm(rootTmpDir, { recursive: true, force: true });

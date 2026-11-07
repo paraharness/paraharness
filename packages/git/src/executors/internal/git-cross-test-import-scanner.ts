@@ -1,21 +1,21 @@
-import { execFile } from 'node:child_process';
+import { type ExecFileException, execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import path from 'node:path';
 import type {
   CrossVerifierBranchCandidate,
+  GitPublicSurfaceCrossTesterNode,
   GitWorktreeHandle,
   StepExecutionContext,
 } from '@harness-dsl/core';
 import { init, parse } from 'es-module-lexer';
+import picomatch from 'picomatch';
+import { gitCheckpointRestore } from './git-checkpoint-restore.js';
+import { gitCheckpointSerialize } from './git-checkpoint-serialize.js';
 import {
   buildIsolatedWorktreeGitEnv,
   runGitCommand,
 } from './git-cli-runner.js';
-import {
-  restoreGitWorktreeCheckpoint,
-  serializeGitWorktreeCheckpoint,
-} from './porcelain-v2-and-checkpoints.js';
 
 /**
  * Extracts and normalizes relative module import paths from a test file's source text using `es-module-lexer`.
@@ -51,6 +51,28 @@ export async function extractRelativeImports(
 }
 
 /**
+ * Pre-compiles all boundary glob patterns from `node.partitionMap` into a single predicate function.
+ *
+ * @param {GitPublicSurfaceCrossTesterNode<unknown>} node - Public-surface cross-tester AST node.
+ *
+ * @returns {(candidatePath: string) => boolean} Predicate returning `true` when `candidatePath` matches a public boundary glob.
+ */
+export function compileBoundaryGlobMatcher(
+  node: GitPublicSurfaceCrossTesterNode<unknown>,
+): (candidatePath: string) => boolean {
+  const matchers: Array<(candidatePath: string) => boolean> = [];
+  for (const part of Object.values(node.partitionMap.mapping)) {
+    for (const glob of part.boundaryGlobs) matchers.push(picomatch(glob, { dot: true }));
+  }
+  return (candidatePath: string): boolean => {
+    for (const isMatch of matchers) {
+      if (isMatch(candidatePath)) return true;
+    }
+    return false;
+  };
+}
+
+/**
  * Collects newly added or modified test files in `candidate` that import exclusively from `isBoundaryPath`.
  *
  * Inspects `git diff --name-only <baseRef> <headRef>` for test files and verifies their relative imports.
@@ -68,13 +90,13 @@ export async function collectCandidateBoundaryTests(
   const headSha = typeof candidate.scopeReceipt['headRef'] === 'string'
     ? candidate.scopeReceipt['headRef']
     : (candidate.scopeHandle.headRef ?? candidate.scopeHandle.baseRef);
-  const diffRes = await runGitCommand({
+  const diffOutput = await runGitCommand({
     cwd,
     args: ['diff', '--name-only', '--diff-filter=AM', candidate.scopeHandle.baseRef, headSha],
     allowNonZeroExit: true,
   });
   const boundaryTests = new Map<string, string>();
-  for (const rawLine of diffRes.stdout.split('\n')) {
+  for (const rawLine of diffOutput.stdout.split('\n')) {
     const relPath = rawLine.trim();
     if (relPath.length === 0 || !/(?:\.test\.|\.spec\.|^test\/|\/test\/)/.test(relPath)) continue;
     const content = await readFile(path.join(cwd, relPath), 'utf8').catch(() => undefined);
@@ -105,7 +127,7 @@ export async function runTransplantedTestsOnTarget(
     return { passedCrossTests: 0, failedCrossTests: 0, crossTestDeficits: [], transplantedTestFiles: [] };
   }
   const handle = target.scopeHandle;
-  const ckpt = await serializeGitWorktreeCheckpoint(handle);
+  const ckpt = await gitCheckpointSerialize(handle);
   let passedCrossTests = 0;
   let failedCrossTests = 0;
   const crossTestDeficits: string[] = [];
@@ -130,9 +152,56 @@ export async function runTransplantedTestsOnTarget(
       }
     }
   } finally {
-    await restoreGitWorktreeCheckpoint(handle, ckpt);
+    await gitCheckpointRestore(handle, ckpt);
   }
   return { passedCrossTests, failedCrossTests, crossTestDeficits, transplantedTestFiles };
+}
+
+/**
+ * Executes cross-verification of public-surface tests across all speculative `candidates`.
+ *
+ * Collects boundary-only tests from each candidate and transplants them into every sibling candidate.
+ *
+ * @param {GitPublicSurfaceCrossTesterNode<unknown>}                       node       - Public-surface cross-tester AST node.
+ * @param {ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>} candidates - Surviving speculative candidate branches.
+ *
+ * @returns {Promise<Readonly<Record<number, unknown>>>} Validated per-branch cross-testing report indexed by `branchIndex`.
+ */
+export async function runPublicSurfaceCrossVerification(
+  node: GitPublicSurfaceCrossTesterNode<unknown>,
+  candidates: ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>,
+): Promise<Readonly<Record<number, unknown>>> {
+  const isBoundaryPath = compileBoundaryGlobMatcher(node);
+  const testsByBranch = new Map<number, ReadonlyMap<string, string>>();
+  for (const cand of candidates) {
+    testsByBranch.set(cand.branchIndex, await collectCandidateBoundaryTests(cand, isBoundaryPath));
+  }
+  const reports: Record<number, unknown> = {};
+  for (const target of candidates) {
+    const mergedTests = new Map<string, string>();
+    for (const [sourceIdx, testMap] of testsByBranch) {
+      if (sourceIdx === target.branchIndex) continue;
+      for (const [relPath, content] of testMap) mergedTests.set(relPath, content);
+    }
+    const rawReport = await runTransplantedTestsOnTarget(target, mergedTests);
+    reports[target.branchIndex] = node.reportSchema.parse(rawReport);
+  }
+  return Object.freeze(reports);
+}
+
+/**
+ * Resolves a numeric process exit code from an `execFile` error callback argument.
+ *
+ * @param {ExecFileException | null} execError - Error object from `execFile`, or `null` on exit `0`.
+ *
+ * @returns {number} Numeric exit code (`0` on success, `execError.code` when numeric, or `1`).
+ */
+function resolveExecFileExitCode(
+  execError: ExecFileException | null,
+): number {
+  if (execError === null) return 0;
+  if (typeof execError.code === 'number') return execError.code;
+  return 1;
 }
 
 /**
@@ -156,7 +225,7 @@ export async function runEvalCommandInSandboxedCandidate(
     : undefined;
   const ckpt = scope !== undefined
     ? await scope.serializeCheckpoint(candidateHandle)
-    : await serializeGitWorktreeCheckpoint(candidateHandle);
+    : await gitCheckpointSerialize(candidateHandle);
   try {
     const cwd = candidateHandle.worktreePath;
     const env = buildIsolatedWorktreeGitEnv(cwd);
@@ -164,12 +233,12 @@ export async function runEvalCommandInSandboxedCandidate(
     const args = typeof command === 'string' ? ['-c', command] : command.slice(1);
     return await new Promise<Record<string, unknown>>((resolve) => {
       execFile(bin, args, { cwd, env }, (err, stdout, stderr) => {
-        const exitCode = err === null ? 0 : typeof err.code === 'number' ? err.code : 1;
+        const exitCode = resolveExecFileExitCode(err);
         resolve({ exitCode, stdout, stderr });
       });
     });
   } finally {
     if (scope !== undefined) await scope.restoreCheckpoint(candidateHandle, ckpt);
-    else await restoreGitWorktreeCheckpoint(candidateHandle, ckpt);
+    else await gitCheckpointRestore(candidateHandle, ckpt);
   }
 }

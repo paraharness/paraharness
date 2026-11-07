@@ -5,12 +5,43 @@ import type {
 } from '@harness-dsl/core';
 import { runGitCommand } from './git-cli-runner.js';
 import {
-  bisectFailingRebaseChain,
   buildCumulativeRebaseChain,
   evaluateWorktreeCheck,
-} from './merge-train-bisector.js';
+  gitMergeTrainBisect,
+} from './git-merge-train-bisect.js';
 import type { MergeTrainCandidate } from './merge-train-candidate.js';
 import type { MergeTrainResult } from './merge-train-result.js';
+
+/**
+ * Fetches `origin` and resolves the current commit SHA of `targetBranch` (preferring `refs/remotes/origin/<targetBranch>`).
+ *
+ * @param {string}            cwd          - Worktree directory path.
+ * @param {string}            targetBranch - Target branch name configured on `GitMergeQueueNode`.
+ * @param {GitWorktreeHandle} handle       - Active worktree handle providing fallback `baseRef`.
+ *
+ * @returns {Promise<string>} Resolved initial target branch commit SHA.
+ */
+async function resolveMergeTrainTargetSha(
+  cwd: string,
+  targetBranch: string,
+  handle: GitWorktreeHandle,
+): Promise<string> {
+  await runGitCommand({ cwd, args: ['fetch', 'origin'], allowNonZeroExit: true });
+  const targetLookup = await runGitCommand({
+    cwd,
+    args: ['rev-parse', '--verify', `refs/remotes/origin/${targetBranch}`],
+    allowNonZeroExit: true,
+  });
+  if (targetLookup.exitCode === 0) {
+    return targetLookup.stdout.trim();
+  }
+  const localBranchLookup = await runGitCommand({
+    cwd,
+    args: ['rev-parse', targetBranch],
+    allowNonZeroExit: true,
+  });
+  return localBranchLookup.stdout.trim() || handle.baseRef;
+}
 
 /**
  * Runs the iterative cumulative rebase train and binary bisection loop for `git.mergeQueue`.
@@ -29,15 +60,7 @@ export async function executeBatchMergeTrainQueue(
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<MergeTrainResult> {
   const cwd = ctx.scopeHandle.worktreePath;
-  await runGitCommand({ cwd, args: ['fetch', 'origin'], allowNonZeroExit: true });
-  const targetLookup = await runGitCommand({
-    cwd,
-    args: ['rev-parse', '--verify', `refs/remotes/origin/${node.targetBranch}`],
-    allowNonZeroExit: true,
-  });
-  let currentTargetSha = targetLookup.exitCode === 0
-    ? targetLookup.stdout.trim()
-    : (await runGitCommand({ cwd, args: ['rev-parse', node.targetBranch], allowNonZeroExit: true })).stdout.trim() || ctx.scopeHandle.baseRef;
+  let currentTargetSha = await resolveMergeTrainTargetSha(cwd, node.targetBranch, ctx.scopeHandle);
   const landedBranches: string[] = [];
   const evictedBranches: string[] = [];
   let verificationRuns = 0;
@@ -56,22 +79,22 @@ export async function executeBatchMergeTrainQueue(
     if (tipCheck.ok) {
       currentTargetSha = tipEntry.rebasedSha;
       for (const entry of chain) landedBranches.push(entry.candidate.label);
-      const conflictedItem = conflictedIdx >= 0 ? queue[conflictedIdx] : undefined;
-      if (conflictedItem !== undefined) evictedBranches.push(conflictedItem.label);
+      const conflictedCandidate = conflictedIdx >= 0 ? queue[conflictedIdx] : undefined;
+      if (conflictedCandidate !== undefined) evictedBranches.push(conflictedCandidate.label);
       queue = conflictedIdx >= 0 ? queue.slice(conflictedIdx + 1) : [];
-    } else {
-      const [badIdx, bisectRuns] = await bisectFailingRebaseChain(chain, node.verifyWith, ctx);
-      verificationRuns += bisectRuns;
-      const priorEntry = badIdx > 0 ? chain[badIdx - 1] : undefined;
-      if (priorEntry !== undefined) currentTargetSha = priorEntry.rebasedSha;
-      for (let j = 0; j < badIdx; j += 1) {
-        const prefixEntry = chain[j];
-        if (prefixEntry !== undefined) landedBranches.push(prefixEntry.candidate.label);
-      }
-      const badEntry = chain[badIdx];
-      if (badEntry !== undefined) evictedBranches.push(badEntry.candidate.label);
-      queue = queue.slice(badIdx + 1);
+      continue;
     }
+    const [badIdx, bisectRuns] = await gitMergeTrainBisect(chain, node.verifyWith, ctx);
+    verificationRuns += bisectRuns;
+    const priorEntry = badIdx > 0 ? chain[badIdx - 1] : undefined;
+    if (priorEntry !== undefined) currentTargetSha = priorEntry.rebasedSha;
+    for (let j = 0; j < badIdx; j += 1) {
+      const prefixEntry = chain[j];
+      if (prefixEntry !== undefined) landedBranches.push(prefixEntry.candidate.label);
+    }
+    const badEntry = chain[badIdx];
+    if (badEntry !== undefined) evictedBranches.push(badEntry.candidate.label);
+    queue = queue.slice(badIdx + 1);
   }
   await runGitCommand({ cwd, args: ['reset', '--hard', currentTargetSha] });
   await runGitCommand({ cwd, args: ['update-ref', `refs/heads/${node.targetBranch}`, currentTargetSha], allowNonZeroExit: true });

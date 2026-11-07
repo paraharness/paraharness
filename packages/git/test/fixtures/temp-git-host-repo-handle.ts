@@ -9,12 +9,18 @@ export interface TempGitHostRepoHandle {
   readonly rootTmpDir: string;
   /** Absolute path to the initialized local Git host repository (`main` branch). */
   readonly repoPath: string;
+  /** Alias for `repoPath` matching the `docs/plan/M3d-git.md` §5 fixture contract. */
+  readonly hostRepoPath: string;
   /** Absolute path to the bare `origin` remote repository wired to `repoPath`. */
   readonly originPath: string;
+  /** Alias for `originPath` matching the `docs/plan/M3d-git.md` §5 fixture contract. */
+  readonly remoteRepoPath: string;
   /** Disjoint sibling directory where `<worktreesDir>/roots/<runId>` and `forks/<runId>/<forkId>` are created. */
   readonly worktreesDir: string;
   /** Initial `HEAD` commit SHA on `main` after repository initialization. */
   readonly initialCommitSha: string;
+  /** Alias for `initialCommitSha` matching the `docs/plan/M3d-git.md` §5 fixture contract. */
+  readonly baseSha: string;
 
   /**
    * Writes a set of relative file paths into `repoPath`, commits them onto the current branch, and optionally pushes to `origin`.

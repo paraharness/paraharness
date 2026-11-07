@@ -38,7 +38,7 @@ export async function restoreGitdirMetadataAndGitignores(
     headRef: fromCheckpoint.headSha,
     unresolvedConflictPaths: Object.freeze({ ...fromCheckpoint.meta.unresolvedConflictPaths }),
   });
-  const gitignorePaths = [...treePaths].filter((p) => p === '.gitignore' || p.endsWith('/.gitignore'));
+  const gitignorePaths = [...treePaths].filter((relPath) => relPath === '.gitignore' || relPath.endsWith('/.gitignore'));
   if (gitignorePaths.length > 0) {
     await checkoutCheckpointTreeAndRestoreIndex(handle, fromCheckpoint, gitignorePaths);
   }
@@ -82,11 +82,11 @@ export async function unlinkAddedAndDirectoryCollisions(
         await rmdir(parentDir).catch(() => undefined);
         parentDir = path.dirname(parentDir);
       }
-    } else {
-      const stat = await lstat(absPath).catch(() => null);
-      if (stat !== null && stat.isDirectory()) {
-        await rm(absPath, { recursive: true, force: true });
-      }
+      continue;
+    }
+    const stat = await lstat(absPath).catch(() => null);
+    if (stat !== null && stat.isDirectory()) {
+      await rm(absPath, { recursive: true, force: true });
     }
   }
 }
@@ -96,9 +96,9 @@ export async function unlinkAddedAndDirectoryCollisions(
  *
  * Uses `git checkout-index -f -z --stdin` for targeted `symDiff` restoration or `-f -a` when full checkout is requested.
  *
- * @param {GitWorktreeHandle}              handle             - Worktree handle being restored.
- * @param {GitCheckpointPayload}           fromCheckpoint     - Target checkpoint payload.
- * @param {readonly string[] | 'ALL'}      pathsToMaterialize - Specific paths to materialize, or `'ALL'` on integrity failure.
+ * @param {GitWorktreeHandle}         handle             - Worktree handle being restored.
+ * @param {GitCheckpointPayload}      fromCheckpoint     - Target checkpoint payload.
+ * @param {readonly string[] | 'ALL'} pathsToMaterialize - Specific paths to materialize, or `'ALL'` on integrity failure.
  *
  * @returns {Promise<void>} Resolves once files and live `<gitdir>/index` are restored.
  */
@@ -136,6 +136,41 @@ export async function checkoutCheckpointTreeAndRestoreIndex(
 }
 
 /**
+ * Restores `<worktree>/node_modules` from `<gitdir>/harness-ckpt-nm/<digest>` when `node_modules` was mutated.
+ *
+ * @param {GitWorktreeHandle}    handle         - Worktree handle being restored.
+ * @param {GitCheckpointPayload} fromCheckpoint - Target checkpoint payload.
+ *
+ * @returns {Promise<void>} Resolves once `node_modules` matches `fromCheckpoint.nodeModulesDigest`.
+ */
+async function restoreTamperedNodeModulesFromBackup(
+  handle: GitWorktreeHandle,
+  fromCheckpoint: GitCheckpointPayload,
+): Promise<void> {
+  const currentNmDigest = await computeNodeModulesDigest(handle.worktreePath);
+  if (currentNmDigest === fromCheckpoint.nodeModulesDigest) return;
+  const nmTarget = path.join(handle.worktreePath, 'node_modules');
+  if (fromCheckpoint.nodeModulesDigest === 'ABSENT') {
+    await rm(nmTarget, { recursive: true, force: true });
+    return;
+  }
+  const nmBackup = path.join(handle.gitDirPath, 'harness-ckpt-nm', fromCheckpoint.nodeModulesDigest);
+  const backupStat = await lstat(nmBackup).catch(() => null);
+  if (backupStat === null || !backupStat.isDirectory()) return;
+  await rm(nmTarget, { recursive: true, force: true });
+  const stack: string[] = [''];
+  while (stack.length > 0) {
+    const rel = stack.pop() ?? '';
+    const entries = await readdir(path.join(nmBackup, rel), { withFileTypes: true });
+    for (const entry of entries) {
+      const childRel = rel.length === 0 ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) stack.push(childRel);
+      else await copyFileCowOrValue(path.join(nmBackup, childRel), path.join(nmTarget, childRel));
+    }
+  }
+}
+
+/**
  * Step 4 of `restoreCheckpoint`: copies back oversized untracked blobs and restores `node_modules` if tampered with.
  *
  * Restores parent directories, original file modes, and `<gitdir>/harness-ckpt-nm` backup when `nodeModulesDigest` changed.
@@ -149,31 +184,10 @@ export async function restoreOversizedUntrackedBlobs(
   handle: GitWorktreeHandle,
   fromCheckpoint: GitCheckpointPayload,
 ): Promise<void> {
-  for (const [relPath, blobInfo] of Object.entries(fromCheckpoint.oversizedUntrackedBlobs)) {
-    const srcBlob = path.join(handle.gitDirPath, 'harness-ckpt-blobs', blobInfo.blobKey);
+  for (const [relPath, blobRecord] of Object.entries(fromCheckpoint.oversizedUntrackedBlobs)) {
+    const srcBlob = path.join(handle.gitDirPath, 'harness-ckpt-blobs', blobRecord.blobKey);
     const destPath = path.join(handle.worktreePath, relPath);
-    await copyFileCowOrValue(srcBlob, destPath, blobInfo.mode);
+    await copyFileCowOrValue(srcBlob, destPath, blobRecord.mode);
   }
-  const currentNmDigest = await computeNodeModulesDigest(handle.worktreePath);
-  if (currentNmDigest === fromCheckpoint.nodeModulesDigest) return;
-  const nmTarget = path.join(handle.worktreePath, 'node_modules');
-  if (fromCheckpoint.nodeModulesDigest === 'ABSENT') {
-    await rm(nmTarget, { recursive: true, force: true });
-    return;
-  }
-  const nmBackup = path.join(handle.gitDirPath, 'harness-ckpt-nm', fromCheckpoint.nodeModulesDigest);
-  const backupStat = await lstat(nmBackup).catch(() => null);
-  if (backupStat !== null && backupStat.isDirectory()) {
-    await rm(nmTarget, { recursive: true, force: true });
-    const stack: string[] = [''];
-    while (stack.length > 0) {
-      const rel = stack.pop() ?? '';
-      const entries = await readdir(path.join(nmBackup, rel), { withFileTypes: true });
-      for (const entry of entries) {
-        const childRel = rel.length === 0 ? entry.name : `${rel}/${entry.name}`;
-        if (entry.isDirectory()) stack.push(childRel);
-        else await copyFileCowOrValue(path.join(nmBackup, childRel), path.join(nmTarget, childRel));
-      }
-    }
-  }
+  await restoreTamperedNodeModulesFromBackup(handle, fromCheckpoint);
 }

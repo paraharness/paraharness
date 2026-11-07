@@ -1,13 +1,43 @@
 import type {
-  BranchableScope, GitCowWorktreeNode, GitScopeReceipt, GitSyncReceipt, GitWorktreeHandle, LeaseDelta, ReconcileResult, ToolEffect,
+  BranchableScope,
+  GitCowWorktreeNode,
+  GitScopeReceipt,
+  GitSyncReceipt,
+  GitWorktreeHandle,
+  LeaseDelta,
+  ReconcileResult,
+  ToolEffect,
 } from '@harness-dsl/core';
 import PQueue from 'p-queue';
-import { GitScopeReceiptSchema, GitSyncReceiptSchema } from '../schemas/git-receipts.schema.js';
-import { buildConflictLeaseDelta, flushParentWorkingTreeCleanChanges } from './internal/conflict-pruning-and-parent-flush.js';
-import { diffGitWorktreeEffects, restoreGitWorktreeCheckpoint, serializeGitWorktreeCheckpoint } from './internal/porcelain-v2-and-checkpoints.js';
-import { commitChildViaMergeTree, inspectGitWorktreeNonMutating, syncChildViaMergeTree, syncRootViaMergeTree } from './internal/stateless-merge-tree-reconcile.js';
-import { acquireRootWorktree, forkChildWorktree, releaseWorktreeAndPinRef } from './internal/worktree-acquire-and-fork.js';
-import { reattachChildWorktree, reattachRootWorktree, resolveEffectiveCheckpointPolicy } from './internal/worktree-crash-reattach.js';
+import {
+  GitScopeReceiptSchema,
+  GitSyncReceiptSchema,
+} from '../schemas/git-receipts.schema.js';
+import { gitCheckpointDiffEffects } from './internal/git-checkpoint-diff-effects.js';
+import { gitCheckpointRestore } from './internal/git-checkpoint-restore.js';
+import { gitCheckpointSerialize } from './internal/git-checkpoint-serialize.js';
+import { gitWorktreeAcquireRoot } from './internal/git-worktree-acquire-root.js';
+import {
+  gitWorktreeCommitChild,
+  gitWorktreeInspectNonMutating,
+} from './internal/git-worktree-commit-child.js';
+import {
+  buildConflictLeaseDelta,
+  gitWorktreeFlushCleanParentChanges,
+} from './internal/git-worktree-flush-and-prune.js';
+import {
+  gitWorktreeForkChild,
+  gitWorktreeReleaseAndPinRef,
+} from './internal/git-worktree-fork-and-release.js';
+import {
+  gitWorktreeReattachChild,
+  gitWorktreeReattachRoot,
+  resolveEffectiveCheckpointPolicy,
+} from './internal/git-worktree-reattach.js';
+import {
+  gitWorktreeSyncChild,
+  gitWorktreeSyncRoot,
+} from './internal/git-worktree-sync-child-and-root.js';
 
 /**
  * Tier-3 branchable Copy-on-Write Git worktree isolation scope driver (`git.cowWorktree`).
@@ -61,7 +91,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<GitWorktreeHandle>} Newly acquired root worktree handle.
    */
   acquireRoot(runId: string): Promise<GitWorktreeHandle> {
-    return acquireRootWorktree(this.node, runId);
+    return gitWorktreeAcquireRoot(this.node, runId);
   }
 
   /**
@@ -75,7 +105,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<GitWorktreeHandle>} Reattached root worktree handle.
    */
   reattachRoot(runId: string, checkpoint?: string): Promise<GitWorktreeHandle> {
-    return reattachRootWorktree(this.node, runId, checkpoint);
+    return gitWorktreeReattachRoot(this.node, runId, checkpoint);
   }
 
   /**
@@ -88,7 +118,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<GitScopeReceipt>} Validated `GitScopeReceipt` without mutating live `HEAD` or `.git/index`.
    */
   inspect(handle: GitWorktreeHandle): Promise<GitScopeReceipt> {
-    return inspectGitWorktreeNonMutating(handle, this.effectiveExcludeGlobs);
+    return gitWorktreeInspectNonMutating(handle, this.effectiveExcludeGlobs);
   }
 
   /**
@@ -102,7 +132,7 @@ export class GitCowWorktreeScopeDriver
    */
   release(handle: GitWorktreeHandle): Promise<void> {
     this.parentFlushQueues.delete(handle.worktreePath);
-    return releaseWorktreeAndPinRef(handle, this.effectiveExcludeGlobs);
+    return gitWorktreeReleaseAndPinRef(handle, this.effectiveExcludeGlobs);
   }
 
   /**
@@ -115,7 +145,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<string>} Serialized JSON `GitCheckpointPayload` string.
    */
   serializeCheckpoint(handle: GitWorktreeHandle): Promise<string> {
-    return serializeGitWorktreeCheckpoint(handle, this.effectiveCheckpointPolicy);
+    return gitCheckpointSerialize(handle, this.effectiveCheckpointPolicy);
   }
 
   /**
@@ -129,7 +159,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<void>} Resolves once `handle` matches `checkpoint`.
    */
   restoreCheckpoint(handle: GitWorktreeHandle, checkpoint: string): Promise<void> {
-    return restoreGitWorktreeCheckpoint(handle, checkpoint, this.effectiveCheckpointPolicy);
+    return gitCheckpointRestore(handle, checkpoint, this.effectiveCheckpointPolicy);
   }
 
   /**
@@ -143,7 +173,38 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<readonly ToolEffect[]>} Synthesized `FsToolEffect` list for modified paths.
    */
   diffEffects(fromCheckpoint: string, handle: GitWorktreeHandle): Promise<readonly ToolEffect[]> {
-    return diffGitWorktreeEffects(fromCheckpoint, handle, this.effectiveCheckpointPolicy);
+    return gitCheckpointDiffEffects(fromCheckpoint, handle, this.effectiveCheckpointPolicy);
+  }
+
+  /**
+   * Returns or creates the serialized `PQueue` (`concurrency: 1`) for `parentWorktreePath`.
+   *
+   * @param {string} parentWorktreePath - Absolute path of the parent worktree.
+   *
+   * @returns {PQueue} Serialized parent flush queue for `parentWorktreePath`.
+   */
+  private getOrCreateParentFlushQueue(parentWorktreePath: string): PQueue {
+    const existing = this.parentFlushQueues.get(parentWorktreePath);
+    if (existing !== undefined) return existing;
+    const created = new PQueue({ concurrency: 1 });
+    this.parentFlushQueues.set(parentWorktreePath, created);
+    return created;
+  }
+
+  /**
+   * Removes `activeQueue` from `parentFlushQueues` once no tasks remain queued or running.
+   *
+   * @param {string} parentWorktreePath - Absolute path of the parent worktree.
+   * @param {PQueue} activeQueue        - Queue instance that just completed a task.
+   */
+  private pruneIdleParentFlushQueue(parentWorktreePath: string, activeQueue: PQueue): void {
+    if (
+      activeQueue.size === 0 &&
+      activeQueue.pending === 0 &&
+      this.parentFlushQueues.get(parentWorktreePath) === activeQueue
+    ) {
+      this.parentFlushQueues.delete(parentWorktreePath);
+    }
   }
 
   /**
@@ -158,21 +219,14 @@ export class GitCowWorktreeScopeDriver
    */
   forkChild(parent: GitWorktreeHandle, forkId: string): Promise<GitWorktreeHandle> {
     const excludeGlobs = this.effectiveExcludeGlobs;
-    let queue = this.parentFlushQueues.get(parent.worktreePath);
-    if (queue === undefined) {
-      queue = new PQueue({ concurrency: 1 });
-      this.parentFlushQueues.set(parent.worktreePath, queue);
-    }
-    const activeQueue = queue;
+    const activeQueue = this.getOrCreateParentFlushQueue(parent.worktreePath);
     return activeQueue
       .add(async (): Promise<GitWorktreeHandle> => {
-        await flushParentWorkingTreeCleanChanges(parent, excludeGlobs);
-        return forkChildWorktree(this.node, parent, forkId);
+        await gitWorktreeFlushCleanParentChanges(parent, excludeGlobs);
+        return gitWorktreeForkChild(this.node, parent, forkId);
       })
       .finally(() => {
-        if (activeQueue.size === 0 && activeQueue.pending === 0 && this.parentFlushQueues.get(parent.worktreePath) === activeQueue) {
-          this.parentFlushQueues.delete(parent.worktreePath);
-        }
+        this.pruneIdleParentFlushQueue(parent.worktreePath, activeQueue);
       });
   }
 
@@ -188,7 +242,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<GitWorktreeHandle>} Reattached child worktree handle.
    */
   reattachChild(parent: GitWorktreeHandle, forkId: string, checkpoint?: string): Promise<GitWorktreeHandle> {
-    return reattachChildWorktree(this.node, parent, forkId, checkpoint);
+    return gitWorktreeReattachChild(this.node, parent, forkId, checkpoint);
   }
 
   /**
@@ -202,7 +256,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<ReconcileResult<GitScopeReceipt>>} Clean or conflicted reconciliation result.
    */
   commitChild(child: GitWorktreeHandle, parent: GitWorktreeHandle): Promise<ReconcileResult<GitScopeReceipt>> {
-    return commitChildViaMergeTree(child, parent, this.effectiveExcludeGlobs);
+    return gitWorktreeCommitChild(child, parent, this.effectiveExcludeGlobs);
   }
 
   /**
@@ -216,7 +270,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<ReconcileResult<GitSyncReceipt>>} Clean or conflicted synchronization result.
    */
   syncChild(parent: GitWorktreeHandle, pausedChild: GitWorktreeHandle): Promise<ReconcileResult<GitSyncReceipt>> {
-    return syncChildViaMergeTree(parent, pausedChild, this.effectiveExcludeGlobs);
+    return gitWorktreeSyncChild(parent, pausedChild, this.effectiveExcludeGlobs);
   }
 
   /**
@@ -230,7 +284,7 @@ export class GitCowWorktreeScopeDriver
    * @returns {Promise<ReconcileResult<GitSyncReceipt>>} Clean or conflicted synchronization result.
    */
   syncRoot(rootHandle: GitWorktreeHandle, prerequisiteReceipts: readonly GitScopeReceipt[]): Promise<ReconcileResult<GitSyncReceipt>> {
-    return syncRootViaMergeTree(rootHandle, prerequisiteReceipts, this.effectiveExcludeGlobs);
+    return gitWorktreeSyncRoot(rootHandle, prerequisiteReceipts, this.effectiveExcludeGlobs);
   }
 
   /**
