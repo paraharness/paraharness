@@ -1,3 +1,4 @@
+import type { z } from 'zod';
 import type { DomainStepASTNode, StepASTNode } from '../../ast/domain-ast.types.js';
 import type { StepExecutionContext } from '../../ports/step-execution-context.js';
 import { executeAgent } from '../agent/execute-agent.js';
@@ -38,10 +39,12 @@ export async function executeStepNode<TIn = unknown, TOut = unknown, THandle = u
       if (executor === undefined) {
         const registered = Object.keys(ctx.registry.steps).join(', ') || '<none>';
         throw new Error(
-          `No StepExecutor registered for '${domainStep.type}' (runId '${ctx.runId}', stepExecId '${ctx.stepExecId}'). Registered: [${registered}].`,
+          `No StepExecutor registered for '${domainStep.type}' (step id '${domainStep.id}', runId '${ctx.runId}', stepExecId '${ctx.stepExecId}'). Registered: [${registered}].`,
         );
       }
-      return Promise.resolve(executor(domainStep as never, input as never, ctx as never)) as Promise<TOut>;
+      const validatedInput = domainStep.inputSchema.parse(input);
+      const rawOutput = await executor(domainStep as never, validatedInput as never, ctx as never);
+      return (domainStep.outputSchema as z.ZodType<TOut>).parse(rawOutput);
     }
   }
 }

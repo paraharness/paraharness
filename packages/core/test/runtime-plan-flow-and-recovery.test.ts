@@ -5,14 +5,14 @@ import {
   type LocalServiceNode, PoolManager, ScopeLockManager, ServiceSessionRegistry, type SpeculateContinuationFrame,
   type SqliteLedgerNode, StepContinuationQueue, type StepExecutionContext, createExecutorRegistry, createRuntime,
   executeAddDependencies, executeFlow, executeHierarchicalRewindDrain, executeReplaceWithPromotion,
-  executeSpawnTasks, executeUpdatePartitionContract, recoverInterruptedRunOnBoot, syncSuspendedRunPrerequisites, z,
+  executeSpawnTasks, executeStepNode, executeUpdatePartitionContract, recoverInterruptedRunOnBoot, syncSuspendedRunPrerequisites, z,
 } from '../src/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import { InMemoryLessonStore } from './fixtures/in-memory-lesson-store.js';
 import { InMemoryTopologyStore } from './fixtures/in-memory-topology-store.js';
 import {
-  SAMPLE_ABORT_HOOK_NODE, SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_DECLARED_TOOL_NODE, SAMPLE_MODEL_NODE,
-  SAMPLE_RUNNER_NODE, SAMPLE_TELEMETRY_COLLECTOR_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TOPOLOGY_STORE_NODE,
+  SAMPLE_ABORT_HOOK_NODE, SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_DECLARED_TOOL_NODE, SAMPLE_LOCAL_COMMAND_NODE,
+  SAMPLE_MODEL_NODE, SAMPLE_RUNNER_NODE, SAMPLE_TELEMETRY_COLLECTOR_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TOPOLOGY_STORE_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 import { ScriptedBranchableScope } from './fixtures/scripted-branchable-scope.js';
 import { ScriptedHumanAdapter } from './fixtures/scripted-human-adapter.js';
@@ -392,5 +392,8 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
     const suspBootRecord = Object.freeze({ ...bootRecord, status: 'SUSPENDED' as const, dependsOn: Object.freeze(['dep-missing']) });
     const notReadyRes = await recoverInterruptedRunOnBoot({ bootRecord: suspBootRecord, flow: dummyFlow as never, flowCtx });
     expect(notReadyRes.readyToResume).toBe(false);
+    const domainCmd = Object.freeze({ ...SAMPLE_LOCAL_COMMAND_NODE, inputSchema: z.object({ arg: z.string() }) });
+    const makeDomCtx = (exitCode: number): StepExecutionContext<GitWorktreeHandle> => ({ runId: 'run-crash-1', stepExecId: 'step-dom-1', scopeHandle: 'root:run-crash-1' as never, activePartitions: [], activeLeases: [], observedEffects: [], registry: createExecutorRegistry({ steps: { 'node:command': async () => ({ exitCode }) } }), resolveEnv: () => '', getRunner: throwUnusedRunner, recordEffects: () => undefined });
+    await Promise.all([expect(executeStepNode(domainCmd, { arg: 'ok' }, makeDomCtx(0))).resolves.toEqual({ exitCode: 0 }), expect(executeStepNode(domainCmd, { arg: 'ok' }, { ...makeDomCtx(0), registry: createExecutorRegistry() })).rejects.toThrow(/step id 'shell-cmd'/), expect(executeStepNode(domainCmd, { arg: 123 as never }, makeDomCtx(0))).rejects.toThrow(/expected string/i), expect(executeStepNode(domainCmd, { arg: 'ok' }, makeDomCtx('bad' as never))).rejects.toThrow(/expected number/i)]);
   });
 });
