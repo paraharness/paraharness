@@ -105,10 +105,12 @@ export class SlackApproverAdapter implements HumanAdapter, ControlPlaneAdapter {
             this.pendingKeyByRequestId.delete(req.requestId);
             const removed = cleanupPendingSlackDecision(this.pendingByKey, key);
             if (removed !== undefined) {
-              void this.transport.updateMessage(botToken, channel, {
-                ts: removed.messageTs, status: 'aborted',
-                text: `[ABORTED] Decision request '${req.requestId}' for run '${req.runId}' was aborted.`,
-              });
+              void Promise.resolve(
+                this.transport.updateMessage(botToken, channel, {
+                  ts: removed.messageTs, status: 'aborted',
+                  text: `[ABORTED] Decision request '${req.requestId}' for run '${req.runId}' was aborted.`,
+                }),
+              ).catch(() => undefined);
             }
             reject(new Error(`Slack decision request '${req.requestId}' for run '${req.runId}' was aborted.`));
           };

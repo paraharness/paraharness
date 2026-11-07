@@ -76,6 +76,11 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
    * @returns {Promise<StreamSubscriptionHandle>} Handle with `.close()` to shut down the HTTP listener.
    */
   async subscribe(onEvent: (event: TEvent) => Promise<void>): Promise<StreamSubscriptionHandle> {
+    if (this.server !== undefined) {
+      throw new Error(
+        `GithubWebhookStreamSource ('${this.node.repo ?? '*'}') is already subscribed.`,
+      );
+    }
     const secret = resolveRequiredGithubSecret(
       this.node.secret,
       (val) => this.ctx.resolveEnv(val),
@@ -103,16 +108,19 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
       this.boundPort = addressInfo.port;
     }
 
+    let closed = false;
     return Object.freeze<StreamSubscriptionHandle>({
       close: async (): Promise<void> => {
-        if (this.server === undefined) {
+        if (closed) {
           return;
         }
-        const activeServer = this.server;
-        this.server = undefined;
-        this.boundPort = undefined;
+        closed = true;
+        if (this.server === httpServer) {
+          this.server = undefined;
+          this.boundPort = undefined;
+        }
         await new Promise<void>((resolve, reject) => {
-          activeServer.close((err?: Error) => {
+          httpServer.close((err?: Error) => {
             if (err !== undefined) {
               reject(err);
               return;

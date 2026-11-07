@@ -64,16 +64,29 @@ export const defaultSlackTransport: SlackTransport = Object.freeze<SlackTranspor
     ) => void,
   ): Promise<ControlPlaneHandle> {
     const socketClient = new SocketModeClient({ appToken });
-    socketClient.on('interactive', (event: unknown) => {
-      void handleSlackInteractiveEvent(event, onInteractiveAction);
-    });
-    socketClient.on('slash_commands', (event: unknown) => {
-      void handleSlackSlashCommandEvent(event, controller);
-    });
-    await socketClient.start();
+    const onInteractive = (event: unknown): void => {
+      void handleSlackInteractiveEvent(event, onInteractiveAction).catch(() => undefined);
+    };
+    const onSlashCommand = (event: unknown): void => {
+      void handleSlackSlashCommandEvent(event, controller).catch(() => undefined);
+    };
+    socketClient.on('interactive', onInteractive);
+    socketClient.on('slash_commands', onSlashCommand);
+    try {
+      await socketClient.start();
+    } catch (err: unknown) {
+      socketClient.removeListener('interactive', onInteractive);
+      socketClient.removeListener('slash_commands', onSlashCommand);
+      throw err;
+    }
     return Object.freeze<ControlPlaneHandle>({
       async close(): Promise<void> {
-        await socketClient.disconnect();
+        try {
+          await socketClient.disconnect();
+        } finally {
+          socketClient.removeListener('interactive', onInteractive);
+          socketClient.removeListener('slash_commands', onSlashCommand);
+        }
       },
     });
   },

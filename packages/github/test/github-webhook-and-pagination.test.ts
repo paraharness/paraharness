@@ -1,3 +1,5 @@
+import { EventEmitter } from 'node:events';
+import type { IncomingMessage } from 'node:http';
 import { Webhooks } from '@octokit/webhooks';
 import { describe, expect, it } from 'vitest';
 import {
@@ -11,6 +13,7 @@ import {
   createGithubExecutors,
   github,
 } from '../src/index.js';
+import { readHttpRequestBody } from '../src/executors/internal/verify-github-webhook-signature.js';
 import { RecordedGithubHttpTransport } from './fixtures/recorded-github-http-transport.js';
 
 function createDriverContext(
@@ -150,6 +153,44 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
       });
     } finally {
       await sub.close();
+    }
+  });
+
+  it('detaches readHttpRequestBody listeners on settle, rejects premature close, and rejects duplicate subscribe() (VF-3)', async () => {
+    const fakeReq = Object.assign(new EventEmitter(), {
+      complete: false,
+      pause() {
+        return this;
+      },
+    }) as IncomingMessage;
+
+    const bodyPromise = readHttpRequestBody(fakeReq, 64);
+    expect(fakeReq.listenerCount('data')).toBe(1);
+    expect(fakeReq.listenerCount('end')).toBe(1);
+    expect(fakeReq.listenerCount('error')).toBe(1);
+    expect(fakeReq.listenerCount('close')).toBe(1);
+
+    fakeReq.emit('close');
+    await expect(bodyPromise).rejects.toThrow(
+      'GitHub webhook HTTP request closed prematurely before body completed.',
+    );
+    expect(fakeReq.listenerCount('data')).toBe(0);
+    expect(fakeReq.listenerCount('end')).toBe(0);
+    expect(fakeReq.listenerCount('error')).toBe(0);
+    expect(fakeReq.listenerCount('close')).toBe(0);
+
+    const streamNode = github.webhookStream({
+      repo: 'acme/app',
+      port: 0,
+      secret: 'whsec_dup_test',
+      events: ['pull_request.closed'],
+    });
+    const source = new GithubWebhookStreamSource(streamNode, createDriverContext({}));
+    const sub1 = await source.subscribe(async () => {});
+    try {
+      await expect(source.subscribe(async () => {})).rejects.toThrow('already subscribed');
+    } finally {
+      await sub1.close();
     }
   });
 });

@@ -83,8 +83,7 @@ export function matchesGithubWebhookFilter(
 /**
  * Reads a Node `IncomingMessage` body up to `maxBytes`, returning `undefined` if the limit is exceeded.
  *
- * Pauses the stream and discards buffered chunks immediately when accumulated bytes exceed `maxBytes`
- * so unbounded webhook payloads cannot exhaust process memory.
+ * Detaches all stream listeners upon settling and rejects if the socket closes before `'end'`.
  *
  * @param {IncomingMessage} [req]                                            - Node HTTP incoming request stream.
  * @param {number}          [maxBytes=DEFAULT_MAX_GITHUB_WEBHOOK_BODY_BYTES] - Maximum allowed body size in bytes.
@@ -99,32 +98,31 @@ export function readHttpRequestBody(
     const chunks: Buffer[] = [];
     let totalBytes = 0;
     let settled = false;
-    req.on('data', (chunk: Buffer | string) => {
-      if (settled) {
-        return;
-      }
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      req.removeListener('data', onData);
+      req.removeListener('end', onEnd);
+      req.removeListener('error', onError);
+      req.removeListener('close', onClose);
+      fn();
+    };
+    const onData = (chunk: Buffer | string): void => {
       const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
       totalBytes += buf.length;
-      if (totalBytes > maxBytes) {
-        settled = true;
-        chunks.length = 0;
-        req.pause();
-        resolve(undefined);
+      if (totalBytes <= maxBytes) {
+        chunks.push(buf);
         return;
       }
-      chunks.push(buf);
-    });
-    req.on('end', () => {
-      if (!settled) {
-        settled = true;
-        resolve(Buffer.concat(chunks));
-      }
-    });
-    req.on('error', (err: Error) => {
-      if (!settled) {
-        settled = true;
-        reject(err);
-      }
-    });
+      chunks.length = 0;
+      req.pause();
+      settle(() => resolve(undefined));
+    };
+    const onEnd = (): void => settle(() => resolve(Buffer.concat(chunks)));
+    const onError = (err: Error): void => settle(() => reject(err));
+    const onClose = (): void => {
+      if (!req.complete) settle(() => reject(new Error('GitHub webhook HTTP request closed prematurely before body completed.')));
+    };
+    req.on('data', onData).on('end', onEnd).on('error', onError).on('close', onClose);
   });
 }

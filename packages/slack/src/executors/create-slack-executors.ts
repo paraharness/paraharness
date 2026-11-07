@@ -7,15 +7,16 @@ import type {
   SlackNotifierNode,
 } from '@harness-dsl/core';
 import { defaultSlackTransport } from './default-slack-transport.constants.js';
-import { SlackApproverAdapter } from './slack-approver-adapter.js';
+import { getOrCreateSlackApproverAdapter } from './internal/get-or-create-slack-approver-adapter.js';
+import type { SlackApproverAdapter } from './slack-approver-adapter.js';
 import { SlackNotifierAdapter } from './slack-notifier-adapter.js';
 import type { SlackTransport } from './slack-transport.js';
 
 /**
  * Creates a `RuntimeExecutorRegistrySlice` registering all `@harness-dsl/slack` human and control-plane adapters.
  *
- * Registers `humanChannels['slack:approver']`, `humanChannels['slack:notifier']`, and
- * `controlPlanes['slack:approver']` backed by the provided `transport`.
+ * Memoizes `SlackApproverAdapter` per `(RuntimeDriverContext, node)` so `humanChannels['slack:approver']`
+ * and `controlPlanes['slack:approver']` share the same instance within a single runtime context.
  *
  * @param {SlackTransport} [transport=defaultSlackTransport] - Transport used for Slack API, webhook, and Socket Mode calls.
  *
@@ -24,13 +25,21 @@ import type { SlackTransport } from './slack-transport.js';
 export function createSlackExecutors(
   transport: SlackTransport = defaultSlackTransport,
 ): RuntimeExecutorRegistrySlice {
+  const adaptersByContext = new WeakMap<
+    RuntimeDriverContext,
+    Map<string, SlackApproverAdapter>
+  >();
+
   return Object.freeze<RuntimeExecutorRegistrySlice>({
     humanChannels: Object.freeze({
       'slack:approver': (
         node: HumanChannelASTNode,
         ctx: RuntimeDriverContext,
       ): SlackApproverAdapter =>
-        new SlackApproverAdapter(node as SlackApproverNode, ctx, transport),
+        getOrCreateSlackApproverAdapter(adaptersByContext, node as SlackApproverNode, {
+          ctx,
+          transport,
+        }),
       'slack:notifier': (
         node: HumanChannelASTNode,
         ctx: RuntimeDriverContext,
@@ -42,7 +51,10 @@ export function createSlackExecutors(
         node: ControlPlaneASTNode,
         ctx: RuntimeDriverContext,
       ): SlackApproverAdapter =>
-        new SlackApproverAdapter(node as SlackApproverNode, ctx, transport),
+        getOrCreateSlackApproverAdapter(adaptersByContext, node as SlackApproverNode, {
+          ctx,
+          transport,
+        }),
     }),
   });
 }

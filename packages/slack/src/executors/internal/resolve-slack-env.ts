@@ -93,13 +93,15 @@ export function startSlackDecisionHeartbeat(
     return undefined;
   }
   const timer = setInterval(() => {
-    void transport.postMessage(target.botToken, target.channel, {
-      kind: 'heartbeat',
-      runId: req.runId,
-      requestId: req.requestId,
-      thread_ts: target.messageTs,
-      text: `[Heartbeat] Still awaiting decision '${req.requestId}' for run '${req.runId}'.`,
-    });
+    void Promise.resolve(
+      transport.postMessage(target.botToken, target.channel, {
+        kind: 'heartbeat',
+        runId: req.runId,
+        requestId: req.requestId,
+        thread_ts: target.messageTs,
+        text: `[Heartbeat] Still awaiting decision '${req.requestId}' for run '${req.runId}'.`,
+      }),
+    ).catch(() => undefined);
   }, req.keepAliveSeconds * 1000);
   timer.unref();
   return timer;

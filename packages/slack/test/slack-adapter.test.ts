@@ -1,3 +1,4 @@
+import { SocketModeClient } from '@slack/socket-mode';
 import { describe, expect, it, vi } from 'vitest';
 import {
   H,
@@ -10,6 +11,7 @@ import {
   SlackApproverAdapter,
   SlackNotifierAdapter,
   createSlackExecutors,
+  defaultSlackTransport,
   slack,
 } from '../src/index.js';
 import {
@@ -26,10 +28,7 @@ function createTestDriverContext(
   return {
     registry,
     resolveEnv(value) {
-      if (typeof value === 'string') {
-        return value;
-      }
-      return env[value.key];
+      return typeof value === 'string' ? value : env[value.key];
     },
     getRunner() {
       throw new Error('RunnerDriver not used in slack tests.');
@@ -45,7 +44,6 @@ describe('@harness-dsl/slack adapter', () => {
         botToken: H.env('SLACK_BOT_TOKEN'),
         channel: H.env('SLACK_CHANNEL_ID'),
       });
-
       expect(botNode).toEqual({
         type: 'slack:approver',
         interactionMode: 'bidirectional',
@@ -75,15 +73,10 @@ describe('@harness-dsl/slack adapter', () => {
     it('supports requestDecision with schema validation and periodic keepAliveSeconds heartbeats', async () => {
       vi.useFakeTimers();
       try {
-        const botNode = slack.bot({
-          appToken: 'xapp-literal',
-          botToken: 'xoxb-literal',
-          channel: 'C999',
-        });
+        const botNode = slack.bot({ appToken: 'xapp-literal', botToken: 'xoxb-literal', channel: 'C999' });
         const transport = new RecordedSlackTransport();
         const ctx = createTestDriverContext({}, transport);
         const adapter = new SlackApproverAdapter(botNode, ctx, transport);
-
         const responseSchema = z.object({ approved: z.boolean(), note: z.string() });
         const decisionPromise = adapter.requestDecision({
           runId: 'run-finance-1',
@@ -107,14 +100,8 @@ describe('@harness-dsl/slack adapter', () => {
               type: 'actions',
               block_id: 'req-refund-1',
               elements: expect.arrayContaining([
-                expect.objectContaining({
-                  type: 'button',
-                  action_id: 'req-refund-1:approve',
-                }),
-                expect.objectContaining({
-                  type: 'button',
-                  action_id: 'req-refund-1:reject',
-                }),
+                expect.objectContaining({ type: 'button', action_id: 'req-refund-1:approve' }),
+                expect.objectContaining({ type: 'button', action_id: 'req-refund-1:reject' }),
               ]),
             }),
           ]),
@@ -124,9 +111,7 @@ describe('@harness-dsl/slack adapter', () => {
         expect(transport.postedMessages[2]?.payload['kind']).toBe('heartbeat');
 
         expect(() =>
-          adapter.submitDecision('run-finance-1', 'req-refund-1', {
-            approved: 'not-a-boolean',
-          }),
+          adapter.submitDecision('run-finance-1', 'req-refund-1', { approved: 'not-a-boolean' }),
         ).toThrow();
 
         adapter.submitDecision('run-finance-1', 'req-refund-1', {
@@ -134,12 +119,10 @@ describe('@harness-dsl/slack adapter', () => {
           note: 'Verified against settlement batch.',
         });
 
-        const decision = await decisionPromise;
-        expect(decision).toEqual({
+        await expect(decisionPromise).resolves.toEqual({
           approved: true,
           note: 'Verified against settlement batch.',
         });
-
         await vi.advanceTimersByTimeAsync(20_000);
         expect(transport.postedMessages).toHaveLength(3);
       } finally {
@@ -148,15 +131,10 @@ describe('@harness-dsl/slack adapter', () => {
     });
 
     it('cancels an active requestDecision via cancelDecision and updates the Slack message as superseded', async () => {
-      const botNode = slack.bot({
-        appToken: 'xapp-literal',
-        botToken: 'xoxb-literal',
-        channel: 'C999',
-      });
+      const botNode = slack.bot({ appToken: 'xapp-literal', botToken: 'xoxb-literal', channel: 'C999' });
       const transport = new RecordedSlackTransport();
       const ctx = createTestDriverContext({}, transport);
       const adapter = new SlackApproverAdapter(botNode, ctx, transport);
-
       const decisionPromise = adapter.requestDecision({
         runId: 'run-spec-1',
         requestId: 'req-parked-2',
@@ -164,14 +142,11 @@ describe('@harness-dsl/slack adapter', () => {
         payload: { question: 'Approve schema migration?' },
         responseSchema: z.object({ approved: z.boolean() }),
       });
-
       await Promise.resolve();
       await adapter.cancelDecision('run-spec-1', 'req-parked-2');
-
       await expect(decisionPromise).rejects.toThrow(
         "Slack decision request 'req-parked-2' for run 'run-spec-1' was cancelled and superseded.",
       );
-
       expect(transport.updatedMessages).toEqual([
         {
           botToken: 'xoxb-literal',
@@ -190,23 +165,16 @@ describe('@harness-dsl/slack adapter', () => {
     it('aborts cleanly without hanging or leaking heartbeat timers when signal aborts while postMessage is in flight', async () => {
       vi.useFakeTimers();
       try {
-        const botNode = slack.bot({
-          appToken: 'xapp-literal',
-          botToken: 'xoxb-literal',
-          channel: 'C999',
-        });
+        const botNode = slack.bot({ appToken: 'xapp-literal', botToken: 'xoxb-literal', channel: 'C999' });
         const transport = new RecordedSlackTransport();
         const ctx = createTestDriverContext({}, transport);
         const adapter = new SlackApproverAdapter(botNode, ctx, transport);
         const abortController = new AbortController();
-
         const originalPostMessage = transport.postMessage.bind(transport);
-        vi.spyOn(transport, 'postMessage').mockImplementationOnce(
-          async (botToken, channel, payload) => {
-            abortController.abort(new Error('Aborted while postMessage in flight'));
-            return originalPostMessage(botToken, channel, payload);
-          },
-        );
+        vi.spyOn(transport, 'postMessage').mockImplementationOnce(async (botToken, channel, payload) => {
+          abortController.abort(new Error('Aborted while postMessage in flight'));
+          return originalPostMessage(botToken, channel, payload);
+        });
 
         const decisionPromise = adapter.requestDecision({
           runId: 'run-abort-1',
@@ -217,11 +185,9 @@ describe('@harness-dsl/slack adapter', () => {
           keepAliveSeconds: 5,
           signal: abortController.signal,
         });
-
         await expect(decisionPromise).rejects.toThrow(
           "Slack decision request 'req-abort-inflight' for run 'run-abort-1' was aborted.",
         );
-
         expect(transport.updatedMessages).toEqual([
           {
             botToken: 'xoxb-literal',
@@ -233,14 +199,11 @@ describe('@harness-dsl/slack adapter', () => {
             },
           },
         ]);
-
         await vi.advanceTimersByTimeAsync(20_000);
         expect(transport.postedMessages).toHaveLength(1);
         expect(() =>
           adapter.submitDecision('run-abort-1', 'req-abort-inflight', { approved: true }),
-        ).toThrow(
-          "No pending Slack decision request found for run 'run-abort-1', request 'req-abort-inflight'.",
-        );
+        ).toThrow("No pending Slack decision request found for run 'run-abort-1', request 'req-abort-inflight'.");
       } finally {
         vi.useRealTimers();
       }
@@ -255,21 +218,13 @@ describe('@harness-dsl/slack adapter', () => {
       const transport = new RecordedSlackTransport();
       const ctx = createTestDriverContext({ SLACK_APP_TOKEN: 'xapp-ctrl-token' }, transport);
       const adapter = new SlackApproverAdapter(botNode, ctx, transport);
-
       const emittedSignals: Array<{ readonly signalId: string; readonly payload: unknown }> = [];
       const controller: HarnessRuntimeController = {
         async emitSignal(signalId, payload) {
           emittedSignals.push({ signalId, payload });
         },
         async getActiveRuns() {
-          return [
-            {
-              runId: 'run-active-1',
-              laneId: 'engineering',
-              itemKey: '#42',
-              status: 'RUNNING',
-            },
-          ];
+          return [{ runId: 'run-active-1', laneId: 'engineering', itemKey: '#42', status: 'RUNNING' }];
         },
       };
 
@@ -298,36 +253,24 @@ describe('@harness-dsl/slack adapter', () => {
 
       await adapter.dispatchSignal('steer-signal', { key: '#42', note: 'Use optimistic locking' });
       expect(emittedSignals).toEqual([
-        {
-          signalId: 'steer-signal',
-          payload: { key: '#42', note: 'Use optimistic locking' },
-        },
+        { signalId: 'steer-signal', payload: { key: '#42', note: 'Use optimistic locking' } },
       ]);
 
       const activeRuns = await adapter.getActiveRuns();
       expect(activeRuns).toEqual([
-        {
-          runId: 'run-active-1',
-          laneId: 'engineering',
-          itemKey: '#42',
-          status: 'RUNNING',
-        },
+        { runId: 'run-active-1', laneId: 'engineering', itemKey: '#42', status: 'RUNNING' },
       ]);
 
       let acked = 0;
       const routedActions: Array<{ runId: string; requestId: string; payload: unknown }> = [];
+      const ackFn = async (): Promise<void> => {
+        acked += 1;
+      };
       await handleSlackInteractiveEvent(
         {
-          ack: async () => {
-            acked += 1;
-          },
+          ack: ackFn,
           body: {
-            actions: [
-              {
-                block_id: 'req-block-1',
-                value: JSON.stringify({ runId: 'run-active-1', requestId: 'req-block-1', approved: true, note: 'ok' }),
-              },
-            ],
+            actions: [{ block_id: 'req-block-1', value: JSON.stringify({ runId: 'run-active-1', requestId: 'req-block-1', approved: true, note: 'ok' }) }],
           },
         },
         (runId, requestId, payload) => {
@@ -335,24 +278,86 @@ describe('@harness-dsl/slack adapter', () => {
         },
       );
       await handleSlackSlashCommandEvent(
-        {
-          ack: async () => {
-            acked += 1;
-          },
-          body: { text: JSON.stringify({ signalId: 'slash-sig', payload: { item: '#42' } }) },
-        },
+        { ack: ackFn, body: { text: JSON.stringify({ signalId: 'slash-sig', payload: { item: '#42' } }) } },
         controller,
       );
       expect(acked).toBe(2);
       expect(routedActions).toHaveLength(1);
       expect(emittedSignals).toHaveLength(2);
       await handle.close();
-      expect(transport.socketModeConnections).toEqual([
-        expect.objectContaining({ appToken: 'xapp-ctrl-token', closed: true }),
-      ]);
-      await expect(adapter.dispatchSignal('steer-signal', {})).rejects.toThrow(
-        'Slack Socket Mode control plane is not active',
-      );
+      expect(transport.socketModeConnections).toEqual([expect.objectContaining({ appToken: 'xapp-ctrl-token', closed: true })]);
+      await expect(adapter.dispatchSignal('steer-signal', {})).rejects.toThrow('Slack Socket Mode control plane is not active');
+    });
+
+    it('shares the same SlackApproverAdapter instance between humanChannels and controlPlanes per RuntimeDriverContext (VF-1)', async () => {
+      const botNode = slack.bot({ appToken: 'xapp-1', botToken: 'xoxb-1', channel: 'C111' });
+      const transport = new RecordedSlackTransport();
+      const executors = createSlackExecutors(transport);
+      const drvCtx = createTestDriverContext({}, transport);
+      const humanAdapter = executors.humanChannels?.['slack:approver']?.(botNode, drvCtx);
+      const controlPlane = executors.controlPlanes?.['slack:approver']?.(botNode, drvCtx);
+      if (humanAdapter === undefined || controlPlane === undefined) {
+        throw new Error('Expected slack:approver humanChannel and controlPlane factories.');
+      }
+      expect(humanAdapter).toBe(controlPlane);
+      const handle = await controlPlane.start({
+        async emitSignal() {},
+        async getActiveRuns() {
+          return [];
+        },
+      });
+      const decisionPromise = humanAdapter.requestDecision({
+        runId: 'run-shared-1',
+        requestId: 'req-shared-1',
+        humanId: 'owner',
+        payload: { question: 'Approve shared instance?' },
+        responseSchema: z.object({ approved: z.boolean(), note: z.string() }),
+      });
+      await Promise.resolve();
+      transport.socketModeConnections[0]?.onInteractiveAction?.('', 'req-shared-1', {
+        approved: true,
+        note: 'Resolved across shared instance',
+      });
+      await expect(decisionPromise).resolves.toEqual({
+        approved: true,
+        note: 'Resolved across shared instance',
+      });
+      await handle.close();
+    });
+
+    it('detaches SocketModeClient listeners on close() and suppresses unhandled rejections in fire-and-forget callbacks (VF-2)', async () => {
+      let capturedClient: SocketModeClient | undefined;
+      const startSpy = vi.spyOn(SocketModeClient.prototype, 'start').mockImplementation(async function (
+        this: SocketModeClient,
+      ) {
+        capturedClient = this;
+        return { ok: true };
+      });
+      const disconnectSpy = vi.spyOn(SocketModeClient.prototype, 'disconnect').mockResolvedValue(undefined);
+      try {
+        const controller: HarnessRuntimeController = {
+          async emitSignal() {},
+          async getActiveRuns() {
+            return [];
+          },
+        };
+        const handle = await defaultSlackTransport.connectSocketMode?.('xapp-socket-test', controller, () => {
+          throw new Error('Stale or already-cancelled requestId');
+        });
+        expect(capturedClient?.listenerCount('interactive')).toBe(1);
+        expect(capturedClient?.listenerCount('slash_commands')).toBe(1);
+        capturedClient?.emit('interactive', {
+          ack: async () => {},
+          body: { actions: [{ block_id: 'req-stale', value: '{"approved":true}' }] },
+        });
+        await Promise.resolve();
+        await handle?.close();
+        expect(capturedClient?.listenerCount('interactive')).toBe(0);
+        expect(capturedClient?.listenerCount('slash_commands')).toBe(0);
+      } finally {
+        startSpy.mockRestore();
+        disconnectSpy.mockRestore();
+      }
     });
   });
 
@@ -364,22 +369,16 @@ describe('@harness-dsl/slack adapter', () => {
         interactionMode: 'notify-only',
         webhookUrl: { type: 'harness:env-ref', key: 'SLACK_WEBHOOK_URL' },
       });
-
       const transport = new RecordedSlackTransport();
       const ctx = createTestDriverContext(
         { SLACK_WEBHOOK_URL: 'https://hooks.slack.com/services/T00/B00/X00' },
         transport,
       );
       const adapter = new SlackNotifierAdapter(notifierNode, ctx, transport);
-
       await adapter.notify('Build pipeline completed.');
       expect(transport.webhookMessages).toEqual([
-        {
-          webhookUrl: 'https://hooks.slack.com/services/T00/B00/X00',
-          message: 'Build pipeline completed.',
-        },
+        { webhookUrl: 'https://hooks.slack.com/services/T00/B00/X00', message: 'Build pipeline completed.' },
       ]);
-
       await expect(
         adapter.requestDecision({
           runId: 'run-1',
