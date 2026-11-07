@@ -13,7 +13,7 @@ import {
   type HumanAdapter,
 } from '@harness-dsl/core';
 import { FsJsonlLessonStore, fsExecutors } from '@harness-dsl/fs';
-import { GitCowWorktreeScopeDriver, gitExecutors } from '@harness-dsl/git';
+import { git, GitCowWorktreeScopeDriver, gitExecutors } from '@harness-dsl/git';
 import { githubExecutors } from '@harness-dsl/github';
 import { markdownExecutors } from '@harness-dsl/markdown';
 import { nodeExecutors } from '@harness-dsl/node';
@@ -26,15 +26,16 @@ import { createIntegrationWorkspaceFixture } from './fixtures/create-integration
 import { ScriptedIntegrationHumanAdapter } from './fixtures/scripted-integration-human-adapter.js';
 import { ScriptedIntegrationModelDriver } from './fixtures/scripted-integration-model-driver.js';
 
-function buildDeepCoordinatorFlowContext(
-  fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>,
-  runId: string,
-  currentInput: WorkItem,
-  modelDriver: ScriptedIntegrationModelDriver,
-  humanAdapter: ScriptedIntegrationHumanAdapter,
-  scopeHandle: GitWorktreeHandle,
-  scopeDriver: GitCowWorktreeScopeDriver,
-): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
+function buildDeepCoordinatorFlowContext(params: {
+  readonly fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>;
+  readonly runId: string;
+  readonly currentInput: WorkItem;
+  readonly modelDriver: ScriptedIntegrationModelDriver;
+  readonly humanAdapter: ScriptedIntegrationHumanAdapter;
+  readonly scopeHandle: GitWorktreeHandle;
+  readonly scopeDriver: GitCowWorktreeScopeDriver;
+}): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
+  const { fixture, runId, currentInput, modelDriver, humanAdapter, scopeHandle, scopeDriver } = params;
   const lessonStoreNode = repoLessons.toAST().store;
   if (lessonStoreNode.type !== 'fs:jsonl-lesson-store') {
     throw new Error('Expected fs:jsonl-lesson-store');
@@ -223,15 +224,11 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-upward-interrupt-201';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildDeepCoordinatorFlowContext(
-        fixture,
-        runId,
-        { ref: '#201', title: 'Add role endpoint across db and api', description: 'Expose queryUserRole in db and getRoleEndpoint in api', routingTier: 'deep', targetPartitions: ['db', 'api'], dependsOn: [] },
-        modelDriver,
-        humanAdapter,
-        scopeHandle,
-        scopeDriver,
-      );
+      const flowCtx = buildDeepCoordinatorFlowContext({
+        fixture, runId,
+        currentInput: { ref: '#201', title: 'Add role endpoint across db and api', description: 'Expose queryUserRole in db and getRoleEndpoint in api', routingTier: 'deep', targetPartitions: ['db', 'api'], dependsOn: [] },
+        modelDriver, humanAdapter, scopeHandle, scopeDriver,
+      });
 
       try {
         const result = await executeFlow(flowCtx);
@@ -272,6 +269,7 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
       let branch1Turn = 0;
       let refineTurn = 0;
       let crossPollinatedFromBranch1 = '';
+      let arbiterSecondTurnPrompt = '';
 
       const modelDriver = new ScriptedIntegrationModelDriver((req, _turnIdx, drv) => {
         if (req.roleKey === 'evaluator') return drv.buildStructuredResponse({ accepted: true, deficits: [] });
@@ -300,6 +298,7 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
           if (arbiterTurn === 1) {
             return drv.buildStructuredResponse({ decision: 'unpark-escalation', parkedBranchIndex: 0, rationale: 'Branch 0 addresses root cause; unpark its normative escalation' });
           }
+          arbiterSecondTurnPrompt = req.history[0]?.canonical.visibleText ?? '';
           return drv.buildStructuredResponse({
             decision: 'select-winner',
             winnerBranchIndex: 0,
@@ -357,6 +356,7 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
         if (branch1Turn === 1) {
           return drv.buildToolCallResponse([
             { id: 'b1-write-diag', name: 'write_file', argsJson: JSON.stringify({ path: 'packages/api/src/branch1-diag.ts', content: 'export const BRANCH_1_DIAG = "from-branch-1";\n' }) },
+            { id: 'b1-write-boundary-test', name: 'write_file', argsJson: JSON.stringify({ path: 'packages/api/test/boundary-contract.test.ts', content: 'import assert from "node:assert/strict";\nimport { getUserEndpoint } from "../src/index.ts";\nassert.equal(typeof getUserEndpoint("u1"), "string");\n' }) },
           ]);
         }
         return drv.buildStructuredResponse({ summary: 'Branch 1 completed conservative helper module without escalating', discoveredInvariants: [], residualRisks: [] });
@@ -365,25 +365,28 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-speculate-202';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildDeepCoordinatorFlowContext(
-        fixture,
-        runId,
-        { ref: '#202', title: 'Explore candidate API approaches', description: 'Run speculative tournament across 2 candidate approaches', routingTier: 'deep', targetPartitions: ['api'], dependsOn: [] },
-        modelDriver,
-        humanAdapter,
-        scopeHandle,
-        scopeDriver,
-      );
+      const flowCtx = buildDeepCoordinatorFlowContext({
+        fixture, runId,
+        currentInput: { ref: '#202', title: 'Explore candidate API approaches', description: 'Run speculative tournament across 2 candidate approaches', routingTier: 'deep', targetPartitions: ['api'], dependsOn: [] },
+        modelDriver, humanAdapter, scopeHandle, scopeDriver,
+      });
 
       try {
         const result = await executeFlow(flowCtx);
         expect(result.exitState).toBe('done');
         expect(humanPagedDuringInitialRace).toBe(false);
         expect(arbiterTurn).toBe(2);
+        expect(arbiterSecondTurnPrompt).toContain('packages/api/test/boundary-contract.test.ts');
+        expect(arbiterSecondTurnPrompt).toContain('"passedCrossTests":1');
         expect(humanAdapter.decisionRequests).toHaveLength(1);
         expect(crossPollinatedFromBranch1).toContain('from-branch-1');
         const diagContent = await readFile(path.join(scopeHandle.worktreePath, 'packages/api/src/branch1-diag.ts'), 'utf8');
         expect(diagContent).toContain('cross-pollinated');
+        const patchNode = git.patchEquivalence().toAST();
+        const patchEqReports = await flowCtx.registry.crossVerifiers['git:patch-equivalence']?.(
+          patchNode, [{ branchIndex: 0, scopeHandle, scopeReceipt: {} }, { branchIndex: 1, scopeHandle, scopeReceipt: {} }], flowCtx as never,
+        );
+        expect(patchNode.reportSchema.parse(patchEqReports?.[0]).equivalentBranchIndices).toEqual([0, 1]);
       } finally {
         await scopeDriver.release(scopeHandle);
       }

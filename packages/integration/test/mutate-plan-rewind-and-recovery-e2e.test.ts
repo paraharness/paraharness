@@ -47,20 +47,21 @@ function createFixtureLessonStore(repoDir: string): FsJsonlLessonStore {
   return new FsJsonlLessonStore(storeNode, repoDir);
 }
 
-function buildFlowContextForRecoveryTest(
-  fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>,
-  runId: string,
-  currentInput: WorkItem,
-  modelDriver: ScriptedIntegrationModelDriver,
-  humanAdapter: ScriptedIntegrationHumanAdapter,
-  scopeHandle: GitWorktreeHandle,
-  scopeDriver: GitCowWorktreeScopeDriver,
-  stores: {
+function buildFlowContextForRecoveryTest(params: {
+  readonly fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>;
+  readonly runId: string;
+  readonly currentInput: WorkItem;
+  readonly modelDriver: ScriptedIntegrationModelDriver;
+  readonly humanAdapter: ScriptedIntegrationHumanAdapter;
+  readonly scopeHandle: GitWorktreeHandle;
+  readonly scopeDriver: GitCowWorktreeScopeDriver;
+  readonly stores: {
     readonly ledgerStore: SqliteLedgerStore;
     readonly topologyStore: SqliteTopologyStore;
     readonly lessonStore: FsJsonlLessonStore;
-  },
-): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
+  };
+}): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
+  const { fixture, runId, currentInput, modelDriver, humanAdapter, scopeHandle, scopeDriver, stores } = params;
   const registry = createExecutorRegistry(
     sqliteExecutors,
     postgresExecutors,
@@ -124,6 +125,11 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
         unlockedSpecFiles: [],
       }));
 
+      expect(repoTopology.dependentsOf('db')).toEqual(['api', 'web']);
+      expect(repoTopology.affectedBy('db')).toEqual(['db', 'api', 'web']);
+      await topologyStore.updateContract('run-seed', 'db', 'line1: UserRecord\nline2: queryUser\nline3: base', 'seed:1');
+      await topologyStore.commitRunOverlay('run-seed');
+
       let parentCoordTurn = 0;
       let prereqWorkerTurn = 0;
 
@@ -180,7 +186,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       const parentRunId = 'run-parent-301';
       const parentHandle = await scopeDriver.acquireRoot(parentRunId);
       const parentInput: WorkItem = { ref: '#301', title: 'Stacked tenant API feature', description: 'Requires prerequisite #102 DB module', routingTier: 'deep', targetPartitions: ['api'], dependsOn: [] };
-      const parentFlowCtx = buildFlowContextForRecoveryTest(fixture, parentRunId, parentInput, modelDriver, humanAdapter, parentHandle, scopeDriver, { ledgerStore, topologyStore, lessonStore });
+      const parentFlowCtx = buildFlowContextForRecoveryTest({ fixture, runId: parentRunId, currentInput: parentInput, modelDriver, humanAdapter, scopeHandle: parentHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
 
       const firstPass = await executeFlow(parentFlowCtx);
       expect(firstPass.exitState).toBe('SUSPENDED');
@@ -189,9 +195,9 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       const prereqRunId = 'run-prereq-102';
       const prereqHandle = await scopeDriver.acquireRoot(prereqRunId);
       const prereqInput: WorkItem = { ref: '#102', title: 'Add tenant helper to db', description: 'Prerequisite DB module for #301', routingTier: 'leaf-only', targetPartitions: ['db'], dependsOn: [] };
-      const prereqFlowCtx = buildFlowContextForRecoveryTest(fixture, prereqRunId, prereqInput, modelDriver, humanAdapter, prereqHandle, scopeDriver, { ledgerStore, topologyStore, lessonStore });
+      const prereqFlowCtx = buildFlowContextForRecoveryTest({ fixture, runId: prereqRunId, currentInput: prereqInput, modelDriver, humanAdapter, scopeHandle: prereqHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
 
-      await topologyStore.updateContract(prereqRunId, 'db', 'db exports UserRecord, queryUser, and TENANT_DB_READY', `${prereqRunId}:step-1`);
+      await topologyStore.updateContract(prereqRunId, 'db', 'line1: UserRecord + TENANT_DB_READY\nline2: queryUser\nline3: base', `${prereqRunId}:step-1`);
       const prereqResult = await executeFlow(prereqFlowCtx);
       expect(prereqResult.exitState).toBe('done');
       await ledgerStore.recordRunTerminalReceipt(prereqRunId, '#102', 'done', JSON.stringify(prereqResult.scopeReceipt));
@@ -223,6 +229,8 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       } finally {
         await scopeDriver.release(parentFlowCtx.scopeHandle);
       }
+      await topologyStore.updateContract('run-concurrent', 'db', 'line1: UserRecord\nline2: queryUser\nline3: concurrentAudit', 'conc:1');
+      await topologyStore.commitRunOverlay('run-concurrent');
 
       const prs = await fixture.readCreatedPrs();
       expect(prs.map((p) => ({ head: p.head, base: p.base }))).toEqual([
@@ -242,12 +250,13 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       await runtime.controller.emitSignal('change-shipped', { ref: '#102', mergeCommitSha: 'sha-merge-main', baseBranch: 'main' });
 
       const canonicalPartitions = await topologyStore.getPartitions();
-      expect(canonicalPartitions.get('db')?.contractText).toContain('TENANT_DB_READY');
+      expect(canonicalPartitions.get('db')?.contractText).toBe('line1: UserRecord + TENANT_DB_READY\nline2: queryUser\nline3: concurrentAudit');
       expect(canonicalPartitions.get('api')?.contractText).toContain('getTenantEndpoint');
 
       const recalledCandidates = await lessonStore.queryCandidates({ queryText: 'TENANT_DB_READY', partitions: ['db'] });
       const updatedLesson = recalledCandidates.find((l) => l.id === admittedLesson);
       expect(updatedLesson?.epochAtCreation).toBeGreaterThan(0);
+      expect(updatedLesson?.relevanceScore).toBeGreaterThan(0);
     } finally {
       await fixture.cleanup();
     }
@@ -268,7 +277,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
       const runId = 'run:engineering-throughput:#302';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
       const initialInput: WorkItem = { ref: '#302', title: 'Initial fast-path task', description: 'Original description', routingTier: 'auto', targetPartitions: ['api'], dependsOn: [] };
-      const flowCtx = buildFlowContextForRecoveryTest(fixture, runId, initialInput, modelDriver, humanAdapter, scopeHandle, scopeDriver, { ledgerStore, topologyStore, lessonStore });
+      const flowCtx = buildFlowContextForRecoveryTest({ fixture, runId, currentInput: initialInput, modelDriver, humanAdapter, scopeHandle, scopeDriver, stores: { ledgerStore, topologyStore, lessonStore } });
 
       try {
         const cleanCkpt = await scopeDriver.serializeCheckpoint(scopeHandle);
@@ -347,7 +356,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
 
         const bootRecords = await ledgerStore.getInterruptedStepsOnBoot();
         const crashBoot = bootRecords.find((r) => r.stepExecId === crashStepExecId);
-        expect(crashBoot).toBeDefined();
+        expect(crashBoot?.stepExecId).toBe(crashStepExecId);
         if (crashBoot === undefined) throw new Error('Expected crashBoot record');
 
         await recoverInterruptedRunOnBoot({ bootRecord: crashBoot, flow: flowCtx.flow, flowCtx });

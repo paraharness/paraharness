@@ -5,6 +5,7 @@ import {
   ScopeLockManager,
   ServiceSessionRegistry,
   StepContinuationQueue,
+  zodToJsonSchema,
   type FlowExecutionContext,
   type HumanAdapter,
 } from '@harness-dsl/core';
@@ -21,7 +22,9 @@ import {
   appHarness,
   createEngineeringHarnessRuntime,
   createReconciliationHarnessRuntime,
+  discrepancyItem,
   reconciliationFlow,
+  workItem,
   type DiscrepancyItem,
 } from '../src/index.js';
 import { ScriptedIntegrationHumanAdapter } from './fixtures/scripted-integration-human-adapter.js';
@@ -36,14 +39,13 @@ function assertDeepFrozen(value: unknown, seen = new Set<unknown>()): void {
   if (!Object.isFrozen(value)) {
     throw new Error('Expected AST container to be frozen.');
   }
-  for (const key of Object.keys(value)) {
-    const prop = (value as Record<string, unknown>)[key];
+  for (const [, prop] of Object.entries(value)) {
     assertDeepFrozen(prop, seen);
   }
 }
 
 describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => {
-  it('compiles deeply frozen, JSON-serializable ASTs for appHarness and reconciliationFlow with zero build-time I/O', () => {
+  it('compiles deeply frozen, JSON-serializable ASTs and z.toJSONSchema() wire schemas with zero build-time I/O', () => {
     const engAst = appHarness.toAST();
     const finAst = reconciliationFlow.toAST();
 
@@ -55,6 +57,17 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
 
     assertDeepFrozen(engAst);
     assertDeepFrozen(finAst);
+
+    const workItemJsonSchema = zodToJsonSchema(workItem);
+    const discrepancyJsonSchema = zodToJsonSchema(discrepancyItem);
+    expect(workItemJsonSchema).toMatchObject({
+      type: 'object',
+      required: expect.arrayContaining(['ref', 'title', 'description']),
+    });
+    expect(discrepancyJsonSchema).toMatchObject({
+      type: 'object',
+      required: expect.arrayContaining(['discrepancyId', 'accountRegion', 'varianceUsd']),
+    });
 
     const engJson = JSON.stringify(engAst);
     const finJson = JSON.stringify(finAst);
@@ -78,10 +91,10 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
     expect(typeof finRuntime.start).toBe('function');
   }, 20_000);
 
-  it('denies closed-period NetSuite postings in-band, elevates Stripe refund lease via financeController, and drains remainingCalls', async () => {
+  it('denies closed-period NetSuite postings in-band, elevates Stripe refund lease via financeController, drains remainingCalls, and verifies exact big.js decimal balance', async () => {
     const humanAdapter = new ScriptedIntegrationHumanAdapter((req) => {
       expect(req.payload).toMatchObject({
-        amountUsd: 1200,
+        amountUsd: 1200.3,
       });
       return {
         approved: true,
@@ -97,7 +110,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
             name: 'netsuite_add_journal_line',
             argsJson: JSON.stringify({
               accountId: '1010-cash',
-              debitUsd: 1200,
+              debitUsd: 1200.3,
               creditUsd: 0,
               postingPeriod: '2025-12',
               periodClosed: true,
@@ -113,11 +126,22 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
 
         return drv.buildToolCallResponse([
           {
-            id: 'call-open-debit',
+            id: 'call-open-debit-a',
             name: 'netsuite_add_journal_line',
             argsJson: JSON.stringify({
-              accountId: '1010-cash',
-              debitUsd: 1200,
+              accountId: '1010-cash-a',
+              debitUsd: 400.1,
+              creditUsd: 0,
+              postingPeriod: '2026-11',
+              periodClosed: false,
+            }),
+          },
+          {
+            id: 'call-open-debit-b',
+            name: 'netsuite_add_journal_line',
+            argsJson: JSON.stringify({
+              accountId: '1010-cash-b',
+              debitUsd: 800.2,
               creditUsd: 0,
               postingPeriod: '2026-11',
               periodClosed: false,
@@ -127,8 +151,8 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
             id: 'call-high-refund',
             name: 'stripe_stage_refund',
             argsJson: JSON.stringify({
-              chargeId: 'ch_variance_1200',
-              amountUsd: 1200,
+              chargeId: 'ch_variance_1200_30',
+              amountUsd: 1200.3,
               journalId: 'draft-je-1',
             }),
           },
@@ -138,7 +162,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
             argsJson: JSON.stringify({
               accountId: '2010-clearing',
               debitUsd: 0,
-              creditUsd: 1200,
+              creditUsd: 1200.3,
               postingPeriod: '2026-11',
               periodClosed: false,
             }),
@@ -157,7 +181,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
 
       return drv.buildStructuredResponse({
         journalEntryId: 'je-us-east-101',
-        reconciledAmountUsd: 1200,
+        reconciledAmountUsd: 1200.3,
       });
     });
 
@@ -195,7 +219,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
       currentInput: {
         discrepancyId: 'disc-101',
         accountRegion: 'us-east',
-        varianceUsd: 1200,
+        varianceUsd: 1200.3,
       },
       scopeHandle,
       scopeDriver,
@@ -220,10 +244,10 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
       expect(result.exitState).toBe('done');
       expect(result.stepOutputs['attempt-reconcile']).toEqual({
         journalEntryId: 'je-us-east-101',
-        reconciledAmountUsd: 1200,
+        reconciledAmountUsd: 1200.3,
       });
       const receipt = result.scopeReceipt as DraftJournalReceipt;
-      expect(receipt.lineCount).toBe(2);
+      expect(receipt.lineCount).toBe(3);
       expect(receipt.netBalanceUsd).toBe(0);
       expect(humanAdapter.decisionRequests).toHaveLength(1);
     } finally {
@@ -231,7 +255,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
     }
   }, 20_000);
 
-  it('flushes reconcileLimitExceeded on turn exhaustion, rolls back draft journal, and replaces with manualEscalationAgent', async () => {
+  it('flushes reconcileLimitExceeded on turn exhaustion, rolls back draft journal, replaces with manualEscalationAgent, and enforces $0.01 big.js balanceZeroCheck', async () => {
     const humanAdapter = new ScriptedIntegrationHumanAdapter(() => ({
       approved: true,
       note: 'ok',
@@ -249,6 +273,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
           'Automated reconciler hit 6-turn ceiling waiting on FX settlement batch',
         );
         const toolResultsCount = req.history.filter((f) => f.canonical.role === 'tool').length;
+        const lastVisibleText = req.history[req.history.length - 1]?.canonical.visibleText ?? '';
         if (toolResultsCount === 0) {
           return drv.buildToolCallResponse([
             {
@@ -256,19 +281,34 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
               name: 'netsuite_add_journal_line',
               argsJson: JSON.stringify({
                 accountId: '1010-cash',
-                debitUsd: 450,
+                debitUsd: 450.05,
                 creditUsd: 0,
                 postingPeriod: '2026-11',
                 periodClosed: false,
               }),
             },
             {
-              id: 'manual-credit',
+              id: 'manual-credit-short',
               name: 'netsuite_add_journal_line',
               argsJson: JSON.stringify({
                 accountId: '2010-clearing',
                 debitUsd: 0,
-                creditUsd: 450,
+                creditUsd: 450.04,
+                postingPeriod: '2026-11',
+                periodClosed: false,
+              }),
+            },
+          ]);
+        }
+        if (toolResultsCount === 1 && lastVisibleText.includes('out of balance by $0.01 USD')) {
+          return drv.buildToolCallResponse([
+            {
+              id: 'manual-credit-cent',
+              name: 'netsuite_add_journal_line',
+              argsJson: JSON.stringify({
+                accountId: '2010-clearing-rounding',
+                debitUsd: 0,
+                creditUsd: 0.01,
                 postingPeriod: '2026-11',
                 periodClosed: false,
               }),
@@ -277,7 +317,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
         }
         return drv.buildStructuredResponse({
           journalEntryId: 'je-eu-west-manual-202',
-          reconciledAmountUsd: 450,
+          reconciledAmountUsd: 450.05,
         });
       }
 
@@ -297,50 +337,31 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
     });
 
     const flowAst = reconciliationFlow.toAST();
-    const registry = createExecutorRegistry(
-      sqliteExecutors,
-      stripeExecutors,
-      netsuiteExecutors,
-      {
-        models: {
-          'claude:model': () => modelDriver,
-        },
-        humanChannels: {
-          'slack:approver': () => humanAdapter,
-        },
-      },
-    );
-
-    if (flowAst.scope.type !== 'netsuite:draft-scope') {
-      throw new Error('Expected netsuite:draft-scope');
-    }
+    const registry = createExecutorRegistry(sqliteExecutors, stripeExecutors, netsuiteExecutors, {
+      models: { 'claude:model': () => modelDriver },
+      humanChannels: { 'slack:approver': () => humanAdapter },
+    });
+    if (flowAst.scope.type !== 'netsuite:draft-scope') throw new Error('Expected netsuite:draft-scope');
     const scopeDriver = new NetSuiteDraftScopeDriver(flowAst.scope);
     const runId = 'run-fin-limit-2';
     const scopeHandle = await scopeDriver.acquireRoot(runId);
-    const ledgerStore = new SqliteLedgerStore(':memory:');
 
     const flowCtx: FlowExecutionContext<DiscrepancyItem, NetSuiteDraftHandle> = {
       runId,
       laneId: 'reconciliation-lane',
       itemKey: 'disc-202',
       flow: flowAst,
-      currentInput: {
-        discrepancyId: 'disc-202',
-        accountRegion: 'eu-west',
-        varianceUsd: 450,
-      },
+      currentInput: { discrepancyId: 'disc-202', accountRegion: 'eu-west', varianceUsd: 450.05 },
       scopeHandle,
       scopeDriver,
       registry,
       env: {},
-      ledgerStore,
+      ledgerStore: new SqliteLedgerStore(':memory:'),
       lockManager: new ScopeLockManager(),
       continuationQueue: new StepContinuationQueue(),
       poolManager: new PoolManager(),
       serviceRegistry: new ServiceSessionRegistry(),
-      humanAdaptersById: new Map<string, HumanAdapter>([
-        ['finance-controller', humanAdapter],
-      ]),
+      humanAdaptersById: new Map<string, HumanAdapter>([['finance-controller', humanAdapter]]),
       wirePrefixesByGroupId: new Map(),
       completedStepOutputs: new Map(),
       observedRunEffects: [],
@@ -354,10 +375,10 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
       expect(result.exitState).toBe('done');
       expect(result.stepOutputs['attempt-reconcile']).toEqual({
         journalEntryId: 'je-eu-west-manual-202',
-        reconciledAmountUsd: 450,
+        reconciledAmountUsd: 450.05,
       });
       const receipt = result.scopeReceipt as DraftJournalReceipt;
-      expect(receipt.lineCount).toBe(2);
+      expect(receipt.lineCount).toBe(3);
       expect(receipt.netBalanceUsd).toBe(0);
       expect(scopeHandle.entries.every((e) => e.accountId !== '9999-unbalanced-dirty')).toBe(true);
     } finally {

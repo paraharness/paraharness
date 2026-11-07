@@ -114,15 +114,20 @@ export class ScriptedIntegrationModelDriver implements ModelDriver {
   ): Promise<WireFrameRecord> {
     const joinedNotes = notes.join('\n');
     const prevResults = frame.canonical.toolResults ?? [];
-    const nextResults = prevResults.map((tr) =>
-      targetCallId === undefined || tr.callId === targetCallId
-        ? Object.freeze({
-            ...tr,
+    const nextResults: Array<{ readonly callId: string; readonly content: string; readonly isError: boolean }> = [];
+    for (const tr of prevResults) {
+      if (targetCallId === undefined || tr.callId === targetCallId) {
+        nextResults.push(
+          Object.freeze({
+            callId: tr.callId,
             content: `${tr.content}\n${joinedNotes}`,
             isError: opts?.isError ?? tr.isError,
-          })
-        : tr,
-    );
+          }),
+        );
+      } else {
+        nextResults.push(tr);
+      }
+    }
     const nextVisibleText =
       prevResults.length === 0
         ? `${frame.canonical.visibleText}\n${joinedNotes}`.trim()

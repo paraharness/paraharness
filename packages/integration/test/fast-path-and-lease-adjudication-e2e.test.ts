@@ -32,15 +32,16 @@ import { createIntegrationWorkspaceFixture } from './fixtures/create-integration
 import { ScriptedIntegrationHumanAdapter } from './fixtures/scripted-integration-human-adapter.js';
 import { ScriptedIntegrationModelDriver } from './fixtures/scripted-integration-model-driver.js';
 
-function buildEngineeringTestFlowContext(
-  fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>,
-  runId: string,
-  currentInput: WorkItem,
-  modelDriver: ScriptedIntegrationModelDriver,
-  humanAdapter: ScriptedIntegrationHumanAdapter,
-  scopeHandle: GitWorktreeHandle,
-  scopeDriver: GitCowWorktreeScopeDriver,
-): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
+function buildEngineeringTestFlowContext(params: {
+  readonly fixture: Awaited<ReturnType<typeof createIntegrationWorkspaceFixture>>;
+  readonly runId: string;
+  readonly currentInput: WorkItem;
+  readonly modelDriver: ScriptedIntegrationModelDriver;
+  readonly humanAdapter: ScriptedIntegrationHumanAdapter;
+  readonly scopeHandle: GitWorktreeHandle;
+  readonly scopeDriver: GitCowWorktreeScopeDriver;
+}): FlowExecutionContext<WorkItem, GitWorktreeHandle> {
+  const { fixture, runId, currentInput, modelDriver, humanAdapter, scopeHandle, scopeDriver } = params;
   const lessonStoreNode = repoLessons.toAST().store;
   if (lessonStoreNode.type !== 'fs:jsonl-lesson-store') {
     throw new Error('Expected fs:jsonl-lesson-store');
@@ -94,7 +95,7 @@ function buildEngineeringTestFlowContext(
 }
 
 describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripwire promotion E2E', () => {
-  it('intercepts existing .test.ts mutation via fs.writeGuard, escalates normativeEscalation to owner, elevates lease across loop, and lands PR', async () => {
+  it('intercepts existing .test.ts mutation via fs.writeGuard, escalates normativeEscalation to owner, elevates lease across loop, runs real node-pty browser-ctl daemon, and lands PR', async () => {
     const fixture = await createIntegrationWorkspaceFixture();
     try {
       const humanAdapter = new ScriptedIntegrationHumanAdapter((req) => {
@@ -112,6 +113,8 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
 
       let workerTurn = 0;
       let adjudicatorTurn = 0;
+      let evaluatorTurn = 0;
+      let browserPtyOutput = '';
       const modelDriver = new ScriptedIntegrationModelDriver((req, _turnIdx, drv) => {
         if (req.roleKey === 'lease-adjudicator') {
           adjudicatorTurn += 1;
@@ -142,6 +145,19 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
         }
 
         if (req.roleKey === 'evaluator') {
+          evaluatorTurn += 1;
+          if (evaluatorTurn === 1) {
+            return drv.buildToolCallResponse([
+              { id: 'eval-activate-ui', name: 'activateSkill', argsJson: JSON.stringify({ skillId: 'ui-verification' }) },
+            ]);
+          }
+          if (evaluatorTurn === 2) {
+            return drv.buildToolCallResponse([
+              { id: 'eval-cdp-title', name: 'browser-ctl', argsJson: JSON.stringify({ input: 'DOM.getTitle' }) },
+            ]);
+          }
+          const lastEvalFrame = req.history[req.history.length - 1];
+          browserPtyOutput = lastEvalFrame?.canonical.toolResults?.find((tr) => tr.callId === 'eval-cdp-title')?.content ?? '';
           return drv.buildStructuredResponse({ accepted: true, deficits: [] });
         }
 
@@ -203,10 +219,10 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-fast-lease-101';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildEngineeringTestFlowContext(
+      const flowCtx = buildEngineeringTestFlowContext({
         fixture,
         runId,
-        {
+        currentInput: {
           ref: '#101',
           title: 'Append VIP flag to getUserEndpoint',
           description: 'Append ?vip=1 to getUserEndpoint and update test + spec',
@@ -218,12 +234,17 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
         humanAdapter,
         scopeHandle,
         scopeDriver,
-      );
+      });
 
       try {
         const result = await executeFlow(flowCtx);
         expect(result.exitState).toBe('done');
         expect(humanAdapter.decisionRequests).toHaveLength(1);
+        expect(browserPtyOutput).toContain('"title":"Acme Portal"');
+        expect(browserPtyOutput).toContain('"command":"DOM.getTitle"');
+        const compiledPrefix = flowCtx.wirePrefixesByGroupId.get('engineering-prefix');
+        expect(compiledPrefix?.toolsMode).toBe('role-scoped');
+        expect(compiledPrefix?.wireToolSchemasByRoleKey['evaluator']?.some((t) => t.name === 'browser-ctl')).toBe(true);
         const receipt = result.scopeReceipt as GitScopeReceipt;
         expect(receipt.mutatedFiles).toEqual(
           expect.arrayContaining([
@@ -327,10 +348,10 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
       const scopeDriver = new GitCowWorktreeScopeDriver({ ...workspace.toAST(), repo: fixture.repoDir });
       const runId = 'run-fast-tripwire-102';
       const scopeHandle = await scopeDriver.acquireRoot(runId);
-      const flowCtx = buildEngineeringTestFlowContext(
+      const flowCtx = buildEngineeringTestFlowContext({
         fixture,
         runId,
-        {
+        currentInput: {
           ref: '#102',
           title: 'Refactor API helpers',
           description: 'Consolidate API helper modules',
@@ -342,7 +363,7 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
         humanAdapter,
         scopeHandle,
         scopeDriver,
-      );
+      });
 
       try {
         const result = await executeFlow(flowCtx);
