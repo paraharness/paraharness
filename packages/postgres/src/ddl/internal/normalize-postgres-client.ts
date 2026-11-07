@@ -104,3 +104,46 @@ export function normalizePostgresClient(
   }
   return clientOrPoolOrUri;
 }
+
+/**
+ * Wraps an asynchronously resolved `Promise<PostgresQueryClient>` into a synchronous `PostgresQueryClient` handle.
+ *
+ * Forwards `query`, `connect` (preserving pooled transaction pinning when the resolved client defines `connect()`),
+ * and `close` to the resolved underlying client.
+ *
+ * @param {Promise<PostgresQueryClient>} pendingClient - Asynchronously resolving PostgreSQL query client.
+ *
+ * @returns {PostgresQueryClient} Synchronous `PostgresQueryClient` proxy.
+ */
+export function wrapAsyncPostgresClient(
+  pendingClient: Promise<PostgresQueryClient>,
+): PostgresQueryClient {
+  return Object.freeze<PostgresQueryClient>({
+    async query<TRow = Record<string, unknown>>(
+      sql: string,
+      params?: readonly unknown[],
+    ): Promise<PostgresQueryResult<TRow>> {
+      const client = await pendingClient;
+      return client.query<TRow>(sql, params);
+    },
+    async connect(): Promise<PostgresPinnedClient> {
+      const client = await pendingClient;
+      if (client.connect !== undefined) {
+        return client.connect();
+      }
+      return Object.freeze<PostgresPinnedClient>({
+        query<TRow = Record<string, unknown>>(
+          sql: string,
+          params?: readonly unknown[],
+        ): Promise<PostgresQueryResult<TRow>> {
+          return client.query<TRow>(sql, params);
+        },
+        release(): void {},
+      });
+    },
+    async close(): Promise<void> {
+      const client = await pendingClient;
+      await client.close?.();
+    },
+  });
+}

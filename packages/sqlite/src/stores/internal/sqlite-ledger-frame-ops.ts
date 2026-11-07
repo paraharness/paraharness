@@ -55,7 +55,7 @@ export function replaceMessageFrameInSqlite(
     frame.compactedTombstones !== undefined ? JSON.stringify(frame.compactedTombstones) : null;
   const updateResult = db
     .prepare(
-      'UPDATE harness_wire_frames SET raw_wire_frame = ?, canonical_json = ?, prefix_digest = ?, compacted_tombstones_json = ? WHERE message_id = ? AND run_id = ?',
+      'UPDATE harness_wire_frames SET raw_wire_frame = ?, canonical_json = ?, prefix_digest = ?, compacted_tombstones_json = COALESCE(?, compacted_tombstones_json) WHERE message_id = ? AND run_id = ?',
     )
     .run(
       Buffer.from(frame.rawWireFrame),

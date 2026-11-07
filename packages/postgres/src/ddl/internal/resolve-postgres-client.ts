@@ -3,7 +3,6 @@ import PQueue from 'p-queue';
 import { Pool } from 'pg';
 import type { PostgresPoolFactory } from '../postgres-pool-factory.js';
 import type { PostgresQueryClient } from '../postgres-query-client.js';
-import type { PostgresQueryResult } from '../postgres-query-result.js';
 import {
   POSTGRES_DDL_STATEMENTS,
   POSTGRES_IDENTIFIER_REGEX,
@@ -12,6 +11,7 @@ import {
 import {
   adaptPgPoolToQueryClient,
   normalizePostgresClient,
+  wrapAsyncPostgresClient,
 } from './normalize-postgres-client.js';
 
 /**
@@ -87,19 +87,7 @@ export function resolvePostgresClient(
   if (!('then' in maybeClient)) {
     return maybeClient;
   }
-  return Object.freeze<PostgresQueryClient>({
-    async query<TRow = Record<string, unknown>>(
-      sql: string,
-      params?: readonly unknown[],
-    ): Promise<PostgresQueryResult<TRow>> {
-      const client = await maybeClient;
-      return client.query<TRow>(sql, params);
-    },
-    async close(): Promise<void> {
-      const client = await maybeClient;
-      await client.close?.();
-    },
-  });
+  return wrapAsyncPostgresClient(maybeClient);
 }
 
 /**

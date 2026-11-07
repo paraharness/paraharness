@@ -255,7 +255,6 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
         spawnedItems: [], addedDependencies: ['ISS-10'], maxPrerequisiteDepth: 2,
       }),
     ).rejects.toThrow(/maxPrerequisiteDepth/);
-
     const fork1: SuspendedForkRecord = {
       suspendedForkId: 'f-pg#1', forkId: 'f-pg', suspensionEpoch: 1, runId: 'pg-run-1',
       parentStepExecId: 'pg-step-1', forkToolName: 'fork_worker', activePartitions: ['db'],
@@ -266,7 +265,6 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     expect((await ledgerStore.getSuspendedForks('pg-run-1')).map((f) => f.suspendedForkId)).toEqual(['f-pg#1', 'f-pg#2']);
     await ledgerStore.resolveSuspendedFork('f-pg#3', 'ABORTED');
     expect(await ledgerStore.getSuspendedForks('pg-run-1')).toEqual([]);
-
     await ledgerStore.createOrResumeRun({ runId: 'pg-run-active', laneId: 'lane-pg', itemKey: 'ISS-10', inputJson: '{}' });
     await ledgerStore.appendMessageFrame('pg-run-1', createSampleWireFrame('pm-1', null, 'root'));
     await ledgerStore.appendMessageFrame('pg-run-1', createSampleWireFrame('pm-2', 'pm-1', 'leaf'));
@@ -280,7 +278,6 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await ledgerStore.markFrameTombstone('pg-run-1', 'pm-1', 'call-pm-1', '[Tombstone]');
     await ledgerStore.recordRunTerminalReceipt('pg-run-1', 'ISS-10', 'done', '{"sha":"999"}');
     expect((await ledgerStore.getRunTerminalReceipts(['ISS-10'])).get('ISS-10')?.terminalState).toBe('done');
-
     await ledgerStore.compactRunFrames('pg-run-1');
     const compactedChain = await ledgerStore.getMessageChain('pm-2');
     expect(compactedChain[0]?.rawWireFrame.byteLength).toBe(0);
@@ -300,13 +297,11 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await topologyStore.sealRunOverlay('r-1');
     const committed = await topologyStore.commitRunOverlay('r-1');
     expect(committed).toEqual({ committedRunIds: ['r-1'], updatedEpochs: new Map([['api', 1]]) });
-
     await topologyStore.getPartitions('r-branch-a');
     await topologyStore.getPartitions('r-branch-b');
     await topologyStore.updateContract('r-branch-a', 'api', 'v2-top\nv1-bottom\nv2-extra', 's-ba');
     await topologyStore.sealRunOverlay('r-branch-a');
     await topologyStore.commitRunOverlay('r-branch-a');
-
     await topologyStore.updateContract('r-branch-b', 'api', 'v1-top\nv2-bottom', 's-bb');
     await topologyStore.sealRunOverlay('r-branch-b');
     const mergedBranchB = await topologyStore.commitRunOverlay('r-branch-b');
@@ -327,7 +322,6 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await topologyStore.updateContract('r-discard', 'api', 'discard-me', 's-d');
     await topologyStore.discardRunOverlay('r-discard');
     expect((await topologyStore.getPartitions('r-discard')).get('api')?.contractText).toBe('v3-prereq\nv2-extra\nv2-bottom');
-
     const lessonId = await lessonStore.admit({
       partition: 'api',
       directive: 'Always validate pagination cursor signatures before querying.',
@@ -337,14 +331,12 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await lessonStore.syncCreationEpochsForRuns(['r-1'], committed.updatedEpochs);
     await lessonStore.recordOutcomes([{ lessonId, outcome: 'clean_pass' }]);
     await lessonStore.markSignalEmitted(lessonId, 'sig-promote', '2026-02-01T00:00:00.000Z');
-
     const recalled = await lessonStore.queryCandidates({ queryText: 'paginaton cursr signaturs', partitions: ['api'] });
     expect(recalled).toHaveLength(1);
     expect(recalled[0]?.relevanceScore).toBe(1);
     expect(recalled[0]?.epochAtCreation).toBe(1);
     expect(recalled[0]?.totalCleanPasses).toBe(1);
     expect(recalled[0]?.signalLastEmittedAt).toEqual({ 'sig-promote': '2026-02-01T00:00:00.000Z' });
-
     await lessonStore.retire([lessonId]);
     expect(await lessonStore.queryCandidates({ queryText: 'pagination cursor', partitions: ['api'] })).toEqual([]);
   });
@@ -387,5 +379,20 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     expect(rollbackSlice).toContain('pinned.query:BEGIN');
     expect(rollbackSlice).toContain('pinned.query:ROLLBACK');
     expect(rollbackSlice[rollbackSlice.length - 1]).toBe('pinned.release');
+
+    const asyncFactorySlice = createPostgresExecutors({ getClient: async () => pooledClient });
+    const asyncLedgerFactory = asyncFactorySlice.ledgers?.['postgres:ledger'];
+    if (asyncLedgerFactory === undefined) throw new Error('Missing async postgres:ledger factory');
+    const asyncPooledLedger = await asyncLedgerFactory(
+      postgres.ledger('postgres://async-factory/db').toAST(),
+      { registry: createExecutorRegistry([asyncFactorySlice]), resolveEnv: (v) => (typeof v === 'string' ? v : undefined), getRunner: () => { throw new Error('unused'); } },
+    );
+    const beforeAsyncLen = events.length;
+    await asyncPooledLedger.createOrResumeRun({ runId: 'async-pool-run', laneId: 'lane-pool', itemKey: 'ISS-ASYNC-1', inputJson: '{}' });
+    const asyncSliceEvents = events.slice(beforeAsyncLen);
+    expect(asyncSliceEvents).toContain('pool.connect');
+    expect(asyncSliceEvents).toContain('pinned.query:BEGIN');
+    expect(asyncSliceEvents).toContain('pinned.query:COMMIT');
+    expect(asyncSliceEvents).toContain('pinned.release');
   });
 });

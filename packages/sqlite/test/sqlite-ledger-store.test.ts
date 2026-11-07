@@ -328,6 +328,11 @@ describe('SqliteLedgerStore durability, DAG mutation, wire frames, and compactio
       },
     });
     await store.markFrameTombstone('run-old', 'm-1', 'call-m-1', '[Compacted tool output]');
+    await store.replaceMessageFrame('run-old', {
+      ...f1,
+      rawWireFrame: new TextEncoder().encode('root-frame-updated'),
+      compactedTombstones: undefined,
+    });
 
     const chainBeforeCompact = await store.getMessageChain('m-2');
     expect(chainBeforeCompact.map((f) => f.messageId)).toEqual(['m-1', 'm-2']);
