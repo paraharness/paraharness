@@ -10,12 +10,8 @@ import {
   DEFAULT_GITHUB_WEBHOOK_PATH,
   DEFAULT_GITHUB_WEBHOOK_PORT,
 } from '../builders/internal/github-builder-defaults.constants.js';
-import { resolveRequiredGithubSecret } from './internal/normalize-github-issue.js';
-import {
-  matchesGithubWebhookFilter,
-  readHttpRequestBody,
-  verifyGithubWebhookSignature,
-} from './internal/verify-github-webhook-signature.js';
+import { dispatchGithubWebhookRequest } from './internal/dispatch-github-webhook-request.js';
+import { resolveRequiredGithubSecret } from './internal/resolve-required-github-secret.js';
 
 /**
  * Runtime `StreamSource` implementation for `GithubWebhookStreamNode` (`github:webhook-stream`).
@@ -74,6 +70,8 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
    * @param {(event: TEvent) => Promise<void>} onEvent - Async callback invoked for each verified matching webhook event.
    *
    * @returns {Promise<StreamSubscriptionHandle>} Handle with `.close()` to shut down the HTTP listener.
+   *
+   * @throws {Error} If already subscribed, secret resolution fails, or port binding fails.
    */
   async subscribe(onEvent: (event: TEvent) => Promise<void>): Promise<StreamSubscriptionHandle> {
     if (this.server !== undefined) {
@@ -91,7 +89,13 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
     const targetPath = this.node.path ?? DEFAULT_GITHUB_WEBHOOK_PATH;
 
     const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-      void this.handleHttpRequest(req, res, { webhooks, targetPath, onEvent });
+      void dispatchGithubWebhookRequest(req, res, {
+        webhooks,
+        targetPath,
+        subscribedEvents: this.subscribedEvents,
+        repo: this.node.repo,
+        onEvent,
+      });
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -108,113 +112,34 @@ export class GithubWebhookStreamSource<TEvent = unknown> implements StreamSource
       this.boundPort = addressInfo.port;
     }
 
-    let closed = false;
     return Object.freeze<StreamSubscriptionHandle>({
-      close: async (): Promise<void> => {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        if (this.server === httpServer) {
-          this.server = undefined;
-          this.boundPort = undefined;
-        }
-        await new Promise<void>((resolve, reject) => {
-          httpServer.close((err?: Error) => {
-            if (err !== undefined) {
-              reject(err);
-              return;
-            }
-            resolve();
-          });
-        });
-      },
+      close: (): Promise<void> => this.closeHttpServer(httpServer),
     });
   }
 
   /**
-   * Validates and dispatches a single incoming HTTP webhook delivery request.
+   * Idempotently closes `httpServer` and clears `this.server` and `this.boundPort`.
    *
-   * Responds with `404` on path mismatch, `413` on oversized body, `401` on invalid signature,
-   * `400` on invalid JSON, `202` when filtered out, `200` once `onEvent` completes, and `500` on error.
+   * No-ops if `httpServer` is no longer the active listener instance.
    *
-   * @param {IncomingMessage} req    - Incoming HTTP request.
-   * @param {ServerResponse}  res    - Outgoing HTTP response.
-   * @param {object}          config - Handler configuration with `@octokit/webhooks`, route path, and callback.
+   * @param {Server} httpServer - Node HTTP server instance to shut down.
    *
-   * @returns {Promise<void>} Resolves once the HTTP response is finalized.
+   * @returns {Promise<void>} Resolves once the HTTP server has closed.
    */
-  private async handleHttpRequest(
-    req: IncomingMessage,
-    res: ServerResponse,
-    config: {
-      readonly webhooks: Webhooks;
-      readonly targetPath: string;
-      readonly onEvent: (event: TEvent) => Promise<void>;
-    },
-  ): Promise<void> {
-    try {
-      const requestPath = (req.url ?? '').split('?')[0];
-      if (req.method !== 'POST' || requestPath !== config.targetPath) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not Found' }));
-        return;
-      }
-      const rawBody = await readHttpRequestBody(req);
-      if (rawBody === undefined) {
-        res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' });
-        res.end(JSON.stringify({ error: 'Payload Too Large' }), () => {
-          req.destroy();
-        });
-        return;
-      }
-      const sigHeader = req.headers['x-hub-signature-256'];
-      const signature = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
-      if (!(await verifyGithubWebhookSignature(rawBody, signature, config.webhooks))) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Invalid X-Hub-Signature-256' }));
-        return;
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(rawBody.toString('utf8'));
-      } catch {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Malformed JSON payload' }));
-        return;
-      }
-      if (typeof parsed !== 'object' || parsed === null) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Expected JSON object payload' }));
-        return;
-      }
-      const evHeaderRaw = req.headers['x-github-event'];
-      const eventHeader = Array.isArray(evHeaderRaw) ? evHeaderRaw[0] : evHeaderRaw;
-      const payloadRecord = parsed as Readonly<Record<string, unknown>>;
-      if (
-        !matchesGithubWebhookFilter(eventHeader, payloadRecord, {
-          subscribedEvents: this.subscribedEvents,
-          repo: this.node.repo,
-        })
-      ) {
-        res.writeHead(202, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ delivered: false, reason: 'filtered' }));
-        return;
-      }
-      await config.onEvent(parsed as TEvent);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ delivered: true }));
-    } catch (err: unknown) {
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: err instanceof Error ? err.message : 'Internal webhook handler error',
-          }),
-        );
-      } else if (!res.writableEnded) {
-        res.end();
-      }
+  private async closeHttpServer(httpServer: Server): Promise<void> {
+    if (this.server !== httpServer) {
+      return;
     }
+    this.server = undefined;
+    this.boundPort = undefined;
+    await new Promise<void>((resolve, reject) => {
+      httpServer.close((err?: Error) => {
+        if (err !== undefined) {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+    });
   }
 }

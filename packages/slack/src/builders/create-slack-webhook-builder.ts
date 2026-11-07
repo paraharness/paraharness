@@ -9,6 +9,8 @@ import type { EnvRef, SlackNotifierNode } from '@harness-dsl/core';
  * @param {string | EnvRef} webhookUrl - Slack incoming webhook URL or symbolic `H.env(...)` reference.
  *
  * @returns {SlackNotifierNode} Frozen passive Slack webhook notifier AST node.
+ *
+ * @throws {Error} If a literal `webhookUrl` string is empty.
  */
 export function createSlackWebhookBuilder(webhookUrl: string | EnvRef): SlackNotifierNode {
   if (typeof webhookUrl === 'string' && webhookUrl.trim().length === 0) {

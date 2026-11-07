@@ -1,4 +1,7 @@
-import type { GithubHttpTransport } from '../../src/executors/github-http-transport.js';
+import type {
+  GithubHttpRequestOptions,
+  GithubHttpTransport,
+} from '../../src/executors/github-http-transport.js';
 import type { RecordedGithubCall } from './recorded-github-call.js';
 
 /**
@@ -42,17 +45,16 @@ export class RecordedGithubHttpTransport implements GithubHttpTransport {
    *
    * @param {'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'} method  - HTTP request method.
    * @param {string}                                      path    - Relative GitHub API path.
-   * @param {object}                                      options - Bearer token and optional JSON body.
+   * @param {GithubHttpRequestOptions}                    options - Bearer token and optional JSON body.
    *
    * @returns {Promise<TResponse>} Registered canned response payload.
+   *
+   * @throws {Error} If no canned response is registered for `"${method} ${path}"`.
    */
   async request<TResponse = unknown>(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
-    options: {
-      readonly token: string;
-      readonly body?: unknown;
-    },
+    options: GithubHttpRequestOptions,
   ): Promise<TResponse> {
     this.calls.push(
       Object.freeze<RecordedGithubCall>({

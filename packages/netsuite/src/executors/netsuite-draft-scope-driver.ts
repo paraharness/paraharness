@@ -1,8 +1,8 @@
-import Big from 'big.js';
 import type { IsolationScope, z } from '@harness-dsl/core';
 import type { DraftJournalReceipt } from '../nodes/draft-journal-receipt.js';
 import type { NetSuiteDraftHandle } from '../nodes/netsuite-draft-handle.js';
 import type { NetSuiteDraftScopeNode } from '../nodes/netsuite-draft-scope-node.js';
+import { computeNetSuiteJournalTotals } from './internal/compute-netsuite-journal-totals.js';
 
 /**
  * Tier-1 runtime isolation scope driver for NetSuite draft journals (`netsuite:draft-scope`).
@@ -84,23 +84,19 @@ export class NetSuiteDraftScopeDriver
   /**
    * Computes a side-effect-free `DraftJournalReceipt` summarizing staged debits and credits for `handle`.
    *
-   * Aggregates `totalDebitUsd`, `totalCreditUsd`, and `netBalanceUsd` in a single pass and validates via `receiptSchema`.
+   * Delegates exact decimal summation to `computeNetSuiteJournalTotals` and validates via `receiptSchema`.
    *
    * @param {NetSuiteDraftHandle} handle - Active NetSuite draft journal scope handle to inspect.
    *
    * @returns {Promise<DraftJournalReceipt>} Schema-validated draft journal inspection receipt.
+   *
+   * @throws {Error} If the synthesized receipt fails `receiptSchema` validation.
    */
   inspect(handle: NetSuiteDraftHandle): Promise<DraftJournalReceipt> {
-    let totalDebit = new Big(0);
-    let totalCredit = new Big(0);
-    for (const entry of handle.entries) {
-      totalDebit = totalDebit.plus(new Big(entry.debitUsd));
-      totalCredit = totalCredit.plus(new Big(entry.creditUsd));
-    }
-    const netBalance = totalDebit.minus(totalCredit);
-    const totalDebitUsd = Number(totalDebit.round(2).toFixed(2));
-    const totalCreditUsd = Number(totalCredit.round(2).toFixed(2));
-    const netBalanceUsd = Number(netBalance.round(2).toFixed(2));
+    const totals = computeNetSuiteJournalTotals(handle.entries);
+    const totalDebitUsd = Number(totals.totalDebit.round(2).toFixed(2));
+    const totalCreditUsd = Number(totals.totalCredit.round(2).toFixed(2));
+    const netBalanceUsd = Number(totals.netBalance.round(2).toFixed(2));
     const receipt = this.receiptSchema.parse({
       journalId: handle.journalId,
       runId: handle.runId,

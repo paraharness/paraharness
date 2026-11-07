@@ -1,5 +1,8 @@
 import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/core';
-import type { SlackTransport } from '../../src/executors/slack-transport.js';
+import type {
+  SlackMessageReceipt,
+  SlackTransport,
+} from '../../src/executors/slack-transport.js';
 
 /**
  * Deterministic in-memory `SlackTransport` test double for `@harness-dsl/slack` unit tests.
@@ -32,7 +35,7 @@ export class RecordedSlackTransport implements SlackTransport {
   /** Recorded Socket Mode connection events. */
   public readonly socketModeConnections: Array<{
     readonly appToken: string;
-    readonly closed: boolean;
+    closed: boolean;
     readonly onInteractiveAction?: (
       runId: string,
       requestId: string,
@@ -52,17 +55,17 @@ export class RecordedSlackTransport implements SlackTransport {
    * @param {string}                            channel  - Resolved Slack channel identifier.
    * @param {Readonly<Record<string, unknown>>} payload  - Message body and block payload.
    *
-   * @returns {Promise<{ readonly ts: string }>} Deterministic Slack message timestamp receipt.
+   * @returns {Promise<SlackMessageReceipt>} Deterministic Slack message timestamp receipt.
    */
   async postMessage(
     botToken: string,
     channel: string,
     payload: Readonly<Record<string, unknown>>,
-  ): Promise<{ readonly ts: string }> {
+  ): Promise<SlackMessageReceipt> {
     this.seq += 1;
     const ts = `1000.${this.seq}`;
     this.postedMessages.push(Object.freeze({ botToken, channel, payload, ts }));
-    return Object.freeze({ ts });
+    return Object.freeze<SlackMessageReceipt>({ ts });
   }
 
   /**
@@ -103,9 +106,9 @@ export class RecordedSlackTransport implements SlackTransport {
    *
    * Flips the connection entry's `closed` flag to `true` when `.close()` is invoked.
    *
-   * @param {string}                   appToken              - Resolved Slack app-level token.
-   * @param {HarnessRuntimeController} _controller           - Runtime controller bound to Socket Mode.
-   * @param {Function}                 [onInteractiveAction] - Optional interactive decision callback.
+   * @param {string}                                                                 appToken              - Resolved Slack app-level token.
+   * @param {HarnessRuntimeController}                                               _controller           - Runtime controller bound to Socket Mode.
+   * @param {(runId: string, requestId: string, responsePayload: unknown) => void} [onInteractiveAction] - Optional interactive decision callback.
    *
    * @returns {Promise<ControlPlaneHandle>} Handle marking the connection closed on `.close()`.
    */

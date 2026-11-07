@@ -8,6 +8,8 @@ import type { StripeMaxRefundGuardNode } from '../nodes/stripe-max-refund-guard-
  * @param {number} maxRefundUsd - Maximum refund amount in USD allowed without lease elevation.
  *
  * @returns {StripeMaxRefundGuardNode} Frozen passive Stripe maximum refund policy guard AST node.
+ *
+ * @throws {Error} If `maxRefundUsd` is not a finite non-negative number.
  */
 export function createStripeMaxRefundGuardBuilder(
   maxRefundUsd: number,

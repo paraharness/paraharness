@@ -13,7 +13,7 @@ import {
   createGithubExecutors,
   github,
 } from '../src/index.js';
-import { readHttpRequestBody } from '../src/executors/internal/verify-github-webhook-signature.js';
+import { readHttpRequestBody } from '../src/executors/internal/read-http-request-body.js';
 import { RecordedGithubHttpTransport } from './fixtures/recorded-github-http-transport.js';
 
 function createDriverContext(

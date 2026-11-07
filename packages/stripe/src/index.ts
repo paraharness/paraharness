@@ -7,8 +7,19 @@ export { createStripeExecutors } from './executors/create-stripe-executors.js';
 export { createStripeSdkGateway } from './executors/create-stripe-sdk-gateway.js';
 export { defaultStripeGateway } from './executors/default-stripe-gateway.constants.js';
 export { stripeExecutors } from './executors/stripe-executors.constants.js';
-export type { StripeGateway } from './executors/stripe-gateway.js';
-export type { StripeSdkClientLike } from './executors/stripe-sdk-client-like.js';
+export type {
+  StripeGateway,
+  StripeListSettlementsParams,
+  StripeStageRefundParams,
+} from './executors/stripe-gateway.js';
+export type {
+  StripeBalanceTransactionListParams,
+  StripeBalanceTransactionListResponse,
+  StripeBalanceTransactionsResource,
+  StripeRefundCreateParams,
+  StripeRefundsResource,
+  StripeSdkClientLike,
+} from './executors/stripe-sdk-client-like.js';
 export type { StripeMaxRefundGuardNode } from './nodes/stripe-max-refund-guard-node.js';
 export type { StripeMaxRefundMatcherNode } from './nodes/stripe-max-refund-matcher-node.js';
 export type { StripeReadToolNode } from './nodes/stripe-read-tool-node.js';

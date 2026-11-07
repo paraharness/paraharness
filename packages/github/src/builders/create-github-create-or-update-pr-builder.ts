@@ -1,6 +1,7 @@
 import { z, type BivariantCallback, type GithubCreateOrUpdatePrNode } from '@harness-dsl/core';
 import type { GithubCreateOrUpdatePrBuilder } from './github-create-or-update-pr-builder.js';
 import type { GithubCreateOrUpdatePrOptions } from './github-create-or-update-pr-options.js';
+import { assertValidGithubPrBuilderOptions } from './internal/assert-valid-github-pr-builder-options.js';
 
 /**
  * Creates an immutable fluent `GithubCreateOrUpdatePrBuilder` (`github.createOrUpdatePr`).
@@ -16,6 +17,8 @@ import type { GithubCreateOrUpdatePrOptions } from './github-create-or-update-pr
  * @param {GithubCreateOrUpdatePrOptions<TIn>}  options - Repository, token, and PR field projections.
  *
  * @returns {GithubCreateOrUpdatePrBuilder<TIn, TOut, THandle>} Immutable pull-request step builder.
+ *
+ * @throws {Error} If `id` is empty or `options.repo` is not a valid `'owner/repo'` slug.
  */
 export function createGithubCreateOrUpdatePrBuilder<
   TIn = unknown,
@@ -25,18 +28,12 @@ export function createGithubCreateOrUpdatePrBuilder<
   id: string,
   options: GithubCreateOrUpdatePrOptions<TIn>,
 ): GithubCreateOrUpdatePrBuilder<TIn, TOut, THandle> {
-  if (typeof id !== 'string' || id.trim().length === 0) {
-    throw new Error('Invalid step id in github.createOrUpdatePr: id must be a non-empty string.');
-  }
-  if (typeof options.repo !== 'string' || options.repo.trim().length === 0 || !options.repo.includes('/')) {
-    throw new Error(
-      `Invalid repo '${String(options.repo)}' in github.createOrUpdatePr '${id}': expected 'owner/repo'.`,
-    );
-  }
+  assertValidGithubPrBuilderOptions(id, options);
   const currentInputSchema = (options.inputSchema ?? z.unknown()) as z.ZodType<TIn>;
   const currentOutputSchema = (options.outputSchema ?? z.unknown()) as z.ZodType<TOut>;
   const untypedBranch: BivariantCallback<[input: unknown], string> = options.branch;
-  const untypedBaseBranch: BivariantCallback<[input: unknown], string> | undefined = options.baseBranch;
+  const untypedBaseBranch: BivariantCallback<[input: unknown], string> | undefined =
+    options.baseBranch;
   const untypedTitle: BivariantCallback<[input: unknown], string> = options.title;
   const untypedBody: BivariantCallback<[input: unknown], string> = options.body;
 

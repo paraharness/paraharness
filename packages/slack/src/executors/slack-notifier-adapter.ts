@@ -51,6 +51,8 @@ export class SlackNotifierAdapter implements HumanAdapter {
    * @param {string} message - Formatted notification text to deliver.
    *
    * @returns {Promise<void>} Resolves once the incoming webhook POST completes.
+   *
+   * @throws {Error} If `webhookUrl` resolution fails or the webhook HTTP request fails.
    */
   async notify(message: string): Promise<void> {
     const webhookUrl = resolveRequiredSlackSecret(
@@ -72,6 +74,8 @@ export class SlackNotifierAdapter implements HumanAdapter {
    * @param {HumanDecisionRequest<TRequest, TResponse>} req - Attempted decision request.
    *
    * @returns {Promise<TResponse>} Always rejects with an actionable domain error.
+   *
+   * @throws {Error} Always throws because `'notify-only'` channels cannot service interactive decisions.
    */
   async requestDecision<TRequest, TResponse>(
     req: HumanDecisionRequest<TRequest, TResponse>,

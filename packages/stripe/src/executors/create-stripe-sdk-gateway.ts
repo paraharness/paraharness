@@ -1,5 +1,9 @@
 import Stripe from 'stripe';
-import type { StripeGateway } from './stripe-gateway.js';
+import type {
+  StripeGateway,
+  StripeListSettlementsParams,
+  StripeStageRefundParams,
+} from './stripe-gateway.js';
 import type { StripeSdkClientLike } from './stripe-sdk-client-like.js';
 
 /**
@@ -19,10 +23,7 @@ export function createStripeSdkGateway(
     typeof apiKeyOrClient === 'string' ? new Stripe(apiKeyOrClient) : apiKeyOrClient;
 
   return Object.freeze<StripeGateway>({
-    async listSettlements(params: {
-      readonly accountRegion: string;
-      readonly discrepancyId?: string | undefined;
-    }): Promise<unknown> {
+    async listSettlements(params: StripeListSettlementsParams): Promise<unknown> {
       const response = await client.balanceTransactions.list({ limit: 25 });
       return Object.freeze({
         accountRegion: params.accountRegion,
@@ -31,11 +32,7 @@ export function createStripeSdkGateway(
       });
     },
 
-    async stageRefund(params: {
-      readonly chargeId: string;
-      readonly amountUsd: number;
-      readonly journalId?: string | undefined;
-    }): Promise<unknown> {
+    async stageRefund(params: StripeStageRefundParams): Promise<unknown> {
       const amountCents = Math.round(params.amountUsd * 100);
       return client.refunds.create({
         charge: params.chargeId,

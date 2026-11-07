@@ -1,6 +1,16 @@
 import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/core';
 
 /**
+ * Receipt returned by `SlackTransport.postMessage(...)` containing the Slack message timestamp.
+ *
+ * Used to correlate thread heartbeats and message updates (`chat.update`).
+ */
+export interface SlackMessageReceipt {
+  /** Slack message timestamp (`ts`) assigned to the posted message. */
+  readonly ts: string;
+}
+
+/**
  * Pluggable transport abstraction for Slack Web API (`chat.postMessage`, `chat.update`),
  * incoming webhooks (`@slack/webhook`), and Socket Mode control-plane connections (`@slack/socket-mode`).
  *
@@ -17,13 +27,13 @@ export interface SlackTransport {
    * @param {string}                            channel  - Resolved Slack channel identifier.
    * @param {Readonly<Record<string, unknown>>} payload  - Message body and interactive Block Kit fields.
    *
-   * @returns {Promise<{ readonly ts: string }>} Slack message timestamp receipt.
+   * @returns {Promise<SlackMessageReceipt>} Slack message timestamp receipt.
    */
   postMessage(
     botToken: string,
     channel: string,
     payload: Readonly<Record<string, unknown>>,
-  ): Promise<{ readonly ts: string }>;
+  ): Promise<SlackMessageReceipt>;
 
   /**
    * Updates an existing Slack message via `chat.update` (such as marking a superseded decision request cancelled).
@@ -59,9 +69,9 @@ export interface SlackTransport {
    *
    * Invoked by `SlackApproverAdapter.start(controller)` to bind interactive Block Kit actions and signals.
    *
-   * @param {string}                   appToken              - Resolved Slack app-level token (`xapp-...`).
-   * @param {HarnessRuntimeController} controller            - Runtime controller for emitting signals and inspecting active runs.
-   * @param {Function}                 [onInteractiveAction] - Callback routing interactive Block Kit decisions to `submitDecision`.
+   * @param {string}                                                                 appToken              - Resolved Slack app-level token (`xapp-...`).
+   * @param {HarnessRuntimeController}                                               controller            - Runtime controller for emitting signals and inspecting active runs.
+   * @param {(runId: string, requestId: string, responsePayload: unknown) => void} [onInteractiveAction] - Callback routing interactive Block Kit decisions to `submitDecision`.
    *
    * @returns {Promise<ControlPlaneHandle>} Handle with `.close()` to disconnect Socket Mode.
    */

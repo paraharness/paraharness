@@ -15,7 +15,10 @@ export type { GithubWebhookStreamOptions } from './builders/github-webhook-strea
 export { createGithubExecutors } from './executors/create-github-executors.js';
 export { defaultGithubHttpTransport } from './executors/default-github-http-transport.constants.js';
 export { githubExecutors } from './executors/github-executors.constants.js';
-export type { GithubHttpTransport } from './executors/github-http-transport.js';
+export type {
+  GithubHttpRequestOptions,
+  GithubHttpTransport,
+} from './executors/github-http-transport.js';
 export type { GithubIssueRecord } from './executors/github-issue-record.js';
 export { GithubIssuesTrackerAdapter } from './executors/github-issues-tracker.js';
 export { executeGithubCreateOrUpdatePrStep } from './executors/github-pr-step-executor.js';

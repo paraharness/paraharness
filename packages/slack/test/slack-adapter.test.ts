@@ -17,7 +17,7 @@ import {
 import {
   handleSlackInteractiveEvent,
   handleSlackSlashCommandEvent,
-} from '../src/executors/internal/build-slack-decision-payload.js';
+} from '../src/executors/internal/slack-socket-envelope-router.js';
 import { RecordedSlackTransport } from './fixtures/recorded-slack-transport.js';
 
 function createTestDriverContext(

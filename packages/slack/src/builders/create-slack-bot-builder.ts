@@ -10,6 +10,8 @@ import type { SlackBotOptions } from './slack-bot-options.js';
  * @param {SlackBotOptions} options - App token, bot token, and target Slack channel configuration.
  *
  * @returns {SlackApproverNode} Frozen passive Slack Socket Mode approver AST node.
+ *
+ * @throws {Error} If any literal `appToken`, `botToken`, or `channel` string is empty.
  */
 export function createSlackBotBuilder(options: SlackBotOptions): SlackApproverNode {
   if (typeof options.appToken === 'string' && options.appToken.trim().length === 0) {

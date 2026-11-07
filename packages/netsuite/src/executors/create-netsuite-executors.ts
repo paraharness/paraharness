@@ -7,25 +7,20 @@ import type {
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
   StepExecutionContext,
-  ToolDriver,
-  ToolEffect,
-  ToolExecutionResult,
 } from '@harness-dsl/core';
 import type { DraftJournalReceipt } from '../nodes/draft-journal-receipt.js';
 import type { NetSuiteBalanceZeroCheckNode } from '../nodes/netsuite-balance-zero-check-node.js';
 import type { NetSuiteClosedPeriodGuardNode } from '../nodes/netsuite-closed-period-guard-node.js';
 import type { NetSuiteDraftHandle } from '../nodes/netsuite-draft-handle.js';
 import type { NetSuiteDraftScopeNode } from '../nodes/netsuite-draft-scope-node.js';
-import type { NetSuiteJournalToolNode } from '../nodes/netsuite-journal-tool-node.js';
 import '../nodes/netsuite-registry-augmentation.js';
 import type { NetSuiteRollbackAbortHookNode } from '../nodes/netsuite-rollback-abort-hook-node.js';
-import { executeNetSuiteRollbackAbortHook } from './internal/execute-netsuite-rollback-abort-hook.js';
 import {
-  describeNetSuiteJournalToolEffects,
   evaluateNetSuiteBalanceZeroCheck,
   evaluateNetSuiteClosedPeriodGuard,
-  executeNetSuiteJournalToolCall,
-} from './internal/netsuite-journal-evaluation.js';
+  executeNetSuiteRollbackAbortHook,
+} from './internal/netsuite-guard-check-abort-executors.js';
+import { createNetSuiteJournalToolDriver } from './internal/netsuite-journal-tool-driver.js';
 import { NetSuiteDraftScopeDriver } from './netsuite-draft-scope-driver.js';
 
 /**
@@ -38,21 +33,6 @@ import { NetSuiteDraftScopeDriver } from './netsuite-draft-scope-driver.js';
  * @returns {RuntimeExecutorRegistrySlice} Frozen runtime executor registry slice for `@harness-dsl/netsuite`.
  */
 export function createNetSuiteExecutors(): RuntimeExecutorRegistrySlice {
-  const journalToolDriver: ToolDriver<NetSuiteJournalToolNode<unknown>, unknown> = Object.freeze<
-    ToolDriver<NetSuiteJournalToolNode<unknown>, unknown>
-  >({
-    describeEffects: (
-      tool: NetSuiteJournalToolNode<unknown>,
-      rawInput: unknown,
-      scopeHandle: unknown,
-    ): readonly ToolEffect[] => describeNetSuiteJournalToolEffects(tool, rawInput, scopeHandle),
-    execute: (
-      tool: NetSuiteJournalToolNode<unknown>,
-      rawInput: unknown,
-      ctx: StepExecutionContext<unknown>,
-    ): Promise<ToolExecutionResult> => executeNetSuiteJournalToolCall(tool, rawInput, ctx),
-  });
-
   return Object.freeze<RuntimeExecutorRegistrySlice>({
     scopes: Object.freeze({
       'netsuite:draft-scope': (
@@ -62,7 +42,7 @@ export function createNetSuiteExecutors(): RuntimeExecutorRegistrySlice {
         new NetSuiteDraftScopeDriver(node),
     }),
     tools: Object.freeze({
-      'netsuite:journal-tool': journalToolDriver,
+      'netsuite:journal-tool': createNetSuiteJournalToolDriver(),
     }),
     policyGuards: Object.freeze({
       'netsuite:closed-period-guard': (

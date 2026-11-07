@@ -5,8 +5,8 @@ import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/
 import {
   handleSlackInteractiveEvent,
   handleSlackSlashCommandEvent,
-} from './internal/build-slack-decision-payload.js';
-import type { SlackTransport } from './slack-transport.js';
+} from './internal/slack-socket-envelope-router.js';
+import type { SlackMessageReceipt, SlackTransport } from './slack-transport.js';
 
 /** Default Slack transport backed by `@slack/web-api`, `@slack/webhook`, and `@slack/socket-mode`. */
 export const defaultSlackTransport: SlackTransport = Object.freeze<SlackTransport>({
@@ -14,7 +14,7 @@ export const defaultSlackTransport: SlackTransport = Object.freeze<SlackTranspor
     botToken: string,
     channel: string,
     payload: Readonly<Record<string, unknown>>,
-  ): Promise<{ readonly ts: string }> {
+  ): Promise<SlackMessageReceipt> {
     const client = new WebClient(botToken);
     const text = typeof payload['text'] === 'string' ? payload['text'] : '';
     const args: ChatPostMessageArguments = {
@@ -26,7 +26,9 @@ export const defaultSlackTransport: SlackTransport = Object.freeze<SlackTranspor
     if (response.ok === false) {
       throw new Error(`Slack chat.postMessage error: ${String(response.error ?? 'unknown')}`);
     }
-    return Object.freeze({ ts: typeof response.ts === 'string' ? response.ts : '0.0' });
+    return Object.freeze<SlackMessageReceipt>({
+      ts: typeof response.ts === 'string' ? response.ts : '0.0',
+    });
   },
 
   async updateMessage(

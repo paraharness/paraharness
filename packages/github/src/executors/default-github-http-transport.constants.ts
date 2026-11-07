@@ -1,16 +1,13 @@
 import { Octokit } from '@octokit/rest';
 import { DEFAULT_GITHUB_API_BASE_URL } from '../builders/internal/github-builder-defaults.constants.js';
-import type { GithubHttpTransport } from './github-http-transport.js';
+import type { GithubHttpRequestOptions, GithubHttpTransport } from './github-http-transport.js';
 
 /** Default `@octokit/rest`-backed HTTP transport targeting `https://api.github.com`. */
 export const defaultGithubHttpTransport: GithubHttpTransport = Object.freeze<GithubHttpTransport>({
   async request<TResponse = unknown>(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
-    options: {
-      readonly token: string;
-      readonly body?: unknown;
-    },
+    options: GithubHttpRequestOptions,
   ): Promise<TResponse> {
     const octokit = new Octokit({
       auth: options.token,

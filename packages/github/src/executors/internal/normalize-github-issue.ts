@@ -1,31 +1,4 @@
-import type { EnvRef } from '@harness-dsl/core';
 import type { GithubIssueRecord } from '../github-issue-record.js';
-
-/**
- * Resolves a GitHub secret or token string from a literal value or symbolic `EnvRef`.
- *
- * Throws an actionable error if the referenced environment variable is unset or empty.
- *
- * @param {string | EnvRef}                              value      - Literal secret or symbolic `EnvRef`.
- * @param {(val: string | EnvRef) => string | undefined} resolveEnv - Runtime environment resolver callback.
- * @param {string}                                       contextId  - Diagnostic adapter or step identifier.
- *
- * @returns {string} Non-empty resolved secret or token string.
- */
-export function resolveRequiredGithubSecret(
-  value: string | EnvRef,
-  resolveEnv: (val: string | EnvRef) => string | undefined,
-  contextId: string,
-): string {
-  const resolved = resolveEnv(value);
-  if (resolved === undefined || resolved.length === 0) {
-    const keyDesc = typeof value === 'string' ? '<literal>' : value.key;
-    throw new Error(
-      `Missing required GitHub secret/token '${keyDesc}' while executing '${contextId}'.`,
-    );
-  }
-  return resolved;
-}
 
 /**
  * Extracts normalized string label names from a raw GitHub issue `labels` array.
@@ -63,6 +36,8 @@ export function normalizeGithubIssueLabels(rawLabels: unknown): readonly string[
  * @param {string}  repo     - Repository slug used in diagnostic error messages.
  *
  * @returns {GithubIssueRecord} Frozen normalized GitHub issue record.
+ *
+ * @throws {Error} If `rawIssue` is not a valid object with numeric `number` and string `title`.
  */
 export function normalizeGithubIssueRecord(rawIssue: unknown, repo: string): GithubIssueRecord {
   if (typeof rawIssue !== 'object' || rawIssue === null) {
@@ -105,4 +80,27 @@ export function isGithubPullRequestIssueItem(rawIssue: unknown): boolean {
   }
   const record = rawIssue as Readonly<Record<string, unknown>>;
   return record['pull_request'] !== undefined && record['pull_request'] !== null;
+}
+
+/**
+ * Parses a positive integer GitHub issue number from an external item key such as `'#42'` or `'42'`.
+ *
+ * Strips any leading `'#'` prefix and validates that the remaining value is a positive integer.
+ *
+ * @param {string} itemKey - External tracker item key (`'#42'` or `'42'`).
+ * @param {string} repo    - Repository slug used in diagnostic error messages.
+ *
+ * @returns {number} Parsed positive integer GitHub issue number.
+ *
+ * @throws {Error} If `itemKey` does not parse to a positive integer.
+ */
+export function parseGithubIssueNumber(itemKey: string, repo: string): number {
+  const rawNumber = itemKey.startsWith('#') ? itemKey.slice(1).trim() : itemKey.trim();
+  const issueNumber = Number.parseInt(rawNumber, 10);
+  if (rawNumber.length === 0 || !Number.isInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error(
+      `Invalid itemKey '${itemKey}' in GithubIssuesTrackerAdapter.setExternalState for '${repo}'.`,
+    );
+  }
+  return issueNumber;
 }

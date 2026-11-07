@@ -17,6 +17,8 @@ import {
  * @param {GithubWebhookStreamOptions} options - Webhook listener, secret, and event filter options.
  *
  * @returns {GithubWebhookStreamNode<TEvent>} Frozen passive GitHub webhook stream source AST node.
+ *
+ * @throws {Error} If `options.events` is not a non-empty array of event names.
  */
 export function createGithubWebhookStreamBuilder<TEvent = GithubWebhookEvent>(
   options: GithubWebhookStreamOptions,

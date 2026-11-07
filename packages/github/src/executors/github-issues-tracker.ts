@@ -3,19 +3,14 @@ import type {
   RuntimeDriverContext,
   TrackerAdapter,
 } from '@harness-dsl/core';
-import { DEFAULT_GITHUB_ISSUES_PER_PAGE } from '../builders/internal/github-builder-defaults.constants.js';
 import { defaultGithubHttpTransport } from './default-github-http-transport.constants.js';
 import type { GithubHttpTransport } from './github-http-transport.js';
 import type { GithubIssueRecord } from './github-issue-record.js';
-import {
-  createGithubOctokitClient,
-  parseGithubRepoSlug,
-} from './internal/create-github-octokit-client.js';
-import {
-  isGithubPullRequestIssueItem,
-  normalizeGithubIssueRecord,
-  resolveRequiredGithubSecret,
-} from './internal/normalize-github-issue.js';
+import { createGithubOctokitClient } from './internal/create-github-octokit-client.js';
+import { parseGithubIssueNumber } from './internal/normalize-github-issue.js';
+import { parseGithubRepoSlug } from './internal/parse-github-repo-slug.js';
+import { pollOpenGithubIssues } from './internal/poll-open-github-issues.js';
+import { resolveRequiredGithubSecret } from './internal/resolve-required-github-secret.js';
 
 /**
  * Runtime `TrackerAdapter` implementation for `GithubIssuesTrackerNode` (`github:issues`).
@@ -62,6 +57,8 @@ export class GithubIssuesTrackerAdapter<TExternalState extends string = string>
    * Uses `@octokit/rest` `issues.listForRepo` with `per_page: 100` and excludes entries with `pull_request`.
    *
    * @returns {Promise<readonly GithubIssueRecord[]>} Frozen array of normalized GitHub issue records.
+   *
+   * @throws {Error} If token resolution fails, the repo slug is invalid, or the API payload is malformed.
    */
   async poll(): Promise<readonly GithubIssueRecord[]> {
     const token = resolveRequiredGithubSecret(
@@ -69,37 +66,14 @@ export class GithubIssuesTrackerAdapter<TExternalState extends string = string>
       (val) => this.ctx.resolveEnv(val),
       `github:issues (${this.node.repo})`,
     );
-    const { owner, repo } = parseGithubRepoSlug(this.node.repo);
+    const coordinates = parseGithubRepoSlug(this.node.repo);
     const octokit = createGithubOctokitClient(token, this.transport);
-    const hasLabels = this.node.labels !== undefined && this.node.labels.length > 0;
-    const labelsFilter = hasLabels ? this.node.labels.join(',') : undefined;
-
-    const normalized: GithubIssueRecord[] = [];
-    let page = 1;
-    while (true) {
-      const response = await octokit.rest.issues.listForRepo({
-        owner,
-        repo,
-        state: 'open',
-        ...(labelsFilter !== undefined ? { labels: labelsFilter } : {}),
-        per_page: DEFAULT_GITHUB_ISSUES_PER_PAGE,
-        page,
-      });
-      const rawIssues: unknown = response.data;
-      if (!Array.isArray(rawIssues)) {
-        throw new Error(`Unexpected non-array response polling issues for '${this.node.repo}'.`);
-      }
-      for (const rawIssue of rawIssues) {
-        if (!isGithubPullRequestIssueItem(rawIssue)) {
-          normalized.push(normalizeGithubIssueRecord(rawIssue, this.node.repo));
-        }
-      }
-      if (rawIssues.length < DEFAULT_GITHUB_ISSUES_PER_PAGE) {
-        break;
-      }
-      page += 1;
-    }
-    return Object.freeze(normalized);
+    return pollOpenGithubIssues({
+      octokit,
+      coordinates,
+      repoSlug: this.node.repo,
+      labels: this.node.labels,
+    });
   }
 
   /**
@@ -111,6 +85,8 @@ export class GithubIssuesTrackerAdapter<TExternalState extends string = string>
    * @param {TExternalState} state   - Target external state label to apply.
    *
    * @returns {Promise<void>} Resolves once the GitHub issue label has been added.
+   *
+   * @throws {Error} If token resolution fails, `itemKey` is not a positive integer, or repo slug is invalid.
    */
   async setExternalState(itemKey: string, state: TExternalState): Promise<void> {
     const token = resolveRequiredGithubSecret(
@@ -118,18 +94,12 @@ export class GithubIssuesTrackerAdapter<TExternalState extends string = string>
       (val) => this.ctx.resolveEnv(val),
       `github:issues (${this.node.repo})`,
     );
-    const rawNumber = itemKey.startsWith('#') ? itemKey.slice(1).trim() : itemKey.trim();
-    const issueNumber = Number.parseInt(rawNumber, 10);
-    if (rawNumber.length === 0 || !Number.isInteger(issueNumber) || issueNumber <= 0) {
-      throw new Error(
-        `Invalid itemKey '${itemKey}' in GithubIssuesTrackerAdapter.setExternalState for '${this.node.repo}'.`,
-      );
-    }
-    const { owner, repo } = parseGithubRepoSlug(this.node.repo);
+    const issueNumber = parseGithubIssueNumber(itemKey, this.node.repo);
+    const coordinates = parseGithubRepoSlug(this.node.repo);
     const octokit = createGithubOctokitClient(token, this.transport);
     await octokit.rest.issues.addLabels({
-      owner,
-      repo,
+      owner: coordinates.owner,
+      repo: coordinates.repo,
       issue_number: issueNumber,
       labels: [state],
     });

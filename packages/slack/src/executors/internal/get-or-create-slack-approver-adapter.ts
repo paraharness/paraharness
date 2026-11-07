@@ -3,6 +3,18 @@ import { SlackApproverAdapter } from '../slack-approver-adapter.js';
 import type { SlackTransport } from '../slack-transport.js';
 
 /**
+ * Runtime driver context and transport parameters for `getOrCreateSlackApproverAdapter`.
+ *
+ * Used to instantiate `SlackApproverAdapter` on cache miss.
+ */
+export interface SlackApproverRuntimeParams {
+  /** Active runtime driver context. */
+  readonly ctx: RuntimeDriverContext;
+  /** Pluggable Slack Web API and Socket Mode transport. */
+  readonly transport: SlackTransport;
+}
+
+/**
  * Serializes a literal string or symbolic `EnvRef` into a canonical cache key segment.
  *
  * Ensures distinct `SlackApproverNode` configurations within the same `RuntimeDriverContext`
@@ -24,17 +36,14 @@ export function serializeSlackTokenOrEnvRef(value: string | EnvRef): string {
  *
  * @param {WeakMap<RuntimeDriverContext, Map<string, SlackApproverAdapter>>} adaptersByContext - Context-scoped adapter cache.
  * @param {SlackApproverNode}                                                node              - Passive Slack approver AST node.
- * @param {object}                                                           runtime           - Driver context and Slack transport.
+ * @param {SlackApproverRuntimeParams}                                       runtime           - Driver context and Slack transport.
  *
  * @returns {SlackApproverAdapter} Shared `SlackApproverAdapter` instance for `(runtime.ctx, node)`.
  */
 export function getOrCreateSlackApproverAdapter(
   adaptersByContext: WeakMap<RuntimeDriverContext, Map<string, SlackApproverAdapter>>,
   node: SlackApproverNode,
-  runtime: {
-    readonly ctx: RuntimeDriverContext;
-    readonly transport: SlackTransport;
-  },
+  runtime: SlackApproverRuntimeParams,
 ): SlackApproverAdapter {
   let byKey = adaptersByContext.get(runtime.ctx);
   if (byKey === undefined) {

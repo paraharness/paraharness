@@ -1,6 +1,6 @@
 import type { GithubCreateOrUpdatePrNode, StepExecutionContext } from '@harness-dsl/core';
 import { defaultGithubHttpTransport } from './default-github-http-transport.constants.js';
-import { executeGithubPrStepWithTransport } from './internal/execute-github-pr-with-transport.js';
+import { executeGithubPrWithTransport } from './internal/execute-github-pr-with-transport.js';
 
 /**
  * Stateless domain step executor for `GithubCreateOrUpdatePrNode` (`github:create-or-update-pr`).
@@ -17,6 +17,8 @@ import { executeGithubPrStepWithTransport } from './internal/execute-github-pr-w
  * @param {StepExecutionContext<THandle>}                  ctx   - Active step execution context.
  *
  * @returns {Promise<TOut>} Validated pull-request step output.
+ *
+ * @throws {Error} If input/output validation fails, token resolution fails, or repo slug is invalid.
  */
 export function executeGithubCreateOrUpdatePrStep<
   TIn = unknown,
@@ -27,7 +29,7 @@ export function executeGithubCreateOrUpdatePrStep<
   input: TIn,
   ctx: StepExecutionContext<THandle>,
 ): Promise<TOut> {
-  return executeGithubPrStepWithTransport(node, input, {
+  return executeGithubPrWithTransport(node, input, {
     ctx,
     transport: defaultGithubHttpTransport,
   });

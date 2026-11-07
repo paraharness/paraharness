@@ -9,4 +9,4 @@ export { defaultSlackTransport } from './executors/default-slack-transport.const
 export { SlackApproverAdapter } from './executors/slack-approver-adapter.js';
 export { slackExecutors } from './executors/slack-executors.constants.js';
 export { SlackNotifierAdapter } from './executors/slack-notifier-adapter.js';
-export type { SlackTransport } from './executors/slack-transport.js';
+export type { SlackMessageReceipt, SlackTransport } from './executors/slack-transport.js';

@@ -11,6 +11,8 @@ import '../nodes/stripe-registry-augmentation.js';
  * @param {number} maxRefundUsd - Elevated maximum refund amount in USD granted by the lease.
  *
  * @returns {LeaseDelta} Frozen capability lease delta containing the `StripeMaxRefundMatcherNode`.
+ *
+ * @throws {Error} If `maxRefundUsd` is not a finite non-negative number.
  */
 export function createStripeAllowRefundLeaseDelta(maxRefundUsd: number): LeaseDelta {
   if (typeof maxRefundUsd !== 'number' || !Number.isFinite(maxRefundUsd) || maxRefundUsd < 0) {

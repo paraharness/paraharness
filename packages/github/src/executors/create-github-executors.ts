@@ -11,7 +11,7 @@ import type { GithubHttpTransport } from './github-http-transport.js';
 import type { GithubIssueRecord } from './github-issue-record.js';
 import { GithubIssuesTrackerAdapter } from './github-issues-tracker.js';
 import { GithubWebhookStreamSource } from './github-webhook-stream.js';
-import { executeGithubPrStepWithTransport } from './internal/execute-github-pr-with-transport.js';
+import { executeGithubPrWithTransport } from './internal/execute-github-pr-with-transport.js';
 
 /**
  * Creates a `RuntimeExecutorRegistrySlice` registering all `@harness-dsl/github` runtime executors.
@@ -50,7 +50,7 @@ export function createGithubExecutors(
         input: unknown,
         ctx: StepExecutionContext<unknown>,
       ): Promise<unknown> =>
-        executeGithubPrStepWithTransport(node, input, {
+        executeGithubPrWithTransport(node, input, {
           ctx,
           transport,
         }),
