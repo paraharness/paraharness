@@ -54,19 +54,16 @@ export function resolveJailedWorktreePath(
   }
   const { rootPath } = extractWorktreeRootAndBaseRef(scopeHandle);
   const realRoot = realpathSync(path.resolve(rootPath));
-  let targetPath = path.resolve(realRoot, candidatePath);
-  if (!existsSync(targetPath)) {
-    try {
-      if (lstatSync(targetPath).isSymbolicLink()) {
-        targetPath = path.resolve(path.dirname(targetPath), readlinkSync(targetPath));
-      }
-    } catch {
-      targetPath = path.resolve(realRoot, candidatePath);
-    }
-  }
-  let cursor = targetPath;
+  let cursor = path.resolve(realRoot, candidatePath);
   const trailing: string[] = [];
-  while (!existsSync(cursor)) {
+  for (let hops = 0; !existsSync(cursor); ) {
+    if (lstatSync(cursor, { throwIfNoEntry: false })?.isSymbolicLink() === true) {
+      hops += 1;
+      if (hops > 40) throw new Error(`Workspace path jail violation: symlink loop on '${candidatePath}'.`);
+      cursor = path.resolve(path.dirname(cursor), readlinkSync(cursor), ...trailing);
+      trailing.length = 0;
+      continue;
+    }
     const parent = path.dirname(cursor);
     if (parent === cursor) break;
     trailing.unshift(path.basename(cursor));
@@ -74,7 +71,7 @@ export function resolveJailedWorktreePath(
   }
   const realCandidate = path.resolve(existsSync(cursor) ? realpathSync(cursor) : cursor, ...trailing);
   const rel = path.relative(realRoot, realCandidate);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (rel === '..' || rel.startsWith('../') || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
     throw new Error(`Workspace path jail violation: '${candidatePath}' escapes worktree '${realRoot}'.`);
   }
   const normalizedRelPath = rel.length === 0 ? '.' : rel.split(path.sep).join('/');
@@ -139,12 +136,16 @@ export function checkPathsExistAtBaseRef(
   const existing: string[] = [];
   for (const relPath of relPaths) {
     const normalized = relPath.replace(/\\/g, '/').replace(/^\.\//, '');
-    if (baseRef !== undefined) {
+    if (baseRef !== undefined && existsSync(path.join(rootPath, '.git'))) {
       try {
         execFileSync('git', ['cat-file', '-e', `${baseRef}:${normalized}`], {
           cwd: rootPath,
           stdio: 'ignore',
-          env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+          env: {
+            ...process.env,
+            GIT_OPTIONAL_LOCKS: '0',
+            GIT_CEILING_DIRECTORIES: path.dirname(rootPath),
+          },
         });
         existing.push(normalized);
       } catch {

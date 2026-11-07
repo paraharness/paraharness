@@ -36,8 +36,7 @@ export function evaluateFsBoundaryGuard(
   }
   const isBoundaryMatch = compileGlobOrExactMatcher(boundaryGlobs);
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     (relPath) => isBoundaryMatch(relPath),
     (paths) => `Protected partition boundary write denied on [${paths.join(', ')}]`,
   );
@@ -61,8 +60,7 @@ export function evaluateFsProtectGuard(
 ): PolicyGuardEvaluationResult {
   const isProtectedMatch = compileGlobOrExactMatcher(node.globs);
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     (relPath) => isProtectedMatch(relPath),
     (paths) => `Protected file write denied on [${paths.join(', ')}]`,
   );
@@ -85,8 +83,7 @@ export function evaluateFsReadOnlyGuard(
   _ctx: StepExecutionContext<unknown>,
 ): PolicyGuardEvaluationResult {
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     () => true,
     (paths) => `Read-only policy violation: write denied on [${paths.join(', ')}]`,
   );
@@ -110,8 +107,7 @@ export function evaluateFsAllowOnlyGuard(
 ): PolicyGuardEvaluationResult {
   const isAllowedMatch = compileGlobOrExactMatcher(node.globs);
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     (relPath) => !isAllowedMatch(relPath),
     (paths) => `Write outside allowOnly globs denied on [${paths.join(', ')}]`,
   );

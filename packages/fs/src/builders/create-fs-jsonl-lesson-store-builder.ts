@@ -1,5 +1,5 @@
 import type { FsJsonlLessonStoreNode } from '@harness-dsl/core';
-import type { FsJsonlLessonStoreOptions } from './fs-jsonl-lesson-store-options.ts';
+import type { FsJsonlLessonStoreOptions } from './fs-jsonl-lesson-store-options.js';
 
 /**
  * Compiles a passive `FsJsonlLessonStoreNode` (`fs:jsonl-lesson-store`) for `fs.jsonlLessonStore(options)`.

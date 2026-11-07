@@ -81,11 +81,12 @@ export class FsJsonlLessonStore implements LessonStore {
     return this.enqueueLocked(async () => {
       const definitions = await readAllLessonDefinitions(this.definitionsDirPath);
       const statsMap = await readLessonStatsFile(this.statsFilePath);
+      const partitionSet = new Set<string>(req.partitions);
       const records: LessonRecord[] = [];
       for (const def of definitions) {
         const stats = statsMap[def.id];
         if (stats?.retired === true) continue;
-        records.push(mergeDefinitionAndStats(def, stats, computeQueryRelevanceScore(req.queryText, def, req.partitions)));
+        records.push(mergeDefinitionAndStats(def, stats, computeQueryRelevanceScore(req.queryText, def, partitionSet)));
       }
       records.sort((a, b) => ((b.relevanceScore ?? 0) !== (a.relevanceScore ?? 0) ? (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0) : a.id.localeCompare(b.id)));
       return Object.freeze(records);
@@ -128,18 +129,28 @@ export class FsJsonlLessonStore implements LessonStore {
   recordOutcomes(outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>): Promise<readonly LessonRecord[]> {
     return this.enqueueLocked(async () => {
       const definitions = await readAllLessonDefinitions(this.definitionsDirPath);
-      const defById = new Map(definitions.map((d) => [d.id, d]));
+      const defById = new Map<string, FsLessonDefinitionRecord>();
+      for (const def of definitions) defById.set(def.id, def);
       const statsMap = await readLessonStatsFile(this.statsFilePath);
       const touchedIds = new Set<string>();
-      for (const item of outcomes) {
-        const prev = statsMap[item.lessonId] ?? { recentOutcomes: [], totalCleanPasses: 0, totalViolated: 0 };
-        statsMap[item.lessonId] = {
-          ...prev,
-          recentOutcomes: [...prev.recentOutcomes, item.outcome],
-          totalCleanPasses: prev.totalCleanPasses + (item.outcome === 'clean_pass' ? 1 : 0),
-          totalViolated: prev.totalViolated + (item.outcome === 'violated' ? 1 : 0),
+      const mutableOutcomesById = new Map<string, LessonOutcome[]>();
+      for (const outcomeEntry of outcomes) {
+        const prev = statsMap[outcomeEntry.lessonId] ?? { recentOutcomes: [], totalCleanPasses: 0, totalViolated: 0 };
+        let outcomeList = mutableOutcomesById.get(outcomeEntry.lessonId);
+        if (outcomeList === undefined) {
+          outcomeList = Array.from(prev.recentOutcomes);
+          mutableOutcomesById.set(outcomeEntry.lessonId, outcomeList);
+        }
+        outcomeList.push(outcomeEntry.outcome);
+        statsMap[outcomeEntry.lessonId] = {
+          recentOutcomes: outcomeList,
+          totalCleanPasses: prev.totalCleanPasses + (outcomeEntry.outcome === 'clean_pass' ? 1 : 0),
+          totalViolated: prev.totalViolated + (outcomeEntry.outcome === 'violated' ? 1 : 0),
+          epochAtCreation: prev.epochAtCreation,
+          signalLastEmittedAt: prev.signalLastEmittedAt,
+          retired: prev.retired,
         };
-        touchedIds.add(item.lessonId);
+        touchedIds.add(outcomeEntry.lessonId);
       }
       this.tempCounter += 1;
       await atomicWriteJsonFile(this.statsFilePath, statsMap, this.tempCounter);
@@ -172,7 +183,14 @@ export class FsJsonlLessonStore implements LessonStore {
         const newEpoch = updatedEpochs.get(def.partition);
         if (newEpoch === undefined) continue;
         const prev = statsMap[def.id] ?? { recentOutcomes: [], totalCleanPasses: 0, totalViolated: 0 };
-        statsMap[def.id] = { ...prev, epochAtCreation: newEpoch };
+        statsMap[def.id] = {
+          recentOutcomes: prev.recentOutcomes,
+          totalCleanPasses: prev.totalCleanPasses,
+          totalViolated: prev.totalViolated,
+          epochAtCreation: newEpoch,
+          signalLastEmittedAt: prev.signalLastEmittedAt,
+          retired: prev.retired,
+        };
         mutated = true;
       }
       if (mutated) {
@@ -214,7 +232,14 @@ export class FsJsonlLessonStore implements LessonStore {
       const statsMap = await readLessonStatsFile(this.statsFilePath);
       for (const id of lessonIds) {
         const prev = statsMap[id] ?? { recentOutcomes: [], totalCleanPasses: 0, totalViolated: 0 };
-        statsMap[id] = { ...prev, retired: true };
+        statsMap[id] = {
+          recentOutcomes: prev.recentOutcomes,
+          totalCleanPasses: prev.totalCleanPasses,
+          totalViolated: prev.totalViolated,
+          epochAtCreation: prev.epochAtCreation,
+          signalLastEmittedAt: prev.signalLastEmittedAt,
+          retired: true,
+        };
       }
       this.tempCounter += 1;
       await atomicWriteJsonFile(this.statsFilePath, statsMap, this.tempCounter);

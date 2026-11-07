@@ -51,15 +51,14 @@ export function parseMarkdownFrontmatter(rawMarkdown: string): ParsedMarkdownDoc
   const yamlBlock = normalized.slice(4, endMarkerIdx);
   const afterFence = normalized.slice(endMarkerIdx + 4).replace(/^\n/, '');
   const frontmatter: Record<string, unknown> = {};
+  const listKeys = new Set<string>();
   let activeListKey: string | undefined;
   for (const line of yamlBlock.split('\n')) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     if (trimmed.startsWith('- ') && activeListKey !== undefined) {
-      const existing = frontmatter[activeListKey];
-      const nextList = Array.isArray(existing) ? [...existing] : [];
-      nextList.push(parseYamlValueToken(trimmed.slice(2).trim()));
-      frontmatter[activeListKey] = Object.freeze(nextList);
+      const activeList = frontmatter[activeListKey] as unknown[];
+      activeList.push(parseYamlValueToken(trimmed.slice(2).trim()));
       continue;
     }
     const colonIdx = trimmed.indexOf(':');
@@ -67,7 +66,16 @@ export function parseMarkdownFrontmatter(rawMarkdown: string): ParsedMarkdownDoc
     const key = trimmed.slice(0, colonIdx).trim();
     const rest = trimmed.slice(colonIdx + 1).trim();
     activeListKey = rest.length === 0 ? key : undefined;
-    frontmatter[key] = rest.length === 0 ? Object.freeze([]) : parseYamlValueToken(rest);
+    if (rest.length === 0) {
+      frontmatter[key] = [];
+      listKeys.add(key);
+    } else {
+      frontmatter[key] = parseYamlValueToken(rest);
+    }
+  }
+  for (const listKey of listKeys) {
+    const listVal = frontmatter[listKey];
+    if (Array.isArray(listVal)) Object.freeze(listVal);
   }
   return Object.freeze<ParsedMarkdownDocument>({ frontmatter: Object.freeze(frontmatter), body: afterFence.trim() });
 }

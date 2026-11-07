@@ -25,24 +25,28 @@ export function compilePosixGlobToRegExp(globPattern: string): RegExp {
   while (idx < normalized.length) {
     const ch = normalized[idx];
     if (ch === '*' && normalized[idx + 1] === '*') {
-      if (normalized[idx + 2] === '/') {
-        regexStr += '(?:.+/)?';
-        idx += 3;
-      } else {
-        regexStr += '.*';
-        idx += 2;
-      }
+      regexStr += normalized[idx + 2] === '/' ? '(?:.+/)?' : '.*';
+      idx += normalized[idx + 2] === '/' ? 3 : 2;
       continue;
     }
-    if (ch === '*') {
-      regexStr += '[^/]*';
-    } else if (ch === '?') {
-      regexStr += '[^/]';
-    } else if (ch !== undefined && /[.+^${}()|[\]\\]/.test(ch)) {
-      regexStr += `\\${ch}`;
-    } else if (ch !== undefined) {
-      regexStr += ch;
+    if (ch === '[' && normalized.indexOf(']', idx + 1) > idx + 1) {
+      const closeIdx = normalized.indexOf(']', idx + 1);
+      const inner = normalized.slice(idx + 1, closeIdx);
+      regexStr += `[${inner.startsWith('!') ? `^${inner.slice(1)}` : inner}]`;
+      idx = closeIdx + 1;
+      continue;
     }
+    if (ch === '{' && normalized.indexOf('}', idx + 1) > idx + 1) {
+      const closeIdx = normalized.indexOf('}', idx + 1);
+      const branches: string[] = [];
+      for (const opt of normalized.slice(idx + 1, closeIdx).split(',')) {
+        branches.push(compilePosixGlobToRegExp(opt).source.slice(1, -1));
+      }
+      regexStr += `(?:${branches.join('|')})`;
+      idx = closeIdx + 1;
+      continue;
+    }
+    regexStr += ch === '*' ? '[^/]*' : ch === '?' ? '[^/]' : ch !== undefined && /[.+^${}()|[\]\\]/.test(ch) ? `\\${ch}` : (ch ?? '');
     idx += 1;
   }
   return new RegExp(`${regexStr}$`);
@@ -62,13 +66,15 @@ export async function resolveMarkdownFiles(
   hostRoot: string,
   pathOrGlob: string,
 ): Promise<readonly string[]> {
-  const cleanPattern = pathOrGlob.replace(/\\/g, '/').replace(/^\.\//, '');
-  const firstGlobIdx = cleanPattern.search(/[*?[\]{}]/);
+  let cleanPattern = pathOrGlob.replace(/\\/g, '/').replace(/^\.\//, '');
+  let firstGlobIdx = cleanPattern.search(/[*?[\]{}]/);
   if (firstGlobIdx === -1) {
     const absPath = resolve(hostRoot, cleanPattern);
-    const info = await stat(absPath);
-    if (!info.isFile()) throw new Error(`Markdown path '${pathOrGlob}' is not a regular file.`);
-    return Object.freeze([cleanPattern]);
+    const targetStat = await stat(absPath);
+    if (targetStat.isFile()) return Object.freeze([cleanPattern]);
+    if (!targetStat.isDirectory()) throw new Error(`Markdown path '${pathOrGlob}' is not a regular file.`);
+    cleanPattern = `${cleanPattern.replace(/\/+$/, '')}/**/*.md`;
+    firstGlobIdx = cleanPattern.search(/[*?[\]{}]/);
   }
   const slashIdx = cleanPattern.lastIndexOf('/', firstGlobIdx);
   const startDir = slashIdx > 0 ? resolve(hostRoot, cleanPattern.slice(0, slashIdx)) : hostRoot;
@@ -78,17 +84,17 @@ export async function resolveMarkdownFiles(
   while (queue.length > 0) {
     const currentDir = queue.pop();
     if (currentDir === undefined) break;
-    const entries = await readdir(currentDir, { withFileTypes: true });
+    const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
       if (entry.name === '.git' || entry.name === 'node_modules') continue;
       const fullPath = resolve(currentDir, entry.name);
-      if (entry.isDirectory()) queue.push(fullPath);
-      else if (entry.isFile()) {
-        const candidate = cleanPattern.startsWith('/')
-          ? fullPath.split('\\').join(posix.sep)
-          : relative(hostRoot, fullPath).split('\\').join(posix.sep);
-        if (matcher.test(candidate)) matched.push(candidate);
+      if (entry.isDirectory()) {
+        queue.push(fullPath);
+        continue;
       }
+      if (!entry.isFile()) continue;
+      const candidate = (cleanPattern.startsWith('/') ? fullPath : relative(hostRoot, fullPath)).split('\\').join(posix.sep);
+      if (matcher.test(candidate)) matched.push(candidate);
     }
   }
   matched.sort((a, b) => a.localeCompare(b));
@@ -111,12 +117,12 @@ export function buildScopePredicateFromFrontmatter(
   const rawPartitions = frontmatter['partitions'];
   const partitions: string[] = [];
   if (Array.isArray(rawPartitions)) {
-    for (const item of rawPartitions) if (typeof item === 'string') partitions.push(item);
+    for (const rawEntry of rawPartitions) if (typeof rawEntry === 'string') partitions.push(rawEntry);
   }
   const rawGlobs = frontmatter['globs'];
   const globs: string[] = [];
   if (Array.isArray(rawGlobs)) {
-    for (const item of rawGlobs) if (typeof item === 'string') globs.push(item);
+    for (const rawEntry of rawGlobs) if (typeof rawEntry === 'string') globs.push(rawEntry);
   }
   if (globs.length === 0) {
     return Object.freeze<ScopePredicate>({ partitions, effects: undefined });

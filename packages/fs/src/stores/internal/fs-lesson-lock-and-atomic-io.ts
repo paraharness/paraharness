@@ -26,7 +26,6 @@ export async function withNonBlockingAdvisoryFileLock<TResult>(
   for (let attempt = 0; attempt < 400; attempt += 1) {
     try {
       handle = await open(lockFilePath, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600);
-      await handle.writeFile(`${String(process.pid)}\n`, 'utf8');
       break;
     } catch (err) {
       const code = (err as { readonly code?: string } | null)?.code;
@@ -38,6 +37,7 @@ export async function withNonBlockingAdvisoryFileLock<TResult>(
     throw new Error(`Timed out acquiring advisory lesson lock '${lockFilePath}'.`);
   }
   try {
+    await handle.writeFile(`${String(process.pid)}\n`, 'utf8');
     return await work();
   } finally {
     await handle.close();
@@ -65,12 +65,17 @@ export async function atomicWriteJsonFile(
   const tmpPath = `${targetPath}.tmp.${String(process.pid)}.${String(counter)}`;
   const handle = await open(tmpPath, constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY, 0o644);
   try {
-    await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-    await handle.datasync();
-  } finally {
-    await handle.close();
+    try {
+      await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+      await handle.datasync();
+    } finally {
+      await handle.close();
+    }
+    await rename(tmpPath, targetPath);
+  } catch (err) {
+    await unlink(tmpPath).catch(() => undefined);
+    throw err;
   }
-  await rename(tmpPath, targetPath);
 }
 
 /**
@@ -112,7 +117,13 @@ export async function readAllLessonDefinitions(
     return Object.freeze([]);
   }
   const entries = await readdir(definitionsDir);
-  const jsonFiles = entries.filter((name) => name.endsWith('.json') && !name.includes('.tmp.')).sort();
+  const jsonFiles: string[] = [];
+  for (const fileName of entries) {
+    if (fileName.endsWith('.json') && !fileName.includes('.tmp.')) {
+      jsonFiles.push(fileName);
+    }
+  }
+  jsonFiles.sort((a, b) => a.localeCompare(b));
   const definitions: FsLessonDefinitionRecord[] = [];
   for (const fileName of jsonFiles) {
     const raw = await readFile(path.join(definitionsDir, fileName), 'utf8');

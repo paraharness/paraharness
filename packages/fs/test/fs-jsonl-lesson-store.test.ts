@@ -88,10 +88,16 @@ describe('@harness-dsl/fs FsJsonlLessonStore', () => {
     });
 
     await Promise.all([
-      store.recordOutcomes([{ lessonId: lessonAId, outcome: 'clean_pass' }]),
-      store.recordOutcomes([{ lessonId: lessonAId, outcome: 'violated' }]),
-      store.recordOutcomes([{ lessonId: lessonAId, outcome: 'gate_rejected_recovered' }]),
-      store.recordOutcomes([
+      new FsJsonlLessonStore(storeNode, ws.rootDir).recordOutcomes([
+        { lessonId: lessonAId, outcome: 'clean_pass' },
+      ]),
+      new FsJsonlLessonStore(storeNode, ws.rootDir).recordOutcomes([
+        { lessonId: lessonAId, outcome: 'violated' },
+      ]),
+      new FsJsonlLessonStore(storeNode, ws.rootDir).recordOutcomes([
+        { lessonId: lessonAId, outcome: 'gate_rejected_recovered' },
+      ]),
+      new FsJsonlLessonStore(storeNode, ws.rootDir).recordOutcomes([
         { lessonId: lessonBId, outcome: 'clean_pass' },
         { lessonId: lessonBId, outcome: 'clean_pass' },
       ]),

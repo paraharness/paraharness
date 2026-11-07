@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -217,6 +218,32 @@ describe('@harness-dsl/fs tools and sources', () => {
     expect(await readFile(join(ws.rootDir, 'src/brand-new.ts'), 'utf8')).toBe(
       'export const created = true;\n',
     );
+
+    const dollarReplacement = 'cost = "$$100 ($& / $` / $\')"';
+    const dollarEditEffects = (editDriver.describeEffects?.(
+      editNode,
+      {
+        path: 'src/existing.ts',
+        oldString: 'count = 42',
+        newString: dollarReplacement,
+      },
+      ctx.scopeHandle,
+    ) ?? []) as readonly FsToolEffect[];
+    expect(dollarEditEffects[0]?.attributes.proposedContent?.['src/existing.ts']).toBe(
+      `export const ${dollarReplacement};\n`,
+    );
+    await editDriver.execute(
+      editNode,
+      {
+        path: 'src/existing.ts',
+        oldString: 'count = 42',
+        newString: dollarReplacement,
+      },
+      ctx,
+    );
+    expect(await readFile(join(ws.rootDir, 'src/existing.ts'), 'utf8')).toBe(
+      `export const ${dollarReplacement};\n`,
+    );
   });
 
   it('blocks path traversal, realpath symlink escapes, and node_modules writes', async () => {
@@ -225,16 +252,24 @@ describe('@harness-dsl/fs tools and sources', () => {
     extraDirs.push(outsideDir);
     const secretFile = join(outsideDir, 'secret.txt');
     await writeFile(secretFile, 'top-secret', 'utf8');
+    const outsideNonexistentDir = join(outsideDir, 'dangling-outside-target');
 
     const ws = await createTempFsWorkspace({
-      files: { 'src/ok.ts': 'ok' },
+      files: {
+        'src/ok.ts': 'ok',
+        'linked-target/inside.ts': 'export const LINKED = "linked-needle";\n',
+      },
       symlinks: {
         'src/escape-file.txt': secretFile,
         'src/escape-dir': outsideDir,
+        'src/dangling-hop2': outsideNonexistentDir,
+        'src/dangling-hop1': 'dangling-hop2',
+        'src/linked-dir': '../linked-target',
       },
     });
     workspaces.push(ws);
-    const [readNode, editNode, writeNode] = fs.codingTools(dummyRunner);
+    await symlink(ws.rootDir, join(ws.rootDir, 'linked-target/cycle-root'));
+    const [readNode, editNode, writeNode, globNode, grepNode] = fs.codingTools(dummyRunner);
     const ctx = createStepContext(ws.rootDir);
 
     const readDriver = createFsReadToolDriver();
@@ -249,6 +284,37 @@ describe('@harness-dsl/fs tools and sources', () => {
     await expect(
       writeDriver.execute(writeNode, { path: 'src/escape-dir/pwn.txt', content: 'x' }, ctx),
     ).rejects.toThrow(/escapes worktree/);
+    await expect(
+      writeDriver.execute(
+        writeNode,
+        { path: 'src/dangling-hop1/sub/pwn.txt', content: 'x' },
+        ctx,
+      ),
+    ).rejects.toThrow(/escapes worktree/);
+    expect(existsSync(outsideNonexistentDir)).toBe(false);
+
+    await writeDriver.execute(writeNode, { path: '..env', content: 'VALID_DOTDOT_NAME=1\n' }, ctx);
+    const dotDotRead = await readDriver.execute(readNode, { path: '..env' }, ctx);
+    expect(dotDotRead.content).toBe('VALID_DOTDOT_NAME=1\n');
+
+    const globDriver = createFsGlobToolDriver();
+    const linkedGlobRes = await globDriver.execute(
+      globNode,
+      { pattern: 'src/linked-dir/**/*.ts' },
+      ctx,
+    );
+    expect(linkedGlobRes.content).toBe('src/linked-dir/inside.ts');
+
+    const grepDriver = createFsGrepToolDriver();
+    const linkedGrepRes = await grepDriver.execute(
+      grepNode,
+      { pattern: 'linked-needle', glob: 'src/linked-dir/**/*.ts' },
+      ctx,
+    );
+    expect(linkedGrepRes.content).toBe(
+      'src/linked-dir/inside.ts:1:export const LINKED = "linked-needle";',
+    );
+
     await expect(
       writeDriver.execute(writeNode, { path: 'node_modules/pkg/index.js', content: 'x' }, ctx),
     ).rejects.toThrow(/node_modules/);

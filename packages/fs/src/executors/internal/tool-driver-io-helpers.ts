@@ -13,26 +13,22 @@ import {
 } from './jail-and-glob-helpers.js';
 
 /**
- * Searches workspace files matching `globPattern` against `pattern` and formats `path:line:text` matches.
+ * Searches workspace files matching `parsed.glob` against `parsed.pattern` and formats `path:line:text` matches.
  *
  * Enforces `resolveJailedWorktreePath` on every candidate file before reading.
  *
- * @param {unknown}            scopeHandle - Active isolation scope handle.
- * @param {string}             pattern     - Regular expression pattern string.
- * @param {string}             globPattern - POSIX glob pattern filtering files to search.
- * @param {string | undefined} flags       - Optional regular expression flags.
+ * @param {unknown}                 scopeHandle - Active isolation scope handle.
+ * @param {Record<string, unknown>} parsed      - Validated grep arguments (`pattern`, optional `glob` and `flags`).
  *
  * @returns {Promise<string>} Newline-joined `path:lineNumber:lineText` match strings.
  */
 export async function grepWorkspaceFiles(
   scopeHandle: unknown,
-  pattern: string,
-  globPattern: string,
-  flags: string | undefined,
+  parsed: { readonly pattern: string; readonly glob?: string; readonly flags?: string },
 ): Promise<string> {
   const { rootPath } = extractWorktreeRootAndBaseRef(scopeHandle);
-  const candidateFiles = enumerateWorkspaceFilesSync(rootPath, globPattern);
-  const regex = new RegExp(pattern, (flags ?? '').replace(/g/g, ''));
+  const candidateFiles = enumerateWorkspaceFilesSync(rootPath, parsed.glob ?? '**/*');
+  const regex = new RegExp(parsed.pattern, (parsed.flags ?? '').replace(/g/g, ''));
   const matches: string[] = [];
   for (const relPath of candidateFiles) {
     const { absolutePath } = resolveJailedWorktreePath(scopeHandle, relPath, false);
@@ -74,7 +70,7 @@ export function describeFsEditEffects(
   const newStr = rec.newString ?? '';
   const nextContent =
     oldStr.length > 0 && currentContent.includes(oldStr)
-      ? currentContent.replace(oldStr, newStr)
+      ? currentContent.replace(oldStr, () => newStr)
       : `${currentContent}${newStr}`;
   const existingAtBase = checkPathsExistAtBaseRef(scopeHandle, [normalizedRelPath]);
   return Object.freeze([
@@ -109,7 +105,7 @@ export async function executeFsEditOperation(
       `fs:edit failed on '${normalizedRelPath}': target oldString was not found in file.`,
     );
   }
-  const updatedContent = currentContent.replace(parsed.oldString, parsed.newString);
+  const updatedContent = currentContent.replace(parsed.oldString, () => parsed.newString);
   await writeFile(absolutePath, updatedContent, 'utf8');
   return Object.freeze<ToolExecutionResult>({ content: `Edited ${normalizedRelPath}` });
 }

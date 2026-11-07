@@ -212,6 +212,33 @@ describe('@harness-dsl/markdown builders, parser, and executors', () => {
       .toAST();
     expect(rulesAst.globalRules).toHaveLength(1);
     expect(rulesAst.scopedRules).toHaveLength(2);
+
+    const dirGlobalArtifact = await executeMarkdownFrontmatterSource(
+      md.globalRules(`${rootDir}/rules/global`),
+      undefined,
+      ctx,
+    );
+    expect(dirGlobalArtifact.content).toEqual([
+      { id: 'strict-types', directive: 'Zero any casts in production code.' },
+      { id: 'complete-jsdoc', directive: 'Document every exported declaration.' },
+    ]);
+
+    const braceAndCharClassArtifact = await executeMarkdownFrontmatterSource(
+      md.scopedRules(`${rootDir}/rules/{scoped,missing}/[a-d]*.md`),
+      undefined,
+      ctx,
+    );
+    expect(braceAndCharClassArtifact.content.map((r) => r.id)).toEqual([
+      'api-handlers',
+      'db-migrations',
+    ]);
+
+    const missingDirGlobArtifact = await executeMarkdownFrontmatterSource(
+      md.globalRules(`${rootDir}/rules/nonexistent-subdir/*.md`),
+      undefined,
+      ctx,
+    );
+    expect(missingDirGlobArtifact.content).toEqual([]);
   });
 
   it('executes md.skill, md.skills, md.frontmatter (including id-prefix fallback), and md.section', async () => {

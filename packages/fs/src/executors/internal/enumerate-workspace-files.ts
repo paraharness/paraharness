@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { ToolEffect } from '@harness-dsl/core';
 import type { FsToolEffect } from '../fs-tool-effect.js';
@@ -19,19 +19,17 @@ import {
  *
  * @returns {readonly string[]} Sorted frozen array of matching relative POSIX file paths.
  */
-export function enumerateWorkspaceFilesSync(
-  rootPath: string,
-  globPattern: string,
-): readonly string[] {
+export function enumerateWorkspaceFilesSync(rootPath: string, globPattern: string): readonly string[] {
   const realRoot = realpathSync(path.resolve(rootPath));
   const isMatch = compileGlobOrExactMatcher([globPattern]);
   const matched: string[] = [];
+  const visitedDirs = new Set<string>([realRoot]);
   const stack: string[] = [realRoot];
   while (stack.length > 0) {
     const currentDir = stack.pop();
     if (currentDir === undefined) continue;
-    const entries = readdirSync(currentDir, { withFileTypes: true });
-    for (const entry of entries) {
+    const realCurrentDir = realpathSync(currentDir);
+    for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
       if (entry.name === '.git' || entry.name === 'node_modules') continue;
       const fullPath = path.join(currentDir, entry.name);
       let realEntryPath: string;
@@ -40,14 +38,19 @@ export function enumerateWorkspaceFilesSync(
       } catch {
         continue;
       }
-      const rel = path.relative(realRoot, realEntryPath);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
-      if (entry.isDirectory()) {
-        stack.push(realEntryPath);
-      } else if (entry.isFile() || entry.isSymbolicLink()) {
-        const posixRel = rel.split(path.sep).join('/');
-        if (isMatch(posixRel)) matched.push(posixRel);
+      const realRel = path.relative(realRoot, realEntryPath);
+      if (realRel === '..' || realRel.startsWith('../') || realRel.startsWith(`..${path.sep}`) || path.isAbsolute(realRel)) continue;
+      const entryStat = statSync(realEntryPath);
+      const isCycle = visitedDirs.has(realEntryPath) || realCurrentDir === realEntryPath || realCurrentDir.startsWith(`${realEntryPath}${path.sep}`);
+      if (entryStat.isDirectory() && entry.isSymbolicLink() && isCycle) continue;
+      if (entryStat.isDirectory() && entry.isSymbolicLink()) visitedDirs.add(realEntryPath);
+      if (entryStat.isDirectory()) {
+        stack.push(fullPath);
+        continue;
       }
+      if (!entryStat.isFile()) continue;
+      const posixRel = path.relative(realRoot, fullPath).split(path.sep).join('/');
+      if (isMatch(posixRel)) matched.push(posixRel);
     }
   }
   matched.sort((a, b) => a.localeCompare(b));
@@ -124,25 +127,25 @@ export function collectMutatedPathsSinceBaseRef(
     const mode = eff.attributes?.['mode'];
     if (eff.mutatesScope !== true && mode !== 'write') continue;
     const paths = eff.attributes?.['paths'];
-    if (Array.isArray(paths)) {
-      for (const p of paths) {
-        if (typeof p === 'string') mutated.add(p.replace(/\\/g, '/').replace(/^\.\//, ''));
-      }
+    if (!Array.isArray(paths)) continue;
+    for (const relPath of paths) {
+      if (typeof relPath === 'string') mutated.add(relPath.replace(/\\/g, '/').replace(/^\.\//, ''));
     }
   }
   const { rootPath, baseRef } = extractWorktreeRootAndBaseRef(scopeHandle);
-  if (mutated.size === 0 && baseRef !== undefined) {
+  let gitOutput = '';
+  if (baseRef !== undefined && existsSync(path.join(rootPath, '.git'))) {
     try {
-      const gitOpts = { cwd: rootPath, encoding: 'utf8' as const, stdio: 'pipe' as const, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } };
-      const diffOut = execFileSync('git', ['diff', '--name-only', baseRef], gitOpts);
-      const untrackedOut = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], gitOpts);
-      for (const line of `${diffOut}\n${untrackedOut}`.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (trimmed.length > 0) mutated.add(trimmed.replace(/\\/g, '/').replace(/^\.\//, ''));
-      }
+      const gitEnv = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_CEILING_DIRECTORIES: path.dirname(rootPath) };
+      const gitOpts = { cwd: rootPath, encoding: 'utf8' as const, stdio: 'pipe' as const, env: gitEnv };
+      gitOutput = `${execFileSync('git', ['diff', '--name-only', baseRef], gitOpts)}\n${execFileSync('git', ['ls-files', '--others', '--exclude-standard'], gitOpts)}`;
     } catch {
-      void 0;
+      gitOutput = '';
     }
+  }
+  for (const line of gitOutput.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) mutated.add(trimmed.replace(/\\/g, '/').replace(/^\.\//, ''));
   }
   return Object.freeze([...mutated].sort((a, b) => a.localeCompare(b)));
 }

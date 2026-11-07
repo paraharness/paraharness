@@ -98,7 +98,7 @@ export function createFsGrepToolDriver<THandle = unknown>(): ToolDriver<
     },
     async execute(node: FsGrepToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
       const parsed = node.inputSchema.parse(args) as { readonly pattern: string; readonly glob?: string; readonly flags?: string };
-      const content = await grepWorkspaceFiles(ctx.scopeHandle, parsed.pattern, parsed.glob ?? '**/*', parsed.flags);
+      const content = await grepWorkspaceFiles(ctx.scopeHandle, parsed);
       return Object.freeze<ToolExecutionResult>({ content });
     },
   });

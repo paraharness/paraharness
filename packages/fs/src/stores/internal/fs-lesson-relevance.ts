@@ -27,16 +27,16 @@ export function computeLessonId(partition: string | undefined, directive: string
  * Calculates token overlap across lowercased alphanumeric tokens in `queryText` and the lesson's
  * `partition` and `directive` text (`SPEC.md` §2.7 & §3.4.3).
  *
- * @param {string}                   queryText  - Search query extracted from actor input.
- * @param {FsLessonDefinitionRecord} definition - Immutable lesson definition record.
- * @param {readonly string[]}        partitions - Active task partitions.
+ * @param {string}                                   queryText  - Search query extracted from actor input.
+ * @param {FsLessonDefinitionRecord}                 definition - Immutable lesson definition record.
+ * @param {ReadonlySet<string> | readonly string[]}  partitions - Active task partitions.
  *
  * @returns {number} Normalized relevance score in `[0, 1]`.
  */
 export function computeQueryRelevanceScore(
   queryText: string,
   definition: FsLessonDefinitionRecord,
-  partitions: readonly string[],
+  partitions: ReadonlySet<string> | readonly string[],
 ): number {
   const queryMatches = queryText.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   if (queryMatches.length === 0) {
@@ -54,7 +54,8 @@ export function computeQueryRelevanceScore(
   if (matchedCount > 0) {
     return matchedCount / queryTokenSet.size;
   }
-  if (definition.partition !== undefined && partitions.includes(definition.partition)) {
+  const partitionSet = partitions instanceof Set ? partitions : new Set(partitions);
+  if (definition.partition !== undefined && partitionSet.has(definition.partition)) {
     return 0.25;
   }
   return 0.05;

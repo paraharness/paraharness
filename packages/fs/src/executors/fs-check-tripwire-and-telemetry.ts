@@ -56,6 +56,32 @@ export async function executeFsRegexCheck<THandle = unknown>(
 }
 
 /**
+ * Accumulates normalized file paths from write-mode `FsToolEffect` entries into `mutatedPaths`.
+ *
+ * Avoids intermediate array spreads when scanning multiple effect slices (`Rule 4.1`).
+ *
+ * @param {readonly ToolEffect[]} effects      - Slice of tool effects to inspect.
+ * @param {Set<string>}           mutatedPaths - Target set receiving normalized POSIX file paths.
+ */
+function addMutatedPathsFromEffects(
+  effects: readonly ToolEffect[],
+  mutatedPaths: Set<string>,
+): void {
+  for (const eff of effects) {
+    if (eff.kind !== 'fs:effect') continue;
+    const mode = eff.attributes?.['mode'];
+    if (eff.mutatesScope !== true && mode !== 'write') continue;
+    const paths = eff.attributes?.['paths'];
+    if (!Array.isArray(paths)) continue;
+    for (const relPath of paths) {
+      if (typeof relPath === 'string') {
+        mutatedPaths.add(relPath.replace(/\\/g, '/').replace(/^\.\//, ''));
+      }
+    }
+  }
+}
+
+/**
  * Evaluates an `FsQuotaTripwireNode` (`fs:quota-tripwire`) after tool execution (`SPEC.md` §4.3).
  *
  * Trips when the total count of distinct mutated file paths across `accumulatedEffects`
@@ -73,18 +99,8 @@ export function evaluateFsQuotaTripwire(
   _ctx: StepExecutionContext<unknown>,
 ): QuotaTripwireEvaluationResult {
   const mutatedPaths = new Set<string>();
-  const combined = [...input.accumulatedEffects, ...input.newEffects];
-  for (const eff of combined) {
-    if (eff.kind !== 'fs:effect') continue;
-    const mode = eff.attributes?.['mode'];
-    if (eff.mutatesScope !== true && mode !== 'write') continue;
-    const paths = eff.attributes?.['paths'];
-    if (Array.isArray(paths)) {
-      for (const p of paths) {
-        if (typeof p === 'string') mutatedPaths.add(p.replace(/\\/g, '/').replace(/^\.\//, ''));
-      }
-    }
-  }
+  addMutatedPathsFromEffects(input.accumulatedEffects, mutatedPaths);
+  addMutatedPathsFromEffects(input.newEffects, mutatedPaths);
   if (mutatedPaths.size > node.maxFilesMutated) {
     return Object.freeze<QuotaTripwireEvaluationResult>({
       tripped: true,

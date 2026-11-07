@@ -6,6 +6,7 @@ import type {
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
   StepExecutionContext,
+  ToolEffect,
 } from '@harness-dsl/core';
 import {
   collectReadPathsFromEffects,
@@ -38,17 +39,24 @@ export function evaluateFsWriteGuard(
   const isDenied = compileGlobOrExactMatcher(node.denyGlobs);
   const isAllowed =
     node.allowGlobs !== undefined ? compileGlobOrExactMatcher(node.allowGlobs) : (): boolean => false;
+  const baseSetByEffect = new WeakMap<ToolEffect, ReadonlySet<string>>();
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     (relPath, eff) => {
       if (isAllowed(relPath) || !isDenied(relPath)) return false;
       if (node.onlyExistingAtBaseRef !== true) return true;
-      const declaredBase = eff.attributes?.['existingPathsAtBaseRef'];
-      const existingList = Array.isArray(declaredBase)
-        ? (declaredBase as readonly string[])
-        : checkPathsExistAtBaseRef(ctx.scopeHandle, [relPath]);
-      return existingList.some((p) => p.replace(/\\/g, '/').replace(/^\.\//, '') === relPath);
+      let existingSet = baseSetByEffect.get(eff);
+      if (existingSet === undefined) {
+        const declaredBase = eff.attributes?.['existingPathsAtBaseRef'];
+        const rawList = Array.isArray(declaredBase)
+          ? (declaredBase as readonly string[])
+          : checkPathsExistAtBaseRef(ctx.scopeHandle, (eff.attributes?.['paths'] as readonly string[] | undefined) ?? [relPath]);
+        const normalizedSet = new Set<string>();
+        for (const basePath of rawList) normalizedSet.add(basePath.replace(/\\/g, '/').replace(/^\.\//, ''));
+        existingSet = normalizedSet;
+        baseSetByEffect.set(eff, existingSet);
+      }
+      return existingSet.has(relPath);
     },
     (paths) => `Write guard '${node.id}' denied mutation on [${paths.join(', ')}]`,
   );
@@ -72,16 +80,23 @@ export function evaluateFsRequireReadBeforeWriteGuard(
   ctx: StepExecutionContext<unknown>,
 ): PolicyGuardEvaluationResult {
   const readPaths = collectReadPathsFromEffects(ctx.observedEffects);
+  const baseSetByEffect = new WeakMap<ToolEffect, ReadonlySet<string>>();
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     (relPath, eff) => {
       if (readPaths.has(relPath)) return false;
-      const declaredBase = eff.attributes?.['existingPathsAtBaseRef'];
-      const existingList = Array.isArray(declaredBase)
-        ? (declaredBase as readonly string[])
-        : checkPathsExistAtBaseRef(ctx.scopeHandle, [relPath]);
-      return existingList.some((p) => p.replace(/\\/g, '/').replace(/^\.\//, '') === relPath);
+      let existingSet = baseSetByEffect.get(eff);
+      if (existingSet === undefined) {
+        const declaredBase = eff.attributes?.['existingPathsAtBaseRef'];
+        const rawList = Array.isArray(declaredBase)
+          ? (declaredBase as readonly string[])
+          : checkPathsExistAtBaseRef(ctx.scopeHandle, (eff.attributes?.['paths'] as readonly string[] | undefined) ?? [relPath]);
+        const normalizedSet = new Set<string>();
+        for (const basePath of rawList) normalizedSet.add(basePath.replace(/\\/g, '/').replace(/^\.\//, ''));
+        existingSet = normalizedSet;
+        baseSetByEffect.set(eff, existingSet);
+      }
+      return existingSet.has(relPath);
     },
     (paths) => `Read-before-write required prior to mutating existing file(s) [${paths.join(', ')}]`,
   );
@@ -113,8 +128,7 @@ export function evaluateFsScopedWriteGuard(
   }
   const isInActivePartition = compileGlobOrExactMatcher(activeGlobs);
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     (relPath) => !isInActivePartition(relPath),
     (paths) =>
       `Scoped write denied outside active partitions [${ctx.activePartitions.join(', ')}] on [${paths.join(', ')}]`,
@@ -140,8 +154,7 @@ export function evaluateFsSecretLiteralsGuard(
 ): PolicyGuardEvaluationResult {
   const secretRegexes = compileSecretPatterns(node.patterns);
   return projectViolatedWriteEffects(
-    input.proposedEffects,
-    input.activeLeases,
+    input,
     (relPath, eff) => {
       const proposedMap = eff.attributes?.['proposedContent'] as
         | Readonly<Record<string, string>>

@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   H,
   type PolicyGuardEvaluationInput,
@@ -72,6 +74,7 @@ function createStepContext(
   worktreePath: string,
   observedEffects: readonly ToolEffect[] = Object.freeze([]),
   activePartitions: readonly string[] = Object.freeze(['api']),
+  baseRef = 'HEAD',
 ): StepExecutionContext {
   return Object.freeze<StepExecutionContext>({
     runId: 'run-guard-test',
@@ -82,7 +85,7 @@ function createStepContext(
     scopeHandle: Object.freeze({
       worktreePath,
       branchName: 'harness/test',
-      baseRef: 'HEAD',
+      baseRef,
       baseBranch: 'main',
     }),
     signal: new AbortController().signal,
@@ -339,5 +342,39 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       filesRead: ['packages/api/untouched.ts'],
       filesMutated: ['packages/api/mutated-clean.ts', 'packages/api/mutated-dirty.ts'],
     });
+
+    const gitWs = await createTempFsWorkspace({
+      files: {
+        'packages/api/untouched.ts': "import { sql } from 'drizzle-orm';\n",
+        'packages/api/mutated-clean.ts': "import { repo } from '@acme/db';\n",
+        'packages/api/git-dirty.ts': "import { repo } from '@acme/db';\n",
+      },
+      initGit: true,
+    });
+    workspaces.push(gitWs);
+    await writeFile(
+      join(gitWs.rootDir, 'packages/api/git-dirty.ts'),
+      "import { eq } from 'drizzle-orm';\n",
+      'utf8',
+    );
+
+    const gitEmptyEffectsCtx = createStepContext(gitWs.rootDir, [], ['api'], gitWs.baseRef);
+    const gitDiffOnlyResult = await executeFsRegexCheck(checkNode, undefined, gitEmptyEffectsCtx);
+    expect(gitDiffOnlyResult.ok).toBe(false);
+    expect(gitDiffOnlyResult.deficits).toEqual([
+      'packages/api/git-dirty.ts: Direct drizzle-orm imports are forbidden in packages/api.',
+    ]);
+
+    const gitCombinedCtx = createStepContext(
+      gitWs.rootDir,
+      [makeWriteEffect(['packages/api/mutated-clean.ts'])],
+      ['api'],
+      gitWs.baseRef,
+    );
+    const gitUnionResult = await executeFsRegexCheck(checkNode, undefined, gitCombinedCtx);
+    expect(gitUnionResult.ok).toBe(false);
+    expect(gitUnionResult.deficits).toEqual([
+      'packages/api/git-dirty.ts: Direct drizzle-orm imports are forbidden in packages/api.',
+    ]);
   });
 });
