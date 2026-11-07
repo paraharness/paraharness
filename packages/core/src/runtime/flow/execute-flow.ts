@@ -134,8 +134,10 @@ export async function executeFlow<TIn = unknown, THandle = unknown>(
           ? await executeFlowStep(flowCtx, node)
           : await executeFlowBranch(flowCtx, node);
       if (stepRes.status === 'suspended') {
-        const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () =>
-          flowCtx.scopeDriver.inspect(flowCtx.scopeHandle),
+        const scopeReceipt = await flowCtx.lockManager.withReadLock(
+          flowCtx.scopeHandle,
+          () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle),
+          flowCtx.activeStepAbortController.signal,
         );
         return Object.freeze<FlowRunResult>({
           runId: flowCtx.runId,
@@ -148,8 +150,10 @@ export async function executeFlow<TIn = unknown, THandle = unknown>(
         idx += 1;
       }
     }
-    const finalReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () =>
-      flowCtx.scopeDriver.inspect(flowCtx.scopeHandle),
+    const finalReceipt = await flowCtx.lockManager.withReadLock(
+      flowCtx.scopeHandle,
+      () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle),
+      flowCtx.activeStepAbortController.signal,
     );
     if (flowCtx.topologyStore !== undefined) {
       await flowCtx.topologyStore.sealRunOverlay(flowCtx.runId);

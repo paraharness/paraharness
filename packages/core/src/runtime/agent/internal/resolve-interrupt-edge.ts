@@ -6,6 +6,7 @@ import type { LeaseDelta } from '../../../ports/lease-delta.js';
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { AgentTurnSessionState } from '../agent-turn-session-state.js';
 import type { InterruptEdgeResolution } from '../interrupt-edge-resolution.js';
+import { getStepRuntimeInternals } from './get-step-runtime-internals.js';
 
 /**
  * Attaches granted `LeaseDelta` entries to the outer actor's `activeLeases` and any enclosing `loop-frame.grantedLoopLeases` (`SPEC.md` §3.5 & §3.8).
@@ -162,7 +163,7 @@ export async function runAdjudicatorEdge<TIn, TOut, THandle>(
   const adjudicatorInput = handler.mapInput(session.validatedInput, validatedPayload);
   const grantedLeases: LeaseDelta[] = [];
   const adjStepExecId = `${session.ctx.stepExecId}:adj:${handler.adjudicator.id}:${String(session.agentFrame.turnsTaken)}:L${String(session.agentFrame.activeLeases.length)}`;
-  const parentRt = (session.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+  const parentRt = getStepRuntimeInternals(session.ctx) ?? {};
   const adjCtx = Object.freeze({
     ...session.ctx,
     stepExecId: adjStepExecId,

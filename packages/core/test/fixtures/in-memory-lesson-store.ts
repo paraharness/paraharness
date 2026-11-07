@@ -153,7 +153,7 @@ export class InMemoryLessonStore implements LessonStore {
   /**
    * Permanently retires the specified lessons.
    *
-   * Marks `retired: true` and adds each ID to `retiredIds`.
+   * Adds each lesson ID to `this.retiredIds` so retired lessons are excluded from future candidate queries.
    *
    * @param {readonly string[]} lessonIds - Identifiers of lessons to retire.
    *

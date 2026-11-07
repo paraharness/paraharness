@@ -4,6 +4,7 @@ import type { IsolationScope } from '../../../ports/isolation-scope.js';
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import { executeAgent } from '../../agent/execute-agent.js';
+import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
 import { mergeLessonOutcomePrecedence } from '../../lessons/lesson-scoring.js';
 import type { LoopExecutionState } from '../loop-execution-state.js';
 import { escalateLoopActorModelIfNeeded } from './escalate-loop-actor-model.js';
@@ -109,8 +110,10 @@ async function inspectLoopActScopeReceipt<TIn, TOut, THandle>(
   if (scopeDriver === undefined) {
     return {};
   }
-  return state.lockManager.withReadLock(state.ctx.scopeHandle, () =>
-    scopeDriver.inspect(state.ctx.scopeHandle),
+  return state.lockManager.withReadLock(
+    state.ctx.scopeHandle,
+    () => scopeDriver.inspect(state.ctx.scopeHandle),
+    state.ctx.signal,
   );
 }
 
@@ -140,7 +143,7 @@ export async function runLoopActPhase<TIn, TOut, THandle>(
     continuationStack?: readonly ContinuationFrame[];
     suspendedAtCallId?: string;
   } = {};
-  const parentRt = (state.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+  const parentRt = getStepRuntimeInternals(state.ctx);
   const actCtx = Object.freeze({
     ...state.ctx,
     resumeContinuationStack: undefined,
@@ -164,8 +167,13 @@ export async function runLoopActPhase<TIn, TOut, THandle>(
   let actOutput: TOut;
   try {
     actOutput = await executeAgent(actor, state.validatedInput, actCtx);
+    state.lastInnerAgentFrame = undefined;
+  } catch (err) {
+    state.lastInnerAgentFrame = actOutcomeSink.continuationStack?.find(
+      (f): f is AgentContinuationFrame => f.kind === 'agent-frame',
+    );
+    throw err;
   } finally {
-    state.lastInnerAgentFrame = actOutcomeSink.continuationStack?.[0];
     state.lastSuspendedAtCallId = actOutcomeSink.suspendedAtCallId;
     const latestLoop = outerForAct[outerForAct.length - 1];
     if (latestLoop?.kind === 'loop-frame') {
@@ -173,11 +181,17 @@ export async function runLoopActPhase<TIn, TOut, THandle>(
     }
   }
   const updatedLoop = outerForAct[outerForAct.length - 1] as LoopContinuationFrame;
-  for (const [lid, lo] of Object.entries(updatedLoop.accumulatedLessonOutcomes)) {
-    state.accumulatedLessonOutcomes[lid] = mergeLessonOutcomePrecedence(
-      state.accumulatedLessonOutcomes[lid],
-      lo,
-    );
+  for (const lid in updatedLoop.accumulatedLessonOutcomes) {
+    if (!Object.hasOwn(updatedLoop.accumulatedLessonOutcomes, lid)) {
+      continue;
+    }
+    const lo = updatedLoop.accumulatedLessonOutcomes[lid];
+    if (lo !== undefined) {
+      state.accumulatedLessonOutcomes[lid] = mergeLessonOutcomePrecedence(
+        state.accumulatedLessonOutcomes[lid],
+        lo,
+      );
+    }
   }
   await state.serviceRegistry.quiesceScopeServices(state.ctx.stepExecId);
   const scopeReceipt = await inspectLoopActScopeReceipt(state);

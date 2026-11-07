@@ -1,7 +1,11 @@
 import type { AgentNode } from '../../ast/agent-node.js';
 import type { ModelASTNode, StepASTNode, ToolASTNode } from '../../ast/domain-ast.types.js';
+import type { EscalateCapabilityNode } from '../../ast/escalate-capability-node.js';
+import type { ForkCapabilityNode } from '../../ast/fork-capability-node.js';
 import type { InlineScopedRuleNode } from '../../ast/inline-scoped-rule-node.js';
 import type { InlineSkillNode } from '../../ast/inline-skill-node.js';
+import type { InterruptNode } from '../../ast/interrupt-node.js';
+import type { SpeculateCapabilityNode } from '../../ast/speculate-capability-node.js';
 import type { AgentContinuationFrame } from '../../ports/agent-continuation-frame.js';
 import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
@@ -54,6 +58,20 @@ export interface AgentTurnSessionState<TIn = unknown, TOut = unknown, THandle = 
   readonly scopedRules: readonly InlineScopedRuleNode[];
   /** Pre-indexed map of all always-on and skill-unlocked `ToolASTNode` definitions by `tool.name`. */
   readonly toolsByName: ReadonlyMap<string, ToolASTNode<THandle>>;
+  /** Pre-indexed map of `.fork()` capability descriptors keyed by `toolName`. */
+  readonly forksByToolName: ReadonlyMap<
+    string,
+    ForkCapabilityNode<TIn, unknown, unknown, unknown, THandle>
+  >;
+  /** Pre-indexed map of `.speculate()` capability descriptors keyed by `toolName`. */
+  readonly speculationsByToolName: ReadonlyMap<
+    string,
+    SpeculateCapabilityNode<TIn, unknown, unknown, unknown, THandle, unknown, unknown>
+  >;
+  /** Pre-indexed map of `.escalate()` capability descriptors keyed by `interrupt.id`. */
+  readonly escalationsByInterruptId: ReadonlyMap<string, EscalateCapabilityNode<unknown, unknown>>;
+  /** Pre-indexed map of `.canRaise()` voluntary interrupt descriptors keyed by `interrupt.id`. */
+  readonly canRaiseInterruptsById: ReadonlyMap<string, InterruptNode<unknown>>;
   /** Selected `ModelASTNode` for the current turn. */
   modelNode: ModelASTNode;
   /** Active `ModelDriver` instance for `modelNode`. */

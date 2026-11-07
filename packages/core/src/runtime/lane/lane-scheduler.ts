@@ -6,12 +6,10 @@ import { StepContinuationQueue } from '../locks/step-continuation-queue.js';
 import { PoolManager } from '../pools/pool-manager.js';
 import { ServiceSessionRegistry } from '../services/service-session-registry.js';
 import type { EnqueueLaneItemOptions } from './enqueue-lane-item-options.js';
-import {
-  assertAcyclicLaneDependencies,
-  evaluateLaneItemBudget,
-  prepareLaneItemFlowExecution,
-  resolveLaneTrackerAdapter,
-} from './internal/lane-run-helpers.js';
+import { assertAcyclicLaneDependencies } from './internal/assert-acyclic-lane-dependencies.js';
+import { evaluateLaneItemBudget } from './internal/evaluate-lane-item-budget.js';
+import { prepareLaneItemFlowExecution } from './internal/prepare-lane-item-flow-execution.js';
+import { resolveLaneTrackerAdapter } from './internal/resolve-lane-tracker-adapter.js';
 import {
   DEFAULT_PRIORITY_AGING_INTERVAL_MS,
   LANE_PRIORITY_WEIGHTS,

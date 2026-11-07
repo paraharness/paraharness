@@ -46,66 +46,84 @@ export function collectTriggeredScopedRuleChecks<TIn, TOut, THandle>(
 }
 
 /**
- * Attributes `beforeStop` gate outcomes (`gate_rejected_unrecovered`, `gate_rejected_recovered`, `clean_pass`, `violated`) to recalled lessons.
- *
- * Also triggers or buffers contrastive `.onGateRecovery()` distillation when a session recovers from a prior gate failure (`SPEC.md` §3.4.3).
+ * Attributes `gate_rejected_unrecovered` to recalled lessons and snapshots `lastGateFailureJson` under a read lock (`SPEC.md` §3.4.3).
  *
  * @template TIn     Validated agent input payload type.
  * @template TOut    Validated agent output payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
  * @param {AgentTurnSessionState<TIn, TOut, THandle>} session          - Active agent turn session state.
- * @param {BeforeStopGateEvaluationResult}            gateResult       - Gate evaluation result.
+ * @param {BeforeStopGateEvaluationResult}            gateResult       - Failed gate evaluation result.
  * @param {unknown}                                   structuredOutput - Candidate structured output from the model.
  *
- * @returns {Promise<void>} Resolves once outcomes and any gate recovery distillation are recorded.
+ * @returns {Promise<void>} Resolves once `lastGateFailureJson` and failed outcomes are recorded on `session.agentFrame`.
  */
-export async function attributeBeforeStopLessonOutcomes<TIn, TOut, THandle>(
+export async function recordFailedBeforeStopGate<TIn, TOut, THandle>(
   session: AgentTurnSessionState<TIn, TOut, THandle>,
   gateResult: BeforeStopGateEvaluationResult,
   structuredOutput: unknown,
 ): Promise<void> {
   const recordOutcomes = session.node.lessons?.recordOutcomes !== false;
-  if (!gateResult.passed) {
-    if (recordOutcomes) {
-      for (const l of session.recalledLessons) {
-        session.accumulatedLessonOutcomes[l.id] = mergeLessonOutcomePrecedence(
-          session.accumulatedLessonOutcomes[l.id],
-          'gate_rejected_unrecovered',
-        );
-      }
+  if (recordOutcomes) {
+    for (const l of session.recalledLessons) {
+      session.accumulatedLessonOutcomes[l.id] = mergeLessonOutcomePrecedence(
+        session.accumulatedLessonOutcomes[l.id],
+        'gate_rejected_unrecovered',
+      );
     }
-    const scopeFactory =
-      session.ctx.scopeNode !== undefined
-        ? session.ctx.registry.scopes[session.ctx.scopeNode.type]
-        : undefined;
-    const scopeDriver = (session.ctx.scope ??
-      (scopeFactory !== undefined && session.ctx.scopeNode !== undefined
-        ? scopeFactory(session.ctx.scopeNode as never, {
-            registry: session.ctx.registry,
-            resolveEnv: (v) => session.ctx.resolveEnv(v),
-            getRunner: (r) => session.ctx.getRunner(r),
-          })
-        : undefined)) as IsolationScope<THandle, Record<string, unknown>> | undefined;
-    const scopeReceipt =
-      scopeDriver !== undefined
-        ? await session.lockManager.withReadLock(session.ctx.scopeHandle, () =>
-            scopeDriver.inspect(session.ctx.scopeHandle),
-          )
-        : undefined;
-    const failSnap = JSON.stringify({
-      output: structuredOutput,
-      scopeReceipt,
-      failedChecks: gateResult.failedCheckIds,
-      deficits: gateResult.deficits,
-    });
-    session.agentFrame = Object.freeze<AgentContinuationFrame>({
-      ...session.agentFrame,
-      lastGateFailureJson: failSnap,
-      accumulatedLessonOutcomes: Object.freeze({ ...session.accumulatedLessonOutcomes }),
-    });
-    return;
   }
+  const scopeFactory =
+    session.ctx.scopeNode !== undefined
+      ? session.ctx.registry.scopes[session.ctx.scopeNode.type]
+      : undefined;
+  const scopeDriver = (session.ctx.scope ??
+    (scopeFactory !== undefined && session.ctx.scopeNode !== undefined
+      ? scopeFactory(session.ctx.scopeNode as never, {
+          registry: session.ctx.registry,
+          resolveEnv: (v) => session.ctx.resolveEnv(v),
+          getRunner: (r) => session.ctx.getRunner(r),
+        })
+      : undefined)) as IsolationScope<THandle, Record<string, unknown>> | undefined;
+  const scopeReceipt =
+    scopeDriver !== undefined
+      ? await session.lockManager.withReadLock(
+          session.ctx.scopeHandle,
+          () => scopeDriver.inspect(session.ctx.scopeHandle),
+          session.ctx.signal,
+        )
+      : undefined;
+  const failSnap = JSON.stringify({
+    output: structuredOutput,
+    scopeReceipt,
+    failedChecks: gateResult.failedCheckIds,
+    deficits: gateResult.deficits,
+  });
+  session.agentFrame = Object.freeze<AgentContinuationFrame>({
+    ...session.agentFrame,
+    lastGateFailureJson: failSnap,
+    accumulatedLessonOutcomes: Object.freeze({ ...session.accumulatedLessonOutcomes }),
+  });
+}
+
+/**
+ * Attributes `violated`, `gate_rejected_recovered`, and `clean_pass` lesson outcomes and triggers `.onGateRecovery()` distillation (`SPEC.md` §3.4.3).
+ *
+ * Buffers contrastive gate recoveries on `session.agentFrame.bufferedGateRecoveries` when running inside an `H.loop` iteration.
+ *
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>} session          - Active agent turn session state.
+ * @param {unknown}                                   structuredOutput - Accepted structured output from the model.
+ *
+ * @returns {Promise<void>} Resolves once passed gate outcomes and any `.onGateRecovery()` distillation complete.
+ */
+export async function recordPassedBeforeStopGateAndDistill<TIn, TOut, THandle>(
+  session: AgentTurnSessionState<TIn, TOut, THandle>,
+  structuredOutput: unknown,
+): Promise<void> {
+  const recordOutcomes = session.node.lessons?.recordOutcomes !== false;
   if (
     recordOutcomes &&
     typeof structuredOutput === 'object' &&
@@ -254,14 +272,17 @@ export async function evaluateBeforeStopGate<TIn, TOut, THandle>(
         `No CheckExecutor registered for '${checkNode.type}' in agent '${session.node.id}'.`,
       );
     }
-    const res = await session.lockManager.withReadLock(session.ctx.scopeHandle, () =>
-      Promise.resolve(
-        checkExec(
-          checkNode as never,
-          undefined,
-          session.ctx as StepExecutionContext<unknown>,
+    const res = await session.lockManager.withReadLock(
+      session.ctx.scopeHandle,
+      () =>
+        Promise.resolve(
+          checkExec(
+            checkNode as never,
+            undefined,
+            session.ctx as StepExecutionContext<unknown>,
+          ),
         ),
-      ),
+      session.ctx.signal,
     );
     if (!res.ok) {
       const checkId =
@@ -279,7 +300,11 @@ export async function evaluateBeforeStopGate<TIn, TOut, THandle>(
     deficits: Object.freeze(deficits),
     failedCheckIds: Object.freeze(failedCheckIds),
   });
-  await attributeBeforeStopLessonOutcomes(session, result, structuredOutput);
+  if (!result.passed) {
+    await recordFailedBeforeStopGate(session, result, structuredOutput);
+  } else {
+    await recordPassedBeforeStopGateAndDistill(session, structuredOutput);
+  }
   if (!result.passed && session.ledgerStore !== undefined) {
     const feedbackText = `[BEFORE_STOP_GATE_REJECTED]\n${deficits.join('\n')}`;
     const msgId = `msg:${session.ctx.stepExecId}:gate-fail:${String(session.agentFrame.turnsTaken)}`;

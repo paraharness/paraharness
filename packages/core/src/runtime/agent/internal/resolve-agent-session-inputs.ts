@@ -1,20 +1,30 @@
 import type { AgentNode } from '../../../ast/agent-node.js';
-import type { SourceASTNode, StepASTNode, ToolASTNode } from '../../../ast/domain-ast.types.js';
+import type { SourceASTNode, ToolASTNode } from '../../../ast/domain-ast.types.js';
+import type { EscalateCapabilityNode } from '../../../ast/escalate-capability-node.js';
+import type { ForkCapabilityNode } from '../../../ast/fork-capability-node.js';
 import type { InlineScopedRuleNode } from '../../../ast/inline-scoped-rule-node.js';
 import type { InlineSkillNode } from '../../../ast/inline-skill-node.js';
-import type { LoopNode } from '../../../ast/loop-node.js';
+import type { InterruptNode } from '../../../ast/interrupt-node.js';
 import type { SourcedScopedRuleNode } from '../../../ast/sourced-scoped-rule-node.js';
 import type { SourcedSkillNode } from '../../../ast/sourced-skill-node.js';
-import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
-import type { LessonOutcome } from '../../../ports/lesson-outcome.types.js';
+import type { SpeculateCapabilityNode } from '../../../ast/speculate-capability-node.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { ScopedRule } from '../../../schemas/core-rules.schema.js';
-import type { ChildForkExecutionOutcome } from '../../fork/child-fork-execution-outcome.js';
-import { executeLoop } from '../../loop/execute-loop.js';
 import { resolveSourceStringValue } from '../../prefix/internal/collect-prefix-tools.js';
-import { executeStepNode } from '../../step/execute-step-node.js';
-import type { AgentTurnSessionState } from '../agent-turn-session-state.js';
-import { executeAgent } from '../execute-agent.js';
+
+/**
+ * Mutable tool and service lookup maps populated by `registerResolvedInlineSkill`.
+ *
+ * @template THandle Runtime handle type of the active isolation scope.
+ */
+export interface RegisterResolvedInlineSkillToolMapsParams<THandle = unknown> {
+  /** Mutable tool map keyed by `tool.name`. */
+  readonly toolsByName: Map<string, ToolASTNode<THandle>>;
+  /** Mutable map of unlocked tool/service tool name to owning `skill.id`. */
+  readonly skillOwnerByToolName: Map<string, string>;
+  /** Mutable map of service tool name to owning `service.id`. */
+  readonly serviceByToolName: Map<string, string>;
+}
 
 /**
  * Indexes a single resolved `InlineSkillNode` and its unlocked tools and services into the session lookup maps.
@@ -24,18 +34,14 @@ import { executeAgent } from '../execute-agent.js';
  *
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {InlineSkillNode<THandle>}              skill      - Resolved inline skill node to register.
- * @param {Map<string, InlineSkillNode<THandle>>} skillsById - Mutable skill map keyed by `skill.id`.
- * @param {object}                                toolMaps   - Mutable tool and service lookup maps.
+ * @param {InlineSkillNode<THandle>}                             skill      - Resolved inline skill node to register.
+ * @param {Map<string, InlineSkillNode<THandle>>}                skillsById - Mutable skill map keyed by `skill.id`.
+ * @param {RegisterResolvedInlineSkillToolMapsParams<THandle>}   toolMaps   - Mutable tool and service lookup maps.
  */
 export function registerResolvedInlineSkill<THandle>(
   skill: InlineSkillNode<THandle>,
   skillsById: Map<string, InlineSkillNode<THandle>>,
-  toolMaps: {
-    readonly toolsByName: Map<string, ToolASTNode<THandle>>;
-    readonly skillOwnerByToolName: Map<string, string>;
-    readonly serviceByToolName: Map<string, string>;
-  },
+  toolMaps: RegisterResolvedInlineSkillToolMapsParams<THandle>,
 ): void {
   skillsById.set(skill.id, skill);
   for (const st of skill.unlockedTools) {
@@ -51,9 +57,10 @@ export function registerResolvedInlineSkill<THandle>(
 }
 
 /**
- * Resolves all inline, sourced (`SourcedSkillNode`), and dynamic (`SourceASTNode`) skills and tools on `node`.
+ * Resolves all inline, sourced (`SourcedSkillNode`), and dynamic (`SourceASTNode`) skills, tools, capabilities, and interrupts on `node`.
  *
- * Pre-indexes `toolsByName`, `skillsById`, `skillOwnerByToolName`, and `serviceByToolName` once at session start (`Rule 4.2`).
+ * Pre-indexes `toolsByName`, `skillsById`, `skillOwnerByToolName`, `serviceByToolName`, `forksByToolName`,
+ * `speculationsByToolName`, `escalationsByInterruptId`, and `canRaiseInterruptsById` once at session start (`Rule 4.2`).
  *
  * @template TIn     Validated agent input payload type.
  * @template TOut    Validated agent output payload type.
@@ -62,7 +69,7 @@ export function registerResolvedInlineSkill<THandle>(
  * @param {AgentNode<TIn, TOut, THandle>} node - Passive `AgentNode` AST definition.
  * @param {StepExecutionContext<THandle>} ctx  - Active step execution context.
  *
- * @returns {Promise<{ readonly toolsByName: ReadonlyMap<string, ToolASTNode<THandle>>; readonly skillsById: ReadonlyMap<string, InlineSkillNode<THandle>>; readonly skillOwnerByToolName: ReadonlyMap<string, string>; readonly serviceByToolName: ReadonlyMap<string, string> }>} Pre-indexed skill and tool lookup maps.
+ * @returns {Promise<{ readonly toolsByName: ReadonlyMap<string, ToolASTNode<THandle>>; readonly skillsById: ReadonlyMap<string, InlineSkillNode<THandle>>; readonly skillOwnerByToolName: ReadonlyMap<string, string>; readonly serviceByToolName: ReadonlyMap<string, string>; readonly forksByToolName: ReadonlyMap<string, ForkCapabilityNode<TIn, unknown, unknown, unknown, THandle>>; readonly speculationsByToolName: ReadonlyMap<string, SpeculateCapabilityNode<TIn, unknown, unknown, unknown, THandle, unknown, unknown>>; readonly escalationsByInterruptId: ReadonlyMap<string, EscalateCapabilityNode<unknown, unknown>>; readonly canRaiseInterruptsById: ReadonlyMap<string, InterruptNode<unknown>> }>} Pre-indexed skill, tool, and capability lookup maps.
  */
 export async function resolveAgentSkillsAndTools<TIn, TOut, THandle>(
   node: AgentNode<TIn, TOut, THandle>,
@@ -72,14 +79,46 @@ export async function resolveAgentSkillsAndTools<TIn, TOut, THandle>(
   readonly skillsById: ReadonlyMap<string, InlineSkillNode<THandle>>;
   readonly skillOwnerByToolName: ReadonlyMap<string, string>;
   readonly serviceByToolName: ReadonlyMap<string, string>;
+  readonly forksByToolName: ReadonlyMap<
+    string,
+    ForkCapabilityNode<TIn, unknown, unknown, unknown, THandle>
+  >;
+  readonly speculationsByToolName: ReadonlyMap<
+    string,
+    SpeculateCapabilityNode<TIn, unknown, unknown, unknown, THandle, unknown, unknown>
+  >;
+  readonly escalationsByInterruptId: ReadonlyMap<string, EscalateCapabilityNode<unknown, unknown>>;
+  readonly canRaiseInterruptsById: ReadonlyMap<string, InterruptNode<unknown>>;
 }> {
   const toolsByName = new Map<string, ToolASTNode<THandle>>();
   const skillsById = new Map<string, InlineSkillNode<THandle>>();
   const skillOwnerByToolName = new Map<string, string>();
   const serviceByToolName = new Map<string, string>();
+  const forksByToolName = new Map<
+    string,
+    ForkCapabilityNode<TIn, unknown, unknown, unknown, THandle>
+  >();
+  const speculationsByToolName = new Map<
+    string,
+    SpeculateCapabilityNode<TIn, unknown, unknown, unknown, THandle, unknown, unknown>
+  >();
+  const escalationsByInterruptId = new Map<string, EscalateCapabilityNode<unknown, unknown>>();
+  const canRaiseInterruptsById = new Map<string, InterruptNode<unknown>>();
   const toolMaps = { toolsByName, skillOwnerByToolName, serviceByToolName };
   for (const tool of node.tools) {
     toolsByName.set(tool.name, tool);
+  }
+  for (const forkCap of node.capabilities?.forks ?? []) {
+    forksByToolName.set(forkCap.toolName, forkCap);
+  }
+  for (const specCap of node.capabilities?.speculations ?? []) {
+    speculationsByToolName.set(specCap.toolName, specCap);
+  }
+  for (const escCap of node.capabilities?.escalations ?? []) {
+    escalationsByInterruptId.set(escCap.interrupt.id, escCap);
+  }
+  for (const intr of node.canRaiseInterrupts) {
+    canRaiseInterruptsById.set(intr.id, intr);
   }
   for (const sEntry of node.skills) {
     const entryType = (sEntry as { readonly type?: string }).type;
@@ -99,12 +138,12 @@ export async function resolveAgentSkillsAndTools<TIn, TOut, THandle>(
         typeof art.content === 'object' && art.content !== null
           ? (art.content as Partial<InlineSkillNode<THandle>>)
           : undefined;
-      const instrText =
-        sourced.instructions !== undefined
-          ? (await resolveSourceStringValue(sourced.instructions, ctx.registry, ctx)).text
-          : typeof loaded?.instructions === 'string'
-            ? loaded.instructions
-            : String(art.content);
+      let instrText = String(art.content);
+      if (sourced.instructions !== undefined) {
+        instrText = (await resolveSourceStringValue(sourced.instructions, ctx.registry, ctx)).text;
+      } else if (typeof loaded?.instructions === 'string') {
+        instrText = loaded.instructions;
+      }
       registerResolvedInlineSkill(
         Object.freeze<InlineSkillNode<THandle>>({
           type: 'harness:skill',
@@ -135,7 +174,16 @@ export async function resolveAgentSkillsAndTools<TIn, TOut, THandle>(
       }
     }
   }
-  return { toolsByName, skillsById, skillOwnerByToolName, serviceByToolName };
+  return {
+    toolsByName,
+    skillsById,
+    skillOwnerByToolName,
+    serviceByToolName,
+    forksByToolName,
+    speculationsByToolName,
+    escalationsByInterruptId,
+    canRaiseInterruptsById,
+  };
 }
 
 /**
@@ -243,100 +291,4 @@ export async function resolveAgentScopedRulesAndDirectives<TIn, TOut, THandle>(
     actorGroundingTexts: Object.freeze(actorGroundingTexts),
     actorInstructionTexts: Object.freeze(actorInstructionTexts),
   };
-}
-
-/**
- * Default child step runner dispatching `AgentNode`, `LoopNode`, or domain `StepASTNode` instances and capturing upward interrupts (`SPEC.md` §3.7.2).
- *
- * Propagates shared stores, managers, and continuation stacks between parent and child executions.
- *
- * @template TIn     Parent agent input payload type.
- * @template TOut    Parent agent output payload type.
- * @template THandle Runtime handle type of the active isolation scope.
- *
- * @param {StepASTNode<unknown, unknown, THandle>} childNode - Child step AST node to execute.
- * @param {unknown}                                childIn   - Child step input payload.
- * @param {object}                                 runCtx    - Child step execution context and enclosing parent agent session state.
- *
- * @returns {Promise<ChildForkExecutionOutcome<unknown>>} Completed child output or upward interrupt outcome.
- */
-export async function executeDefaultChildStep<TIn, TOut, THandle>(
-  childNode: StepASTNode<unknown, unknown, THandle>,
-  childIn: unknown,
-  runCtx: {
-    readonly childCtx: StepExecutionContext<THandle>;
-    readonly parent: AgentTurnSessionState<TIn, TOut, THandle>;
-  },
-): Promise<ChildForkExecutionOutcome<unknown>> {
-  const { childCtx, parent } = runCtx;
-  const existingRuntime =
-    (childCtx as StepExecutionContext<THandle> & { readonly _runtime?: Record<string, unknown> })
-      ._runtime ?? {};
-  const childOutcomeSink: {
-    continuationStack?: readonly ContinuationFrame[];
-    leafMessageId?: string | null;
-    accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>;
-    raisedByPhase?: 'act' | 'evaluate';
-    suspendedAtCallId?: string;
-  } = {};
-  const enrichedCtx = Object.freeze({
-    ...childCtx,
-    _runtime: {
-      ledgerStore: parent.ledgerStore,
-      topologyStore: parent.topologyStore,
-      lessonStore: parent.lessonStore,
-      lockManager: parent.lockManager,
-      continuationQueue: parent.continuationQueue,
-      poolManager: parent.poolManager,
-      serviceRegistry: parent.serviceRegistry,
-      humanAdaptersById: parent.humanAdaptersById,
-      ...existingRuntime,
-      childOutcomeSink,
-    },
-  });
-  try {
-    const nodeType = (childNode as { readonly type: string }).type;
-    let output: unknown;
-    if (nodeType === 'harness:agent') {
-      output = await executeAgent(
-        childNode as AgentNode<unknown, unknown, THandle>,
-        childIn,
-        enrichedCtx,
-      );
-    } else if (nodeType === 'harness:loop') {
-      output = await executeLoop(
-        childNode as LoopNode<unknown, unknown, THandle>,
-        childIn,
-        enrichedCtx,
-      );
-    } else {
-      output = await executeStepNode(childNode, childIn, enrichedCtx);
-    }
-    return Object.freeze<ChildForkExecutionOutcome<unknown>>({
-      status: 'completed',
-      output,
-      leafMessageId: childOutcomeSink.leafMessageId,
-      accumulatedLessonOutcomes: childOutcomeSink.accumulatedLessonOutcomes,
-      continuationStack: childOutcomeSink.continuationStack ?? Object.freeze([]),
-    });
-  } catch (err) {
-    const intrErr = err as {
-      readonly interruptResolution?: { readonly interruptId: string; readonly payload: unknown };
-      readonly raisedByPhase?: 'act' | 'evaluate';
-      readonly suspendedAtCallId?: string;
-    };
-    if (intrErr.interruptResolution !== undefined) {
-      return Object.freeze<ChildForkExecutionOutcome<unknown>>({
-        status: 'interrupt-raised',
-        interruptId: intrErr.interruptResolution.interruptId,
-        interruptPayload: intrErr.interruptResolution.payload,
-        raisedByPhase: intrErr.raisedByPhase ?? childOutcomeSink.raisedByPhase ?? 'act',
-        suspendedAtCallId: intrErr.suspendedAtCallId ?? childOutcomeSink.suspendedAtCallId,
-        leafMessageId: childOutcomeSink.leafMessageId,
-        accumulatedLessonOutcomes: childOutcomeSink.accumulatedLessonOutcomes,
-        continuationStack: childOutcomeSink.continuationStack ?? Object.freeze([]),
-      });
-    }
-    throw err;
-  }
 }

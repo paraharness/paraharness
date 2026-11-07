@@ -225,6 +225,23 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
     expect(compiledGroupJson).toContain('fs_read');
 
     const restoresBeforeChild = scope.restoredCheckpoints.length;
+    const origSyncRoot = scope.syncRoot.bind(scope);
+    let failSyncRootOnce = true;
+    scope.syncRoot = async (h, receipts) => {
+      if (failSyncRootOnce) {
+        failSyncRootOnce = false;
+        throw new Error('syncRoot initialization failure');
+      }
+      return origSyncRoot(h, receipts);
+    };
+    await expect(scheduler.scheduleNextReadyRuns(1_000 + 20 * 60_000)).rejects.toThrow(
+      'syncRoot initialization failure',
+    );
+    expect(scope.liveHandles.has('root:run:lane-1:item-child')).toBe(false);
+    const childFailedItem = scheduler.getItemsByKey().get('item-child');
+    if (childFailedItem !== undefined) {
+      childFailedItem.status = 'QUEUED';
+    }
     const pass2 = await scheduler.scheduleNextReadyRuns(1_000 + 20 * 60_000);
     expect(pass2[0]?.runId).toBe('run:lane-1:item-child');
     expect(step2Attempts).toBe(2);

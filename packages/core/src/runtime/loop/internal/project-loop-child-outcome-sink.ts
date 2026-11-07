@@ -1,6 +1,5 @@
-import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
-import type { LessonOutcome } from '../../../ports/lesson-outcome.types.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
+import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
 import type { LoopExecutionState } from '../loop-execution-state.js';
 
 /**
@@ -20,19 +19,7 @@ export function projectLoopChildOutcomeSink<TIn = unknown, TOut = unknown, THand
   ctx: StepExecutionContext<THandle>,
   state: LoopExecutionState<TIn, TOut, THandle>,
 ): void {
-  const sink = (
-    ctx as StepExecutionContext<THandle> & {
-      readonly _runtime?: {
-        readonly childOutcomeSink?: {
-          continuationStack?: readonly ContinuationFrame[];
-          leafMessageId?: string | null;
-          accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>;
-          raisedByPhase?: 'act' | 'evaluate';
-          suspendedAtCallId?: string;
-        };
-      };
-    }
-  )._runtime?.childOutcomeSink;
+  const sink = getStepRuntimeInternals(ctx)?.childOutcomeSink;
   if (sink === undefined) {
     return;
   }

@@ -18,7 +18,11 @@ export async function flushStepLessonOutcomes(
     readonly lessonId: string;
     readonly outcome: typeof params.accumulatedOutcomes[string];
   }> = [];
-  for (const [lessonId, outcome] of Object.entries(params.accumulatedOutcomes)) {
+  for (const lessonId in params.accumulatedOutcomes) {
+    if (!Object.hasOwn(params.accumulatedOutcomes, lessonId)) {
+      continue;
+    }
+    const outcome = params.accumulatedOutcomes[lessonId];
     if (outcome !== undefined) {
       entries.push({ lessonId, outcome });
     }

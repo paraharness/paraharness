@@ -1,5 +1,8 @@
 import type { AgentNode } from '../../../ast/agent-node.js';
+import type { LoopNode } from '../../../ast/loop-node.js';
 import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
+import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
+import type { LeaseDelta } from '../../../ports/lease-delta.js';
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { CrossVerifierBranchCandidate } from '../../../ports/runtime-executor-registry.js';
 import type {
@@ -7,6 +10,7 @@ import type {
   SpeculateContinuationFrame,
   SpeculateHumanRulingRecord,
 } from '../../../ports/speculate-continuation-frame.js';
+import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
 import { executeDefaultForkOrTournamentChild } from '../../fork/internal/run-single-fork-call.js';
 import type { PostRaceResolution } from '../post-race-resolution.js';
 import type { SpeculateTournamentParams } from '../speculate-tournament-params.js';
@@ -21,6 +25,40 @@ import {
   mergeBranchBufferedOutcomes,
   promoteRefinedWinnerStack,
 } from './commit-and-flush-tournament-winner.js';
+
+/**
+ * Context parameters for `buildArbiterCandidatesAndFailures` and `runTournamentArbiterWithGate`.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ */
+export interface RunTournamentArbiterWithGateContextParams<THandle = unknown> {
+  /** Live branch handles keyed by `branchIndex`. */
+  readonly handlesByBranch: ReadonlyMap<number, THandle>;
+  /** Pre-computed branch input payloads (`0..B-1`) from `mapBranches`. */
+  readonly branchInputs: readonly unknown[];
+}
+
+/**
+ * Parameters for `runOptionalWinnerRefinement`.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ */
+export interface RunOptionalWinnerRefinementParams<THandle = unknown> {
+  /** Tournament parameters. */
+  readonly params: SpeculateTournamentParams<THandle>;
+  /** Winner refinement and commit context. */
+  readonly commitCtx: WinnerRefinementCommitContext<THandle>;
+  /** Winning branch scope handle. */
+  readonly winnerHandle: THandle;
+  /** Winning branch entry record. */
+  readonly winnerBranch: SpeculateBranchEntryRecord;
+  /** Current tournament continuation frame. */
+  readonly curFrame: SpeculateContinuationFrame;
+  /** Inherited leases from the winning branch. */
+  readonly inheritedLeases: readonly LeaseDelta[];
+  /** Child step execution callback. */
+  readonly runStep: NonNullable<SpeculateTournamentParams<THandle>['executeChildStep']>;
+}
 
 /**
  * Classifies a completed speculative tournament race into Post-Race Cases 1–4 (`SPEC.md` §3.7.2 Capability 2).
@@ -67,20 +105,20 @@ export function resolvePostRaceCases(
 /**
  * Builds candidate descriptors and failure summaries for `arbiter.actor` (`SPEC.md` §3.7.2).
  *
- *Runs `crossVerifier` over `COMPLETED` branch handles and formats `PARKED_ON_ESCALATION` and `COMPLETED` entries.
+ * Runs `crossVerifier` over `COMPLETED` branch handles and formats `PARKED_ON_ESCALATION` and `COMPLETED` entries.
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
- * @param {SpeculateTournamentParams<THandle>} params          - Tournament parameters.
- * @param {SpeculateContinuationFrame}         frame           - Current tournament continuation frame.
- * @param {ReadonlyMap<number, THandle>}       handlesByBranch - Live branch handles keyed by `branchIndex`.
+ * @param {SpeculateTournamentParams<THandle>}                 params     - Tournament parameters.
+ * @param {SpeculateContinuationFrame}                         frame      - Current tournament continuation frame.
+ * @param {RunTournamentArbiterWithGateContextParams<THandle>} arbiterCtx - Live branch handles and pre-computed branch inputs.
  *
  * @returns {Promise<{ readonly candidates: readonly Record<string, unknown>[]; readonly failedBranches: readonly { readonly branchIndex: number; readonly errorSummary: string }[] }>} Formatted arbiter candidates and failed branches.
  */
 async function buildArbiterCandidatesAndFailures<THandle = unknown>(
   params: SpeculateTournamentParams<THandle>,
   frame: SpeculateContinuationFrame,
-  handlesByBranch: ReadonlyMap<number, THandle>,
+  arbiterCtx: RunTournamentArbiterWithGateContextParams<THandle>,
 ): Promise<{
   readonly candidates: readonly Record<string, unknown>[];
   readonly failedBranches: readonly {
@@ -88,6 +126,7 @@ async function buildArbiterCandidatesAndFailures<THandle = unknown>(
     readonly errorSummary: string;
   }[];
 }> {
+  const { handlesByBranch, branchInputs } = arbiterCtx;
   const crossCandidates: CrossVerifierBranchCandidate<THandle>[] = [];
   for (const branch of frame.branches) {
     const handle = handlesByBranch.get(branch.branchIndex);
@@ -107,8 +146,6 @@ async function buildArbiterCandidatesAndFailures<THandle = unknown>(
     cvExec !== undefined && params.capability.crossVerifier !== undefined
       ? await cvExec(params.capability.crossVerifier as never, crossCandidates, params.ctx as never)
       : {};
-  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}'));
-  const branchInputs = params.capability.mapBranches(params.parentInput, req);
   const candidates: Array<Record<string, unknown>> = [];
   const failedBranches: Array<{ readonly branchIndex: number; readonly errorSummary: string }> = [];
   for (const branch of frame.branches) {
@@ -120,12 +157,12 @@ async function buildArbiterCandidatesAndFailures<THandle = unknown>(
       continue;
     }
     const handle = handlesByBranch.get(branch.branchIndex);
-    const receipt =
-      branch.scopeReceiptJson !== undefined
-        ? JSON.parse(branch.scopeReceiptJson)
-        : handle !== undefined
-          ? await params.branchableScope.inspect(handle)
-          : {};
+    let receipt: unknown = {};
+    if (branch.scopeReceiptJson !== undefined) {
+      receipt = JSON.parse(branch.scopeReceiptJson);
+    } else if (handle !== undefined) {
+      receipt = await params.branchableScope.inspect(handle);
+    }
     if (branch.status === 'PARKED_ON_ESCALATION') {
       const escPayload =
         branch.parkedEscalationPayloadJson !== undefined
@@ -164,17 +201,18 @@ async function buildArbiterCandidatesAndFailures<THandle = unknown>(
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
- * @param {SpeculateTournamentParams<THandle>} params          - Tournament parameters.
- * @param {SpeculateContinuationFrame}         frame           - Current tournament continuation frame.
- * @param {ReadonlyMap<number, THandle>}       handlesByBranch - Live branch handles keyed by `branchIndex`.
+ * @param {SpeculateTournamentParams<THandle>}                 params     - Tournament parameters.
+ * @param {SpeculateContinuationFrame}                         frame      - Current tournament continuation frame.
+ * @param {RunTournamentArbiterWithGateContextParams<THandle>} arbiterCtx - Live branch handles and pre-computed branch inputs.
  *
  * @returns {Promise<ValidatedArbiterTurnResult>} Validated arbiter verdict and decision.
  */
 export async function runTournamentArbiterWithGate<THandle = unknown>(
   params: SpeculateTournamentParams<THandle>,
   frame: SpeculateContinuationFrame,
-  handlesByBranch: ReadonlyMap<number, THandle>,
+  arbiterCtx: RunTournamentArbiterWithGateContextParams<THandle>,
 ): Promise<ValidatedArbiterTurnResult> {
+  const { handlesByBranch } = arbiterCtx;
   const runStep =
     params.executeChildStep ??
     ((cNode, cIn, cCtx) =>
@@ -190,7 +228,7 @@ export async function runTournamentArbiterWithGate<THandle = unknown>(
   const { candidates, failedBranches } = await buildArbiterCandidatesAndFailures(
     params,
     frame,
-    handlesByBranch,
+    arbiterCtx,
   );
   let validationFeedback: string | undefined;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -276,6 +314,93 @@ function findMatchingWorkerEscalation<THandle = unknown>(
 }
 
 /**
+ * Builds the resumed continuation stack for a parked tournament branch after receiving a human ruling.
+ *
+ * Attaches `grantedLease` to `loop-frame` and `agent-frame` entries and transitions `adjudication` pause state
+ * back to `tool-batch` or `active-turn`.
+ *
+ * @param {readonly ContinuationFrame[]} stackWithReqId - Parked branch continuation stack with `humanRequestId` attached.
+ * @param {string}                       feedback       - Formatted human ruling feedback string.
+ * @param {LeaseDelta | undefined}       grantedLease   - Optional elevated lease granted by the human ruling.
+ *
+ * @returns {readonly ContinuationFrame[]} Resumed continuation stack ready for worker re-invocation.
+ */
+function buildResumedUnparkContinuationStack(
+  stackWithReqId: readonly ContinuationFrame[],
+  feedback: string,
+  grantedLease: LeaseDelta | undefined,
+): readonly ContinuationFrame[] {
+  const resumed: ContinuationFrame[] = [];
+  for (const f of stackWithReqId) {
+    if (f.kind === 'loop-frame') {
+      resumed.push(
+        grantedLease !== undefined
+          ? Object.freeze<LoopContinuationFrame>({
+              ...f,
+              grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, grantedLease]),
+            })
+          : f,
+      );
+      continue;
+    }
+    if (f.kind !== 'agent-frame') {
+      resumed.push(f);
+      continue;
+    }
+    const prevBatch =
+      f.pauseState.kind === 'adjudication' ? f.pauseState.pendingToolBatch : undefined;
+    let nextBatch = prevBatch;
+    const leadingCall = prevBatch?.remainingCalls[0];
+    if (prevBatch !== undefined && leadingCall !== undefined) {
+      if (leadingCall.blockedPreFlight === true) {
+        nextBatch = Object.freeze({
+          ...prevBatch,
+          adjudicationFeedback: feedback,
+          remainingCalls: Object.freeze(
+            prevBatch.remainingCalls.map((c, idx) =>
+              idx === 0
+                ? Object.freeze({
+                    ...c,
+                    blockedPreFlight: undefined,
+                    adjudicatedClauseIds: undefined,
+                  })
+                : c,
+            ),
+          ),
+        });
+      } else {
+        nextBatch = Object.freeze({
+          ...prevBatch,
+          completedResults: Object.freeze([
+            ...prevBatch.completedResults,
+            Object.freeze({
+              callId: leadingCall.callId,
+              content: feedback,
+              isError: false,
+            }),
+          ]),
+          remainingCalls: Object.freeze(prevBatch.remainingCalls.slice(1)),
+        });
+      }
+    }
+    resumed.push(
+      Object.freeze<AgentContinuationFrame>({
+        ...f,
+        activeLeases:
+          grantedLease !== undefined
+            ? Object.freeze([...f.activeLeases, grantedLease])
+            : f.activeLeases,
+        pauseState:
+          nextBatch !== undefined
+            ? Object.freeze({ kind: 'tool-batch', pendingToolBatch: nextBatch })
+            : Object.freeze({ kind: 'active-turn' }),
+      }),
+    );
+  }
+  return Object.freeze(resumed);
+}
+
+/**
  * Unparks a `PARKED_ON_ESCALATION` branch non-destructively while retaining all `COMPLETED` sibling handles (`SPEC.md` §3.7.2).
  *
  * Persists `humanRequestId` before calling `HumanAdapter.requestDecision` for exogenous human escalations,
@@ -285,7 +410,7 @@ function findMatchingWorkerEscalation<THandle = unknown>(
  *
  * @param {SpeculateTournamentParams<THandle>} params    - Tournament parameters.
  * @param {SpeculateContinuationFrame}         frame     - Current tournament continuation frame.
- * @param {UnparkBranchContext<THandle>}       unparkCtx - Target branch index, handle, and persistence callback.
+ * @param {UnparkBranchContext<THandle>}       unparkCtx - Target branch index, handle, branch inputs, and persistence callback.
  *
  * @returns {Promise<UnparkBranchResult>} Unpark result.
  */
@@ -384,71 +509,11 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(
     'resumeWith' in escCap && typeof escCap.resumeWith === 'function'
       ? escCap.resumeWith(decision)
       : JSON.stringify(decision);
-  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}'));
-  const branchInputs = params.capability.mapBranches(params.parentInput, req);
-  const resumedStack = stackWithReqId.map((f) => {
-    if (f.kind === 'loop-frame') {
-      return grantedLease !== undefined
-        ? Object.freeze<LoopContinuationFrame>({
-            ...f,
-            grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, grantedLease]),
-          })
-        : f;
-    }
-    if (f.kind !== 'agent-frame') {
-      return f;
-    }
-    const prevBatch =
-      f.pauseState.kind === 'adjudication' ? f.pauseState.pendingToolBatch : undefined;
-    const nextBatch =
-      prevBatch !== undefined
-        ? prevBatch.remainingCalls[0]?.blockedPreFlight === true
-          ? Object.freeze({
-              ...prevBatch,
-              adjudicationFeedback: feedback,
-              remainingCalls: Object.freeze(
-                prevBatch.remainingCalls.map((c, idx) =>
-                  idx === 0
-                    ? Object.freeze({
-                        ...c,
-                        blockedPreFlight: undefined,
-                        adjudicatedClauseIds: undefined,
-                      })
-                    : c,
-                ),
-              ),
-            })
-          : prevBatch.remainingCalls[0] !== undefined
-            ? Object.freeze({
-                ...prevBatch,
-                completedResults: Object.freeze([
-                  ...prevBatch.completedResults,
-                  Object.freeze({
-                    callId: prevBatch.remainingCalls[0].callId,
-                    content: feedback,
-                    isError: false,
-                  }),
-                ]),
-                remainingCalls: Object.freeze(prevBatch.remainingCalls.slice(1)),
-              })
-            : prevBatch
-        : undefined;
-    return Object.freeze<AgentContinuationFrame>({
-      ...f,
-      activeLeases:
-        grantedLease !== undefined
-          ? Object.freeze([...f.activeLeases, grantedLease])
-          : f.activeLeases,
-      pauseState:
-        nextBatch !== undefined
-          ? Object.freeze({ kind: 'tool-batch', pendingToolBatch: nextBatch })
-          : Object.freeze({ kind: 'active-turn' }),
-    });
-  });
-  const parentRt = (params.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+  const resumedStack = buildResumedUnparkContinuationStack(stackWithReqId, feedback, grantedLease);
+  const parentRt = getStepRuntimeInternals(params.ctx) ?? {};
   const outcome = await runStep(
     params.capability.workerExecutable,
-    branchInputs[branch.branchIndex],
+    unparkCtx.branchInputs[branch.branchIndex],
     Object.freeze({
       ...params.ctx,
       stepExecId: `${params.ctx.stepExecId}:branch:${String(branch.branchIndex)}`,
@@ -510,6 +575,101 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(
 }
 
 /**
+ * Executes optional `.refineWinnerWhen()` on the winning branch while losing candidate worktrees remain mounted (`SPEC.md` §3.7.2).
+ *
+ * Snapshots `preRefinementCheckpoint` before invoking the refiner and restores it if the refiner fails or raises an interrupt.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ *
+ * @param {RunOptionalWinnerRefinementParams<THandle>} refineParams - Refinement parameters.
+ *
+ * @returns {Promise<{ readonly winnerBranch: SpeculateBranchEntryRecord; readonly curFrame: SpeculateContinuationFrame; readonly activeExecutable: AgentNode<unknown, unknown, THandle> | LoopNode<unknown, unknown, THandle>; readonly activeInput: unknown }>} Updated winner branch, frame, and active executable/input.
+ */
+async function runOptionalWinnerRefinement<THandle = unknown>(
+  refineParams: RunOptionalWinnerRefinementParams<THandle>,
+): Promise<{
+  readonly winnerBranch: SpeculateBranchEntryRecord;
+  readonly curFrame: SpeculateContinuationFrame;
+  readonly activeExecutable:
+    | AgentNode<unknown, unknown, THandle>
+    | LoopNode<unknown, unknown, THandle>;
+  readonly activeInput: unknown;
+}> {
+  const { params, commitCtx, winnerHandle, inheritedLeases, runStep } = refineParams;
+  let { winnerBranch, curFrame } = refineParams;
+  let activeExecutable = params.capability.workerExecutable;
+  let activeInput: unknown = commitCtx.branchInputs[commitCtx.winnerBranchIndex];
+  const refineCfg = params.capability.refineWinnerWhen;
+  if (
+    refineCfg === undefined ||
+    commitCtx.verdict === undefined ||
+    !refineCfg.predicate(commitCtx.verdict)
+  ) {
+    return { winnerBranch, curFrame, activeExecutable, activeInput };
+  }
+  const preCkpt = await params.branchableScope.serializeCheckpoint(winnerHandle);
+  curFrame = Object.freeze<SpeculateContinuationFrame>({
+    ...curFrame,
+    phase: 'REFINING_WINNER',
+    preRefinementCheckpoint: preCkpt,
+  });
+  await commitCtx.persistFrame(curFrame);
+  const candidates = curFrame.branches.map((b) => ({
+    branchIndex: b.branchIndex,
+    input: commitCtx.branchInputs[b.branchIndex],
+    status: b.status,
+    output: b.outputJson !== undefined ? JSON.parse(b.outputJson) : undefined,
+    scopeReceipt: b.scopeReceiptJson !== undefined ? JSON.parse(b.scopeReceiptJson) : undefined,
+  }));
+  const refineInput = refineCfg.mapInput(params.parentInput, commitCtx.verdict, candidates);
+  const parentRt = getStepRuntimeInternals(params.ctx) ?? {};
+  try {
+    const refinedOut = await runStep(
+      refineCfg.refinementExecutable,
+      refineInput,
+      Object.freeze({
+        ...params.ctx,
+        stepExecId: `${params.ctx.stepExecId}:refine:${String(commitCtx.winnerBranchIndex)}`,
+        scopeHandle: winnerHandle,
+        activeLeases: inheritedLeases,
+        candidateHandles: commitCtx.handlesByBranch,
+        _runtime: { ...parentRt, outerFrames: [...params.outerFrames, curFrame] },
+      }),
+    );
+    if (refinedOut.status === 'completed') {
+      winnerBranch = Object.freeze<SpeculateBranchEntryRecord>({
+        ...winnerBranch,
+        outputJson: JSON.stringify(refinedOut.output ?? null),
+        continuationStack: promoteRefinedWinnerStack(
+          winnerBranch.continuationStack,
+          refinedOut.continuationStack,
+        ),
+      });
+      curFrame = Object.freeze<SpeculateContinuationFrame>({
+        ...curFrame,
+        bufferedLessonOutcomes: mergeBranchBufferedOutcomes(
+          curFrame.bufferedLessonOutcomes,
+          commitCtx.winnerBranchIndex,
+          refinedOut.accumulatedLessonOutcomes,
+        ),
+        branches: Object.freeze(
+          curFrame.branches.map((b) =>
+            b.branchIndex === commitCtx.winnerBranchIndex ? winnerBranch : b,
+          ),
+        ),
+      });
+      activeExecutable = refineCfg.refinementExecutable;
+      activeInput = refineInput;
+    } else {
+      await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
+    }
+  } catch {
+    await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
+  }
+  return { winnerBranch, curFrame, activeExecutable, activeInput };
+}
+
+/**
  * Executes optional `.refineWinnerWhen()` while losing worktrees remain mounted, commits the winner with conflict-bounce retries, releases all handles, and flushes winner lessons (`SPEC.md` §3.7.2).
  *
  * Persists `WINNER_COMMITTED` before calling `LessonStore.recordOutcomes()` and discards losing branch lessons.
@@ -518,7 +678,7 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(
  *
  * @param {SpeculateTournamentParams<THandle>}     params    - Tournament parameters.
  * @param {SpeculateContinuationFrame}             frame     - Current tournament continuation frame.
- * @param {WinnerRefinementCommitContext<THandle>} commitCtx - Winner index, verdict, handles, and persistence callback.
+ * @param {WinnerRefinementCommitContext<THandle>} commitCtx - Winner index, verdict, branch inputs, handles, and persistence callback.
  *
  * @returns {Promise<SpeculateTournamentResult>} Final tournament result with committed winner output and receipt.
  */
@@ -540,108 +700,46 @@ export async function executeWinnerRefinementAndCommit<THandle = unknown>(
         outerFrames: [...params.outerFrames, frame],
       }));
   const winnerHandle = commitCtx.handlesByBranch.get(commitCtx.winnerBranchIndex);
-  let winnerBranch = frame.branches.find((b) => b.branchIndex === commitCtx.winnerBranchIndex);
-  let curFrame = Object.freeze<SpeculateContinuationFrame>({
+  const initialWinnerBranch = frame.branches.find(
+    (b) => b.branchIndex === commitCtx.winnerBranchIndex,
+  );
+  if (winnerHandle === undefined || initialWinnerBranch === undefined) {
+    throw new Error(`Winning branch '${String(commitCtx.winnerBranchIndex)}' handle not found.`);
+  }
+  const initialFrame = Object.freeze<SpeculateContinuationFrame>({
     ...frame,
     winnerBranchIndex: commitCtx.winnerBranchIndex,
   });
-  if (winnerHandle === undefined || winnerBranch === undefined) {
-    throw new Error(`Winning branch '${String(commitCtx.winnerBranchIndex)}' handle not found.`);
-  }
-  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}'));
-  const branchInputs = params.capability.mapBranches(params.parentInput, req);
-  const refineCfg = params.capability.refineWinnerWhen;
-  let activeExecutable = params.capability.workerExecutable;
-  let activeInput: unknown = branchInputs[commitCtx.winnerBranchIndex];
   const inheritedLeases =
-    winnerBranch.continuationStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')
-      ?.grantedLoopLeases ??
-    winnerBranch.continuationStack.find(
+    initialWinnerBranch.continuationStack.find(
+      (f): f is LoopContinuationFrame => f.kind === 'loop-frame',
+    )?.grantedLoopLeases ??
+    initialWinnerBranch.continuationStack.find(
       (f): f is AgentContinuationFrame => f.kind === 'agent-frame',
     )?.activeLeases ??
     params.ctx.activeLeases;
   try {
-    if (
-      refineCfg !== undefined &&
-      commitCtx.verdict !== undefined &&
-      refineCfg.predicate(commitCtx.verdict)
-    ) {
-      const preCkpt = await params.branchableScope.serializeCheckpoint(winnerHandle);
-      curFrame = Object.freeze<SpeculateContinuationFrame>({
-        ...curFrame,
-        phase: 'REFINING_WINNER',
-        preRefinementCheckpoint: preCkpt,
-      });
-      await commitCtx.persistFrame(curFrame);
-      const candidates = curFrame.branches.map((b) => ({
-        branchIndex: b.branchIndex,
-        input: branchInputs[b.branchIndex],
-        status: b.status,
-        output: b.outputJson !== undefined ? JSON.parse(b.outputJson) : undefined,
-        scopeReceipt:
-          b.scopeReceiptJson !== undefined ? JSON.parse(b.scopeReceiptJson) : undefined,
-      }));
-      const refineInput = refineCfg.mapInput(params.parentInput, commitCtx.verdict, candidates);
-      const parentRt =
-        (params.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
-      try {
-        const refinedOut = await runStep(
-          refineCfg.refinementExecutable,
-          refineInput,
-          Object.freeze({
-            ...params.ctx,
-            stepExecId: `${params.ctx.stepExecId}:refine:${String(commitCtx.winnerBranchIndex)}`,
-            scopeHandle: winnerHandle,
-            activeLeases: inheritedLeases,
-            candidateHandles: commitCtx.handlesByBranch,
-            _runtime: { ...parentRt, outerFrames: [...params.outerFrames, curFrame] },
-          }),
-        );
-        if (refinedOut.status === 'completed') {
-          winnerBranch = Object.freeze<SpeculateBranchEntryRecord>({
-            ...winnerBranch,
-            outputJson: JSON.stringify(refinedOut.output ?? null),
-            continuationStack: promoteRefinedWinnerStack(
-              winnerBranch.continuationStack,
-              refinedOut.continuationStack,
-            ),
-          });
-          curFrame = Object.freeze<SpeculateContinuationFrame>({
-            ...curFrame,
-            bufferedLessonOutcomes: mergeBranchBufferedOutcomes(
-              curFrame.bufferedLessonOutcomes,
-              commitCtx.winnerBranchIndex,
-              refinedOut.accumulatedLessonOutcomes,
-            ),
-            branches: Object.freeze(
-              curFrame.branches.map((b) =>
-                b.branchIndex === commitCtx.winnerBranchIndex && winnerBranch !== undefined
-                  ? winnerBranch
-                  : b,
-              ),
-            ),
-          });
-          ({ refinementExecutable: activeExecutable } = refineCfg);
-          activeInput = refineInput;
-        } else {
-          await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
-        }
-      } catch {
-        await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
-      }
-    }
+    const refined = await runOptionalWinnerRefinement({
+      params,
+      commitCtx,
+      winnerHandle,
+      winnerBranch: initialWinnerBranch,
+      curFrame: initialFrame,
+      inheritedLeases,
+      runStep,
+    });
     const commitState = await commitWinnerWithConflictBounce({
       params,
       commitCtx,
       winnerHandle,
-      winnerBranch,
-      curFrame,
-      activeExecutable,
-      activeInput,
+      winnerBranch: refined.winnerBranch,
+      curFrame: refined.curFrame,
+      activeExecutable: refined.activeExecutable,
+      activeInput: refined.activeInput,
       inheritedLeases,
       runStep,
     });
-    ({ winnerBranch, curFrame } = commitState);
+    let { winnerBranch, curFrame } = commitState;
     if (!commitState.committed || commitState.commitRes.status !== 'clean') {
       return Object.freeze<SpeculateTournamentResult>({
         toolResultText: JSON.stringify({
@@ -666,16 +764,14 @@ export async function executeWinnerRefinementAndCommit<THandle = unknown>(
       phase: 'COMMITTING',
       branches: Object.freeze(
         curFrame.branches.map((b) =>
-          b.branchIndex === commitCtx.winnerBranchIndex && winnerBranch !== undefined
-            ? winnerBranch
-            : b,
+          b.branchIndex === commitCtx.winnerBranchIndex ? winnerBranch : b,
         ),
       ),
     });
     await commitCtx.persistFrame(curFrame);
     curFrame = await flushCommittedWinnerLessons(params, curFrame, {
       commitCtx,
-      activeExecutable,
+      activeExecutable: refined.activeExecutable,
     });
     return Object.freeze<SpeculateTournamentResult>({
       toolResultText: JSON.stringify({
@@ -689,9 +785,17 @@ export async function executeWinnerRefinementAndCommit<THandle = unknown>(
     });
   } finally {
     const handles = [...commitCtx.handlesByBranch.values()];
-    (commitCtx.handlesByBranch as Map<number, THandle>).clear?.();
-    for (const handle of handles) {
-      await params.branchableScope.release(handle);
+    if (commitCtx.handlesByBranch instanceof Map) {
+      commitCtx.handlesByBranch.clear();
+    }
+    const settled = await Promise.allSettled(
+      handles.map((handle) => params.branchableScope.release(handle)),
+    );
+    const firstRejected = settled.find(
+      (res): res is PromiseRejectedResult => res.status === 'rejected',
+    );
+    if (firstRejected !== undefined) {
+      throw firstRejected.reason;
     }
   }
 }

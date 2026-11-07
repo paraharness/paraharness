@@ -12,6 +12,7 @@ import type { StepExecutionContext } from '../../../ports/step-execution-context
 import type { SuspendedForkRecord } from '../../../ports/suspended-fork-record.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
 import { executeAgent } from '../../agent/execute-agent.js';
+import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
 import type { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import type { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
 import { executeLoop } from '../../loop/execute-loop.js';
@@ -24,6 +25,30 @@ import type {
 } from '../fork-batch-execution-params.js';
 
 /**
+ * Environment and shared runtime store parameters for `executeDefaultForkOrTournamentChild`.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ */
+export interface ExecuteDefaultForkOrTournamentChildEnvParams<THandle = unknown> {
+  /** Child step execution context. */
+  readonly childCtx: StepExecutionContext<THandle>;
+  /** Durable ledger store. */
+  readonly ledgerStore: LedgerStore;
+  /** Optional lesson store. */
+  readonly lessonStore?: LessonStore;
+  /** Per-scope read/write lock manager. */
+  readonly lockManager: ScopeLockManager;
+  /** Serialized continuation stack update queue. */
+  readonly continuationQueue: StepContinuationQueue;
+  /** Optional capacity pool manager. */
+  readonly poolManager?: PoolManager;
+  /** Optional registered human adapters keyed by channel ID. */
+  readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
+  /** Optional outer continuation frames surrounding the child step. */
+  readonly outerFrames?: readonly ContinuationFrame[];
+}
+
+/**
  * Default child step runner used by `executeForkBatch`, `executeResumeForkBatch`, and `executeSpeculateTournament` (`SPEC.md` §3.7.2).
  *
  * Dispatches `AgentNode`, `LoopNode`, or domain `StepASTNode` definitions via `executeAgent` / `executeLoop` / `executeStepNode`
@@ -31,25 +56,16 @@ import type {
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
- * @param {StepASTNode<unknown, unknown, THandle>} childNode - Child executable node.
- * @param {unknown}                                childIn   - Mapped child input payload.
- * @param {object}                                 env       - Child execution context and shared runtime stores.
+ * @param {StepASTNode<unknown, unknown, THandle>}                   childNode - Child executable node.
+ * @param {unknown}                                                  childIn   - Mapped child input payload.
+ * @param {ExecuteDefaultForkOrTournamentChildEnvParams<THandle>}    env       - Child execution context and shared runtime stores.
  *
  * @returns {Promise<ChildForkExecutionOutcome<unknown>>} Settled child execution outcome.
  */
 export async function executeDefaultForkOrTournamentChild<THandle = unknown>(
   childNode: StepASTNode<unknown, unknown, THandle>,
   childIn: unknown,
-  env: {
-    readonly childCtx: StepExecutionContext<THandle>;
-    readonly ledgerStore: LedgerStore;
-    readonly lessonStore?: LessonStore;
-    readonly lockManager: ScopeLockManager;
-    readonly continuationQueue: StepContinuationQueue;
-    readonly poolManager?: PoolManager;
-    readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
-    readonly outerFrames?: readonly ContinuationFrame[];
-  },
+  env: ExecuteDefaultForkOrTournamentChildEnvParams<THandle>,
 ): Promise<ChildForkExecutionOutcome<unknown>> {
   const childOutcomeSink: {
     continuationStack?: readonly ContinuationFrame[];
@@ -58,9 +74,7 @@ export async function executeDefaultForkOrTournamentChild<THandle = unknown>(
     raisedByPhase?: 'act' | 'evaluate';
     suspendedAtCallId?: string;
   } = {};
-  const existingRuntime =
-    (env.childCtx as StepExecutionContext<THandle> & { readonly _runtime?: Record<string, unknown> })
-      ._runtime ?? {};
+  const existingRuntime = getStepRuntimeInternals(env.childCtx) ?? {};
   const enrichedCtx = Object.freeze({
     ...env.childCtx,
     _runtime: {
@@ -77,20 +91,22 @@ export async function executeDefaultForkOrTournamentChild<THandle = unknown>(
   });
   try {
     const nodeType = (childNode as { readonly type: string }).type;
-    const output =
-      nodeType === 'harness:agent'
-        ? await executeAgent(
-            childNode as AgentNode<unknown, unknown, THandle>,
-            childIn,
-            enrichedCtx,
-          )
-        : nodeType === 'harness:loop'
-          ? await executeLoop(
-              childNode as LoopNode<unknown, unknown, THandle>,
-              childIn,
-              enrichedCtx,
-            )
-          : await executeStepNode(childNode, childIn, enrichedCtx);
+    let output: unknown;
+    if (nodeType === 'harness:agent') {
+      output = await executeAgent(
+        childNode as AgentNode<unknown, unknown, THandle>,
+        childIn,
+        enrichedCtx,
+      );
+    } else if (nodeType === 'harness:loop') {
+      output = await executeLoop(
+        childNode as LoopNode<unknown, unknown, THandle>,
+        childIn,
+        enrichedCtx,
+      );
+    } else {
+      output = await executeStepNode(childNode, childIn, enrichedCtx);
+    }
     return Object.freeze<ChildForkExecutionOutcome<unknown>>({
       status: 'completed',
       output,
@@ -252,8 +268,10 @@ export async function prepareForkCallContext<THandle = unknown>(
       continuationStack: Object.freeze([]),
     });
   const seededHistory = await seedForkedChildTranscript(params, call);
-  const childHandle = await params.lockManager.withReadLock(params.ctx.scopeHandle, () =>
-    params.branchableScope.forkChild(params.ctx.scopeHandle, call.forkId),
+  const childHandle = await params.lockManager.withReadLock(
+    params.ctx.scopeHandle,
+    () => params.branchableScope.forkChild(params.ctx.scopeHandle, call.forkId),
+    params.ctx.signal,
   );
   const initLease = params.branchableScope.getConflictLease?.(childHandle);
   const childCtx: StepExecutionContext<THandle> = Object.freeze({
@@ -294,12 +312,15 @@ export async function abortSuspendedForkRecord<THandle = unknown>(
   readonly forkId: string;
   readonly status: 'ABORTED';
 }> {
-  const childHandle = await params.lockManager.withReadLock(params.ctx.scopeHandle, () =>
-    params.branchableScope.reattachChild(
-      params.ctx.scopeHandle,
-      record.forkId,
-      record.childScopeCheckpoint,
-    ),
+  const childHandle = await params.lockManager.withReadLock(
+    params.ctx.scopeHandle,
+    () =>
+      params.branchableScope.reattachChild(
+        params.ctx.scopeHandle,
+        record.forkId,
+        record.childScopeCheckpoint,
+      ),
+    params.ctx.signal,
   );
   await params.branchableScope.release(childHandle);
   await params.ledgerStore.resolveSuspendedFork(record.suspendedForkId, 'ABORTED');

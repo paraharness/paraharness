@@ -13,12 +13,55 @@ import type {
   SpeculateContinuationFrame,
 } from '../../../ports/speculate-continuation-frame.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
+import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
 import type { ChildForkExecutionOutcome } from '../../fork/child-fork-execution-outcome.js';
 import { normalizeEvaluatorRollbackStack } from '../../fork/internal/fork-barrier-and-pause.js';
 import { flushStepLessonOutcomes } from '../../lessons/internal/flush-step-lesson-outcomes.js';
 import { mergeLessonOutcomePrecedence } from '../../lessons/lesson-scoring.js';
 import type { SpeculateTournamentParams } from '../speculate-tournament-params.js';
 import type { WinnerRefinementCommitContext } from '../winner-refinement-commit-context.js';
+
+/**
+ * Parameters for `commitWinnerWithConflictBounce`.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ */
+export interface CommitWinnerWithConflictBounceParams<THandle = unknown> {
+  /** Enclosing tournament execution parameters. */
+  readonly params: SpeculateTournamentParams<THandle>;
+  /** Winner refinement and commit context. */
+  readonly commitCtx: WinnerRefinementCommitContext<THandle>;
+  /** Winning branch scope handle. */
+  readonly winnerHandle: THandle;
+  /** Winning branch entry record. */
+  readonly winnerBranch: SpeculateBranchEntryRecord;
+  /** Current tournament continuation frame. */
+  readonly curFrame: SpeculateContinuationFrame;
+  /** Active executable node (refiner or worker) for conflict-bounce retries. */
+  readonly activeExecutable:
+    | AgentNode<unknown, unknown, THandle>
+    | LoopNode<unknown, unknown, THandle>;
+  /** Active input payload for conflict-bounce retries. */
+  readonly activeInput: unknown;
+  /** Inherited leases from the winning branch. */
+  readonly inheritedLeases: readonly LeaseDelta[];
+  /** Child step execution callback. */
+  readonly runStep: NonNullable<SpeculateTournamentParams<THandle>['executeChildStep']>;
+}
+
+/**
+ * Context parameters for `flushCommittedWinnerLessons`.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ */
+export interface FlushCommittedWinnerLessonsContextParams<THandle = unknown> {
+  /** Winner refinement and commit context. */
+  readonly commitCtx: WinnerRefinementCommitContext<THandle>;
+  /** Active executable node (refiner or worker) whose `LessonsNode` is consulted. */
+  readonly activeExecutable:
+    | AgentNode<unknown, unknown, THandle>
+    | LoopNode<unknown, unknown, THandle>;
+}
 
 /**
  * Merges `newOutcomes` into `existingBuffered` for `branchIndex` using 4-state `mergeLessonOutcomePrecedence` (`SPEC.md` §3.4.3 & §3.7.2).
@@ -51,11 +94,16 @@ export function mergeBranchBufferedOutcomes(
     }
   }
   if (newOutcomes !== undefined) {
-    for (const [lessonId, outcome] of Object.entries(newOutcomes)) {
-      mergedForBranch.set(
-        lessonId,
-        mergeLessonOutcomePrecedence(mergedForBranch.get(lessonId), outcome),
-      );
+    for (const lessonId in newOutcomes) {
+      if (Object.hasOwn(newOutcomes, lessonId)) {
+        const outcome = newOutcomes[lessonId];
+        if (outcome !== undefined) {
+          mergedForBranch.set(
+            lessonId,
+            mergeLessonOutcomePrecedence(mergedForBranch.get(lessonId), outcome),
+          );
+        }
+      }
     }
   }
   const outcomes: Array<{ readonly lessonId: string; readonly outcome: LessonOutcome }> = [];
@@ -127,25 +175,78 @@ export function promoteRefinedWinnerStack(
   const priorAgentLeases =
     priorStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.activeLeases ??
     [];
+  const baseAgentLeases = priorLoopLeases.length > 0 ? priorLoopLeases : priorAgentLeases;
   const hasLoopFrame = refinedStack.some((f) => f.kind === 'loop-frame');
-  const mapped = refinedStack.map((f) =>
-    f.kind === 'loop-frame'
-      ? Object.freeze<LoopContinuationFrame>({
+  const mapped: ContinuationFrame[] = [];
+  for (const f of refinedStack) {
+    if (f.kind === 'loop-frame') {
+      mapped.push(
+        Object.freeze<LoopContinuationFrame>({
           ...f,
           grantedLoopLeases: mergeUniqueLeaseArrays(priorLoopLeases, f.grantedLoopLeases),
-        })
-      : f.kind === 'agent-frame'
-        ? Object.freeze<AgentContinuationFrame>({
-            ...f,
-            activeLeases: mergeUniqueLeaseArrays(
-              priorLoopLeases.length > 0 ? priorLoopLeases : priorAgentLeases,
-              f.activeLeases,
-            ),
-          })
-        : f,
-  );
+        }),
+      );
+    } else if (f.kind === 'agent-frame') {
+      mapped.push(
+        Object.freeze<AgentContinuationFrame>({
+          ...f,
+          activeLeases: mergeUniqueLeaseArrays(baseAgentLeases, f.activeLeases),
+        }),
+      );
+    } else {
+      mapped.push(f);
+    }
+  }
   const priorLoop = priorStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame');
   return Object.freeze(!hasLoopFrame && priorLoop !== undefined ? [priorLoop, ...mapped] : mapped);
+}
+
+/**
+ * Projects a conflict-bounce wire frame ID and optional `conflictLease` onto a rolled-back winner continuation stack.
+ *
+ * @param {readonly ContinuationFrame[]} stack         - Winner continuation stack to roll back and update.
+ * @param {string}                       bounceId      - Appended `[COMMIT_CONFLICT]` wire frame identifier.
+ * @param {LeaseDelta | undefined}       conflictLease - Optional conflict lease attached by `BranchableScope`.
+ *
+ * @returns {readonly ContinuationFrame[]} Updated continuation stack for conflict-bounce retry.
+ */
+function buildWinnerConflictBouncedStack(
+  stack: readonly ContinuationFrame[],
+  bounceId: string,
+  conflictLease: LeaseDelta | undefined,
+): readonly ContinuationFrame[] {
+  const rolled = normalizeEvaluatorRollbackStack(stack, 'evaluate');
+  const bounced: ContinuationFrame[] = [];
+  for (const f of rolled) {
+    if (f.kind === 'agent-frame') {
+      bounced.push(
+        Object.freeze<AgentContinuationFrame>({
+          ...f,
+          leafMessageId: bounceId,
+          conflictCheckArmed: true,
+          activeLeases:
+            conflictLease !== undefined
+              ? Object.freeze([...f.activeLeases, conflictLease])
+              : f.activeLeases,
+        }),
+      );
+    } else if (f.kind === 'loop-frame') {
+      bounced.push(
+        Object.freeze<LoopContinuationFrame>({
+          ...f,
+          preservedActLeafMessageId: bounceId,
+          conflictCheckArmed: true,
+          grantedLoopLeases:
+            conflictLease !== undefined
+              ? Object.freeze([...f.grantedLoopLeases, conflictLease])
+              : f.grantedLoopLeases,
+        }),
+      );
+    } else {
+      bounced.push(f);
+    }
+  }
+  return Object.freeze(bounced);
 }
 
 /**
@@ -155,23 +256,13 @@ export function promoteRefinedWinnerStack(
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
- * @param {object} ctx - Winner commit and conflict-bounce parameters.
+ * @param {CommitWinnerWithConflictBounceParams<THandle>} ctx - Winner commit and conflict-bounce parameters.
  *
  * @returns {Promise<{ readonly committed: boolean; readonly commitRes: ReconcileResult<unknown>; readonly winnerBranch: SpeculateBranchEntryRecord; readonly curFrame: SpeculateContinuationFrame }>} Settled commit state.
  */
-export async function commitWinnerWithConflictBounce<THandle = unknown>(ctx: {
-  readonly params: SpeculateTournamentParams<THandle>;
-  readonly commitCtx: WinnerRefinementCommitContext<THandle>;
-  readonly winnerHandle: THandle;
-  readonly winnerBranch: SpeculateBranchEntryRecord;
-  readonly curFrame: SpeculateContinuationFrame;
-  readonly activeExecutable:
-    | AgentNode<unknown, unknown, THandle>
-    | LoopNode<unknown, unknown, THandle>;
-  readonly activeInput: unknown;
-  readonly inheritedLeases: readonly LeaseDelta[];
-  readonly runStep: NonNullable<SpeculateTournamentParams<THandle>['executeChildStep']>;
-}): Promise<{
+export async function commitWinnerWithConflictBounce<THandle = unknown>(
+  ctx: CommitWinnerWithConflictBounceParams<THandle>,
+): Promise<{
   readonly committed: boolean;
   readonly commitRes: ReconcileResult<unknown>;
   readonly winnerBranch: SpeculateBranchEntryRecord;
@@ -182,6 +273,7 @@ export async function commitWinnerWithConflictBounce<THandle = unknown>(ctx: {
     const commitRes = await ctx.params.lockManager.withWriteLock(
       ctx.params.ctx.scopeHandle,
       () => ctx.params.branchableScope.commitChild(ctx.winnerHandle, ctx.params.ctx.scopeHandle),
+      ctx.params.ctx.signal,
     );
     if (commitRes.status === 'clean' || curFrame.conflictRetryCount >= 2) {
       return {
@@ -209,35 +301,14 @@ export async function commitWinnerWithConflictBounce<THandle = unknown>(ctx: {
         prefixDigest: ctx.params.wirePrefix?.systemDigest ?? 'unpinned',
       }),
     );
-    const bouncedStack = normalizeEvaluatorRollbackStack(
+    const bouncedStack = buildWinnerConflictBouncedStack(
       winnerBranch.continuationStack,
-      'evaluate',
-    ).map((f) =>
-      f.kind === 'agent-frame'
-        ? Object.freeze<AgentContinuationFrame>({
-            ...f,
-            leafMessageId: bounceId,
-            conflictCheckArmed: true,
-            activeLeases:
-              conflictLease !== undefined
-                ? Object.freeze([...f.activeLeases, conflictLease])
-                : f.activeLeases,
-          })
-        : f.kind === 'loop-frame'
-          ? Object.freeze<LoopContinuationFrame>({
-              ...f,
-              preservedActLeafMessageId: bounceId,
-              conflictCheckArmed: true,
-              grantedLoopLeases:
-                conflictLease !== undefined
-                  ? Object.freeze([...f.grantedLoopLeases, conflictLease])
-                  : f.grantedLoopLeases,
-            })
-          : f,
+      bounceId,
+      conflictLease,
     );
     winnerBranch = Object.freeze<SpeculateBranchEntryRecord>({
       ...winnerBranch,
-      continuationStack: Object.freeze(bouncedStack),
+      continuationStack: bouncedStack,
     });
     curFrame = Object.freeze<SpeculateContinuationFrame>({
       ...curFrame,
@@ -250,8 +321,7 @@ export async function commitWinnerWithConflictBounce<THandle = unknown>(ctx: {
       ),
     });
     await ctx.commitCtx.persistFrame(curFrame);
-    const parentRt =
-      (ctx.params.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+    const parentRt = getStepRuntimeInternals(ctx.params.ctx) ?? {};
     const retryOut: ChildForkExecutionOutcome<unknown> = await ctx.runStep(
       ctx.activeExecutable,
       ctx.activeInput,
@@ -293,27 +363,41 @@ export async function commitWinnerWithConflictBounce<THandle = unknown>(ctx: {
 }
 
 /**
+ * Resolves the active `LessonsNode` mounted on an `AgentNode` or `LoopNode` when `recordOutcomes !== false`.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ *
+ * @param {AgentNode<unknown, unknown, THandle> | LoopNode<unknown, unknown, THandle>} node - Executable node to inspect.
+ *
+ * @returns {LessonsNode | undefined} Mounted `LessonsNode` when outcome recording is enabled, or `undefined`.
+ */
+function resolveExecutableLessonsNode<THandle = unknown>(
+  node: AgentNode<unknown, unknown, THandle> | LoopNode<unknown, unknown, THandle>,
+): LessonsNode | undefined {
+  const attachment = node.type === 'harness:agent' ? node.lessons : node.actStep.actor.lessons;
+  if (attachment === undefined || attachment.recordOutcomes === false) {
+    return undefined;
+  }
+  return attachment.node;
+}
+
+/**
  * Deduplicates and flushes buffered lesson outcomes for `winnerBranchIndex` after `WINNER_COMMITTED` (`SPEC.md` §3.4.3 & §3.7.2).
  *
  * Uses `flushStepLessonOutcomes` when a `LessonsNode` is mounted on the active or worker executable, or `recordOutcomes` otherwise.
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
- * @param {SpeculateTournamentParams<THandle>} params   - Tournament parameters.
- * @param {SpeculateContinuationFrame}         curFrame - Committed tournament continuation frame.
- * @param {object}                             flushCtx - Winner commit context and active winner executable node.
+ * @param {SpeculateTournamentParams<THandle>}                params   - Tournament parameters.
+ * @param {SpeculateContinuationFrame}                        curFrame - Committed tournament continuation frame.
+ * @param {FlushCommittedWinnerLessonsContextParams<THandle>} flushCtx - Winner commit context and active winner executable node.
  *
  * @returns {Promise<SpeculateContinuationFrame>} Updated frame with `lessonsFlushed: true`.
  */
 export async function flushCommittedWinnerLessons<THandle = unknown>(
   params: SpeculateTournamentParams<THandle>,
   curFrame: SpeculateContinuationFrame,
-  flushCtx: {
-    readonly commitCtx: WinnerRefinementCommitContext<THandle>;
-    readonly activeExecutable:
-      | AgentNode<unknown, unknown, THandle>
-      | LoopNode<unknown, unknown, THandle>;
-  },
+  flushCtx: FlushCommittedWinnerLessonsContextParams<THandle>,
 ): Promise<SpeculateContinuationFrame> {
   if (curFrame.lessonsFlushed === true || params.lessonStore === undefined) {
     return curFrame;
@@ -333,18 +417,9 @@ export async function flushCommittedWinnerLessons<THandle = unknown>(
       }
     }
   }
-  const getLessons = (
-    node: AgentNode<unknown, unknown, THandle> | LoopNode<unknown, unknown, THandle>,
-  ): LessonsNode | undefined =>
-    node.type === 'harness:agent'
-      ? node.lessons?.recordOutcomes !== false
-        ? node.lessons?.node
-        : undefined
-      : node.actStep.actor.lessons?.recordOutcomes !== false
-        ? node.actStep.actor.lessons?.node
-        : undefined;
   const lessonsNode =
-    getLessons(activeExecutable) ?? getLessons(params.capability.workerExecutable);
+    resolveExecutableLessonsNode(activeExecutable) ??
+    resolveExecutableLessonsNode(params.capability.workerExecutable);
   if (dedupedByLessonId.size > 0) {
     const dedupedMap: Record<string, LessonOutcome> = {};
     const dedupedList: Array<{ readonly lessonId: string; readonly outcome: LessonOutcome }> = [];

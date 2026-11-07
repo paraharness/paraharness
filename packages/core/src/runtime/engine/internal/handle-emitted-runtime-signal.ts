@@ -8,6 +8,48 @@ import type { TopologyStore } from '../../../ports/topology-store.js';
 import type { LaneScheduler } from '../../lane/lane-scheduler.js';
 
 /**
+ * Parameters passed to `handleTopologyOverlayCommitSignal`.
+ *
+ * @template TPayload Emitted signal payload type.
+ */
+export interface HandleTopologyOverlayCommitSignalParams<TPayload = unknown> {
+  /** Identifier of the emitted signal. */
+  readonly signalId: string;
+
+  /** Emitted signal payload. */
+  readonly payload: TPayload;
+
+  /** Durable execution ledger store. */
+  readonly ledgerStore: LedgerStore;
+
+  /** Optional topology AST node. */
+  readonly topologyNode: TopologyNode<string> | undefined;
+
+  /** Optional topology store instance. */
+  readonly topologyStore: TopologyStore | undefined;
+
+  /** Optional institutional memory lesson store. */
+  readonly lessonStore: LessonStore | undefined;
+}
+
+/**
+ * Parameters passed to `handleEmittedRuntimeSignal`.
+ *
+ * @template TPayload Emitted signal payload type.
+ */
+export interface HandleEmittedRuntimeSignalParams<TPayload = unknown>
+  extends HandleTopologyOverlayCommitSignalParams<TPayload> {
+  /** Root harness AST node. */
+  readonly node: HarnessNode;
+
+  /** Registered human escalation and notification adapters keyed by `humanNode.id`. */
+  readonly humanAdaptersById: ReadonlyMap<string, HumanAdapter>;
+
+  /** Active lane schedulers keyed by `laneNode.id`. */
+  readonly laneSchedulers: ReadonlyMap<string, LaneScheduler<unknown>>;
+}
+
+/**
  * Handles `topology.commitOverlayWhen` on-signal promotion or child-branch absorption (`SPEC.md` §3.3 & §3.10).
  *
  * Absorbs child branch overlays into `prerequisiteRunId` when `baseBranch` is non-trunk, or commits to canonical trunk
@@ -15,32 +57,24 @@ import type { LaneScheduler } from '../../lane/lane-scheduler.js';
  *
  * @template TPayload Emitted signal payload type.
  *
- * @param {string}   signalId - Identifier of the emitted signal.
- * @param {TPayload} payload  - Signal payload.
- * @param {object}   deps     - Topology node, stores, and ledger store.
+ * @param {HandleTopologyOverlayCommitSignalParams<TPayload>} params - Signal ID, payload, topology node, and stores.
  *
  * @returns {Promise<void>} Resolves once overlay promotion or absorption completes.
  */
 async function handleTopologyOverlayCommitSignal<TPayload>(
-  signalId: string,
-  payload: TPayload,
-  deps: {
-    readonly ledgerStore: LedgerStore;
-    readonly topologyNode: TopologyNode<string> | undefined;
-    readonly topologyStore: TopologyStore | undefined;
-    readonly lessonStore: LessonStore | undefined;
-  },
+  params: HandleTopologyOverlayCommitSignalParams<TPayload>,
 ): Promise<void> {
-  const commitCfg = deps.topologyNode?.commitOverlayWhen;
+  const { signalId, payload } = params;
+  const commitCfg = params.topologyNode?.commitOverlayWhen;
   if (
     commitCfg?.onSignal === undefined ||
     commitCfg.onSignal.signal.id !== signalId ||
-    deps.topologyStore === undefined
+    params.topologyStore === undefined
   ) {
     return;
   }
   const correlatedId = commitCfg.onSignal.correlateBy(payload);
-  const rec = (await deps.ledgerStore.getRunTerminalReceipts([correlatedId])).get(correlatedId);
+  const rec = (await params.ledgerStore.getRunTerminalReceipts([correlatedId])).get(correlatedId);
   const targetRunId = rec?.runId ?? correlatedId;
   const parsed =
     rec?.scopeReceiptJson !== undefined
@@ -57,12 +91,12 @@ async function handleTopologyOverlayCommitSignal<TPayload>(
     parsed.baseBranch !== 'master' &&
     parsed.prerequisiteRunId !== undefined
   ) {
-    await deps.topologyStore.syncRunOverlays(parsed.prerequisiteRunId, [targetRunId]);
-    await deps.topologyStore.discardRunOverlay(targetRunId);
+    await params.topologyStore.syncRunOverlays(parsed.prerequisiteRunId, [targetRunId]);
+    await params.topologyStore.discardRunOverlay(targetRunId);
   } else {
-    const commitRes = await deps.topologyStore.commitRunOverlay(targetRunId);
-    if (deps.lessonStore !== undefined && commitRes.committedRunIds.length > 0) {
-      await deps.lessonStore.syncCreationEpochsForRuns(
+    const commitRes = await params.topologyStore.commitRunOverlay(targetRunId);
+    if (params.lessonStore !== undefined && commitRes.committedRunIds.length > 0) {
+      await params.lessonStore.syncCreationEpochsForRuns(
         commitRes.committedRunIds,
         commitRes.updatedEpochs,
       );
@@ -78,43 +112,32 @@ async function handleTopologyOverlayCommitSignal<TPayload>(
  *
  * @template TPayload Emitted signal payload type.
  *
- * @param {string}   signalId - Identifier of the emitted signal.
- * @param {TPayload} payload  - Signal payload.
- * @param {object}   deps     - Harness AST, stores, human adapters, and lane schedulers.
+ * @param {HandleEmittedRuntimeSignalParams<TPayload>} params - Signal ID, payload, harness AST, stores, and lane schedulers.
  *
  * @returns {Promise<void>} Resolves once all matching signal handlers complete.
  */
 export async function handleEmittedRuntimeSignal<TPayload>(
-  signalId: string,
-  payload: TPayload,
-  deps: {
-    readonly node: HarnessNode;
-    readonly ledgerStore: LedgerStore;
-    readonly topologyNode: TopologyNode<string> | undefined;
-    readonly topologyStore: TopologyStore | undefined;
-    readonly lessonStore: LessonStore | undefined;
-    readonly humanAdaptersById: ReadonlyMap<string, HumanAdapter>;
-    readonly laneSchedulers: ReadonlyMap<string, LaneScheduler<unknown>>;
-  },
+  params: HandleEmittedRuntimeSignalParams<TPayload>,
 ): Promise<void> {
-  for (const notif of deps.node.onSignalNotifications) {
+  const { signalId, payload } = params;
+  for (const notif of params.node.onSignalNotifications) {
     if (notif.signal.id === signalId) {
-      await deps.humanAdaptersById.get(notif.human.id)?.notify(notif.messageMapper(payload));
+      await params.humanAdaptersById.get(notif.human.id)?.notify(notif.messageMapper(payload));
     }
   }
-  await handleTopologyOverlayCommitSignal(signalId, payload, deps);
-  const compaction = (deps.node.ledger as { readonly compaction?: CompactionConfigNode })
+  await handleTopologyOverlayCommitSignal(params);
+  const compaction = (params.node.ledger as { readonly compaction?: CompactionConfigNode })
     .compaction;
   for (const trig of compaction?.signalTriggers ?? []) {
     if (trig.signal.id === signalId) {
       const itemKeyOrRunId = trig.correlateBy(payload);
-      const rec = (await deps.ledgerStore.getRunTerminalReceipts([itemKeyOrRunId])).get(
+      const rec = (await params.ledgerStore.getRunTerminalReceipts([itemKeyOrRunId])).get(
         itemKeyOrRunId,
       );
-      await deps.ledgerStore.compactRunFrames(rec?.runId ?? itemKeyOrRunId);
+      await params.ledgerStore.compactRunFrames(rec?.runId ?? itemKeyOrRunId);
     }
   }
-  for (const scheduler of deps.laneSchedulers.values()) {
+  for (const scheduler of params.laneSchedulers.values()) {
     await scheduler.handleSignalRewind(signalId, payload);
   }
 }

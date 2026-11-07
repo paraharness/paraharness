@@ -1,6 +1,7 @@
 import { Graph, alg } from '@dagrejs/graphlib';
 import type { AgentContinuationFrame } from '../../ports/agent-continuation-frame.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
+import type { LeaseDelta } from '../../ports/lease-delta.js';
 import type { MutateLanePlanSpawnedItem } from '../../ports/mutate-lane-plan-request.js';
 import type { PlanMutationParams } from './plan-mutation-params.js';
 import type { PlanMutationResult } from './plan-mutation-result.js';
@@ -65,6 +66,135 @@ async function suspendParentStepForPrerequisites<THandle = unknown>(
 }
 
 /**
+ * Computes the effective priority level for a dynamically spawned task (`SPEC.md` §3.7.2).
+ *
+ * Applies `priorityStrategy` (`'normal'` or `'inherit-parent-with-boost'`).
+ *
+ * @param {'inherit-parent-with-boost' | 'normal'}             strategy       - Configured priority strategy on `.canSpawnTasks()`.
+ * @param {'low' | 'normal' | 'high' | 'critical' | undefined} parentPriority - Parent work item base priority level.
+ *
+ * @returns {'low' | 'normal' | 'high' | 'critical'} Resolved task priority level.
+ */
+function computeSpawnedTaskPriority(
+  strategy: 'inherit-parent-with-boost' | 'normal',
+  parentPriority: 'low' | 'normal' | 'high' | 'critical' | undefined,
+): 'low' | 'normal' | 'high' | 'critical' {
+  if (strategy === 'normal') {
+    return 'normal';
+  }
+  if (parentPriority === 'low') {
+    return 'normal';
+  }
+  if (parentPriority === 'high' || parentPriority === 'critical') {
+    return 'critical';
+  }
+  return 'high';
+}
+
+/**
+ * Parameters passed to `applyPrerequisiteSyncToAgentFrame`.
+ */
+interface ApplyPrerequisiteSyncToAgentFrameParams {
+  /** Paused `AgentContinuationFrame` to update with prerequisite sync state. */
+  readonly agentFrame: AgentContinuationFrame;
+
+  /** Checkpoint serialized after `syncRoot` settled. */
+  readonly syncedToPrerequisiteCheckpoint: string | undefined;
+
+  /** Whether a 3-way merge conflict armed `.beforeStop()` conflict checks. */
+  readonly conflictCheckArmed: boolean;
+
+  /** Temporary conflict-resolution lease granted on `syncRoot` conflict. */
+  readonly conflictLease: LeaseDelta | undefined;
+
+  /** Formatted `[PREREQUISITE_COMPLETED]`, `[PREREQUISITE_FAILED]`, and `[PREREQUISITE_SYNC]` notes. */
+  readonly syncNotes: readonly string[];
+
+  /** Whether all prerequisite items reached a successful terminal exit. */
+  readonly allSucceeded: boolean;
+}
+
+/**
+ * Updates a resumed `AgentContinuationFrame` with `syncedToPrerequisiteCheckpoint`, `conflictLease`, and prerequisite sync notes (`SPEC.md` §3.7.2).
+ *
+ * Pairs `spawnTasks` / `addDependencies` tool calls in `remainingCalls[0]` or appends `syncNotes` to the latest completed tool result.
+ *
+ * @param {ApplyPrerequisiteSyncToAgentFrameParams} params - Agent frame and prerequisite sync outcome.
+ *
+ * @returns {AgentContinuationFrame} Updated `AgentContinuationFrame`.
+ */
+function applyPrerequisiteSyncToAgentFrame(
+  params: ApplyPrerequisiteSyncToAgentFrameParams,
+): AgentContinuationFrame {
+  const {
+    agentFrame,
+    syncedToPrerequisiteCheckpoint,
+    conflictCheckArmed,
+    conflictLease,
+    syncNotes,
+    allSucceeded,
+  } = params;
+  const nextLeases =
+    conflictLease !== undefined
+      ? Object.freeze([...agentFrame.activeLeases, conflictLease])
+      : agentFrame.activeLeases;
+  const prevBatch =
+    agentFrame.pauseState.kind === 'prerequisite-wait' ||
+    agentFrame.pauseState.kind === 'tool-batch'
+      ? agentFrame.pauseState.pendingToolBatch
+      : undefined;
+  if (prevBatch === undefined) {
+    return Object.freeze<AgentContinuationFrame>({
+      ...agentFrame,
+      activeLeases: nextLeases,
+      conflictCheckArmed,
+      syncedToPrerequisiteCheckpoint,
+      pauseState: agentFrame.pauseState,
+    });
+  }
+  const headCall = prevBatch.remainingCalls[0];
+  const isPlanMutationCall =
+    headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies';
+  let settledCompleted = [...prevBatch.completedResults];
+  if (isPlanMutationCall && headCall !== undefined) {
+    settledCompleted.push(
+      Object.freeze({
+        callId: headCall.callId,
+        content: syncNotes.join('\n') || '{"status":"RESUMED"}',
+        isError: !allSucceeded,
+      }),
+    );
+  } else if (syncNotes.length > 0 && settledCompleted.length > 0) {
+    const lastIdx = settledCompleted.length - 1;
+    const lastResult = settledCompleted[lastIdx];
+    if (lastResult !== undefined) {
+      settledCompleted[lastIdx] = Object.freeze({
+        ...lastResult,
+        content: `${lastResult.content}\n${syncNotes.join('\n')}`,
+      });
+    }
+  }
+  const nextRemaining = isPlanMutationCall
+    ? Object.freeze(prevBatch.remainingCalls.slice(1))
+    : prevBatch.remainingCalls;
+  const nextPauseState = Object.freeze({
+    kind: 'tool-batch' as const,
+    pendingToolBatch: Object.freeze({
+      ...prevBatch,
+      completedResults: Object.freeze(settledCompleted),
+      remainingCalls: nextRemaining,
+    }),
+  });
+  return Object.freeze<AgentContinuationFrame>({
+    ...agentFrame,
+    activeLeases: nextLeases,
+    conflictCheckArmed,
+    syncedToPrerequisiteCheckpoint,
+    pauseState: nextPauseState,
+  });
+}
+
+/**
  * Executes the `spawnTasks` capability tool with linear prerequisite chaining ($T_{\text{prevTip}} \leftarrow T_1 \leftarrow \dots \leftarrow T_k \leftarrow T_{\text{parent}}$) (`SPEC.md` §3.7.2).
  *
  * Enforces `maxSpawnedPerRun`, applies `enforcePatch`, computes `'inherit-parent-with-boost'` priority,
@@ -93,14 +223,7 @@ export async function executeSpawnTasks<THandle = unknown>(
       `spawnTasks count (${String(prevCount + rawTasks.length)}) exceeds maxSpawnedPerRun (${String(cfg.maxSpawnedPerRun)}) in run '${params.ctx.runId}'.`,
     );
   }
-  const boostedPriority: 'low' | 'normal' | 'high' | 'critical' =
-    cfg.priorityStrategy === 'normal'
-      ? 'normal'
-      : params.parentPriority === 'low'
-        ? 'normal'
-        : params.parentPriority === 'high' || params.parentPriority === 'critical'
-          ? 'critical'
-          : 'high';
+  const boostedPriority = computeSpawnedTaskPriority(cfg.priorityStrategy, params.parentPriority);
   const spawnedItems: MutateLanePlanSpawnedItem[] = [];
   const itemKeys: string[] = [];
   let rollingTip = params.previousSpawnedTipKey;
@@ -320,54 +443,13 @@ export async function syncSuspendedRunPrerequisites<THandle = unknown>(
     postCkpt = await params.branchableScope.serializeCheckpoint(params.scopeHandle);
   }
   if (updatedFrame !== undefined) {
-    const nextLeases =
-      conflictLease !== undefined
-        ? Object.freeze([...updatedFrame.activeLeases, conflictLease])
-        : updatedFrame.activeLeases;
-    const prevBatch =
-      updatedFrame.pauseState.kind === 'prerequisite-wait' ||
-      updatedFrame.pauseState.kind === 'tool-batch'
-        ? updatedFrame.pauseState.pendingToolBatch
-        : undefined;
-    const headCall = prevBatch?.remainingCalls[0];
-    const isPlanMutationCall =
-      headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies';
-    const settledCompleted =
-      prevBatch !== undefined
-        ? isPlanMutationCall
-          ? [
-              ...prevBatch.completedResults,
-              Object.freeze({
-                callId: headCall.callId,
-                content: syncNotes.join('\n') || '{"status":"RESUMED"}',
-                isError: !allSucceeded,
-              }),
-            ]
-          : prevBatch.completedResults.map((r, i) =>
-              i === prevBatch.completedResults.length - 1 && syncNotes.length > 0
-                ? Object.freeze({ ...r, content: `${r.content}\n${syncNotes.join('\n')}` })
-                : r,
-            )
-        : [];
-    const nextPauseState =
-      prevBatch !== undefined
-        ? Object.freeze({
-            kind: 'tool-batch' as const,
-            pendingToolBatch: Object.freeze({
-              ...prevBatch,
-              completedResults: Object.freeze(settledCompleted),
-              remainingCalls: isPlanMutationCall
-                ? Object.freeze(prevBatch.remainingCalls.slice(1))
-                : prevBatch.remainingCalls,
-            }),
-          })
-        : updatedFrame.pauseState;
-    updatedFrame = Object.freeze({
-      ...updatedFrame,
-      activeLeases: nextLeases,
-      conflictCheckArmed,
+    updatedFrame = applyPrerequisiteSyncToAgentFrame({
+      agentFrame: updatedFrame,
       syncedToPrerequisiteCheckpoint: postCkpt,
-      pauseState: nextPauseState,
+      conflictCheckArmed,
+      conflictLease,
+      syncNotes,
+      allSucceeded,
     });
     const stack: readonly ContinuationFrame[] = Object.freeze([
       ...(params.outerFrames ?? []),

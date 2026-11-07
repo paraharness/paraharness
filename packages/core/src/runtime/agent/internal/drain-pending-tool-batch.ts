@@ -20,13 +20,52 @@ import type { AgentTurnSessionState } from '../agent-turn-session-state.js';
 import type { DrainToolBatchOutcome } from '../drain-tool-batch-outcome.js';
 import type { InterruptEdgeResolution } from '../interrupt-edge-resolution.js';
 import { dispatchSingleToolCall } from './dispatch-single-tool-call.js';
+import { getStepRuntimeInternals } from './get-step-runtime-internals.js';
 import { resolveInterruptEdge } from './resolve-interrupt-edge.js';
+
+/**
+ * Mutable batch state supplied to `evaluateAndAdjudicatePreFlightCall`.
+ */
+export interface EvaluateAndAdjudicatePreFlightCallStateParams {
+  /** Mutable completed tool batch results accumulated so far. */
+  readonly completedResults: CompletedToolBatchResultRecord[];
+  /** Latest adjudication feedback string from `.onInterrupt()` resumption. */
+  adjudicationFeedback: string | undefined;
+}
+
+/**
+ * Batch context parameters supplied to `evaluatePostToolTripwireAndFlush`.
+ */
+export interface EvaluatePostToolTripwireBatchContextParams {
+  /** Newly observed effects from the current tool call. */
+  readonly newEffects: readonly ToolEffect[];
+  /** Completed tool results accumulated in the turn batch. */
+  readonly completedResults: readonly CompletedToolBatchResultRecord[];
+  /** Remaining unexecuted tool calls in the turn batch. */
+  readonly remainingCalls: readonly RemainingToolCallRecord[];
+}
+
+/**
+ * Parameters for `formatDrainedToolCallContent`.
+ */
+export interface FormatDrainedToolCallContentParams {
+  /** Tool call record that was executed. */
+  readonly call: RemainingToolCallRecord;
+  /** Raw tool result content string. */
+  readonly rawContent: string;
+  /** Optional adjudication feedback from a pre-flight interrupt edge. */
+  readonly adjudicationFeedback: string | undefined;
+  /** Reacquired skill service notes for the step. */
+  readonly reacquiredNotes: readonly string[];
+  /** Whether `reacquiredNotes` have already been attached to a prior tool result in the batch. */
+  readonly reacquiredNotesAttached: boolean;
+}
 
 /**
  * Collects and executes a contiguous slice of `.fork()` calls from the front of `remainingCalls` as a single concurrent batch (`SPEC.md` §3.5 & §3.7.2).
  *
- * Forwards `precedingCompletedResults` and `siblingForkCallIds` to `executeForkBatch` (and `ModelDriver.prepareFork`)
- * and appends each settled fork result to `completedResults`.
+ * Uses the $O(1)$ pre-indexed `session.forksByToolName` map (`Rule 4.2`), forwards `precedingCompletedResults`
+ * and `siblingForkCallIds` to `executeForkBatch`, and appends each settled fork result to `completedResults`.
  *
  * @template TIn     Validated agent input payload type.
  * @template TOut    Validated agent output payload type.
@@ -43,13 +82,10 @@ export async function drainContiguousForkSlice<TIn, TOut, THandle>(
   remainingCalls: RemainingToolCallRecord[],
   completedResults: CompletedToolBatchResultRecord[],
 ): Promise<boolean> {
-  const forksByToolName = new Map(
-    (session.node.capabilities?.forks ?? []).map((f) => [f.toolName, f] as const),
-  );
   const forkCalls: ForkDispatchCallItem<THandle>[] = [];
   while (remainingCalls.length > 0) {
     const head = remainingCalls[0];
-    const forkCap = head !== undefined ? forksByToolName.get(head.toolName) : undefined;
+    const forkCap = head !== undefined ? session.forksByToolName.get(head.toolName) : undefined;
     if (head === undefined || forkCap === undefined) {
       break;
     }
@@ -67,8 +103,7 @@ export async function drainContiguousForkSlice<TIn, TOut, THandle>(
   if (forkCalls.length === 0) {
     return false;
   }
-  const rtScope = (session.ctx as { readonly _runtime?: { readonly branchableScope?: unknown } })
-    ._runtime?.branchableScope;
+  const rtScope = getStepRuntimeInternals(session.ctx)?.branchableScope;
   const scopeFactory =
     session.ctx.scopeNode !== undefined
       ? session.ctx.registry.scopes[session.ctx.scopeNode.type]
@@ -140,19 +175,16 @@ export async function drainContiguousForkSlice<TIn, TOut, THandle>(
  * @template TOut    Validated agent output payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {AgentTurnSessionState<TIn, TOut, THandle>} session        - Active agent turn session state.
- * @param {RemainingToolCallRecord[]}                 remainingCalls - Mutable remaining calls queue `(i..k)`.
- * @param {object}                                    state          - Mutable batch state (`completedResults` and `adjudicationFeedback`).
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>}     session        - Active agent turn session state.
+ * @param {RemainingToolCallRecord[]}                     remainingCalls - Mutable remaining calls queue `(i..k)`.
+ * @param {EvaluateAndAdjudicatePreFlightCallStateParams} state          - Mutable batch state (`completedResults` and `adjudicationFeedback`).
  *
  * @returns {Promise<{ readonly status: 'proceed' | 'denied-in-band' | 'lease-denied' | 're-evaluate' | 'interrupted'; readonly interruptResolution?: InterruptEdgeResolution<THandle> }>} Pre-flight gate outcome.
  */
 export async function evaluateAndAdjudicatePreFlightCall<TIn, TOut, THandle>(
   session: AgentTurnSessionState<TIn, TOut, THandle>,
   remainingCalls: RemainingToolCallRecord[],
-  state: {
-    readonly completedResults: CompletedToolBatchResultRecord[];
-    adjudicationFeedback: string | undefined;
-  },
+  state: EvaluateAndAdjudicatePreFlightCallStateParams,
 ): Promise<{
   readonly status:
     | 'proceed'
@@ -248,20 +280,16 @@ export async function evaluateAndAdjudicatePreFlightCall<TIn, TOut, THandle>(
  * @template TOut    Validated agent output payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {AgentTurnSessionState<TIn, TOut, THandle>} session     - Active agent turn session state.
- * @param {readonly ToolEffect[]}                     prevEffects - Effects accumulated prior to the current tool call.
- * @param {object}                                    batchCtx    - Current tool effects, completed results, and remaining calls.
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>}     session     - Active agent turn session state.
+ * @param {readonly ToolEffect[]}                         prevEffects - Effects accumulated prior to the current tool call.
+ * @param {EvaluatePostToolTripwireBatchContextParams}    batchCtx    - Current tool effects, completed results, and remaining calls.
  *
  * @returns {Promise<InterruptEdgeResolution<THandle> | undefined>} Interrupt resolution when tripped and not resumed, or `undefined`.
  */
 export async function evaluatePostToolTripwireAndFlush<TIn, TOut, THandle>(
   session: AgentTurnSessionState<TIn, TOut, THandle>,
   prevEffects: readonly ToolEffect[],
-  batchCtx: {
-    readonly newEffects: readonly ToolEffect[];
-    readonly completedResults: readonly CompletedToolBatchResultRecord[];
-    readonly remainingCalls: readonly RemainingToolCallRecord[];
-  },
+  batchCtx: EvaluatePostToolTripwireBatchContextParams,
 ): Promise<InterruptEdgeResolution<THandle> | undefined> {
   if (batchCtx.newEffects.length === 0) {
     return undefined;
@@ -370,6 +398,89 @@ async function appendCompletedToolBatchWireFrame<TIn, TOut, THandle>(
 }
 
 /**
+ * Shifts the leading call from `remainingCalls` and records a synthetic `[Skipped: Preceding tool call in turn batch was denied]` result (`SPEC.md` §3.5).
+ *
+ * @param {RemainingToolCallRecord[]}        remainingCalls   - Mutable remaining calls queue.
+ * @param {CompletedToolBatchResultRecord[]} completedResults - Mutable completed results list.
+ */
+function shiftAndRecordSkippedBatchCall(
+  remainingCalls: RemainingToolCallRecord[],
+  completedResults: CompletedToolBatchResultRecord[],
+): void {
+  const skipped = remainingCalls.shift();
+  if (skipped === undefined) {
+    return;
+  }
+  completedResults.push(
+    Object.freeze<CompletedToolBatchResultRecord>({
+      callId: skipped.callId,
+      content: '[Skipped: Preceding tool call in turn batch was denied]',
+      isError: true,
+    }),
+  );
+}
+
+/**
+ * Formats a completed tool call's observation content with any `[SERVICE_REACQUIRED]` and `[Lease Elevated]` prefixes (`SPEC.md` §3.4.2 & §3.5).
+ *
+ * @param {FormatDrainedToolCallContentParams} params - Formatting parameters.
+ *
+ * @returns {{ readonly content: string; readonly reacquiredNotesAttached: boolean }} Formatted content and updated attachment flag.
+ */
+function formatDrainedToolCallContent(params: FormatDrainedToolCallContentParams): {
+  readonly content: string;
+  readonly reacquiredNotesAttached: boolean;
+} {
+  const { call, rawContent, adjudicationFeedback, reacquiredNotes } = params;
+  let { reacquiredNotesAttached } = params;
+  const leasePrefix =
+    call.blockedPreFlight === true && adjudicationFeedback !== undefined
+      ? `[Lease Elevated: ${adjudicationFeedback}]\n\n`
+      : '';
+  let svcPrefix = '';
+  if (!reacquiredNotesAttached && reacquiredNotes.length > 0) {
+    reacquiredNotesAttached = true;
+    svcPrefix = `${reacquiredNotes.join('\n')}\n`;
+  }
+  return {
+    content: `${svcPrefix}${leasePrefix}${rawContent}`,
+    reacquiredNotesAttached,
+  };
+}
+
+/**
+ * Updates `session.agentFrame` with `settledBatch` and persists the continuation stack to `LedgerStore` (`SPEC.md` §3.5).
+ *
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>} session      - Active agent turn session state.
+ * @param {PendingToolBatch}                          settledBatch - Settled `PendingToolBatch` snapshot.
+ *
+ * @returns {Promise<void>} Resolves once `session.agentFrame` and `LedgerStore` are updated.
+ */
+async function persistDrainedToolBatchProgress<TIn, TOut, THandle>(
+  session: AgentTurnSessionState<TIn, TOut, THandle>,
+  settledBatch: PendingToolBatch,
+): Promise<void> {
+  session.agentFrame = Object.freeze<AgentContinuationFrame>({
+    ...session.agentFrame,
+    pauseState: Object.freeze({ kind: 'tool-batch', pendingToolBatch: settledBatch }),
+  });
+  if (session.ledgerStore !== undefined) {
+    const ledgerStore = session.ledgerStore;
+    await session.continuationQueue.enqueueUpdate(session.ctx.stepExecId, () =>
+      ledgerStore.updateContinuationStack(
+        session.ctx.runId,
+        session.ctx.stepExecId,
+        Object.freeze<readonly ContinuationFrame[]>([...session.outerFrames, session.agentFrame]),
+      ),
+    );
+  }
+}
+
+/**
  * Drains `PendingToolBatch.remainingCalls` in strict `(1..k)` declaration order and writes a single `role: 'tool'` wire frame (`SPEC.md` §3.5 & §3.7.2).
  *
  * Handles contiguous `.fork()` batching, pre-flight `'raise-interrupt'` batching, `[SERVICE_REACQUIRED]` notes,
@@ -400,43 +511,33 @@ export async function drainPendingToolBatch<TIn, TOut, THandle>(
       getRunner: (n) => session.ctx.getRunner(n),
     },
   });
-  const completedResults: CompletedToolBatchResultRecord[] = [
-    ...initialBatch.completedResults,
-  ];
+  const completedResults: CompletedToolBatchResultRecord[] = [...initialBatch.completedResults];
   const remainingCalls: RemainingToolCallRecord[] = [...initialBatch.remainingCalls];
-  const batchState = {
+  const batchState: EvaluateAndAdjudicatePreFlightCallStateParams = {
     completedResults,
     adjudicationFeedback: initialBatch.adjudicationFeedback,
   };
   let precedingReplayCallDenied = false;
   let reacquiredNotesAttached = false;
   while (remainingCalls.length > 0) {
-    const call = remainingCalls[0] as RemainingToolCallRecord;
     if (precedingReplayCallDenied) {
-      const skipped = remainingCalls.shift() as RemainingToolCallRecord;
-      completedResults.push(
-        Object.freeze<CompletedToolBatchResultRecord>({
-          callId: skipped.callId,
-          content: '[Skipped: Preceding tool call in turn batch was denied]',
-          isError: true,
-        }),
-      );
+      shiftAndRecordSkippedBatchCall(remainingCalls, completedResults);
       continue;
     }
     if (await drainContiguousForkSlice(session, remainingCalls, completedResults)) {
       continue;
     }
-    const preOut = await evaluateAndAdjudicatePreFlightCall(
-      session,
-      remainingCalls,
-      batchState,
-    );
+    const preOut = await evaluateAndAdjudicatePreFlightCall(session, remainingCalls, batchState);
     if (preOut.status === 're-evaluate' || preOut.status === 'denied-in-band') {
       continue;
     }
     if (preOut.status === 'lease-denied') {
       precedingReplayCallDenied = true;
       continue;
+    }
+    const call = remainingCalls[0];
+    if (call === undefined) {
+      break;
     }
     const curBatch = Object.freeze<PendingToolBatch>({
       completedResults: Object.freeze([...completedResults]),
@@ -474,19 +575,18 @@ export async function drainPendingToolBatch<TIn, TOut, THandle>(
         session.ctx as { readonly recordEffects?: (effs: readonly ToolEffect[]) => void }
       ).recordEffects?.(stepOut.newEffects);
     }
-    const prefix =
-      call.blockedPreFlight === true && batchState.adjudicationFeedback !== undefined
-        ? `[Lease Elevated: ${batchState.adjudicationFeedback}]\n\n`
-        : '';
-    let svcPrefix = '';
-    if (!reacquiredNotesAttached && reacquiredNotes.length > 0) {
-      reacquiredNotesAttached = true;
-      svcPrefix = `${reacquiredNotes.join('\n')}\n`;
-    }
+    const formatted = formatDrainedToolCallContent({
+      call,
+      rawContent: stepOut.content,
+      adjudicationFeedback: batchState.adjudicationFeedback,
+      reacquiredNotes,
+      reacquiredNotesAttached,
+    });
+    ({ reacquiredNotesAttached } = formatted);
     completedResults.push(
       Object.freeze<CompletedToolBatchResultRecord>({
         callId: call.callId,
-        content: `${svcPrefix}${prefix}${stepOut.content}`,
+        content: formatted.content,
         isError: stepOut.isError,
       }),
     );
@@ -522,30 +622,14 @@ export async function drainPendingToolBatch<TIn, TOut, THandle>(
         interruptResolution: twIntr,
       });
     }
-    session.agentFrame = Object.freeze<AgentContinuationFrame>({
-      ...session.agentFrame,
-      pauseState: Object.freeze({ kind: 'tool-batch', pendingToolBatch: settledBatch }),
-    });
-    if (session.ledgerStore !== undefined) {
-      const ledgerStore = session.ledgerStore;
-      await session.continuationQueue.enqueueUpdate(session.ctx.stepExecId, () =>
-        ledgerStore.updateContinuationStack(
-          session.ctx.runId,
-          session.ctx.stepExecId,
-          Object.freeze<readonly ContinuationFrame[]>([
-            ...session.outerFrames,
-            session.agentFrame,
-          ]),
-        ),
-      );
-    }
+    await persistDrainedToolBatchProgress(session, settledBatch);
   }
-  if (!reacquiredNotesAttached && reacquiredNotes.length > 0 && completedResults.length > 0) {
-    const lastIdx = completedResults.length - 1;
-    const lastEntry = completedResults[lastIdx] as CompletedToolBatchResultRecord;
-    completedResults[lastIdx] = Object.freeze<CompletedToolBatchResultRecord>({
-      ...lastEntry,
-      content: `${lastEntry.content}\n${reacquiredNotes.join('\n')}`,
+  const trailingIdx = completedResults.length - 1;
+  const trailingEntry = completedResults[trailingIdx];
+  if (!reacquiredNotesAttached && reacquiredNotes.length > 0 && trailingEntry !== undefined) {
+    completedResults[trailingIdx] = Object.freeze<CompletedToolBatchResultRecord>({
+      ...trailingEntry,
+      content: `${trailingEntry.content}\n${reacquiredNotes.join('\n')}`,
     });
   }
   const finalBatch = Object.freeze<PendingToolBatch>({

@@ -80,7 +80,14 @@ export async function escalateLoopActorModelIfNeeded<TIn, TOut, THandle>(
     string,
     { readonly messageId: string; readonly callId: string }
   > = {};
-  for (const [skillId, coord] of Object.entries(state.loopFrame.activeSkillActivations)) {
+  for (const skillId in state.loopFrame.activeSkillActivations) {
+    if (!Object.hasOwn(state.loopFrame.activeSkillActivations, skillId)) {
+      continue;
+    }
+    const coord = state.loopFrame.activeSkillActivations[skillId];
+    if (coord === undefined) {
+      continue;
+    }
     remappedActivations[skillId] = Object.freeze({
       messageId: msgIdMap.get(coord.messageId) ?? coord.messageId,
       callId: coord.callId,

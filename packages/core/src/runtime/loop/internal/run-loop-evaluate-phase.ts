@@ -46,6 +46,22 @@ function extractEvaluatorHarnessMeta<TIn, TOut, THandle>(
 }
 
 /**
+ * Rejected `.act()` output, scope receipt, and evaluator output passed to `handleLoopEvaluationRejection`.
+ *
+ * @template TOut Validated loop output payload type.
+ */
+interface HandleLoopEvaluationRejectionParams<TOut> {
+  /** Output produced by the `.act()` phase in the current iteration. */
+  readonly actOutput: TOut;
+
+  /** Isolation scope inspection receipt captured after `.act()`. */
+  readonly scopeReceipt: Record<string, unknown>;
+
+  /** Cleaned evaluator output payload that rejected the iteration. */
+  readonly evalOutput: unknown;
+}
+
+/**
  * Handles an evaluator rejection by recording `'gate_rejected_unrecovered'`, appending `[EVALUATOR_REJECTED]`, and advancing `iteration` (`SPEC.md` §3.8).
  *
  * Persists `lastRejectedIterationJson` for subsequent `.onLoopRecovery()` contrastive distillation.
@@ -54,20 +70,16 @@ function extractEvaluatorHarnessMeta<TIn, TOut, THandle>(
  * @template TOut    Validated loop output payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {LoopExecutionState<TIn, TOut, THandle>} state       - Active loop execution state.
- * @param {LoopContinuationFrame}                  updatedLoop - Updated loop continuation frame after `.evaluate()`.
- * @param {object}                                 rejection   - Rejected `.act()` output, scope receipt, and evaluator output.
+ * @param {LoopExecutionState<TIn, TOut, THandle>}    state       - Active loop execution state.
+ * @param {LoopContinuationFrame}                     updatedLoop - Updated loop continuation frame after `.evaluate()`.
+ * @param {HandleLoopEvaluationRejectionParams<TOut>} rejection   - Rejected `.act()` output, scope receipt, and evaluator output.
  *
  * @returns {Promise<LoopEvaluatePhaseResult<TOut>>} Rejected evaluation result with feedback.
  */
 async function handleLoopEvaluationRejection<TIn, TOut, THandle>(
   state: LoopExecutionState<TIn, TOut, THandle>,
   updatedLoop: LoopContinuationFrame,
-  rejection: {
-    readonly actOutput: TOut;
-    readonly scopeReceipt: Record<string, unknown>;
-    readonly evalOutput: unknown;
-  },
+  rejection: HandleLoopEvaluationRejectionParams<TOut>,
 ): Promise<LoopEvaluatePhaseResult<TOut>> {
   const actorModel = state.node.actStep.actor.model as {
     readonly type?: string;
@@ -186,7 +198,15 @@ export async function runLoopEvaluatePhase<TIn, TOut, THandle>(
       })
     : baseEval;
   const evalInput = state.node.evaluateStep.mapInput(state.validatedInput, actOutput, scopeReceipt);
-  const rawEvalOut = await executeAgent(evalActor, evalInput, evalCtx);
+  let rawEvalOut: unknown;
+  try {
+    rawEvalOut = await executeAgent(evalActor, evalInput, evalCtx);
+  } finally {
+    const latestLoop = outerForEval[outerForEval.length - 1];
+    if (latestLoop?.kind === 'loop-frame') {
+      state.loopFrame = latestLoop;
+    }
+  }
   const updatedLoop = outerForEval[outerForEval.length - 1] as LoopContinuationFrame;
   await state.serviceRegistry.quiesceScopeServices(evalStepExecId);
   const { evalOutput, violatedIds } = extractEvaluatorHarnessMeta(state, rawEvalOut);

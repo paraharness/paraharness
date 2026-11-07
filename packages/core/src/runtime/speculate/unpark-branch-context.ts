@@ -12,6 +12,8 @@ export interface UnparkBranchContext<THandle = unknown> {
   readonly branchIndex: number;
   /** Live child scope handle for the parked branch. */
   readonly handle: THandle;
+  /** Pre-computed branch input payloads (`0..B-1`) from `mapBranches`. */
+  readonly branchInputs: readonly unknown[];
   /** Callback persisting an updated `SpeculateContinuationFrame` into `LedgerStore`. */
   readonly persistFrame: (frame: SpeculateContinuationFrame) => Promise<void>;
 }

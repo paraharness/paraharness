@@ -1,9 +1,7 @@
 import type { AgentNode } from '../../ast/agent-node.js';
 import type { StepExecutionContext } from '../../ports/step-execution-context.js';
-import {
-  finalizeAgentTurnSession,
-  initializeAgentTurnSession,
-} from './internal/initialize-agent-turn-session.js';
+import { finalizeAgentTurnSession } from './internal/finalize-agent-turn-session.js';
+import { initializeAgentTurnSession } from './internal/initialize-agent-turn-session.js';
 import { runAgentTurnLoop } from './internal/run-agent-turn-loop.js';
 
 /**

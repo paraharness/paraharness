@@ -69,22 +69,32 @@ export function normalizeEvaluatorRollbackStack(
 }
 
 /**
+ * Frame normalization context for `normalizeSiblingAgentFrameForPause`.
+ */
+export interface NormalizeSiblingAgentFrameForPauseFrameParams {
+  /** Agent continuation frame being paused at the sibling barrier. */
+  readonly frame: AgentContinuationFrame;
+  /** Next suspension epoch number allocated for the sibling fork. */
+  readonly nextEpoch: number;
+}
+
+/**
  * Normalizes a single `AgentContinuationFrame` when a sibling fork is paused at a turn-batch barrier.
  *
  * Cancels any pending `humanRequestId` decision and synthesizes tool pause results for remaining calls.
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
- * @param {ForkBatchExecutionParams<THandle>} batchParams  - Enclosing fork batch execution parameters.
- * @param {ForkBatchEntryRecord}              siblingEntry - Sibling fork entry being paused.
- * @param {object}                            frameCtx     - Agent continuation frame and next suspension epoch.
+ * @param {ForkBatchExecutionParams<THandle>}              batchParams  - Enclosing fork batch execution parameters.
+ * @param {ForkBatchEntryRecord}                           siblingEntry - Sibling fork entry being paused.
+ * @param {NormalizeSiblingAgentFrameForPauseFrameParams}  frameCtx     - Agent continuation frame and next suspension epoch.
  *
  * @returns {Promise<AgentContinuationFrame>} Normalized `AgentContinuationFrame` for suspension.
  */
 async function normalizeSiblingAgentFrameForPause<THandle = unknown>(
   batchParams: ForkBatchExecutionParams<THandle>,
   siblingEntry: ForkBatchEntryRecord,
-  frameCtx: { readonly frame: AgentContinuationFrame; readonly nextEpoch: number },
+  frameCtx: NormalizeSiblingAgentFrameForPauseFrameParams,
 ): Promise<AgentContinuationFrame> {
   const { frame, nextEpoch } = frameCtx;
   const isEscalated = frame.pauseState.kind === 'adjudication';
@@ -421,6 +431,7 @@ export async function reconcileChildForkWithBounce<THandle = unknown>(
       const commitRes = await batchParams.lockManager.withWriteLock(
         batchParams.ctx.scopeHandle,
         () => batchParams.branchableScope.commitChild(params.childHandle, batchParams.ctx.scopeHandle),
+        batchParams.ctx.signal,
       );
       if (commitRes.status === 'clean') {
         currentEntry = Object.freeze<ForkBatchEntryRecord>({
@@ -492,9 +503,19 @@ export async function reconcileChildForkWithBounce<THandle = unknown>(
       batchParams.lessonStore !== undefined &&
       currentOutcome.accumulatedLessonOutcomes !== undefined
     ) {
-      const pairs = Object.entries(currentOutcome.accumulatedLessonOutcomes).map(
-        ([lessonId, outcome]) => ({ lessonId, outcome }),
-      );
+      const outcomesMap = currentOutcome.accumulatedLessonOutcomes;
+      const pairs: Array<{
+        readonly lessonId: string;
+        readonly outcome: NonNullable<typeof outcomesMap>[string];
+      }> = [];
+      for (const lessonId in outcomesMap) {
+        if (Object.hasOwn(outcomesMap, lessonId)) {
+          const outcome = outcomesMap[lessonId];
+          if (outcome !== undefined) {
+            pairs.push({ lessonId, outcome });
+          }
+        }
+      }
       if (pairs.length > 0) {
         await batchParams.lessonStore.recordOutcomes(pairs);
       }

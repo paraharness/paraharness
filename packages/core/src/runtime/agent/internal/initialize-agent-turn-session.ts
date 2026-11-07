@@ -1,21 +1,17 @@
 import type { AgentNode } from '../../../ast/agent-node.js';
-import type { ModelASTNode, StepASTNode } from '../../../ast/domain-ast.types.js';
+import type { ModelASTNode } from '../../../ast/domain-ast.types.js';
 import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
-import type { CompiledWirePrefix } from '../../../ports/compiled-wire-prefix.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
-import type { HumanAdapter } from '../../../ports/human-adapter.js';
-import type { LedgerStore } from '../../../ports/ledger-store.js';
 import type { LessonOutcome } from '../../../ports/lesson-outcome.types.js';
 import type { LessonStore } from '../../../ports/lesson-store.js';
 import type {
   LoopContinuationFrame,
   RecalledLoopLessonRecord,
 } from '../../../ports/loop-continuation-frame.js';
+import type { ModelDriver } from '../../../ports/model-driver.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { TopologyPartitionState } from '../../../ports/topology-partition-state.js';
-import type { TopologyStore } from '../../../ports/topology-store.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
-import type { ChildForkExecutionOutcome } from '../../fork/child-fork-execution-outcome.js';
 import { selectRecalledLessons } from '../../lessons/lesson-scoring.js';
 import { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
@@ -25,11 +21,52 @@ import { computeInRunGroundingDiffs } from '../../prefix/internal/compute-in-run
 import type { SkillCatalogEntryRecord } from '../../prefix/skill-catalog-entry-record.js';
 import { ServiceSessionRegistry } from '../../services/service-session-registry.js';
 import type { AgentTurnSessionState } from '../agent-turn-session-state.js';
+import { executeDefaultChildStep } from './execute-default-child-step.js';
+import { getStepRuntimeInternals } from './get-step-runtime-internals.js';
 import {
-  executeDefaultChildStep,
   resolveAgentScopedRulesAndDirectives,
   resolveAgentSkillsAndTools,
 } from './resolve-agent-session-inputs.js';
+
+/**
+ * Context parameters for `recallAgentTurnLessons`.
+ *
+ * @template THandle Runtime handle type of the active isolation scope.
+ */
+export interface RecallAgentTurnLessonsContextParams<THandle = unknown> {
+  /** Active step execution context. */
+  readonly ctx: StepExecutionContext<THandle>;
+  /** Optional enclosing `LoopContinuationFrame`. */
+  readonly loopFrame: LoopContinuationFrame | undefined;
+  /** Optional empirical `LessonStore`. */
+  readonly lessonStore: LessonStore | undefined;
+}
+
+/**
+ * Parameters for `buildInitialOrResumedAgentFrame`.
+ *
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ */
+export interface BuildInitialOrResumedAgentFrameParams<
+  TIn = unknown,
+  TOut = unknown,
+  THandle = unknown,
+> {
+  /** Passive `AgentNode` AST definition. */
+  readonly node: AgentNode<TIn, TOut, THandle>;
+  /** Schema-validated agent input payload. */
+  readonly validatedInput: TIn;
+  /** Active step execution context. */
+  readonly ctx: StepExecutionContext<THandle>;
+  /** Selected `ModelASTNode` for the session. */
+  readonly modelNode: ModelASTNode;
+  /** Optional enclosing `LoopContinuationFrame`. */
+  readonly loopFrame: LoopContinuationFrame | undefined;
+  /** Optional resumed `AgentContinuationFrame`. */
+  readonly resumedAgentFrame: AgentContinuationFrame | undefined;
+}
 
 /**
  * Recalls Turn-0 empirical lessons for an `AgentNode` when not already provided by an enclosing `LoopContinuationFrame` (`SPEC.md` §3.4.3).
@@ -40,20 +77,16 @@ import {
  * @template TOut    Validated agent output payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {AgentNode<TIn, TOut, THandle>} node           - Passive `AgentNode` AST definition.
- * @param {TIn}                           validatedInput - Schema-validated agent input payload.
- * @param {object}                        recallContext  - Active step context, enclosing loop frame, and optional lesson store.
+ * @param {AgentNode<TIn, TOut, THandle>}                node           - Passive `AgentNode` AST definition.
+ * @param {TIn}                                          validatedInput - Schema-validated agent input payload.
+ * @param {RecallAgentTurnLessonsContextParams<THandle>} recallContext  - Active step context, enclosing loop frame, and optional lesson store.
  *
  * @returns {Promise<readonly RecalledLoopLessonRecord[]>} Frozen recalled lesson records.
  */
 async function recallAgentTurnLessons<TIn, TOut, THandle>(
   node: AgentNode<TIn, TOut, THandle>,
   validatedInput: TIn,
-  recallContext: {
-    readonly ctx: StepExecutionContext<THandle>;
-    readonly loopFrame: LoopContinuationFrame | undefined;
-    readonly lessonStore: LessonStore | undefined;
-  },
+  recallContext: RecallAgentTurnLessonsContextParams<THandle>,
 ): Promise<readonly RecalledLoopLessonRecord[]> {
   if (
     recallContext.loopFrame !== undefined &&
@@ -91,9 +124,91 @@ async function recallAgentTurnLessons<TIn, TOut, THandle>(
 }
 
 /**
+ * Selects the active `ModelASTNode` (via override or `PoolManager.selectModel`) and instantiates its registered `ModelDriver`.
+ *
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {AgentNode<TIn, TOut, THandle>} node        - Passive `AgentNode` AST definition.
+ * @param {StepExecutionContext<THandle>} ctx         - Active step execution context.
+ * @param {PoolManager}                   poolManager - Capacity pool manager.
+ *
+ * @returns {{ readonly modelNode: ModelASTNode; readonly modelDriver: ModelDriver }} Selected model node and driver instance.
+ */
+function selectAgentModelDriver<TIn, TOut, THandle>(
+  node: AgentNode<TIn, TOut, THandle>,
+  ctx: StepExecutionContext<THandle>,
+  poolManager: PoolManager,
+): { readonly modelNode: ModelASTNode; readonly modelDriver: ModelDriver } {
+  const rtEnv = getStepRuntimeInternals(ctx);
+  const modelNode: ModelASTNode =
+    rtEnv?.overrideModelNode ?? poolManager.selectModel(node.model, ctx.runId, 0);
+  const modelDriverFactory = ctx.registry.models[modelNode.type];
+  if (modelDriverFactory === undefined) {
+    throw new Error(
+      `No ModelDriver registered for '${modelNode.type}' on agent '${node.id}'.`,
+    );
+  }
+  const modelDriver = modelDriverFactory(modelNode as never, {
+    registry: ctx.registry,
+    resolveEnv: (v) => ctx.resolveEnv(v),
+    getRunner: (n) => ctx.getRunner(n),
+  });
+  return { modelNode, modelDriver };
+}
+
+/**
+ * Constructs a fresh `AgentContinuationFrame` or merges initial leases onto a resumed `AgentContinuationFrame`.
+ *
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {BuildInitialOrResumedAgentFrameParams<TIn, TOut, THandle>} params - Frame construction parameters.
+ *
+ * @returns {AgentContinuationFrame} Initial or resumed `AgentContinuationFrame`.
+ */
+function buildInitialOrResumedAgentFrame<TIn, TOut, THandle>(
+  params: BuildInitialOrResumedAgentFrameParams<TIn, TOut, THandle>,
+): AgentContinuationFrame {
+  const { node, validatedInput, ctx, modelNode, loopFrame, resumedAgentFrame } = params;
+  const initialLeases = Object.freeze([
+    ...ctx.activeLeases,
+    ...(resumedAgentFrame?.activeLeases ?? loopFrame?.grantedLoopLeases ?? []),
+  ]);
+  if (resumedAgentFrame !== undefined) {
+    return Object.freeze<AgentContinuationFrame>({
+      ...resumedAgentFrame,
+      activeLeases: initialLeases,
+    });
+  }
+  const isActPhase = loopFrame?.phase === 'act';
+  return Object.freeze<AgentContinuationFrame>({
+    kind: 'agent-frame',
+    agentId: node.id,
+    roleKey: node.roleKey,
+    modelId: modelNode.modelId,
+    stepExecId: ctx.stepExecId,
+    inputJson: JSON.stringify(validatedInput),
+    leafMessageId: null,
+    turnsTaken: 0,
+    costUsd: 0,
+    elapsedDurationMs: 0,
+    activeLeases: initialLeases,
+    activeSkillIds: isActPhase ? loopFrame.activeSkillIds : Object.freeze([]),
+    activeSkillActivations: isActPhase ? loopFrame.activeSkillActivations : Object.freeze({}),
+    observedEffects: isActPhase ? loopFrame.observedEffects : Object.freeze([]),
+    injectedScopedRuleIds: isActPhase ? loopFrame.injectedScopedRuleIds : Object.freeze([]),
+    pausedAtPhase: 'TOOL_BOUNDARY',
+    pauseState: Object.freeze({ kind: 'active-turn' }),
+  });
+}
+
+/**
  * Initializes the `AgentTurnSessionState` and `AgentContinuationFrame` for an `AgentNode` execution (`SPEC.md` §3.7.1).
  *
- * Pre-indexes tools, skills, and scoped rules once (`Rule 4.2`), resolves the model driver, recalls
+ * Pre-indexes tools, skills, capabilities, and scoped rules once (`Rule 4.2`), resolves the model driver, recalls
  * Turn-0 lessons, and restores any persisted `AgentContinuationFrame` on resume.
  *
  * @template TIn     Validated agent input payload type.
@@ -115,50 +230,12 @@ export async function initializeAgentTurnSession<
   validatedInput: TIn,
   ctx: StepExecutionContext<THandle>,
 ): Promise<AgentTurnSessionState<TIn, TOut, THandle>> {
-  const rtEnv = (
-    ctx as StepExecutionContext<THandle> & {
-      readonly _runtime?: {
-        readonly ledgerStore?: LedgerStore;
-        readonly topologyStore?: TopologyStore;
-        readonly lessonStore?: LessonStore;
-        readonly lockManager?: ScopeLockManager;
-        readonly continuationQueue?: StepContinuationQueue;
-        readonly poolManager?: PoolManager;
-        readonly serviceRegistry?: ServiceSessionRegistry;
-        readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
-        readonly wirePrefixesByGroupId?: ReadonlyMap<string, CompiledWirePrefix>;
-        readonly outerFrames?: ContinuationFrame[];
-        readonly existingAgentFrame?: AgentContinuationFrame;
-        readonly overrideModelNode?: ModelASTNode;
-        readonly laneId?: string;
-        readonly itemKey?: string;
-        readonly baseScopeCheckpoint?: string;
-        readonly executeChildStep?: (
-          childNode: StepASTNode<unknown, unknown, THandle>,
-          childInput: unknown,
-          childCtx: StepExecutionContext<THandle>,
-        ) => Promise<ChildForkExecutionOutcome<unknown>>;
-      };
-    }
-  )._runtime;
-  const { toolsByName, skillsById, skillOwnerByToolName, serviceByToolName } =
-    await resolveAgentSkillsAndTools(node, ctx);
+  const rtEnv = getStepRuntimeInternals(ctx);
+  const resolvedSkillsAndTools = await resolveAgentSkillsAndTools(node, ctx);
   const { scopedRules, actorGroundingTexts, actorInstructionTexts } =
     await resolveAgentScopedRulesAndDirectives(node, ctx);
   const poolManager = rtEnv?.poolManager ?? new PoolManager();
-  const modelNode: ModelASTNode =
-    rtEnv?.overrideModelNode ?? poolManager.selectModel(node.model, ctx.runId, 0);
-  const modelDriverFactory = ctx.registry.models[modelNode.type];
-  if (modelDriverFactory === undefined) {
-    throw new Error(
-      `No ModelDriver registered for '${modelNode.type}' on agent '${node.id}'.`,
-    );
-  }
-  const modelDriver = modelDriverFactory(modelNode as never, {
-    registry: ctx.registry,
-    resolveEnv: (v) => ctx.resolveEnv(v),
-    getRunner: (n) => ctx.getRunner(n),
-  });
+  const { modelNode, modelDriver } = selectAgentModelDriver(node, ctx, poolManager);
   const outerFrames: ContinuationFrame[] = rtEnv?.outerFrames ?? [];
   const loopFrame = outerFrames.find(
     (f): f is LoopContinuationFrame => f.kind === 'loop-frame',
@@ -176,54 +253,31 @@ export async function initializeAgentTurnSession<
   const accumulatedLessonOutcomes: Record<string, LessonOutcome> = {
     ...(resumedAgentFrame?.accumulatedLessonOutcomes ?? {}),
   };
-  const initialLeases = Object.freeze([
-    ...ctx.activeLeases,
-    ...(resumedAgentFrame?.activeLeases ?? loopFrame?.grantedLoopLeases ?? []),
-  ]);
-  const isActPhase = loopFrame?.phase === 'act';
-  const agentFrame: AgentContinuationFrame =
-    resumedAgentFrame !== undefined
-      ? Object.freeze<AgentContinuationFrame>({
-          ...resumedAgentFrame,
-          activeLeases: initialLeases,
-        })
-      : Object.freeze<AgentContinuationFrame>({
-          kind: 'agent-frame',
-          agentId: node.id,
-          roleKey: node.roleKey,
-          modelId: modelNode.modelId,
-          stepExecId: ctx.stepExecId,
-          inputJson: JSON.stringify(validatedInput),
-          leafMessageId: null,
-          turnsTaken: 0,
-          costUsd: 0,
-          elapsedDurationMs: 0,
-          activeLeases: initialLeases,
-          activeSkillIds: isActPhase ? loopFrame.activeSkillIds : Object.freeze([]),
-          activeSkillActivations: isActPhase
-            ? loopFrame.activeSkillActivations
-            : Object.freeze({}),
-          observedEffects: isActPhase ? loopFrame.observedEffects : Object.freeze([]),
-          injectedScopedRuleIds: isActPhase
-            ? loopFrame.injectedScopedRuleIds
-            : Object.freeze([]),
-          pausedAtPhase: 'TOOL_BOUNDARY',
-          pauseState: Object.freeze({ kind: 'active-turn' }),
-        });
-  const serviceRegistry = rtEnv?.serviceRegistry ?? new ServiceSessionRegistry();
+  const agentFrame = buildInitialOrResumedAgentFrame({
+    node,
+    validatedInput,
+    ctx,
+    modelNode,
+    loopFrame,
+    resumedAgentFrame,
+  });
   const session: AgentTurnSessionState<TIn, TOut, THandle> = {
     node,
     validatedInput,
     ctx,
     agentFrame,
     outerFrames,
-    skillsById,
-    skillOwnerByToolName,
-    serviceByToolName,
+    skillsById: resolvedSkillsAndTools.skillsById,
+    skillOwnerByToolName: resolvedSkillsAndTools.skillOwnerByToolName,
+    serviceByToolName: resolvedSkillsAndTools.serviceByToolName,
     actorGroundingTexts,
     actorInstructionTexts,
     scopedRules,
-    toolsByName,
+    toolsByName: resolvedSkillsAndTools.toolsByName,
+    forksByToolName: resolvedSkillsAndTools.forksByToolName,
+    speculationsByToolName: resolvedSkillsAndTools.speculationsByToolName,
+    escalationsByInterruptId: resolvedSkillsAndTools.escalationsByInterruptId,
+    canRaiseInterruptsById: resolvedSkillsAndTools.canRaiseInterruptsById,
     modelNode,
     modelDriver,
     wirePrefix:
@@ -236,7 +290,7 @@ export async function initializeAgentTurnSession<
     lockManager: rtEnv?.lockManager ?? new ScopeLockManager(),
     continuationQueue: rtEnv?.continuationQueue ?? new StepContinuationQueue(),
     poolManager,
-    serviceRegistry,
+    serviceRegistry: rtEnv?.serviceRegistry ?? new ServiceSessionRegistry(),
     humanAdaptersById: rtEnv?.humanAdaptersById ?? new Map(),
     recalledLessons,
     accumulatedLessonOutcomes,
@@ -362,50 +416,4 @@ export async function initializeAgentContinuationFrame<TIn, TOut, THandle>(
     leafMessageId: turn0MsgId,
     injectedScopedRuleIds: Object.freeze(Array.from(injectedIdSet)),
   });
-}
-
-/**
- * Projects final or suspended agent continuation state into `_runtime.childOutcomeSink` and quiesces step-scoped services (`SPEC.md` §3.4.2 & §3.7.2).
- *
- * Invoked in `executeAgent`'s `finally` block so enclosing `H.loop`, `.fork()`, and `.speculate()` handlers
- * receive the latest `agentFrame`, `leafMessageId`, `accumulatedLessonOutcomes`, and `suspendedAtCallId`.
- *
- * @template TIn     Validated agent input payload type.
- * @template TOut    Validated agent output payload type.
- * @template THandle Runtime handle type of the active isolation scope.
- *
- * @param {StepExecutionContext<THandle>}             ctx     - Active step execution context.
- * @param {AgentTurnSessionState<TIn, TOut, THandle>} session - Active agent turn session state.
- *
- * @returns {Promise<void>} Resolves once outcome sink projection and service quiescing complete.
- */
-export async function finalizeAgentTurnSession<TIn, TOut, THandle>(
-  ctx: StepExecutionContext<THandle>,
-  session: AgentTurnSessionState<TIn, TOut, THandle>,
-): Promise<void> {
-  const sink = (
-    ctx as StepExecutionContext<THandle> & {
-      readonly _runtime?: {
-        readonly childOutcomeSink?: {
-          continuationStack?: readonly ContinuationFrame[];
-          leafMessageId?: string | null;
-          accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>;
-          suspendedAtCallId?: string;
-        };
-      };
-    }
-  )._runtime?.childOutcomeSink;
-  if (sink !== undefined) {
-    sink.continuationStack = Object.freeze([session.agentFrame]);
-    sink.leafMessageId = session.agentFrame.leafMessageId;
-    sink.accumulatedLessonOutcomes = Object.freeze({
-      ...session.accumulatedLessonOutcomes,
-    });
-    if (session.agentFrame.pauseState.kind === 'tool-batch') {
-      const pendingBatch = session.agentFrame.pauseState.pendingToolBatch;
-      sink.suspendedAtCallId =
-        pendingBatch.activeInterruptCallId ?? pendingBatch.remainingCalls[0]?.callId;
-    }
-  }
-  await session.serviceRegistry.quiesceScopeServices(ctx.stepExecId);
 }

@@ -291,6 +291,32 @@ describe('H.skill reference-counted ServiceSession lifecycle and H.loop cross-mo
 
     await svcRegistry.acquireSkillServices({ runId: 'r1', scopeKey: 's1', scopeHandle: 'h1', skill: skillA, driverContext: drvCtx });
     await svcRegistry.quiesceScopeServices('s1');
+    let secondPrefixStopCount = 0;
+    const prefixDrvCtx = {
+      registry: createExecutorRegistry({
+        services: {
+          'node:service': async () => ({
+            id: 'dev-server',
+            endpoint: 'http://127.0.0.1:0',
+            tools: [],
+            invokeTool: async () => ({ content: 'ok', isError: false }),
+            stop: async () => {
+              if (secondPrefixStopCount === 0) {
+                secondPrefixStopCount += 1;
+                throw new Error('service stop failure');
+              }
+              secondPrefixStopCount += 1;
+            },
+          }),
+        },
+      }),
+      resolveEnv: () => undefined,
+      getRunner: throwUnusedRunner,
+    };
+    await svcRegistry.acquireSkillServices({ runId: 'r-prefix', scopeKey: 'r-prefix:step-1:1', scopeHandle: 'h1', skill: skillA, driverContext: prefixDrvCtx });
+    await svcRegistry.acquireSkillServices({ runId: 'r-prefix', scopeKey: 'r-prefix:step-2:1', scopeHandle: 'h1', skill: skillB, driverContext: prefixDrvCtx });
+    await expect(svcRegistry.quiesceScopeServices('r-prefix')).rejects.toThrow('service stop failure');
+    expect([secondPrefixStopCount, svcRegistry.getActiveSessionsForScope('r-prefix:step-2:1').size]).toEqual([2, 0]);
     const ledger = new InMemoryLedgerStore();
     await ledger.createOrResumeRun({ runId: 'r1', laneId: 'l1', itemKey: 'k1', inputJson: '{}' });
     const repIntr = H.interrupt('rep-intr', z.object({ why: z.string() }));
@@ -358,7 +384,7 @@ describe('H.skill reference-counted ServiceSession lifecycle and H.loop cross-mo
       .returnOutputFrom('code').toAST();
     const modelDriver = new ScriptedModelDriver([
       makeTurn('', [{ id: 'call-s1', name: 'activateSkill', argsJson: JSON.stringify({ skillId: 'skill-1' }) }, { id: 'call-s2', name: 'activateSkill', argsJson: JSON.stringify({ skillId: 'skill-2' }) }]),
-      makeTurn('', [{ id: 'call-c1', name: 'completeSkill', argsJson: JSON.stringify({ skillId: 'skill-1', summary: 'TOMBSTONE_S1' }) }]),
+      makeTurn('', [{ id: 'call-c1', name: 'completeSkill', argsJson: JSON.stringify({ skillId: 'skill-1' }) }]),
       makeTurn(JSON.stringify({ patch: 'v1-dirty' }), [], { patch: 'v1-dirty' }), makeTurn(JSON.stringify({ patch: 'v1' }), [], { patch: 'v1' }),
       makeTurn(JSON.stringify({ passed: false, feedback: 'Needs edge case fix' }), [], { passed: false, feedback: 'Needs edge case fix' }),
       makeTurn('', [{ id: 'call-c2', name: 'completeSkill', argsJson: JSON.stringify({ skillId: 'skill-2', summary: 'TOMBSTONE_S2_AFTER_FORK' }) }]),
@@ -388,7 +414,8 @@ describe('H.skill reference-counted ServiceSession lifecycle and H.loop cross-mo
     expect(await executeLoop(loopNode, { goal: 'ship feature' }, ctx)).toEqual({ patch: 'v2-fixed' });
     expect(JSON.parse(capturedGateFailureJson ?? '{}')).toHaveProperty('scopeReceipt');
     expect([modelDriver.recordedForks.length, modelDriver.recordedForks[0]?.target.modelId, modelDriver.recordedForks[0]?.target.substituteTombstones]).toEqual([1, 'claude-opus', true]);
-    expect(Array.from(ledger.tombstones.values())).toEqual(expect.arrayContaining(['TOMBSTONE_S1', 'TOMBSTONE_S2_AFTER_FORK']));
+    expect(Array.from(ledger.tombstones.values())).toEqual(expect.arrayContaining(["[Skill 'skill-1' completed and unmounted]", 'TOMBSTONE_S2_AFTER_FORK']));
+    expect(ledger.frames.get('msg:step-loop:assistant:1')?.compactedTombstones?.['call-s1']).toBe("[Skill 'skill-1' completed and unmounted]");
     expect(Array.from(ledger.tombstones.keys()).find((k) => k.endsWith(':call-s2'))?.startsWith('fork:1:')).toBe(true);
 
     const freshLoopNode = Object.freeze({ ...loopNode, preserveActorSession: false });

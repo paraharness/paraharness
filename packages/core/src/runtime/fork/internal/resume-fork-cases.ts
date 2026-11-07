@@ -276,26 +276,34 @@ async function syncSuspendedChildScopeIfNeeded<THandle = unknown>(
         syncedCkpt: await batchParams.branchableScope.serializeCheckpoint(childHandle),
       };
     },
+    batchParams.ctx.signal,
   );
   const conflictLease: LeaseDelta | undefined =
     syncOut.syncRes.status === 'conflict'
       ? batchParams.branchableScope.getConflictLease?.(childHandle)
       : undefined;
-  const updatedStack = curEntry.continuationStack.map((f) =>
-    f.kind === 'agent-frame' && conflictLease !== undefined
-      ? Object.freeze<AgentContinuationFrame>({
+  const updatedStack: ContinuationFrame[] = [];
+  for (const f of curEntry.continuationStack) {
+    if (f.kind === 'agent-frame' && conflictLease !== undefined) {
+      updatedStack.push(
+        Object.freeze<AgentContinuationFrame>({
           ...f,
           conflictCheckArmed: true,
           activeLeases: Object.freeze([...f.activeLeases, conflictLease]),
-        })
-      : f.kind === 'loop-frame' && conflictLease !== undefined
-        ? Object.freeze<LoopContinuationFrame>({
-            ...f,
-            conflictCheckArmed: true,
-            grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, conflictLease]),
-          })
-        : f,
-  );
+        }),
+      );
+    } else if (f.kind === 'loop-frame' && conflictLease !== undefined) {
+      updatedStack.push(
+        Object.freeze<LoopContinuationFrame>({
+          ...f,
+          conflictCheckArmed: true,
+          grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, conflictLease]),
+        }),
+      );
+    } else {
+      updatedStack.push(f);
+    }
+  }
   const updatedEntry = Object.freeze<ForkBatchEntryRecord>({
     ...curEntry,
     conflictCheckArmed: curEntry.conflictCheckArmed || syncOut.syncRes.status === 'conflict',
@@ -339,6 +347,7 @@ export async function resumeSuspendedForkEntry<THandle = unknown>(
         record.forkId,
         record.childScopeCheckpoint,
       ),
+    batchParams.ctx.signal,
   );
   let handedOffToReconcile = false;
   let curEntry = params.entry;
@@ -349,12 +358,14 @@ export async function resumeSuspendedForkEntry<THandle = unknown>(
       const innerAgent = curEntry.continuationStack.find(
         (f): f is AgentContinuationFrame => f.kind === 'agent-frame',
       );
-      const nextStack =
-        record.suspensionReason === 'INTERRUPT_RAISED'
-          ? await injectCaseAResumeFrame({ ...params, entry: curEntry }, syncJson)
-          : innerAgent?.pausedAtPhase === 'BEFORE_STOP_GATE'
-            ? await injectCaseCResumeFrame({ ...params, entry: curEntry }, syncJson)
-            : await injectCaseBResumeFrame({ ...params, entry: curEntry }, syncJson);
+      let nextStack: readonly ContinuationFrame[];
+      if (record.suspensionReason === 'INTERRUPT_RAISED') {
+        nextStack = await injectCaseAResumeFrame({ ...params, entry: curEntry }, syncJson);
+      } else if (innerAgent?.pausedAtPhase === 'BEFORE_STOP_GATE') {
+        nextStack = await injectCaseCResumeFrame({ ...params, entry: curEntry }, syncJson);
+      } else {
+        nextStack = await injectCaseBResumeFrame({ ...params, entry: curEntry }, syncJson);
+      }
       curEntry = Object.freeze<ForkBatchEntryRecord>({
         ...curEntry,
         resumeFrameInjected: true,

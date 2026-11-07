@@ -224,8 +224,14 @@ export async function executeForkBatch<THandle = unknown>(
     }
     return buildForkBatchExecutionResult(params, entriesByForkId, triggers);
   } finally {
-    for (const handle of unreleasedHandles) {
-      await params.branchableScope.release(handle);
+    const settled = await Promise.allSettled(
+      Array.from(unreleasedHandles, (handle) => params.branchableScope.release(handle)),
+    );
+    const firstRejected = settled.find(
+      (res): res is PromiseRejectedResult => res.status === 'rejected',
+    );
+    if (firstRejected !== undefined) {
+      throw firstRejected.reason;
     }
   }
 }

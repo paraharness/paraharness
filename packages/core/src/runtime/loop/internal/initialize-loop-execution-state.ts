@@ -1,14 +1,10 @@
 import type { ModelASTNode } from '../../../ast/domain-ast.types.js';
 import type { LoopNode } from '../../../ast/loop-node.js';
-import type { CompiledWirePrefix } from '../../../ports/compiled-wire-prefix.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
-import type { HumanAdapter } from '../../../ports/human-adapter.js';
-import type { LedgerStore } from '../../../ports/ledger-store.js';
 import type { LessonOutcome } from '../../../ports/lesson-outcome.types.js';
-import type { LessonStore } from '../../../ports/lesson-store.js';
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
-import type { TopologyStore } from '../../../ports/topology-store.js';
+import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
 import { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
 import { PoolManager } from '../../pools/pool-manager.js';
@@ -40,23 +36,7 @@ export function initializeLoopExecutionState<
   validatedInput: TIn,
   ctx: StepExecutionContext<THandle>,
 ): LoopExecutionState<TIn, TOut, THandle> {
-  const rtEnv = (
-    ctx as StepExecutionContext<THandle> & {
-      readonly _runtime?: {
-        readonly ledgerStore?: LedgerStore;
-        readonly topologyStore?: TopologyStore;
-        readonly lessonStore?: LessonStore;
-        readonly lockManager?: ScopeLockManager;
-        readonly continuationQueue?: StepContinuationQueue;
-        readonly poolManager?: PoolManager;
-        readonly serviceRegistry?: ServiceSessionRegistry;
-        readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
-        readonly wirePrefixesByGroupId?: ReadonlyMap<string, CompiledWirePrefix>;
-        readonly outerFrames?: ContinuationFrame[];
-        readonly existingLoopFrame?: LoopContinuationFrame;
-      };
-    }
-  )._runtime;
+  const rtEnv = getStepRuntimeInternals(ctx);
   const poolManager = rtEnv?.poolManager ?? new PoolManager();
   const actor = node.actStep.actor;
   const resumedLoopFrame =

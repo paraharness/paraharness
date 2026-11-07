@@ -3,8 +3,8 @@ import { z } from 'zod';
 import {
   type AgentContinuationFrame, type ForkBatchEntryRecord, H, type LoopContinuationFrame,
   ScopeLockManager, type SpeculateBranchEntryRecord, StepContinuationQueue, type StepExecutionContext,
-  type WireFrameRecord, createExecutorRegistry, executeAgent, executeForkBatch, executeResumeForkBatch,
-  executeSpeculateTournament, resolvePostRaceCases,
+  type WireFrameRecord, createExecutorRegistry, executeAgent, executeForkBatch,
+  executeLoop, executeResumeForkBatch, executeSpeculateTournament, resolvePostRaceCases,
 } from '../src/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import { InMemoryLessonStore } from './fixtures/in-memory-lesson-store.js';
@@ -185,21 +185,33 @@ describe('Upward .onChildInterrupt() turn-batch barrier, resumeFork Cases A/B/C 
         if (id === 'f-c' && childCtx.resumeContinuationStack === undefined) {
           return { status: 'completed', output: { ok: false }, continuationStack: [sibCFrame] };
         }
-        const out = await executeAgent(
-          childNode.type === 'harness:loop' ? childActor.toAST() : childWorkerC.toAST(),
-          rawIn as { readonly id: string },
-          { ...childCtx, _runtime: { ledgerStore: ledger, lessonStore, lockManager } } as StepExecutionContext<string> & { readonly _runtime: unknown },
-        );
-        if (id === 'f-a' && childCtx.resumeContinuationStack === undefined) {
-          const raisingLoop: LoopContinuationFrame = Object.freeze({
-            kind: 'loop-frame', loopId: 'l-raise', roleKey: 'act-worker-role', lastActModelId: SAMPLE_MODEL_NODE.modelId, stepExecId: 's-r', loopInputJson: '{"id":"f-a"}',
-            iteration: 0, phase: 'evaluate', preservedActLeafMessageId: 'msg:act-preserved', turnsTaken: 1, costUsd: 0, elapsedDurationMs: 1,
-            actTurnsTaken: 1, actCostUsd: 0, actElapsedDurationMs: 1, grantedLoopLeases: Object.freeze([]), activeSkillIds: Object.freeze([]),
-            activeSkillActivations: Object.freeze({}), observedEffects: Object.freeze([]), injectedScopedRuleIds: Object.freeze([]), recalledLessons: Object.freeze([]), accumulatedLessonOutcomes: Object.freeze({}),
-          });
-          return { status: 'interrupt-raised', interruptId: 'schema-gap', interruptPayload: { reason: 'missing col' }, raisedByPhase: 'evaluate', continuationStack: [raisingLoop] };
+        const sink: {
+          continuationStack?: readonly (AgentContinuationFrame | LoopContinuationFrame)[];
+          raisedByPhase?: 'act' | 'evaluate';
+        } = {};
+        const execCtx = {
+          ...childCtx,
+          _runtime: { ledgerStore: ledger, lessonStore, lockManager, childOutcomeSink: sink },
+        } as StepExecutionContext<string> & { readonly _runtime: unknown };
+        try {
+          const out =
+            childNode.type === 'harness:loop'
+              ? await executeLoop(childNode as never, rawIn as { readonly id: string }, execCtx)
+              : await executeAgent(childWorkerC.toAST(), rawIn as { readonly id: string }, execCtx);
+          return { status: 'completed', output: out, continuationStack: sink.continuationStack ?? [] };
+        } catch (err) {
+          if (err instanceof Error && 'interruptResolution' in err) {
+            const intrRes = (err as Error & { readonly interruptResolution: { readonly interruptId: string; readonly payload: unknown } }).interruptResolution;
+            return {
+              status: 'interrupt-raised',
+              interruptId: intrRes.interruptId,
+              interruptPayload: intrRes.payload,
+              raisedByPhase: sink.raisedByPhase ?? 'act',
+              continuationStack: sink.continuationStack ?? [],
+            };
+          }
+          throw err;
         }
-        return { status: 'completed', output: out, continuationStack: [] };
       },
     });
 
@@ -207,6 +219,10 @@ describe('Upward .onChildInterrupt() turn-batch barrier, resumeFork Cases A/B/C 
     expect([...scope.liveHandles]).toEqual(['root:run-bar']);
     const openForks = await ledger.getSuspendedForks('run-bar', { parentStepExecId: 'step-bar' });
     expect(openForks.map((f) => f.suspendedForkId).sort()).toEqual(['f-a#1', 'f-b#1', 'f-c#1']);
+    const faSuspended = openForks.find((f) => f.forkId === 'f-a');
+    expect(faSuspended?.raisedByPhase).toBe('evaluate');
+    expect(faSuspended?.continuationStack).toHaveLength(1);
+    expect(faSuspended?.continuationStack[0]).toMatchObject({ kind: 'loop-frame', loopId: 'l-raise', phase: 'act', preservedActLeafMessageId: 'msg:step-bar:fork:f-a:assistant:1' });
     const fbSuspended = openForks.find((f) => f.forkId === 'f-b');
     expect(fbSuspended?.continuationStack.find((f) => f.kind === 'loop-frame')).toMatchObject({ kind: 'loop-frame', phase: 'act' });
     const fbAgentFrame = fbSuspended?.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame');
@@ -360,5 +376,53 @@ describe('.speculate() tournament: Post-Race Cases 1-4, real child/arbiter execu
     const finalWinnerAgent = finalSf?.kind === 'speculate-frame' ? finalSf.branches.find((b) => b.branchIndex === 1)?.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame') : undefined;
     expect(finalWinnerAgent?.agentId).toBe('spec-refiner');
     expect([lessonStore.recordedBatches, lessonStore.retiredIds.has('lesson-1'), [...scope.liveHandles]]).toEqual([[[{ lessonId: 'lesson-1', outcome: 'violated' }]], true, ['root:run-spec']]);
+
+    const survivorVerifier = H.agent<string>('sole-verifier').model(SAMPLE_MODEL_NODE).input(z.object({ code: z.string() })).output(z.object({ ok: z.boolean() }));
+    const case3Cap = H.agent<string>('spec-case3-parent').model(SAMPLE_MODEL_NODE).input(z.object({ prompt: z.string() })).output(z.object({ ok: z.boolean() }))
+      .capabilities(($c) =>
+        $c.speculate('raceCase3', ($s) =>
+          $s.requestSchema(z.object({})).worker(worker).branches(2, () => [{ variant: 0 }, { variant: 1 }])
+            .verifyWinnerWith(survivorVerifier, { mapInput: (_bIn, out: { readonly code: string }) => out, acceptWhen: (v: { readonly ok: boolean }) => v.ok })
+            .arbiter(arbiter, { resolveDecision: (v) => ({ decision: 'select-winner', winnerBranchIndex: v.idx, rationale: 'arb' }) })
+            .refineWinnerWhen((v) => v.needsRefine, refiner, () => ({ variant: 0 })),
+        ),
+      ).toAST().capabilities?.speculations[0];
+    if (case3Cap === undefined) throw new Error('Missing case3Cap');
+
+    const case3Driver = new ScriptedModelDriver([
+      makeTurn(JSON.stringify({ code: 'sole-v0' }), [], { code: 'sole-v0' }),
+      makeTurn('bad json that fails worker 1', []),
+      makeTurn(JSON.stringify({ ok: false }), [], { ok: false }),
+      makeTurn(JSON.stringify({ code: 'arb-v0-pre-refine' }), [], { code: 'arb-v0-pre-refine' }),
+      makeTurn(JSON.stringify({ code: 'arb-v1' }), [], { code: 'arb-v1' }),
+      makeTurn(JSON.stringify({ action: 'select-winner', idx: 0, needsRefine: true }), [], { action: 'select-winner', idx: 0, needsRefine: true }),
+      makeTurn('bad json that fails refiner', []),
+    ]);
+    const case3Reg = createExecutorRegistry({ models: { 'claude:model': () => case3Driver }, scopes: { 'git:cow-worktree': () => scope as never } });
+    const case3Ctx = Object.freeze({
+      runId: 'run-spec', stepExecId: 'step-case3', scopeHandle: 'root:run-spec', activePartitions: ['core'],
+      activeLeases: [], observedEffects: [], registry: case3Reg, resolveEnv: () => '', getRunner: throwUnusedRunner, recordEffects: () => undefined,
+    });
+    const case3Rejected = await executeSpeculateTournament({
+      parentNode: parent as never, parentInput: { prompt: 'case3' }, callId: 'call-c3-fail', capability: case3Cap as never,
+      argsJson: '{}', outerFrames: [], branchableScope: scope, lockManager: new ScopeLockManager(),
+      continuationQueue: new StepContinuationQueue(), ledgerStore: ledger, ctx: case3Ctx,
+    });
+    expect([case3Rejected.isError, JSON.parse(case3Rejected.toolResultText)]).toEqual([
+      true,
+      expect.objectContaining({ status: 'ALL_FAILED', branches: expect.arrayContaining([expect.objectContaining({ branchIndex: 0, status: 'FAILED', errorSummary: 'Rejected by verifyWinnerWith' })]) }),
+    ]);
+
+    const restoresBeforeRefineRollback = scope.restoredCheckpoints.length;
+    const case3RefinerRolledBack = await executeSpeculateTournament({
+      parentNode: parent as never, parentInput: { prompt: 'case3-rollback' }, callId: 'call-c3-rb', capability: case3Cap as never,
+      argsJson: '{}', outerFrames: [], branchableScope: scope, lockManager: new ScopeLockManager(),
+      continuationQueue: new StepContinuationQueue(), ledgerStore: ledger, ctx: case3Ctx,
+    });
+    expect([case3RefinerRolledBack.isError, scope.restoredCheckpoints.length > restoresBeforeRefineRollback, JSON.parse(case3RefinerRolledBack.toolResultText)]).toEqual([
+      false,
+      true,
+      expect.objectContaining({ status: 'WINNER_COMMITTED', winnerBranchIndex: 0, output: { code: 'arb-v0-pre-refine' } }),
+    ]);
   });
 });

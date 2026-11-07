@@ -37,7 +37,7 @@ function computeMaxPrerequisiteDepth(graph: Graph, nodeKey: string, memo: Map<st
  *
  * @throws {Error} If the mutation introduces a prerequisite cycle or exceeds `req.maxPrerequisiteDepth`.
  */
-export function applyMutateLanePlan(store: InMemoryLedgerStore, req: MutateLanePlanRequest): void {
+export function applyLanePlanMutation(store: InMemoryLedgerStore, req: MutateLanePlanRequest): void {
   const graph = new Graph({ directed: true });
   for (const run of store.runs.values()) {
     if (run.laneId === req.laneId) {

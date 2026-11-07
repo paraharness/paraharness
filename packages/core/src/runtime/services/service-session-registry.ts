@@ -56,7 +56,7 @@ export class ServiceSessionRegistry {
   /**
    * Releases a skill's reference lease across all services in `scopeKey`, stopping any daemon whose reference count drops to zero.
    *
-   * Invoked when `completeSkill({ skillId })` is called by the model (`SPEC.md` §3.4.2).
+   * Stops all zero-reference sessions via `Promise.allSettled` and rethrows the first error after all settle (`SPEC.md` §3.4.2).
    *
    * @param {string} scopeKey - Canonical scope key of the active isolation scope.
    * @param {string} skillId  - Completed skill identifier releasing its service leases.
@@ -67,48 +67,69 @@ export class ServiceSessionRegistry {
     const scopeMap = this.entriesByScope.get(scopeKey);
     if (scopeMap === undefined) return Object.freeze([]);
     const stoppedServiceIds: string[] = [];
+    const sessionsToStop: ServiceSession[] = [];
     for (const [serviceId, entry] of scopeMap) {
       if (!entry.holdingSkillIds.has(skillId)) continue;
       entry.holdingSkillIds.delete(skillId);
       if (entry.holdingSkillIds.size === 0) {
         scopeMap.delete(serviceId);
-        await entry.session.stop();
         stoppedServiceIds.push(serviceId);
+        sessionsToStop.push(entry.session);
       }
     }
     if (scopeMap.size === 0) {
       this.entriesByScope.delete(scopeKey);
     }
+    const settled = await Promise.allSettled(sessionsToStop.map((s) => s.stop()));
+    for (const outcome of settled) {
+      if (outcome.status === 'rejected') {
+        throw outcome.reason;
+      }
+    }
     return Object.freeze(stoppedServiceIds);
   }
 
   /**
-   * Stops and unmounts all active `ServiceSession` daemons running in `scopeKey` (or across all scopes when omitted).
+   * Stops and unmounts all active `ServiceSession` daemons running in `scopeKey` (matching exact `scopeKey` and `${scopeKey}:*` sub-scopes) or across all scopes.
    *
    * Invoked at step boundaries (`.act()` to `.evaluate()`), on actor suspension, and during `.onLimitExceeded()` cleanup.
    *
-   * @param {string} [scopeKey] - Optional canonical scope key to quiesce; quiesces all scopes when omitted.
+   * @param {string} [scopeKey] - Optional canonical scope key or prefix to quiesce; quiesces all scopes when omitted.
    *
    * @returns {Promise<readonly string[]>} Identifiers of stopped service sessions.
    */
   async quiesceScopeServices(scopeKey?: string): Promise<readonly string[]> {
-    if (scopeKey !== undefined) {
-      const scopeMap = this.entriesByScope.get(scopeKey);
-      if (scopeMap === undefined) return Object.freeze([]);
-      this.entriesByScope.delete(scopeKey);
-      const stopped: string[] = [];
-      for (const [serviceId, entry] of scopeMap) {
-        await entry.session.stop();
-        stopped.push(serviceId);
+    const matchedKeys: string[] = [];
+    if (scopeKey === undefined) {
+      for (const key of this.entriesByScope.keys()) {
+        matchedKeys.push(key);
       }
-      return Object.freeze(stopped);
+    } else {
+      const prefix = `${scopeKey}:`;
+      for (const key of this.entriesByScope.keys()) {
+        if (key === scopeKey || key.startsWith(prefix)) {
+          matchedKeys.push(key);
+        }
+      }
     }
-    const allStopped: string[] = [];
-    for (const key of Array.from(this.entriesByScope.keys())) {
-      const stopped = await this.quiesceScopeServices(key);
-      for (const id of stopped) allStopped.push(id);
+    const stopped: string[] = [];
+    const sessionsToStop: ServiceSession[] = [];
+    for (const key of matchedKeys) {
+      const scopeMap = this.entriesByScope.get(key);
+      if (scopeMap === undefined) continue;
+      this.entriesByScope.delete(key);
+      for (const [serviceId, entry] of scopeMap) {
+        stopped.push(serviceId);
+        sessionsToStop.push(entry.session);
+      }
     }
-    return Object.freeze(allStopped);
+    const settled = await Promise.allSettled(sessionsToStop.map((s) => s.stop()));
+    for (const outcome of settled) {
+      if (outcome.status === 'rejected') {
+        throw outcome.reason;
+      }
+    }
+    return Object.freeze(stopped);
   }
 
   /**

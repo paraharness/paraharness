@@ -1,4 +1,3 @@
-import type { StepASTNode } from '../../../ast/domain-ast.types.js';
 import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
 import type { BranchableScope } from '../../../ports/branchable-scope.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
@@ -10,7 +9,7 @@ import type { FlowExecutionContext } from '../flow-execution-context.js';
 import type { HierarchicalRewindDrainParams } from '../hierarchical-rewind-drain-params.js';
 import type { RecoverInterruptedRunParams } from '../recover-interrupted-run-params.js';
 import type { ReplaceWithPromotionParams } from '../replace-with-promotion-params.js';
-import { buildFlowStepExecutionContext } from './collect-flow-actors.js';
+import { buildFlowStepExecutionContext } from './build-flow-step-execution-context.js';
 
 /**
  * Releases and aborts all suspended child forks matching `filter` for `flowCtx.runId`.
@@ -192,7 +191,7 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
       const hookExec = flowCtx.registry.rewindHooks[onRewindHook.type];
       const { stepCtx } = buildFlowStepExecutionContext(
         flowCtx,
-        flowCtx.activeReplacementExecutable as StepASTNode<unknown, unknown, THandle>,
+        flowCtx.activeReplacementExecutable,
         {
           stepExecId: flowCtx.activeStepExecId ?? flowCtx.runId,
           activePartitions: [],
@@ -349,21 +348,17 @@ async function resumeSuspendedBootRunIfReady<TIn, THandle>(
       inputJson: runState.inputJson,
       rewindPendingToStepId: null,
     });
-    Object.assign(flowCtx, {
-      pendingRewindToStepId: pendingRewind,
-      activeStepId: pendingRewind,
-      activeStepExecId: null,
-    });
+    flowCtx.pendingRewindToStepId = pendingRewind;
+    flowCtx.activeStepId = pendingRewind;
+    flowCtx.activeStepExecId = null;
     return true;
   }
-  Object.assign(flowCtx, {
-    activeStepId: bootRecord.stepId,
-    activeStepExecId: bootRecord.stepExecId,
-    resumeContinuationStack: Object.freeze<readonly ContinuationFrame[]>([
-      ...outerFrames,
-      syncRes.updatedAgentFrame ?? topAgent,
-    ]),
-  });
+  flowCtx.activeStepId = bootRecord.stepId;
+  flowCtx.activeStepExecId = bootRecord.stepExecId;
+  flowCtx.resumeContinuationStack = Object.freeze<readonly ContinuationFrame[]>([
+    ...outerFrames,
+    syncRes.updatedAgentFrame ?? topAgent,
+  ]);
   return true;
 }
 
@@ -400,11 +395,9 @@ export async function recoverInterruptedRunOnBoot<TIn = unknown, THandle = unkno
     return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume });
   }
   if (bootRecord.status === 'RUNNING' && bootRecord.stepId !== null) {
-    Object.assign(flowCtx, {
-      activeStepId: bootRecord.stepId,
-      activeStepExecId: bootRecord.stepExecId,
-      resumeContinuationStack: bootRecord.continuationStack,
-    });
+    flowCtx.activeStepId = bootRecord.stepId;
+    flowCtx.activeStepExecId = bootRecord.stepExecId;
+    flowCtx.resumeContinuationStack = bootRecord.continuationStack;
   }
   return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume: true });
 }
@@ -435,7 +428,7 @@ export async function foldFlowCustomTelemetry<TIn = unknown, THandle = unknown>(
   }
   const { stepCtx } = buildFlowStepExecutionContext(
     flowCtx,
-    flowCtx.activeReplacementExecutable as StepASTNode<unknown, unknown, THandle>,
+    flowCtx.activeReplacementExecutable,
     {
       stepExecId: flowCtx.activeStepExecId ?? flowCtx.runId,
       activePartitions: [],

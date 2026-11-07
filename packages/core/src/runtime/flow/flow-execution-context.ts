@@ -3,6 +3,7 @@ import type { FlowNode } from '../../ast/flow-node.js';
 import type { PrefixGroupNode } from '../../ast/prefix-group-node.js';
 import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
+import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
 import type { HumanAdapter } from '../../ports/human-adapter.js';
 import type { IsolationScope } from '../../ports/isolation-scope.js';
 import type { LedgerStore } from '../../ports/ledger-store.js';
@@ -75,6 +76,8 @@ export interface FlowExecutionContext<TIn = unknown, THandle = unknown> {
   activeStepExecId: string | null;
   /** Currently executing replacement `StepASTNode` promoted via `.replaceWith()`, if any. */
   activeReplacementExecutable?: StepASTNode<unknown, unknown, THandle>;
+  /** Persisted continuation stack restored during reboot recovery for the first resumed step execution. */
+  resumeContinuationStack?: readonly ContinuationFrame[];
   /** `AbortController` governing the currently executing step for rewind/cancel drain barriers. */
   activeStepAbortController: AbortController;
   /** Target `stepId` queued by `.rewindTo()` to jump the flow loop to after draining. */

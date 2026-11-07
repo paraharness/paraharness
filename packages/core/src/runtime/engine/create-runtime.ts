@@ -112,7 +112,9 @@ export function createRuntime(
   const controlPlaneHandles: ControlPlaneHandle[] = [];
   const controller: HarnessRuntimeController = {
     async emitSignal<TPayload>(signalId: string, payload: TPayload): Promise<void> {
-      await handleEmittedRuntimeSignal(signalId, payload, {
+      await handleEmittedRuntimeSignal({
+        signalId,
+        payload,
         node,
         ledgerStore,
         topologyNode: options?.topologyNode,
@@ -170,21 +172,23 @@ export function createRuntime(
           }
         }
       } catch (err) {
-        for (const cph of controlPlaneHandles.splice(0)) {
-          await cph.close();
-        }
-        for (const sh of streamHandles.splice(0)) {
-          await sh.close();
-        }
+        await Promise.allSettled([
+          ...controlPlaneHandles.splice(0).map((cph) => cph.close()),
+          ...streamHandles.splice(0).map((sh) => sh.close()),
+        ]);
         throw err;
       }
     },
     async stop(): Promise<void> {
-      for (const sh of streamHandles.splice(0)) {
-        await sh.close();
-      }
-      for (const cph of controlPlaneHandles.splice(0)) {
-        await cph.close();
+      const settled = await Promise.allSettled([
+        ...streamHandles.splice(0).map((sh) => sh.close()),
+        ...controlPlaneHandles.splice(0).map((cph) => cph.close()),
+        serviceRegistry.quiesceScopeServices(),
+      ]);
+      for (const outcome of settled) {
+        if (outcome.status === 'rejected') {
+          throw outcome.reason;
+        }
       }
     },
   });

@@ -12,6 +12,8 @@ export interface WinnerRefinementCommitContext<THandle = unknown> {
   readonly winnerBranchIndex: number;
   /** Optional structured arbiter verdict passed to `refineWinnerWhen`. */
   readonly verdict: unknown;
+  /** Pre-computed branch input payloads (`0..B-1`) from `mapBranches`. */
+  readonly branchInputs: readonly unknown[];
   /** Map of all candidate branch indices to their live scope handles. */
   readonly handlesByBranch: ReadonlyMap<number, THandle>;
   /** Callback persisting an updated `SpeculateContinuationFrame` into `LedgerStore`. */
