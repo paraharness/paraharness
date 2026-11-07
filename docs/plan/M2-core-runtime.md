@@ -12,8 +12,19 @@
 - **`forbidden_dirs`**:
   - `packages/core/src/{ast,ports,schemas,topology,builders}/**`
   - `packages/core/src/h-namespace-contract.ts`, `packages/core/src/h-namespace.ts`
-  - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
+  - `packages/{lockfile,sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
   - Root workspace files (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`), `.agents/**`, `.claude/**`, `docs/**`
+
+### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
+
+| Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Per-`stepExecId` continuation queue & writer lock serialization (`StepContinuationQueue`, `ScopeLockManager`) | `p-queue` (`new PQueue({ concurrency: 1 })`) | `^9.1.0` (npm `10.0.0`; `^9.1.0` workspace-pinned, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled promise-chain queue (forbidden by Rule 3.5) | Pass a queued-wait-only `AbortController` signal to `PQueue.add` and detach caller `AbortSignal` listener inside the task callback before critical-section execution (`docs/lessons/BUILDER.md`); prune map entries when `size === 0 && pending === 0` | Approved (`Rule 3.5`) |
+| Bounded child fork & speculative branch concurrency (`.fork()`, `.speculate()`) | `p-limit` (`pLimit(concurrency)`) | `^7.3.0` (npm `7.3.3`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled semaphore counter (forbidden by Rule 3.5) | Pure JS lightweight concurrency limiter; combine with `try / finally` `AbortSignal` listener cleanup per Rule 5.3 | Approved (`Rule 3.5`) |
+| In-run grounding snapshot unified diffs (`computeInRunGroundingDiffs` / `updatedGroundingDiffs`) | `diff` (`createTwoFilesPatch`) | `^9.0.0` (npm `9.0.0`, `BSD-3-Clause`, `0` deprecated, `0` CVEs) | `diff-match-patch-es` (character-level operational transform rather than standard unified line patch format expected in `[ROLE_AND_SCOPE_CONTEXT]`); hand-rolled Myers diff (forbidden by Rule 3.5) | Pure JS deterministic unified patch generation when grounding source digest changes mid-run without mutating byte 0 of `systemPromptText` | Approved (`Rule 3.5`) |
+| Dynamic prerequisite DAG cycle detection (`executeAddDependencies`, `LaneScheduler`) | `@dagrejs/graphlib` (`Graph`, `alg.findCycles`, `alg.preorder`) | `^4.0.7` (npm `4.0.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled DFS cycle detector (forbidden by Rule 3.5) | Pure JS in-memory directed graph shared with `M1` topology validation | Approved (`Rule 3.5`) |
+| Step input/output validation & tool JSON Schema compilation | `zod` (`schema.parse`, `z.toJSONSchema()`) | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validator (forbidden by Rule 3.5) | Pure TypeScript runtime validation at step entry/exit boundaries (`Rule 5.4`) | Approved (`Rule 3.5`) |
+| Grounding digests & run/step/frame identifiers | `node:crypto` (`createHash('sha256')`, `randomUUID()`) | Built-in Node.js `>=22` (`MIT`) | External UUID/hash packages (unnecessary when `node:crypto` is native) | Synchronous SHA-256 hex digest computed once per snapshot (`Rule 4.4`) | Approved (`Rule 3.5`) |
 
 ---
 
@@ -36,45 +47,35 @@
 
 ## 3. Planned Module Decomposition & Public Exports (`packages/core/src/runtime/**`)
 
-Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file plus `TSPropertySignature` property sub-interfaces only, 1 `class` per file, `internal/` phase helpers, zero inline comments, full 3-part JSDoc on every declaration and `TSMethodSignature`).
+Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single-kind entity files per Rule 1.1, 1 root `interface` per file plus reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces per Rule 1.2, 1 `class` per file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rule 1.3, function files with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.6 & 3.3, `internal/` phase helpers, zero inline comments, and complete `/** ... */` JSDoc per Rules 2.1–2.3).
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/runtime/locks/scope-lock-entry-state.ts` | `interface` | `ScopeLockEntryState` |
-| `src/runtime/locks/scope-lock-manager.ts` | `class` | `ScopeLockManager` (`acquireRead`, `acquireWrite`, `withReadLock`, `withWriteLock`) |
+| `src/runtime/locks/scope-lock-manager.ts` | `class` | `ScopeLockManager` (`acquireRead`, `acquireWrite`, `withReadLock`, `withWriteLock`, plus co-located dedicated `ScopeLockEntryState` interface) |
 | `src/runtime/locks/step-continuation-queue.ts` | `class` | `StepContinuationQueue` (`enqueueUpdate`, `clearStep`) |
-| `src/runtime/pools/pool-runtime-state.ts` | `interface` | `PoolRuntimeState` |
-| `src/runtime/pools/pool-manager.ts` | `class` | `PoolManager` (`selectSeat`, `selectModel`, `recordRateLimit429`, `recordModelOutcome`, `releaseRunSeats`) |
-| `src/runtime/prefix/compile-wire-prefix-params.ts` | `interface` | `CompileWirePrefixParams` |
-| `src/runtime/prefix/compile-wire-prefix.ts` | `function` | `compileRunWirePrefixes`, `computeInRunGroundingDiffs`, `buildRoleAndScopeContextFrame` |
+| `src/runtime/pools/pool-manager.ts` | `class` | `PoolManager` (`selectSeat`, `selectModel`, `recordRateLimit429`, `recordModelOutcome`, `releaseRunSeats`, plus co-located dedicated `PoolRuntimeState` interface) |
+| `src/runtime/prefix/compile-wire-prefix.ts` | `function` | `compileRunWirePrefixes`, `computeInRunGroundingDiffs`, `buildRoleAndScopeContextFrame` (plus co-located dedicated `CompileWirePrefixParams` interface) |
 | `src/runtime/prefix/internal/collect-prefix-tools.ts` | `function` | `collectRoleScopedWireTools`, `collectUnionWireTools` |
 | `src/runtime/lessons/lesson-scoring.constants.ts` | `const` | `LESSON_OUTCOME_PRECEDENCE_RANK`, `DEFAULT_LESSON_SCORING_WEIGHTS` |
 | `src/runtime/lessons/lesson-scoring.ts` | `function` | `computeLessonScore`, `shouldRetireLesson`, `selectRecalledLessons`, `mergeLessonOutcomePrecedence` |
-| `src/runtime/lessons/lesson-distillation-params.ts` | `interface` | `LessonDistillationParams` |
-| `src/runtime/lessons/lesson-distiller-runner.ts` | `function` | `runContrastiveLessonDistillation`, `flushStepLessonOutcomes`, `evaluateLessonSignalTriggers` |
-| `src/runtime/services/active-service-entry.ts` | `interface` | `ActiveServiceEntry` |
-| `src/runtime/services/service-session-registry.ts` | `class` | `ServiceSessionRegistry` (`acquireSkillServices`, `releaseSkillServices`, `quiesceScopeServices`, `reacquireActiveSkillServices`) |
+| `src/runtime/lessons/lesson-distiller-runner.ts` | `function` | `runContrastiveLessonDistillation`, `flushStepLessonOutcomes`, `evaluateLessonSignalTriggers` (plus co-located dedicated `LessonDistillationParams` interface) |
+| `src/runtime/services/service-session-registry.ts` | `class` | `ServiceSessionRegistry` (`acquireSkillServices`, `releaseSkillServices`, `quiesceScopeServices`, `reacquireActiveSkillServices`, plus co-located dedicated `ActiveServiceEntry` interface) |
 | `src/runtime/policy/policy-evaluation-result.ts` | `interface` | `PolicyEvaluationResult` |
-| `src/runtime/policy/post-flight-sandbox-params.ts` | `interface` | `PostFlightSandboxParams` |
-| `src/runtime/policy/evaluate-policy-guards.ts` | `function` | `evaluatePreFlightToolBatch`, `executePostFlightSandboxedTool`, `evaluateQuotaTripwires` |
+| `src/runtime/policy/evaluate-policy-guards.ts` | `function` | `evaluatePreFlightToolBatch`, `executePostFlightSandboxedTool`, `evaluateQuotaTripwires` (plus co-located dedicated `PostFlightSandboxParams` interface) |
 | `src/runtime/policy/internal/match-lease-and-clauses.ts` | `function` | `evaluateSingleGuardClause`, `isEffectCoveredByLeases`, `checkQuantitativeLimits` |
-| `src/runtime/policy/limit-exceeded-flush-params.ts` | `interface` | `LimitExceededFlushParams` |
-| `src/runtime/policy/execute-limit-exceeded-flush.ts` | `function` | `executeLimitExceededSequence` |
+| `src/runtime/policy/execute-limit-exceeded-flush.ts` | `function` | `executeLimitExceededSequence` (plus co-located dedicated `LimitExceededFlushParams` interface) |
 | `src/runtime/agent/agent-turn-session-state.ts` | `interface` | `AgentTurnSessionState` |
 | `src/runtime/agent/execute-agent.ts` | `function` | `executeAgent` |
 | `src/runtime/agent/internal/run-agent-turn-loop.ts` | `function` | `runAgentTurnLoop`, `initializeAgentContinuationFrame`, `invokeModelTurnWithFailover` |
 | `src/runtime/agent/internal/drain-pending-tool-batch.ts` | `function` | `drainPendingToolBatch`, `executeSingleToolInPipeline`, `handleBuiltInSkillAndCapabilityTools` |
 | `src/runtime/agent/internal/evaluate-before-stop-gate.ts` | `function` | `evaluateBeforeStopGate`, `collectTriggeredScopedRuleChecks` |
 | `src/runtime/agent/internal/resolve-interrupt-edge.ts` | `function` | `resolveInterruptEdge`, `runAdjudicatorEdge`, `runHumanAskEdge` |
-| `src/runtime/fork/fork-batch-execution-params.ts` | `interface` | `ForkBatchExecutionParams` |
-| `src/runtime/fork/execute-fork-batch.ts` | `function` | `executeForkBatch`, `executeResumeForkBatch` |
+| `src/runtime/fork/execute-fork-batch.ts` | `function` | `executeForkBatch`, `executeResumeForkBatch` (plus co-located `ForkBatchExecutionParams` interface) |
 | `src/runtime/fork/internal/fork-barrier-and-pause.ts` | `function` | `coordinateTurnBatchInterruptBarrier`, `pauseSiblingForkAtBoundary`, `reconcileChildForkWithBounce` |
 | `src/runtime/fork/internal/resume-fork-cases.ts` | `function` | `resumeSuspendedForkEntry`, `injectCaseAResumeFrame`, `injectCaseBResumeFrame`, `injectCaseCResumeFrame` |
-| `src/runtime/speculate/speculate-tournament-params.ts` | `interface` | `SpeculateTournamentParams` |
-| `src/runtime/speculate/execute-speculate-tournament.ts` | `function` | `executeSpeculateTournament` |
+| `src/runtime/speculate/execute-speculate-tournament.ts` | `function` | `executeSpeculateTournament` (plus co-located `SpeculateTournamentParams` interface) |
 | `src/runtime/speculate/internal/resolve-tournament-race.ts` | `function` | `resolvePostRaceCases`, `runTournamentArbiterWithGate`, `executeWinnerRefinementAndCommit`, `unparkEscalatedTournamentBranch` |
-| `src/runtime/plan/plan-mutation-params.ts` | `interface` | `PlanMutationParams` |
-| `src/runtime/plan/execute-plan-mutation.ts` | `function` | `executeSpawnTasks`, `executeAddDependencies`, `executeUpdatePartitionContract`, `syncSuspendedRunPrerequisites` |
+| `src/runtime/plan/execute-plan-mutation.ts` | `function` | `executeSpawnTasks`, `executeAddDependencies`, `executeUpdatePartitionContract`, `syncSuspendedRunPrerequisites` (plus co-located `PlanMutationParams` interface) |
 | `src/runtime/loop/loop-execution-state.ts` | `interface` | `LoopExecutionState` |
 | `src/runtime/loop/execute-loop.ts` | `function` | `executeLoop` |
 | `src/runtime/loop/internal/run-loop-iteration.ts` | `function` | `runLoopActPhase`, `runLoopEvaluatePhase`, `escalateLoopActorModelIfNeeded` |
@@ -84,8 +85,7 @@ Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**
 | `src/runtime/flow/execute-flow.ts` | `function` | `executeFlow`, `executeFlowStep`, `executeFlowBranch` |
 | `src/runtime/flow/internal/flow-replace-and-rewind.ts` | `function` | `executeReplaceWithPromotion`, `executeHierarchicalRewindDrain`, `recoverInterruptedRunOnBoot` |
 | `src/runtime/lane/lane-priority.constants.ts` | `const` | `LANE_PRIORITY_WEIGHTS`, `DEFAULT_PRIORITY_AGING_INTERVAL_MS`, `PRIORITY_AGING_STEP_WEIGHT`, `DEFAULT_MAX_SEALED_AGE_HOURS` |
-| `src/runtime/lane/lane-queued-item-state.ts` | `interface` | `LaneQueuedItemState` |
-| `src/runtime/lane/lane-scheduler.ts` | `class` | `LaneScheduler` (`enqueueItem`, `computeEffectivePriority`, `scheduleNextReadyRuns`, `handleSignalRewind`, `enforceRunBudget`) |
+| `src/runtime/lane/lane-scheduler.ts` | `class` | `LaneScheduler` (`enqueueItem`, `computeEffectivePriority`, `scheduleNextReadyRuns`, `handleSignalRewind`, `enforceRunBudget`, plus co-located dedicated `LaneQueuedItemState` interface) |
 | `src/runtime/engine/create-runtime.ts` | `function` | `createRuntime` |
 | `src/runtime/engine/default-execution-engine.constants.ts` | `const` | `defaultExecutionEngine: HarnessExecutionEngine` |
 | `src/runtime/index.ts` | `barrel` | Pure explicit re-exports of `createRuntime`, `defaultExecutionEngine`, `executeStepNode`, `executeAgent`, `executeLoop`, `executeCommand`, `ScopeLockManager`, `StepContinuationQueue`, `PoolManager`, `ServiceSessionRegistry`, `LaneScheduler`, `createExecutorRegistry`, and runtime port types |
@@ -94,12 +94,13 @@ Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**
 
 ## 4. Detailed Implementation Requirements
 
-### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
-1. **Zero Co-Location of Entity Kinds**:
-   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/core/src/runtime/**` or `packages/core/test/fixtures/**`.
-   - Every runtime helper `interface` (`*Context`, `*State`, `*Params`, `*Options`, `*Result`) gets its own dedicated file (with only `TSPropertySignature` sub-interfaces sharing that file); every `class` (`ScopeLockManager`, `StepContinuationQueue`, `PoolManager`, `ServiceSessionRegistry`, `LaneScheduler`, and each `test/fixtures/*` class) gets its own file (`1 class per file`); every `const` lives in `*.constants.ts`; every `type` lives in `*.types.ts`.
-2. **Full 3-Part JSDoc Requirement**:
-   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/core lint`.
+### 4.0 Single-Kind File Separation, Parameter Co-Location & JSDoc Discipline (`docs/CODING_GUIDELINES.md` §§1–3)
+1. **Single-Kind Entity Files & Co-Location (`Rules 1.1–1.7 & 3.3`)**:
+   - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** live in the same file in `packages/core/src/runtime/**` or `packages/core/test/fixtures/**`.
+   - Dedicated 1:1 `*Params` / `*Options` / `*State` interfaces (and their reachable sub-interfaces) for a single function or class are co-located in the same file as that function or class (`Rules 1.3, 1.6, 3.3`), while multi-module shared state/result interfaces (`PolicyEvaluationResult`, `AgentTurnSessionState`, `LoopExecutionState`, `FlowExecutionContext`) live in their own dedicated `interface` files (`Rule 1.2`).
+   - Every `class` (`ScopeLockManager`, `StepContinuationQueue`, `PoolManager`, `ServiceSessionRegistry`, `LaneScheduler`, and each `test/fixtures/*` class) gets its own file (`1 class per file`); every `const` lives in `*.constants.ts`; every `type` lives in `*.types.ts`.
+2. **JSDoc Anatomy & Tag Completeness (`Rules 2.1–2.4`)**:
+   - Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) in `src/**` and `test/fixtures/**` must carry the 3-part JSDoc anatomy per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by an empty `*` line, followed by `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` where applicable; vertical ASCII column alignment of `@template` and `@param` tags is not required; `private` class methods and small `internal/` helper functions `<= 20` lines require only a 1-paragraph summary + required `@tags`), enforced by `pnpm --filter @harness-dsl/core lint`.
 
 ### 4.1 `ScopeLockManager` & Serialized Per-Step `StepContinuationQueue` (`SPEC.md` §3.7.2 & `CODING_GUIDELINES.md` Rule 3.5)
 1. **Approved Library Usage (`p-queue`, `p-limit`, `diff`, `@dagrejs/graphlib`)**:

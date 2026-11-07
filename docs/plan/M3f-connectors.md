@@ -10,11 +10,22 @@
   - `packages/stripe/src/**`, `packages/stripe/test/**`
   - `packages/netsuite/src/**`, `packages/netsuite/test/**`
 - **`forbidden_dirs`**:
-  - `packages/core/**`
+  - `packages/core/**`, `packages/lockfile/**`
   - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,integration}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, and `@harness-dsl/netsuite` must have **zero runtime or type imports** from each other or from any other M3 adapter package. Each depends exclusively on `@harness-dsl/core` (`workspace:*`), `zod`, and Node built-ins (`node:http`, `node:crypto`).
+  - `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, and `@harness-dsl/netsuite` must have **zero runtime or type imports** from each other or from any other M3 adapter package. `@harness-dsl/github` depends exclusively on `@harness-dsl/core` (`workspace:*`), `@octokit/rest`, `@octokit/webhooks`, `zod`, and Node built-ins; `@harness-dsl/slack` depends exclusively on `@harness-dsl/core` (`workspace:*`), `@slack/web-api`, `@slack/socket-mode`, `@slack/webhook`, `zod`, and Node built-ins; `@harness-dsl/stripe` depends exclusively on `@harness-dsl/core` (`workspace:*`), `stripe`, `zod`, and Node built-ins; `@harness-dsl/netsuite` depends exclusively on `@harness-dsl/core` (`workspace:*`), `big.js`, `zod`, and Node built-ins.
+
+### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
+
+| Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| GitHub REST API client (`github.issues`, `github.createOrUpdatePr`) | `@octokit/rest` | `^22.0.1` (npm `22.0.1`, `MIT`, `0` deprecated, `0` CVEs) | Full `octokit` meta-package (pulls unnecessary GraphQL/App sub-packages), hand-rolled `fetch` client (forbidden by Rule 3.5) | Official modular GitHub REST client; supports injectable `GithubHttpTransport` / `request.fetch` test seam | Approved (`Rule 3.5`) |
+| GitHub Webhook HMAC-SHA256 signature verification & event dispatch (`github.webhookStream`) | `@octokit/webhooks` (`Webhooks`) | `^14.2.0` (npm `14.2.0`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled `crypto.createHmac` header parser (forbidden by Rule 3.5) | Constant-time `X-Hub-Signature-256` verification and typed event payload handling; close HTTP listener in `try / finally` | Approved (`Rule 3.5`) |
+| Slack Web API, Socket Mode & Incoming Webhook clients (`slack.bot`, `slack.webhook`) | `@slack/web-api` (`^8.3.0`), `@slack/socket-mode` (`^3.1.1`), `@slack/webhook` (`^8.0.2`) | `MIT` (npm `8.3.0`, `3.1.1`, `8.0.2`, `0` deprecated, `0` CVEs) | `@slack/bolt` (heavy HTTP framework wrapper), hand-rolled Slack HTTP/WebSocket client (forbidden by Rule 3.5) | Official Slack SDKs; memoize `SlackApproverAdapter` per `(RuntimeDriverContext, canonicalNodeKey)` via `WeakMap` across `humanChannels` and `controlPlanes` (`docs/lessons/BUILDER.md`) and clear keep-alive timers in `try / finally` | Approved (`Rule 3.5`) |
+| Stripe API client & financial types (`stripe.readTools`, `stripe.maxRefundGuardUsd`, `stripe.allowRefundUpToUsd`) | `stripe` | `^23.1.0` (npm `23.1.0`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled Stripe REST wrapper (forbidden by Rule 3.5) | Official Stripe TypeScript SDK with injectable HTTP client / transport seam for offline deterministic testing | Approved (`Rule 3.5`) |
+| Exact arbitrary-precision decimal arithmetic (`netsuite.balanceZeroCheck`, journal debit/credit summation) | `big.js` (`+ @types/big.js`) | `^7.0.1` (npm `7.0.1`, `MIT`, `0` deprecated, `0` CVEs) | Native IEEE-754 `number` (`0.1 + 0.2 !== 0.3` floating-point drift on financial journal lines, forbidden by Rule 3.5), `decimal.js` (heavier trig/transcendental surface unnecessary for financial ledger arithmetic) | Pure JS exact decimal arithmetic (`new Big(line.debitUsd).minus(line.creditUsd)`) with zero floating-point rounding error | Approved (`Rule 3.5`) |
+| Schema validation (`responseSchema`, tool/step payloads) | `zod` | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validation (forbidden by Rule 3.5) | Pure TypeScript runtime validation | Approved (`Rule 3.5`) |
 
 ---
 
@@ -32,26 +43,23 @@
 
 ## 3. Planned Module Decomposition & Public Exports
 
-Every file in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file plus `TSPropertySignature` property sub-interfaces only, 1 `class` per file, 1 builder factory function per `create-*.ts` file, `internal/` helpers, pure `src/index.ts` barrels, full 3-part `/** ... */` JSDoc on every declaration and `TSMethodSignature`, and zero inline/non-JSDoc comments).
+Every file in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single-kind entity files per Rule 1.1, 1 root `interface` per file plus reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces per Rule 1.2, 1 `class` per file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rule 1.3, 1 builder factory function per `create-*.ts` file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.6 & 3.3, `internal/` helpers, pure `src/index.ts` barrels, complete `/** ... */` JSDoc per Rules 2.1–2.3, and zero inline/non-JSDoc comments per Rule 2.4).
 
 ### 3.1 `packages/github` (`@harness-dsl/github`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/github-issues-options.ts` | `interface` | `GithubIssuesOptions` |
-| `src/builders/github-webhook-stream-options.ts` | `interface` | `GithubWebhookStreamOptions` |
-| `src/builders/github-create-or-update-pr-options.ts` | `interface` | `GithubCreateOrUpdatePrOptions<TIn>` |
-| `src/builders/github-create-or-update-pr-builder.ts` | `interface` | `GithubCreateOrUpdatePrBuilder<TIn, TOut, THandle>` |
+| `src/builders/github-create-or-update-pr-builder.ts` | `interface` | `GithubCreateOrUpdatePrBuilder<TIn, TOut, THandle>` (plus `TSMethodSignature` sub-interface `GithubCreateOrUpdatePrOptions<TIn>`) |
 | `src/builders/create-github-issues-builder.ts` | `function` | `createGithubIssuesBuilder` |
 | `src/builders/create-github-webhook-stream-builder.ts` | `function` | `createGithubWebhookStreamBuilder` |
 | `src/builders/create-github-create-or-update-pr-builder.ts` | `function` | `createGithubCreateOrUpdatePrBuilder` |
-| `src/builders/github-namespace-contract.ts` | `interface` | `GithubNamespace` |
+| `src/builders/github-namespace-contract.ts` | `interface` | `GithubNamespace` (plus `TSMethodSignature` sub-interfaces `GithubIssuesOptions`, `GithubWebhookStreamOptions`) |
 | `src/builders/github-namespace.ts` | `const` | `github: GithubNamespace` |
 | `src/executors/github-issue-record.ts` | `interface` | `GithubIssueRecord` |
 | `src/executors/github-http-transport.ts` | `interface` | `GithubHttpTransport` |
-| `src/executors/default-github-http-transport.constants.ts` | `const` | `defaultGithubHttpTransport: GithubHttpTransport` |
+| `src/executors/default-github-http-transport.constants.ts` | `const` | `defaultGithubHttpTransport: GithubHttpTransport` (backed by `@octokit/rest`) |
 | `src/executors/github-issues-tracker.ts` | `class` | `GithubIssuesTrackerAdapter` (implementing `TrackerAdapter<GithubIssueRecord, string>`) |
-| `src/executors/github-webhook-stream.ts` | `class` | `GithubWebhookStreamSource` (implementing `StreamSource<unknown>` with HMAC-SHA256 `X-Hub-Signature-256` verification) |
+| `src/executors/github-webhook-stream.ts` | `class` | `GithubWebhookStreamSource` (implementing `StreamSource<unknown>` with `@octokit/webhooks` HMAC-SHA256 `X-Hub-Signature-256` verification) |
 | `src/executors/github-pr-step-executor.ts` | `function` | `executeGithubCreateOrUpdatePrStep` |
 | `src/executors/create-github-executors.ts` | `function` | `createGithubExecutors` |
 | `src/executors/github-executors.constants.ts` | `const` | `githubExecutors: RuntimeExecutorRegistrySlice` |
@@ -61,16 +69,15 @@ Every file in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixture
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/slack-bot-options.ts` | `interface` | `SlackBotOptions` |
 | `src/builders/create-slack-bot-builder.ts` | `function` | `createSlackBotBuilder` |
 | `src/builders/create-slack-webhook-builder.ts` | `function` | `createSlackWebhookBuilder` |
-| `src/builders/slack-namespace-contract.ts` | `interface` | `SlackNamespace` |
+| `src/builders/slack-namespace-contract.ts` | `interface` | `SlackNamespace` (plus `TSMethodSignature` sub-interface `SlackBotOptions`) |
 | `src/builders/slack-namespace.ts` | `const` | `slack: SlackNamespace` |
 | `src/executors/slack-transport.ts` | `interface` | `SlackTransport` |
-| `src/executors/default-slack-transport.constants.ts` | `const` | `defaultSlackTransport: SlackTransport` |
+| `src/executors/default-slack-transport.constants.ts` | `const` | `defaultSlackTransport: SlackTransport` (backed by `@slack/web-api`, `@slack/socket-mode`, and `@slack/webhook`) |
 | `src/executors/slack-approver-adapter.ts` | `class` | `SlackApproverAdapter` (implementing `HumanAdapter` and `ControlPlaneAdapter`) |
 | `src/executors/slack-notifier-adapter.ts` | `class` | `SlackNotifierAdapter` (implementing `HumanAdapter` for `'notify-only'`) |
-| `src/executors/create-slack-executors.ts` | `function` | `createSlackExecutors` |
+| `src/executors/create-slack-executors.ts` | `function` | `createSlackExecutors` (memoizing `SlackApproverAdapter` per `(RuntimeDriverContext, canonicalNodeKey)` via `WeakMap` across `humanChannels` and `controlPlanes`) |
 | `src/executors/slack-executors.constants.ts` | `const` | `slackExecutors: RuntimeExecutorRegistrySlice` |
 | `src/index.ts` | `barrel` | Pure explicit re-exports of `slack`, `SlackNamespace`, `slackExecutors`, `createSlackExecutors`, `SlackApproverAdapter`, `SlackNotifierAdapter`, `SlackTransport`, `defaultSlackTransport`, `SlackBotOptions`, `createSlackBotBuilder`, `createSlackWebhookBuilder`, `SlackApproverNode`, `SlackNotifierNode` |
 
@@ -87,7 +94,7 @@ Every file in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixture
 | `packages/stripe/src/builders/create-stripe-allow-refund-lease-delta.ts` | `function` | `createStripeAllowRefundLeaseDelta` |
 | `packages/stripe/src/builders/stripe-namespace-contract.ts` | `interface` | `StripeNamespace` (`readTools`, `maxRefundGuardUsd`, `allowRefundUpToUsd`) |
 | `packages/stripe/src/builders/stripe-namespace.ts` | `const` | `stripe: StripeNamespace` |
-| `packages/stripe/src/executors/create-stripe-executors.ts` | `function` | `createStripeExecutors` |
+| `packages/stripe/src/executors/create-stripe-executors.ts` | `function` | `createStripeExecutors` (backed by `stripe` SDK) |
 | `packages/stripe/src/executors/stripe-executors.constants.ts` | `const` | `stripeExecutors: RuntimeExecutorRegistrySlice` |
 | `packages/stripe/src/index.ts` | `barrel` | Pure explicit re-exports of `stripe`, `StripeNamespace`, `stripeExecutors`, `createStripeExecutors`, `createStripeReadTools`, `createStripeMaxRefundGuardBuilder`, `createStripeAllowRefundLeaseDelta`, `StripeReadToolNode`, `StripeMaxRefundGuardNode`, `StripeMaxRefundMatcherNode` |
 | `packages/netsuite/src/nodes/netsuite-draft-handle.ts` | `interface` | `NetSuiteDraftHandle` |
@@ -106,7 +113,7 @@ Every file in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixture
 | `packages/netsuite/src/builders/netsuite-namespace-contract.ts` | `interface` | `NetSuiteNamespace` (`draftJournalScope`, `forbidClosedPeriodPosting`, `journalTools`, `balanceZeroCheck`, `rollbackDraftJournal`) |
 | `packages/netsuite/src/builders/netsuite-namespace.ts` | `const` | `netsuite: NetSuiteNamespace` |
 | `packages/netsuite/src/executors/netsuite-draft-scope-driver.ts` | `class` | `NetSuiteDraftScopeDriver` (implementing Tier-1 `IsolationScope<NetSuiteDraftHandle, DraftJournalReceipt>`) |
-| `packages/netsuite/src/executors/create-netsuite-executors.ts` | `function` | `createNetSuiteExecutors` |
+| `packages/netsuite/src/executors/create-netsuite-executors.ts` | `function` | `createNetSuiteExecutors` (using `big.js` for exact decimal balance verification) |
 | `packages/netsuite/src/executors/netsuite-executors.constants.ts` | `const` | `netsuiteExecutors: RuntimeExecutorRegistrySlice` |
 | `packages/netsuite/src/index.ts` | `barrel` | Pure explicit re-exports of `netsuite`, `NetSuiteNamespace`, `netsuiteExecutors`, `createNetSuiteExecutors`, `NetSuiteDraftScopeDriver`, `createNetSuiteDraftJournalScopeBuilder`, `createNetSuiteClosedPeriodGuardBuilder`, `createNetSuiteJournalTools`, `createNetSuiteBalanceZeroCheckBuilder`, `createNetSuiteRollbackAbortHookBuilder`, `NetSuiteDraftHandle`, `DraftJournalReceipt`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode` |
 
@@ -114,13 +121,14 @@ Every file in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixture
 
 ## 4. Detailed Implementation Requirements
 
-### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
-1. **Zero Co-Location of Entity Kinds**:
-   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/{github,slack,stripe,netsuite}/src/**` or `packages/{github,slack,stripe,netsuite}/test/fixtures/**`.
-   - Every domain AST node interface (`StripeReadToolNode`, `StripeMaxRefundGuardNode`, `StripeMaxRefundMatcherNode`, `NetSuiteDraftHandle`, `DraftJournalReceipt`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode`), every builder/options/transport interface, and every namespace contract (`*-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file; every adapter class (`GithubIssuesTrackerAdapter`, `GithubWebhookStreamSource`, `SlackApproverAdapter`, `SlackNotifierAdapter`, `NetSuiteDraftScopeDriver`) gets its own single-class file; every `const` (`github`, `slack`, `stripe`, `netsuite`, `default*Transport`, `*Executors`) lives in its own `const`-only file.
-2. **Full 3-Part JSDoc & Official Vendor SDK Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
+### 4.0 Single-Kind File Separation, Co-Location & JSDoc Discipline (`docs/CODING_GUIDELINES.md` §§1–3)
+1. **Single-Kind Entity Files & Co-Location (`Rules 1.1–1.7 & 3.3`)**:
+   - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** live in the same file in `packages/{github,slack,stripe,netsuite}/src/**` or `packages/{github,slack,stripe,netsuite}/test/fixtures/**`.
+   - Every domain AST node interface (`StripeReadToolNode`, `StripeMaxRefundGuardNode`, `StripeMaxRefundMatcherNode`, `NetSuiteDraftHandle`, `DraftJournalReceipt`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode`), every root builder/transport interface, and every namespace contract (`*-namespace-contract.ts`) lives in its own single-interface file, co-locating secondary interfaces reachable via `TSPropertySignature` or `TSMethodSignature` parameter/return types (`GithubIssuesOptions`, `GithubWebhookStreamOptions`, `GithubCreateOrUpdatePrOptions<TIn>`, `SlackBotOptions`) per Rule 1.2.
+   - Every builder factory function (`create-*.ts`) gets its own single-function file; every adapter class (`GithubIssuesTrackerAdapter`, `GithubWebhookStreamSource`, `SlackApproverAdapter`, `SlackNotifierAdapter`, `NetSuiteDraftScopeDriver`) gets its own single-class file; every `const` (`github`, `slack`, `stripe`, `netsuite`, `default*Transport`, `*Executors`) lives in its own `const`-only file.
+2. **JSDoc Anatomy & Official Vendor SDK Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
    - Use the official vendor SDKs and libraries installed in each package (`@octokit/rest` + `@octokit/webhooks` in `@harness-dsl/github`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook` in `@harness-dsl/slack`, `stripe` in `@harness-dsl/stripe`, and `big.js` for exact decimal balance verification in `@harness-dsl/netsuite`).
-   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite lint`.
+   - Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) in `src/**` and `test/fixtures/**` must carry the 3-part JSDoc anatomy per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by an empty `*` line, followed by `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` where applicable; vertical ASCII column alignment of `@template` and `@param` tags is not required; `private` class methods and small `internal/` helper functions `<= 20` lines require only a 1-paragraph summary + required `@tags`), enforced by `pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite lint`.
 
 ### 4.1 `@harness-dsl/github` (`SPEC.md` §4.5 line 3177 & `CODING_SAMPLE.md` lines 431–452, 1132–1169)
 1. **`github.issues({ repo, token, labels? })`**:

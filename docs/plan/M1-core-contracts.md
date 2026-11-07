@@ -18,6 +18,8 @@
     - `packages/core/src/h-namespace.ts`
     - `packages/core/src/index.ts`
     - `packages/core/src/runtime/index.ts` (initial barrel re-exporting `createExecutorRegistry` and runtime port contracts; expanded in `M2`)
+  - `@harness-dsl/lockfile` test suite:
+    - `packages/lockfile/test/with-file-lock.test.ts`
   - `@harness-dsl/core` M1 test suites and fixtures:
     - `packages/core/test/fixtures/**`
     - `packages/core/test/ast-and-schemas.test.ts`
@@ -28,6 +30,15 @@
   - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/src/**`
   - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/test/**`
   - Pre-existing root files (`package.json`, `eslint.config.mjs`, `tsconfig.base.json`, `vitest.config.ts`), `.agents/**`, `.claude/**`, `docs/**`
+
+### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
+
+| Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Schema validation & JSON Schema conversion (`zodToJsonSchema`) | `zod` (`z.toJSONSchema()`) | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | `zod-to-json-schema` (deprecated/superseded by native Zod v4 `z.toJSONSchema()`); hand-rolled recursive Zod `_def` walker (forbidden by Rule 3.5) | Pure TypeScript, zero native/WASM overhead; covariant `ZodType<out Output, out Input>` preserves `.default()` output inference across all AST/builder generics | Approved (`Rule 3.5`) |
+| Topology DAG cycle detection & transitive traversal (`H.topology`, `dependentsOf`, `affectedBy`) | `@dagrejs/graphlib` (`Graph`, `alg.findCycles`, `alg.preorder`) | `^4.0.7` (npm `4.0.7`, `MIT`, `0` deprecated, `0` CVEs) | `graphology` (multi-package plugin sprawl for simple cycle/preorder queries); hand-rolled 3-state DFS (forbidden by Rule 3.5) | Pure JS in-memory directed graph; deterministic cycle detection at `.toAST()` build time and transitive dependent queries | Approved (`Rule 3.5`) |
+| In-process per-path FIFO lock serialization (`@harness-dsl/lockfile`) | `p-queue` (`new PQueue({ concurrency: 1 })`) | `^9.1.0` (npm `10.0.0`; `^9.1.0` workspace-pinned, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled promise-chain mutex map (forbidden by Rule 3.5) | Pass a queued-wait-only `AbortController` signal to `PQueue.add` and detach caller `AbortSignal` listener inside the task callback before critical-section execution (`docs/lessons/BUILDER.md`); delete map entry when `queue.size === 0 && queue.pending === 0` | Approved (`Rule 3.5`) |
+| Cross-process advisory lockfile (`@harness-dsl/lockfile`) | `node:fs/promises` (`open(lockPath, 'wx')`, `utimes`, `stat`, `readFile`, `unlink`) + `process.kill(pid, 0)` | Built-in Node.js `>=22` (`MIT`) | `proper-lockfile` (unmaintained since 2020, timer-race issues); copy-pasting lock helpers across `packages/fs` and `packages/git` (forbidden by `CLAUDE.MD` #2 Step 4) | Standalone `packages/lockfile` workspace package; `.unref()`ed `setInterval` heartbeat (`utimes`), dead-PID (`ESRCH`) and stale-`mtime` reclamation, and deterministic `try / finally` handle close + unlink | Approved (`Rule 3.5`) |
 
 ---
 
@@ -46,17 +57,22 @@
 
 ---
 
-## 3. Planned Module Decomposition & Public Exports (`packages/core/src/**`)
+## 3. Planned Module Decomposition & Public Exports (`packages/lockfile/src/**` & `packages/core/src/**`)
 
-Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file plus `TSPropertySignature` property sub-interfaces only, 1 builder factory function per `create-*-builder.ts` file, pure `index.ts` barrels, strict acyclic DAG imports, full 3-part `/** ... */` JSDoc on every declaration and `TSMethodSignature`, and zero inline/non-JSDoc comments).
+Every file in `packages/lockfile/src/**`, `packages/core/src/**`, and `packages/core/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single-kind entity files per Rule 1.1, 1 root `interface` per file plus sub-interfaces reachable via `TSPropertySignature`, `TSIndexSignature`, `extends`, or `TSMethodSignature` parameter/return types per Rule 1.2, 1 builder factory function per `create-*-builder.ts` file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.3 & 1.6, pure `index.ts` barrels, strict acyclic DAG imports, complete `/** ... */` JSDoc per Rules 2.1–2.3, and zero inline/non-JSDoc comments per Rule 2.4).
 
-### 3.0 Workspace Manifests (`pnpm-workspace.yaml` & `packages/*/{package.json,tsconfig.json}`)
+### 3.0 Workspace Manifests (`pnpm-workspace.yaml` & `packages/*/{package.json,tsconfig.json}`) & `@harness-dsl/lockfile` (`packages/lockfile/src/**`)
 
 | File Path | Primary Category | Specification |
 | :--- | :--- | :--- |
 | `pnpm-workspace.yaml` | `workspace` | `packages: ['packages/*']` (zero `#` comments per `CLAUDE.MD`) |
-| `packages/<pkg>/package.json` *(all 15 packages)* | `manifest` | `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`, `"exports": { ".": "./src/index.ts" }` (plus `"./runtime": "./src/runtime/index.ts"` on `@harness-dsl/core`), `"scripts": { "lint": "eslint src test", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir test --passWithNoTests" }`, and exact `"dependencies"` / `"devDependencies"` per §4.0 |
-| `packages/<pkg>/tsconfig.json` *(all 15 packages)* | `tsconfig` | `{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["src/**/*.ts", "test/**/*.ts"] }` |
+| `packages/<pkg>/package.json` *(all 16 packages)* | `manifest` | `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`, `"exports": { ".": "./src/index.ts" }` (plus `"./runtime": "./src/runtime/index.ts"` on `@harness-dsl/core`), `"scripts": { "lint": "eslint src test", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir test --passWithNoTests" }`, and exact `"dependencies"` / `"devDependencies"` per §4.0 |
+| `packages/<pkg>/tsconfig.json` *(all 16 packages)* | `tsconfig` | `{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["src/**/*.ts", "test/**/*.ts"] }` |
+| `packages/lockfile/src/file-lock.constants.ts` | `const` | `DEFAULT_LOCK_STALE_MS`, `DEFAULT_LOCK_RETRY_DELAY_MS`, `DEFAULT_LOCK_TIMEOUT_MS`, `DEFAULT_LOCK_HEARTBEAT_DIVISOR` |
+| `packages/lockfile/src/internal/lock-owner-metadata.ts` | `function` | `serializeLockMetadata`, `parseLockMetadata`, `isLockOwnerProcessAlive` (plus co-located dedicated `LockOwnerMetadata` interface) |
+| `packages/lockfile/src/internal/reclaim-stale-lock.ts` | `function` | `tryReclaimStaleLock`, `sleepWithAbort` (plus co-located dedicated `TryReclaimStaleLockParams` interface) |
+| `packages/lockfile/src/with-file-lock.ts` | `function` | `withFileLock<T>(targetPath: string, fn: () => Promise<T>, options?: FileLockOptions): Promise<T>` (plus co-located dedicated `FileLockOptions` interface) |
+| `packages/lockfile/src/index.ts` | `barrel` | Pure explicit re-exports of `withFileLock` and `FileLockOptions` |
 
 ### 3.1 AST Layer (`packages/core/src/ast/**`)
 
@@ -226,15 +242,13 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 | `src/ports/runtime-executor-registry-slice.ts` | `interface` | `RuntimeExecutorRegistrySlice` |
 | `src/ports/create-executor-registry.ts` | `function` | `createExecutorRegistry(...slices: ReadonlyArray<RuntimeExecutorRegistrySlice \| readonly RuntimeExecutorRegistrySlice[]>): RuntimeExecutorRegistry` |
 | `src/ports/harness-runtime.ts` | `interface` | `HarnessRuntime` |
-| `src/ports/harness-runtime-options.ts` | `interface` | `HarnessRuntimeOptions` |
-| `src/ports/harness-execution-engine.ts` | `interface` | `HarnessExecutionEngine` |
+| `src/ports/harness-execution-engine.ts` | `interface` | `HarnessExecutionEngine` (plus `TSMethodSignature` sub-interface `HarnessRuntimeOptions`) |
 | `src/ports/harness-runtime-controller.ts` | `interface` | `HarnessRuntimeController` |
 | `src/ports/resolution-context.ts` | `interface` | `ResolutionContext` |
 | `src/ports/tool-effect.ts` | `interface` | `ToolEffect` |
 | `src/ports/lease-delta.ts` | `interface` | `LeaseDelta` |
 | `src/ports/runner-driver.ts` | `interface` | `RunnerDriver` |
-| `src/ports/tool-execution-result.ts` | `interface` | `ToolExecutionResult` |
-| `src/ports/tool-driver.ts` | `interface` | `ToolDriver<TNode, THandle>` |
+| `src/ports/tool-driver.ts` | `interface` | `ToolDriver<TNode, THandle>` (plus `TSMethodSignature` sub-interface `ToolExecutionResult`) |
 | `src/ports/service-session.ts` | `interface` | `ServiceSession<THandle>` |
 | `src/ports/reconcile-clean-result.ts` | `interface` | `ReconcileCleanResult<TData>` |
 | `src/ports/reconcile-conflict-result.ts` | `interface` | `ReconcileConflictResult<TData>` |
@@ -246,11 +260,7 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 | `src/ports/wire-frame-record.ts` | `interface` | `WireFrameRecord` |
 | `src/ports/compiled-wire-prefix.ts` | `interface` | `CompiledWirePrefix` (plus `TSPropertySignature` sub-interfaces `WireToolSchema`, `GroundingSnapshotRecord`) |
 | `src/ports/fork-context.ts` | `interface` | `ForkContext` (plus `TSPropertySignature` sub-interface `PrecedingCompletedToolResult`) |
-| `src/ports/model-turn-request.ts` | `interface` | `ModelTurnRequest` |
-| `src/ports/model-turn-response.ts` | `interface` | `ModelTurnResponse` (plus `TSPropertySignature` sub-interface `ModelUsageMetrics`) |
-| `src/ports/prepare-fork-target.ts` | `interface` | `PrepareForkTarget` |
-| `src/ports/append-tool-result-notes-options.ts` | `interface` | `AppendToolResultNotesOptions` |
-| `src/ports/model-driver.ts` | `interface` | `ModelDriver` |
+| `src/ports/model-driver.ts` | `interface` | `ModelDriver` (plus `TSMethodSignature` / `TSPropertySignature` sub-interfaces `ModelTurnRequest`, `ModelTurnResponse`, `ModelUsageMetrics`, `PrepareForkTarget`, `AppendToolResultNotesOptions`) |
 | `src/ports/universal-step-telemetry.ts` | `interface` | `UniversalStepTelemetry<TCustomMetrics, TAbortMeta>` |
 | `src/ports/pending-tool-batch.ts` | `interface` | `PendingToolBatch` (plus `TSPropertySignature` sub-interfaces `PendingPreFlightCall`, `RemainingToolCallRecord`) |
 | `src/ports/active-turn-pause-state.ts` | `interface` | `ActiveTurnPauseState` |
@@ -266,24 +276,16 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 | `src/ports/speculate-continuation-frame.ts` | `interface` | `SpeculateContinuationFrame` (plus `TSPropertySignature` sub-interfaces `SpeculateBranchEntryRecord`, `SpeculateHumanRulingRecord`, `SpeculateBufferedLessonOutcomeRecord`) |
 | `src/ports/continuation-frame.types.ts` | `type` | `ContinuationFrame` |
 | `src/ports/suspended-fork-record.ts` | `interface` | `SuspendedForkRecord` |
-| `src/ports/create-or-resume-run-input.ts` | `interface` | `CreateOrResumeRunInput` |
-| `src/ports/create-or-resume-run-result.ts` | `interface` | `CreateOrResumeRunResult` |
-| `src/ports/record-step-start-input.ts` | `interface` | `RecordStepStartInput` |
-| `src/ports/mutate-lane-plan-request.ts` | `interface` | `MutateLanePlanRequest` |
-| `src/ports/record-step-transition-input.ts` | `interface` | `RecordStepTransitionInput` |
-| `src/ports/interrupted-step-boot-record.ts` | `interface` | `InterruptedStepBootRecord` |
-| `src/ports/ledger-store.ts` | `interface` | `LedgerStore` |
+| `src/ports/ledger-store.ts` | `interface` | `LedgerStore` (plus `TSMethodSignature` sub-interfaces `CreateOrResumeRunInput`, `CreateOrResumeRunResult`, `RecordStepStartInput`, `MutateLanePlanRequest`, `RecordStepTransitionInput`, `InterruptedStepBootRecord`) |
 | `src/ports/topology-partition-state.ts` | `interface` | `TopologyPartitionState` |
-| `src/ports/commit-run-overlay-result.ts` | `interface` | `CommitRunOverlayResult` |
-| `src/ports/topology-store.ts` | `interface` | `TopologyStore` |
+| `src/ports/topology-store.ts` | `interface` | `TopologyStore` (plus `TSMethodSignature` sub-interface `CommitRunOverlayResult`) |
 | `src/ports/lesson-outcome.ts` | `interface` | `LessonOutcome` |
 | `src/ports/distilled-lesson-candidate.ts` | `interface` | `DistilledLessonCandidate` |
 | `src/ports/lesson-record.ts` | `interface` | `LessonRecord` |
 | `src/ports/lesson-store.ts` | `interface` | `LessonStore` |
 | `src/ports/tracker-adapter.ts` | `interface` | `TrackerAdapter<TExternal, TExternalState>` |
 | `src/ports/stream-source.ts` | `interface` | `StreamSource<TEvent>` |
-| `src/ports/human-decision-request.ts` | `interface` | `HumanDecisionRequest<TRequest, TResponse>` |
-| `src/ports/human-adapter.ts` | `interface` | `HumanAdapter` |
+| `src/ports/human-adapter.ts` | `interface` | `HumanAdapter` (plus `TSMethodSignature` sub-interface `HumanDecisionRequest<TRequest, TResponse>`) |
 | `src/ports/control-plane-adapter.ts` | `interface` | `ControlPlaneAdapter` |
 
 ### 3.3 Schemas & Topology Layers (`packages/core/src/schemas/**`, `packages/core/src/topology/**`)
@@ -304,23 +306,16 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 | `src/builders/builder-defaults.constants.ts` | `const` | `DEFAULT_AGENT_MAX_TURNS`, `DEFAULT_LESSON_TOP_K`, `DEFAULT_LESSON_MIN_SCORE`, `DEFAULT_LESSON_WEIGHTS` |
 | `src/builders/internal/deep-freeze.ts` | `function` | `deepFreeze<T>(value: T): Readonly<T>`, `assertNonEmptyIdentifier(label: string, id: string): void`, `deriveCanonicalRoleKey(baseId: string, extraTools: readonly ToolASTNode<any>[]): string` |
 | `src/builders/internal/validate-flow-capabilities.ts` | `function` | `validateFlowScopeCapabilities`, `validatePrefixGroupCloneTranscriptMode`, `validateBidirectionalHumanChannel` |
-| `src/builders/internal/agent-builder-state.ts` | `interface` | `AgentBuilderState<TIn, TOut, THandle>` |
-| `src/builders/internal/loop-builder-state.ts` | `interface` | `LoopBuilderState<TIn, TOut, THandle, TActStepId>` |
-| `src/builders/internal/flow-builder-state.ts` | `interface` | `FlowBuilderState<TIn, THandle, TStepIds>` |
-| `src/builders/internal/lane-builder-state.ts` | `interface` | `LaneBuilderState<TIn, TStepIds>` |
-| `src/builders/internal/policy-builder-state.ts` | `interface` | `PolicyBuilderState<THandle>` |
 | `src/builders/create-signal-builder.ts` | `function` | `createSignalBuilder` |
 | `src/builders/create-interrupt-builder.ts` | `function` | `createInterruptBuilder` |
 | `src/builders/stream-builder.ts` | `interface` | `StreamBuilder<TEvent, TPayload>` |
 | `src/builders/create-stream-builder.ts` | `function` | `createStreamBuilder` |
-| `src/builders/pool-strategy-configurator.ts` | `interface` | `PoolStrategyConfigurator<TItem>` |
-| `src/builders/pool-builder.ts` | `interface` | `PoolBuilder<TItem>` |
+| `src/builders/pool-builder.ts` | `interface` | `PoolBuilder<TItem>` (plus `TSMethodSignature` sub-interface `PoolStrategyConfigurator<TItem>`) |
 | `src/builders/create-pool-builder.ts` | `function` | `createPoolBuilder` |
 | `src/builders/prefix-group-builder.ts` | `interface` | `PrefixGroupBuilder` |
 | `src/builders/create-prefix-group-builder.ts` | `function` | `createPrefixGroupBuilder` |
 | `src/builders/create-topology-builder.ts` | `function` | `createTopologyBuilder` |
-| `src/builders/scoped-human-target-builder.ts` | `interface` | `ScopedHumanTargetBuilder<TResponse>` |
-| `src/builders/human-builder.ts` | `interface` | `HumanBuilder<TMode>` |
+| `src/builders/human-builder.ts` | `interface` | `HumanBuilder<TMode>` (plus `TSMethodSignature` sub-interface `ScopedHumanTargetBuilder<TResponse>`) |
 | `src/builders/create-human-builder.ts` | `function` | `createHumanBuilder` |
 | `src/builders/rules-builder.ts` | `interface` | `RulesBuilder` |
 | `src/builders/create-rules-builder.ts` | `function` | `createRulesBuilder` |
@@ -328,18 +323,11 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 | `src/builders/create-scoped-rule-builder.ts` | `function` | `createScopedRuleBuilder` |
 | `src/builders/skill-builder.ts` | `interface` | `SkillBuilder<THandle>` |
 | `src/builders/create-skill-builder.ts` | `function` | `createSkillBuilder` |
-| `src/builders/lesson-distillation-builder.ts` | `interface` | `LessonDistillationBuilder` |
-| `src/builders/lesson-scoring-builder.ts` | `interface` | `LessonScoringBuilder` |
-| `src/builders/lesson-retirement-builder.ts` | `interface` | `LessonRetirementBuilder` |
-| `src/builders/lesson-signal-trigger-builder.ts` | `interface` | `LessonSignalTriggerBuilder` |
-| `src/builders/lessons-builder.ts` | `interface` | `LessonsBuilder<TIn>` |
+| `src/builders/lessons-builder.ts` | `interface` | `LessonsBuilder<TIn>` (plus `TSMethodSignature` sub-interfaces `LessonDistillationBuilder`, `LessonScoringBuilder`, `LessonRetirementBuilder`, `LessonSignalTriggerBuilder`) |
 | `src/builders/create-lessons-builder.ts` | `function` | `createLessonsBuilder` |
-| `src/builders/policy-guard-clause-builder.ts` | `interface` | `PolicyGuardClauseBuilder<THandle>` |
-| `src/builders/policy-limit-exceeded-builder.ts` | `interface` | `PolicyLimitExceededBuilder<THandle, TPayload>` |
-| `src/builders/policy-builder.ts` | `interface` | `PolicyBuilder<THandle>` |
-| `src/builders/create-policy-builder.ts` | `function` | `createPolicyBuilder` |
-| `src/builders/fork-model-routing-builder.ts` | `interface` | `ForkModelRoutingBuilder<TParentIn, TReq>` |
-| `src/builders/fork-capability-builder.ts` | `interface` | `ForkCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle>` |
+| `src/builders/policy-builder.ts` | `interface` | `PolicyBuilder<THandle>` (plus `TSMethodSignature` sub-interfaces `PolicyGuardClauseBuilder<THandle>`, `PolicyLimitExceededBuilder<THandle, TPayload>`) |
+| `src/builders/create-policy-builder.ts` | `function` | `createPolicyBuilder` (plus co-located dedicated `PolicyBuilderState<THandle>` interface) |
+| `src/builders/fork-capability-builder.ts` | `interface` | `ForkCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle>` (plus `TSMethodSignature` sub-interface `ForkModelRoutingBuilder<TParentIn, TReq>`) |
 | `src/builders/create-fork-capability-builder.ts` | `function` | `createForkCapabilityBuilder` |
 | `src/builders/mutate-plan-capability-builder.ts` | `interface` | `MutatePlanCapabilityBuilder<TItem>` |
 | `src/builders/create-mutate-plan-capability-builder.ts` | `function` | `createMutatePlanCapabilityBuilder` |
@@ -349,63 +337,54 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 | `src/builders/create-speculate-capability-builder.ts` | `function` | `createSpeculateCapabilityBuilder` |
 | `src/builders/agent-capabilities-builder.ts` | `interface` | `AgentCapabilitiesBuilder<TParentIn, THandle>` |
 | `src/builders/create-agent-capabilities-builder.ts` | `function` | `createAgentCapabilitiesBuilder` |
-| `src/builders/adjudicate-interrupt-builder.ts` | `interface` | `AdjudicateInterruptBuilder<TIn, TPayload, THandle, TAdjOut>` |
-| `src/builders/ask-interrupt-builder.ts` | `interface` | `AskInterruptBuilder<TPayload, TResponse>` |
-| `src/builders/interrupt-edge-builder.ts` | `interface` | `InterruptEdgeBuilder<TIn, TPayload, THandle, TReceipt, TCustomMetrics, TAbortMeta>` |
+| `src/builders/interrupt-edge-builder.ts` | `interface` | `InterruptEdgeBuilder<TIn, TPayload, THandle, TReceipt, TCustomMetrics, TAbortMeta>` (plus `TSMethodSignature` sub-interfaces `AdjudicateInterruptBuilder<TIn, TPayload, THandle, TAdjOut>`, `AskInterruptBuilder<TPayload, TResponse>`) |
 | `src/builders/create-interrupt-edge-builder.ts` | `function` | `createInterruptEdgeBuilder` |
-| `src/builders/child-interrupt-handler-builder.ts` | `interface` | `ChildInterruptHandlerBuilder<TPayload>` |
 | `src/builders/create-child-interrupt-handler-builder.ts` | `function` | `createChildInterruptHandlerBuilder` |
-| `src/builders/command-config-options.ts` | `interface` | `CommandConfigOptions<TIn, TOut, THandle>` |
-| `src/builders/command-builder.ts` | `interface` | `CommandBuilder<TIn, TOut, THandle>` |
+| `src/builders/command-builder.ts` | `interface` | `CommandBuilder<TIn, TOut, THandle>` (plus `TSMethodSignature` sub-interface `CommandConfigOptions<TIn, TOut, THandle>`) |
 | `src/builders/create-command-builder.ts` | `function` | `createCommandBuilder` |
-| `src/builders/agent-builder.ts` | `interface` | `AgentBuilder<TIn, TOut, THandle>` |
-| `src/builders/create-agent-builder.ts` | `function` | `createAgentBuilder` |
-| `src/builders/loop-evaluate-options.ts` | `interface` | `LoopEvaluateOptions<TIn, TOut, THandle, TReceipt, TEvalIn, TEvalOut>` |
-| `src/builders/loop-builder.ts` | `interface` | `LoopBuilder<TIn, TOut, THandle, TActStepId, TReceipt>` |
-| `src/builders/create-loop-builder.ts` | `function` | `createLoopBuilder` |
-| `src/builders/flow-sub-branch-builder.ts` | `interface` | `FlowSubBranchBuilder<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>` |
-| `src/builders/flow-branch-builder.ts` | `interface` | `FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>` |
+| `src/builders/agent-builder.ts` | `interface` | `AgentBuilder<TIn, TOut, THandle>` (plus `TSMethodSignature` sub-interface `ChildInterruptHandlerBuilder<TPayload>`) |
+| `src/builders/create-agent-builder.ts` | `function` | `createAgentBuilder` (plus co-located dedicated `AgentBuilderState<TIn, TOut, THandle>` interface) |
+| `src/builders/loop-builder.ts` | `interface` | `LoopBuilder<TIn, TOut, THandle, TActStepId, TReceipt>` (plus `TSMethodSignature` sub-interface `LoopEvaluateOptions<TIn, TOut, THandle, TReceipt, TEvalIn, TEvalOut>`) |
+| `src/builders/create-loop-builder.ts` | `function` | `createLoopBuilder` (plus co-located dedicated `LoopBuilderState<TIn, TOut, THandle, TActStepId>` interface) |
+| `src/builders/flow-branch-builder.ts` | `interface` | `FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>` (plus `TSMethodSignature` sub-interface `FlowSubBranchBuilder<TFlowIn, TBranchOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>`) |
 | `src/builders/create-flow-branch-builder.ts` | `function` | `createFlowBranchBuilder` |
-| `src/builders/flow-step-config-builder.ts` | `interface` | `FlowStepConfigBuilder<TFlowIn, TStepIn, TStepOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>` |
-| `src/builders/flow-builder.ts` | `interface` | `FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>` |
-| `src/builders/create-flow-builder.ts` | `function` | `createFlowBuilder` |
-| `src/builders/lane-tracker-config-builder.ts` | `interface` | `LaneTrackerConfigBuilder<TIn, TExternal, TExternalState>` |
-| `src/builders/lane-retry-config-builder.ts` | `interface` | `LaneRetryConfigBuilder` |
-| `src/builders/lane-signal-handler-builder.ts` | `interface` | `LaneSignalHandlerBuilder<TIn, TStepIds, TPayload>` |
-| `src/builders/lane-builder.ts` | `interface` | `LaneBuilder<TIn, TStepIds>` |
-| `src/builders/create-lane-builder.ts` | `function` | `createLaneBuilder` |
-| `src/builders/harness-signal-notification-builder.ts` | `interface` | `HarnessSignalNotificationBuilder<TPayload>` |
-| `src/builders/harness-builder.ts` | `interface` | `HarnessBuilder` |
+| `src/builders/flow-builder.ts` | `interface` | `FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>` (plus `TSMethodSignature` sub-interface `FlowStepConfigBuilder<TFlowIn, TStepIn, TStepOut, THandle, TReceipt, TCustomMetrics, TStepOutputs>`) |
+| `src/builders/create-flow-builder.ts` | `function` | `createFlowBuilder` (plus co-located dedicated `FlowBuilderState<TIn, THandle, TStepIds>` interface) |
+| `src/builders/lane-builder.ts` | `interface` | `LaneBuilder<TIn, TStepIds>` (plus `TSMethodSignature` sub-interfaces `LaneTrackerConfigBuilder<TIn, TExternal, TExternalState>`, `LaneRetryConfigBuilder`, `LaneSignalHandlerBuilder<TIn, TStepIds, TPayload>`) |
+| `src/builders/create-lane-builder.ts` | `function` | `createLaneBuilder` (plus co-located dedicated `LaneBuilderState<TIn, TStepIds>` interface) |
+| `src/builders/harness-builder.ts` | `interface` | `HarnessBuilder` (plus `TSMethodSignature` sub-interface `HarnessSignalNotificationBuilder<TPayload>`) |
 | `src/builders/create-harness-builder.ts` | `function` | `createHarnessBuilder` |
 | `src/h-namespace-contract.ts` | `interface` | `HNamespace` |
 | `src/h-namespace.ts` | `const` | `H: HNamespace` |
 | `src/runtime/index.ts` | `barrel` | Pure explicit re-exports of `createExecutorRegistry` and runtime port types (expanded in `M2`) |
-| `src/index.ts` | `barrel` | Pure explicit re-exports of `H`, `HNamespace`, `z`, `extractAST`, `dependentsOf`, `affectedBy`, `zodToJsonSchema`, `createExecutorRegistry`, all schemas, all builder interfaces and factory functions, all port interfaces/types, and all `CoreASTNode` / `DomainASTNode` interfaces/types |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `H`, `HNamespace`, `z`, `extractAST`, `dependentsOf`, `affectedBy`, `zodToJsonSchema`, `createExecutorRegistry`, all schemas, all builder interfaces (including all `TSMethodSignature` sub-builder and options interfaces) and factory functions, all port interfaces/types, and all `CoreASTNode` / `DomainASTNode` interfaces/types |
 
 ---
 
 ## 4. Detailed Implementation Requirements
 
-### 4.0 Workspace Package Manifests, `NodeNext` Exports, Strict File Separation & Full 3-Part JSDoc (`pnpm-workspace.yaml` & `packages/*/{package.json,tsconfig.json}`)
-1. **Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)**:
-   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** share a file in `src/**` or `test/fixtures/**` (sole exception: `*.schema.ts` pairing a Zod schema `export const FooSchema = z.object(...)` with its `export type Foo = z.infer<typeof FooSchema>`).
-   - Every top-level `interface` (including every sub-builder interface, `*Options` / `*State` interface, port record interface, and domain AST node interface) gets its own dedicated file; only nested sub-interfaces referenced directly by that parent interface's **properties (`TSPropertySignature`)** may share the same file.
-   - Every builder factory function (`create-*-builder.ts`) gets its own single-function file.
-   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/core lint`.
+### 4.0 Workspace Package Manifests, `NodeNext` Exports, Single-Kind File Separation & JSDoc Discipline (`pnpm-workspace.yaml` & `packages/*/{package.json,tsconfig.json}`)
+1. **Single-Kind Entity File Separation, Co-Location & JSDoc Discipline (`docs/CODING_GUIDELINES.md` §§1–3)**:
+   - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** share a file in `src/**` or `test/fixtures/**` (Rules 1.1–1.7):
+     - `*.schema.ts` pairs a Zod schema `export const FooSchema = z.object(...)` with its `export type Foo = z.infer<typeof FooSchema>`.
+     - Each root `interface` lives in its own `kebab-case` file (`<= 250` lines), and secondary interfaces reachable from that root interface via **`TSPropertySignature`, `TSIndexSignature`, `extends`, or `TSMethodSignature` parameter/return types** (such as fluent callback sub-builders `$d`, `$r`, `$t`, `$f`, `$s`, `$intr`, `$b`, `$c`, `$m`, `$l` and dedicated port method input/output records) are co-located in their parent root interface file (`Rule 1.2`).
+     - Dedicated 1:1 `*Params` / `*Options` / `*State` interfaces (and their reachable sub-interfaces) for a single function or class are co-located in the same file as that function or class (`Rules 1.3, 1.6, 3.3`), while multi-caller shared parameter interfaces live in their own interface file.
+     - Every builder factory function (`create-*-builder.ts`) gets its own single-function file (`Rule 1.6`).
+   - Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) in `src/**` and `test/fixtures/**` must carry the 3-part JSDoc anatomy per `docs/CODING_GUIDELINES.md` Rules 2.1–2.3 (2-paragraph Summary + Detailed description separated by an empty `*` line, followed by `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` where applicable; vertical ASCII column alignment of `@template` and `@param` tags is not required; `private` class methods and small `internal/` helper functions `<= 20` lines require only a 1-paragraph summary + required `@tags`), enforced by `pnpm --filter @harness-dsl/lockfile --filter @harness-dsl/core lint`.
 2. **`pnpm-workspace.yaml`**:
    - Contains `packages: ['packages/*']` with zero `#` comments (`CLAUDE.MD`).
-3. **`packages/<pkg>/package.json` for all 15 workspace packages**:
+3. **`packages/<pkg>/package.json` for all 16 workspace packages**:
    - Every package manifest includes:
      - `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`.
-     - `"exports"`: `{ ".": "./src/index.ts" }` on all adapter/integration packages, and `{ ".": "./src/index.ts", "./runtime": "./src/runtime/index.ts" }` on `@harness-dsl/core` (required under `moduleResolution: "NodeNext"`).
+     - `"exports"`: `{ ".": "./src/index.ts" }` on `@harness-dsl/lockfile` and all adapter/integration packages, and `{ ".": "./src/index.ts", "./runtime": "./src/runtime/index.ts" }` on `@harness-dsl/core` (required under `moduleResolution: "NodeNext"`).
      - `"scripts"`: `{ "lint": "eslint src test", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir test --passWithNoTests" }` so `pnpm --filter @harness-dsl/<pkg> lint`, `typecheck`, and `test` execute cleanly on that package.
      - `"dependencies"` and `"devDependencies"` (`docs/CODING_GUIDELINES.md` Rule 3.5):
        - `@harness-dsl/lockfile`: `"dependencies": { "p-queue": "^9.1.0" }`.
        - `@harness-dsl/core`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "diff": "^9.0.0", "p-limit": "^7.3.0", "p-queue": "^9.1.0", "zod": "^4.6.7" }`.
        - `@harness-dsl/sqlite`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@harness-dsl/core": "workspace:*", "better-sqlite3": "^12.8.0", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "zod": "^4.6.7" }`, `"devDependencies": { "@types/better-sqlite3": "^9.6.0" }`.
        - `@harness-dsl/postgres`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@electric-sql/pglite": "^0.5.15", "@harness-dsl/core": "workspace:*", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "pg": "^8.23.1", "zod": "^4.6.7" }`, `"devDependencies": { "@types/pg": "^8.23.1" }`.
-       - `@harness-dsl/{fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}`: `"dependencies"` with `"zod": "^4.6.7"`, `"@harness-dsl/lockfile": "workspace:*"` (for `fs` and `git`), and the Owner-approved libraries per `docs/CODING_GUIDELINES.md` Rule 3.5.
-4. **`packages/<pkg>/tsconfig.json` for all 15 workspace packages**:
+       - `@harness-dsl/{fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}`: `"dependencies"` with `"zod": "^4.6.7"`, `"@harness-dsl/lockfile": "workspace:*"` (for `fs`, `git`, and `integration`), and the Owner-approved libraries per `docs/CODING_GUIDELINES.md` Rule 3.5.
+4. **`packages/<pkg>/tsconfig.json` for all 16 workspace packages**:
    - `{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["src/**/*.ts", "test/**/*.ts"] }`.
 
 ### 4.1 Pure Passive Discriminated-Union AST, `CustomDomainAST<K>`, Zod `.default()` Variance & Generic Propagation (`SPEC.md` §1.2, §2.1, §2.2, §5 & `CODING_SAMPLE.md` §6)
@@ -439,7 +418,7 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 
 ### 4.2 Static Build-Time Validation Rules (`SPEC.md` §1.2, §3.5, §3.6, §3.7.2, §3.8, §3.9, §3.10)
 1. **Topology DAG Validation (`H.topology(id).partitions(...)`)**:
-   - Validates non-empty partition IDs, rejects unknown `dependsOn` partition IDs, and rejects self-loops or directed cycles via 3-state DFS (`unvisited`, `visiting`, `visited`) with an actionable `Error`.
+   - Validates non-empty partition IDs, rejects unknown `dependsOn` partition IDs, and rejects self-loops or directed cycles via `@dagrejs/graphlib` (`Graph`, `alg.findCycles`, `alg.preorder` per `docs/CODING_GUIDELINES.md` Rule 3.5) with an actionable `Error`.
    - `dependentsOf(topology, partitionId)` returns all strict transitive dependent partition IDs (`dependentsOf(repoTopology, 'db')` -> `['api', 'web']`).
    - `affectedBy(topology, partitionId)` returns `[partitionId, ...dependentsOf(topology, partitionId)]` (`affectedBy(repoTopology, 'db')` -> `['db', 'api', 'web']`).
 2. **Capability Tier Validation on `H.flow` (`SPEC.md` §1.2 Invariant 1, §3.5, §3.7.2, §3.9)**:
@@ -460,16 +439,17 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 
 ---
 
-## 5. Deterministic Test Suite Architecture (`packages/core/test/**`)
+## 5. Deterministic Test Suite Architecture (`packages/lockfile/test/**` & `packages/core/test/**`)
 
-All test files obey [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §6 (`<= 400` lines per `*.test.ts` file, shared fixtures in `test/fixtures/**` `<= 250` lines with single-entity-kind separation and full 3-part §2 JSDoc, exact structural assertions):
+All test files obey [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §6 (`<= 400` lines per `*.test.ts` file, shared fixtures in `test/fixtures/**` `<= 250` lines with single-entity-kind separation and complete §2 JSDoc, exact structural assertions):
 
 | File Path | Line Ceiling | Required Deterministic Test Cases |
 | :--- | :--- | :--- |
-| `test/fixtures/sample-domain-nodes.constants.ts` | `<= 250` | Pure `const` passive `DomainASTNode` fixture instances (`SAMPLE_TIER1_SCOPE_NODE` with `capabilityTier: 'scope'`, `SAMPLE_TIER2_SCOPE_NODE` with `capabilityTier: 'checkpointable'`, `SAMPLE_TIER3_SCOPE_NODE` with `capabilityTier: 'branchable'`, `SAMPLE_DECLARED_TOOL_NODE`, `SAMPLE_POST_FLIGHT_SUBPROCESS_TOOL_NODE`, `SAMPLE_GUARD_NODE`, `SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE`, `SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE`, `SAMPLE_MODEL_NODE`). |
-| `test/ast-and-schemas.test.ts` | `<= 400` | 1. Verifies `extractAST`, `H.env(key)` symbolic `EnvRef` serialization (never reading `process.env`), `ScopePredicateSchema`, `GlobalRuleSchema`, `ScopedRuleSchema`, `BudgetApprovalSchema`, `ResumeForkInputSchema`, `SpeculationCandidateSchema`, and `SpeculationInputSchema` (including 5-argument invocation with union escalation schema from `CODING_SAMPLE.md` lines `783–789`).<br>2. Verifies `zodToJsonSchema` across primitives, literals, enums, arrays, tuples, records, nested objects with `.optional()` and `.default()`, discriminated unions, intersections, and deep-freeze invariants.<br>3. Verifies `CustomDomainASTRegistry` declaration merging (`CustomDomainAST<K>`) across both exact keys `K` and namespaced `${K}:${string}` keys. |
-| `test/topology-and-builders.test.ts` | `<= 400` | 1. Verifies `H.topology` DAG validation (accepting valid `db <- api <- web` graph; rejecting unknown dependencies, self-cycles, and multi-node cycles with exact error messages).<br>2. Verifies `dependentsOf` (`'db' -> ['api', 'web']`, `'api' -> ['web']`, `'web' -> []`) and `affectedBy` (`'db' -> ['db', 'api', 'web']`) both as standalone functions and as methods on `TopologyBuilder`.<br>3. Verifies copy-on-write immutability, `.toAST()` deep-freeze, Zod `.default()` output type inference, and all builder chains for `H.signal`, `H.interrupt`, `H.stream`, `H.pool` (`soonest-reset`, `round-robin`, `least-used`, `escalateOnRetry`, `custom`, `fallback`), `H.prefixGroup`, `H.rules`, `H.scopedRule`, `H.skill`, `H.lessons`, `H.policy` (including `.extend()`), `H.human`, `H.command` (both 2-argument `H.command(id, { input, output, extractPartitions?, fn })` and fluent builder chain, verifying zero `.execute` method on `CommandNode`), `H.agent`, `H.loop`, and `createExecutorRegistry`.<br>4. Verifies `.withTools()` canonical order-independent `roleKey` (`"${baseActor.id}+tools:${sortedExtraToolNames.join(',')}"`) and `.withPolicy()` preservation of actor-level `.onInterrupt()` handlers. |
-| `test/flow-and-validation.test.ts` | `<= 400` | 1. Verifies `H.flow` (`.step()`, `.branch()` with `.when()` / `.otherwise()`, `.inputFrom()` with strongly typed `steps[branchId]` and `scopeReceipt`, `.onInterrupt()` adjudicate/ask/replace modes with strongly typed `telemetry.custom` and `telemetry.abortMeta`), `H.lane` (`.tracker()` populating canonical `stateMappings` keys `'queued'`, `'running'`, `'waiting'`, `'errored'`, `'cancelled'`, `'exit:${exitState}'`, `.waitFor()`, `.maxCostUsd()`, `.retry()`, `.onSignal().rewindTo()`), and `H.harness`.<br>2. Verifies static build-time rejections: (a) `.fork()` / `.speculate()` / `.mutatePlan()` on a Tier-1 `'scope'` or Tier-2 `'checkpointable'` scope; (b) `effectTracking: 'subprocess-post-flight'` tool under a policy guard on a Tier-1 `'scope'` scope; (c) `.replaceWith()` without `.onAbort()` on a Tier-1 `'scope'` scope; (d) `'clone-transcript'` fork across distinct roles under `toolsMode: 'role-scoped'`; (e) `.ask()`, `.escalate()`, or `.maxCostUsd()` targeting a `'notify-only'` human channel; (f) invalid `.returnOutputFrom()` or `.rewindTo()` step IDs. |
+| `packages/lockfile/test/with-file-lock.test.ts` | `<= 400` | 1. Verifies in-process FIFO mutual exclusion (`p-queue` `concurrency: 1`) and cross-process atomic `open(lockPath, 'wx')` exclusion across real temporary directories (`mkdtemp`).<br>2. Verifies dead-PID (`ESRCH`) and stale-`mtime` lock reclamation, `.unref()`ed `utimes` heartbeat renewal, queued-wait `AbortSignal` cancellation without mid-critical-section slot release (`docs/lessons/BUILDER.md`), and deterministic `try / finally` lock cleanup. |
+| `packages/core/test/fixtures/sample-domain-nodes.constants.ts` | `<= 250` | Pure `const` passive `DomainASTNode` fixture instances (`SAMPLE_TIER1_SCOPE_NODE` with `capabilityTier: 'scope'`, `SAMPLE_TIER2_SCOPE_NODE` with `capabilityTier: 'checkpointable'`, `SAMPLE_TIER3_SCOPE_NODE` with `capabilityTier: 'branchable'`, `SAMPLE_DECLARED_TOOL_NODE`, `SAMPLE_POST_FLIGHT_SUBPROCESS_TOOL_NODE`, `SAMPLE_GUARD_NODE`, `SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE`, `SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE`, `SAMPLE_MODEL_NODE`). |
+| `packages/core/test/ast-and-schemas.test.ts` | `<= 400` | 1. Verifies `extractAST`, `H.env(key)` symbolic `EnvRef` serialization (never reading `process.env`), `ScopePredicateSchema`, `GlobalRuleSchema`, `ScopedRuleSchema`, `BudgetApprovalSchema`, `ResumeForkInputSchema`, `SpeculationCandidateSchema`, and `SpeculationInputSchema` (including 5-argument invocation with union escalation schema from `CODING_SAMPLE.md` lines `783–789`).<br>2. Verifies `zodToJsonSchema` (via Zod v4 `z.toJSONSchema()`) across primitives, literals, enums, arrays, tuples, records, nested objects with `.optional()` and `.default()`, discriminated unions, intersections, and deep-freeze invariants.<br>3. Verifies `CustomDomainASTRegistry` declaration merging (`CustomDomainAST<K>`) across both exact keys `K` and namespaced `${K}:${string}` keys. |
+| `packages/core/test/topology-and-builders.test.ts` | `<= 400` | 1. Verifies `H.topology` DAG validation via `@dagrejs/graphlib` (accepting valid `db <- api <- web` graph; rejecting unknown dependencies, self-cycles, and multi-node cycles with exact error messages).<br>2. Verifies `dependentsOf` (`'db' -> ['api', 'web']`, `'api' -> ['web']`, `'web' -> []`) and `affectedBy` (`'db' -> ['db', 'api', 'web']`) both as standalone functions and as methods on `TopologyBuilder`.<br>3. Verifies copy-on-write immutability, `.toAST()` deep-freeze, Zod `.default()` output type inference, and all builder chains for `H.signal`, `H.interrupt`, `H.stream`, `H.pool` (`soonest-reset`, `round-robin`, `least-used`, `escalateOnRetry`, `custom`, `fallback`), `H.prefixGroup`, `H.rules`, `H.scopedRule`, `H.skill`, `H.lessons`, `H.policy` (including `.extend()`), `H.human`, `H.command` (both 2-argument `H.command(id, { input, output, extractPartitions?, fn })` and fluent builder chain, verifying zero `.execute` method on `CommandNode`), `H.agent`, `H.loop`, and `createExecutorRegistry`.<br>4. Verifies `.withTools()` canonical order-independent `roleKey` (`"${baseActor.id}+tools:${sortedExtraToolNames.join(',')}"`) and `.withPolicy()` preservation of actor-level `.onInterrupt()` handlers. |
+| `packages/core/test/flow-and-validation.test.ts` | `<= 400` | 1. Verifies `H.flow` (`.step()`, `.branch()` with `.when()` / `.otherwise()`, `.inputFrom()` with strongly typed `steps[branchId]` and `scopeReceipt`, `.onInterrupt()` adjudicate/ask/replace modes with strongly typed `telemetry.custom` and `telemetry.abortMeta`), `H.lane` (`.tracker()` populating canonical `stateMappings` keys `'queued'`, `'running'`, `'waiting'`, `'errored'`, `'cancelled'`, `'exit:${exitState}'`, `.waitFor()`, `.maxCostUsd()`, `.retry()`, `.onSignal().rewindTo()`), and `H.harness`.<br>2. Verifies static build-time rejections: (a) `.fork()` / `.speculate()` / `.mutatePlan()` on a Tier-1 `'scope'` or Tier-2 `'checkpointable'` scope; (b) `effectTracking: 'subprocess-post-flight'` tool under a policy guard on a Tier-1 `'scope'` scope; (c) `.replaceWith()` without `.onAbort()` on a Tier-1 `'scope'` scope; (d) `'clone-transcript'` fork across distinct roles under `toolsMode: 'role-scoped'`; (e) `.ask()`, `.escalate()`, or `.maxCostUsd()` targeting a `'notify-only'` human channel; (f) invalid `.returnOutputFrom()` or `.rewindTo()` step IDs. |
 
 ---
 
@@ -478,8 +458,8 @@ All test files obey [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/p
 Run from workspace root (along with the `docs/IMPL_LOOP.md` `baseline_dirty` check verifying zero new or newly modified files in `<non_sibling_forbidden_dirs_excluding_upstream_patches>` relative to `baseline_dirty`):
 
 ```bash
-pnpm --filter @harness-dsl/core lint
-pnpm --filter @harness-dsl/core typecheck
-pnpm --filter @harness-dsl/core test -- --reporter=verbose
+pnpm --filter @harness-dsl/lockfile --filter @harness-dsl/core lint
+pnpm --filter @harness-dsl/lockfile --filter @harness-dsl/core typecheck
+pnpm --filter @harness-dsl/lockfile --filter @harness-dsl/core test -- --reporter=verbose
 test -z "$(git status --porcelain -- docs .agents .claude package.json tsconfig.base.json vitest.config.ts)"
 ```

@@ -8,11 +8,19 @@
   - `packages/integration/src/**`
   - `packages/integration/test/**`
 - **`forbidden_dirs`**:
-  - `packages/core/**`
+  - `packages/core/**`, `packages/lockfile/**`
   - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Upstream Escalation Rule (`docs/rules/BUILDER.md` Rule 2)**:
   - If an end-to-end integration test exposes a contract or runtime defect in `@harness-dsl/core` or any `@harness-dsl/*` adapter package, escalate immediately via `BLOCKED_ON_UPSTREAM` citing the exact `file:line` and failing assertion rather than modifying `forbidden_dirs` without Head authorization in `upstream_patches`.
+
+### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
+
+| Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Full-stack DSL & adapter orchestration (`engineering-harness` & `reconciliation-harness`) | `@harness-dsl/{core,lockfile,sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite}` | `workspace:*` (`MIT`) | Re-implementing adapter logic inside `packages/integration` (forbidden by Rule 3.4 & Rule 3.5) | Composes all 15 workspace packages via `createExecutorRegistry` and `createRuntime`; cleans up real SQLite DBs, Git worktrees, and subprocesses in `try / finally` and `afterEach` | Approved (`Rule 3.5`) |
+| Reference harness schema definitions (`workItem`, `workReceipt`, `evaluationResult`, `discrepancyItem`, `settlementReceipt`) | `zod` (re-exported via `@harness-dsl/core` & direct `zod` dependency) | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validation (forbidden by Rule 3.5) | Pure TypeScript covariant `.default()` schema inference across `H.flow`, `H.loop`, and `H.lane` | Approved (`Rule 3.5`) |
+| Temporary E2E monorepo & bare Git remote test fixtures | `node:fs/promises` (`mkdtemp`, `rm`), `node:path`, `node:os`, `node:child_process` (`execFile`) | Built-in Node.js `>=22` (`MIT`) | In-memory fake filesystems or mocked Git CLI (forbidden by `CODING_GUIDELINES.md` Rule 6.2) | Real local Git repositories, CoW worktrees, and SQLite ledger databases cleaned up deterministically in `afterEach` | Approved (`Rule 3.5`) |
 
 ---
 
@@ -29,7 +37,7 @@
 
 ## 3. Planned Module Decomposition & Public Exports (`packages/integration/src/**`)
 
-Every file in `packages/integration/src/**` and `packages/integration/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file, 1 `class` per file, pure `src/index.ts` barrel, full 3-part `/** ... */` JSDoc on every declaration and `TSMethodSignature`, and zero inline/non-JSDoc comments).
+Every file in `packages/integration/src/**` and `packages/integration/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single-kind entity files per Rule 1.1, 1 root `interface` per file plus reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces per Rule 1.2, 1 `class` per file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rule 1.3, function files with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.6 & 3.3, pure `src/index.ts` barrel, complete `/** ... */` JSDoc per Rules 2.1–2.3, and zero inline/non-JSDoc comments per Rule 2.4).
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
@@ -54,16 +62,16 @@ Every file in `packages/integration/src/**` and `packages/integration/test/fixtu
 
 ## 4. Detailed Implementation Requirements
 
-### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
-1. **Zero Co-Location of Entity Kinds**:
-   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/integration/src/**` or `packages/integration/test/fixtures/**` (sole exception: `*.schema.ts` pairing Zod schemas with their `z.infer` types).
-   - `src/financial/financial-domain-registry.ts` (`interface` augmentation), `src/financial/reconciliation-schemas.schema.ts` (`schema`), `src/financial/reconciliation-harness.constants.ts` (`const`), and `src/financial/create-reconciliation-harness-runtime.ts` (`function`) are strictly separated by entity kind; likewise `src/engineering/engineering-schemas.schema.ts` (`schema`), `src/engineering/*.constants.ts` (`const`), and `src/engineering/create-engineering-harness-runtime.ts` (`function`) never mix entity kinds.
-2. **Full 3-Part JSDoc Requirement**:
-   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/integration lint`.
+### 4.0 Single-Kind File Separation, Co-Location & JSDoc Discipline (`docs/CODING_GUIDELINES.md` §§1–3)
+1. **Single-Kind Entity Files & Co-Location (`Rules 1.1–1.7 & 3.3`)**:
+   - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** live in the same file in `packages/integration/src/**` or `packages/integration/test/fixtures/**` (sole exception: `*.schema.ts` pairing Zod schemas with their `z.infer` types).
+   - `src/financial/financial-domain-registry.ts` (`interface` augmentation), `src/financial/reconciliation-schemas.schema.ts` (`schema`), `src/financial/reconciliation-harness.constants.ts` (`const`), and `src/financial/create-reconciliation-harness-runtime.ts` (`function`) are strictly separated by entity kind; likewise `src/engineering/engineering-schemas.schema.ts` (`schema`), `src/engineering/*.constants.ts` (`const`), and `src/engineering/create-engineering-harness-runtime.ts` (`function`) never mix entity kinds, while dedicated 1:1 `*Options` / `*Handle` interfaces for a function or class are co-located in that function or class file (`Rules 1.3, 1.6, 3.3`).
+2. **JSDoc Anatomy & Tag Completeness (`Rules 2.1–2.4`)**:
+   - Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) in `src/**` and `test/fixtures/**` must carry the 3-part JSDoc anatomy per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by an empty `*` line, followed by `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` where applicable; vertical ASCII column alignment of `@template` and `@param` tags is not required; `private` class methods and small `internal/` helper functions `<= 20` lines require only a 1-paragraph summary + required `@tags`), enforced by `pnpm --filter @harness-dsl/integration lint`.
 
 ### 4.1 Exact Reference Harness Fidelity & Coding Guidelines Compliance (`CODING_SAMPLE.md` §6, `SPEC.md` §5, `CODING_GUIDELINES.md` §§1–5)
 1. **Production Engineering Harness (`src/engineering/**`)**:
-   - Implements 100% of the declarations, schemas, signals, interrupts, pools, services, topology, partition map, CoW worktree scope, rules, lessons, skills, role-scoped prefix group, policies, agents (`worker`, `evaluator`, `leaseAdjudicator`, `candidateArbiter`, `guardedWorker`, `verifiedWorkerLoop`, `coordinator`), delivery steps (`landChanges`, `checkExistingPr`, `publishPr`), `engineeringFlow`, `engineeringLane`, and `appHarness` from `CODING_SAMPLE.md` §6 (`lines 178–1208`) across the focused single-entity-kind files (`<= 250` lines each with full §2 JSDoc).
+   - Implements 100% of the declarations, schemas, signals, interrupts, pools, services, topology, partition map, CoW worktree scope, rules, lessons, skills, role-scoped prefix group, policies, agents (`worker`, `evaluator`, `leaseAdjudicator`, `candidateArbiter`, `guardedWorker`, `verifiedWorkerLoop`, `coordinator`), delivery steps (`landChanges`, `checkExistingPr`, `publishPr`), `engineeringFlow`, `engineeringLane`, and `appHarness` from `CODING_SAMPLE.md` §6 (`lines 178–1208`) across the focused single-entity-kind files (`<= 250` lines each with complete §2 JSDoc).
    - When translating `CODING_SAMPLE.md` §6 and `SPEC.md` §5 into `src/engineering/**` and `src/financial/**`, **strip all inline `//` comments** (`CODING_GUIDELINES.md` Rule 2.4), **replace `.flatMap()` / `.filter().map()` chains with single-pass `for` loops** (`CODING_GUIDELINES.md` Rule 4.1), and **replace any `as` casts with explicit type guards/predicates** (`CODING_GUIDELINES.md` Rule 5.1).
    - Compiles with **zero** `: any`, `as any`, `as unknown as`, or `@ts-ignore` suppressions.
 2. **Non-Coding Financial Harness (`src/financial/**`)**:
@@ -75,12 +83,11 @@ Every file in `packages/integration/src/**` and `packages/integration/test/fixtu
 
 ## 5. Deterministic Test Suite Architecture (`packages/integration/test/**`)
 
-All end-to-end tests (`<= 400` lines per file, fixtures `<= 250` lines with single-entity-kind separation and full 3-part §2 JSDoc) run against **real** local SQLite databases, **real** temporary Git repositories and CoW worktrees (`git.cowWorktree`), **real** filesystem tools/guards (`fs.*`), **real** Markdown rule/skill files (`md.*`), and **real** Node subprocesses/daemons (`local.*`), using scripted `ModelDriver` and `HumanAdapter` responses (`docs/CODING_GUIDELINES.md` §6):
+All end-to-end tests (`<= 400` lines per file, fixtures `<= 250` lines with single-entity-kind separation and complete §2 JSDoc) run against **real** local SQLite databases, **real** temporary Git repositories and CoW worktrees (`git.cowWorktree`), **real** filesystem tools/guards (`fs.*`), **real** Markdown rule/skill files (`md.*`), and **real** Node subprocesses/daemons (`local.*`), using scripted `ModelDriver` and `HumanAdapter` responses (`docs/CODING_GUIDELINES.md` §6):
 
 | File Path | Line Ceiling | Required Deterministic Test Cases |
 | :--- | :--- | :--- |
-| `test/fixtures/integration-workspace-handle.ts` | `<= 250` | `IntegrationWorkspaceHandle` (`interface` only, describing the initialized monorepo paths, git remote, and cleanup hook). |
-| `test/fixtures/create-integration-workspace-fixture.ts` | `<= 250` | Pure `function` initializing a real temporary monorepo (`packages/{db,api,web}`, `PRODUCT_SPEC.md`, `TECH_DESIGN.md`, `.harness/rules/**`, `.harness/skills/**`, `.harness/prompts/**`, local bare `origin` git remote, and real `.harness/state.sqlite`). |
+| `test/fixtures/create-integration-workspace-fixture.ts` | `<= 250` | Function initializing a real temporary monorepo (`packages/{db,api,web}`, `PRODUCT_SPEC.md`, `TECH_DESIGN.md`, `.harness/rules/**`, `.harness/skills/**`, `.harness/prompts/**`, local bare `origin` git remote, and real `.harness/state.sqlite`, with co-located dedicated `IntegrationWorkspaceHandle` interface per Rule 1.6). |
 | `test/fixtures/scripted-integration-model-driver.ts` | `<= 250` | `ScriptedIntegrationModelDriver` (`class` only, implementing `ModelDriver` to orchestrate multi-turn tool calls `edit_file`, `write_file`, `delegate-partition`, `explore-candidates`, `spawnTasks`, and `resumeFork`). |
 | `test/fixtures/scripted-integration-human-adapter.ts` | `<= 250` | `ScriptedIntegrationHumanAdapter` (`class` only, implementing `HumanAdapter` to orchestrate deterministic human Slack rulings, notifications, and `cancelDecision` tracking). |
 | `test/ast-and-financial-harness-e2e.test.ts` | `<= 400` | 1. Verifies `appHarness.toAST()` and `reconciliationFlow.toAST()` are deeply frozen, JSON-serializable, and perform zero I/O at build time.<br>2. Executes `reconciliationFlow` (`SPEC.md` §5) end-to-end: verifies `netsuite.forbidClosedPeriodPosting()` denies closed-period postings in-band, `stripe.maxRefundGuardUsd(500)` raises `highValueApprovalRequest` to `financeController`, `stripe.allowRefundUpToUsd(10_000)` elevates the lease and drains `remainingCalls`, and turn exhaustion triggers `reconcileLimitExceeded` -> `netsuite.rollbackDraftJournal()` -> `.replaceWith(manualEscalationAgent)`. |

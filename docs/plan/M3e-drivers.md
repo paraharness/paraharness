@@ -9,11 +9,20 @@
   - `packages/openai/src/**`, `packages/openai/test/**`
   - `packages/gemini/src/**`, `packages/gemini/test/**`
 - **`forbidden_dirs`**:
-  - `packages/core/**`
+  - `packages/core/**`, `packages/lockfile/**`
   - `packages/{sqlite,postgres,fs,markdown,node,git,github,slack,stripe,netsuite,integration}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@harness-dsl/claude`, `@harness-dsl/openai`, and `@harness-dsl/gemini` must have **zero runtime or type imports** from each other or from any other M3 adapter package. Each depends exclusively on `@harness-dsl/core` (`workspace:*`) and `zod`.
+  - `@harness-dsl/claude`, `@harness-dsl/openai`, and `@harness-dsl/gemini` must have **zero runtime or type imports** from each other or from any other M3 adapter package. `@harness-dsl/claude` depends exclusively on `@harness-dsl/core` (`workspace:*`), `@anthropic-ai/sdk`, `zod`, and Node built-ins; `@harness-dsl/openai` depends exclusively on `@harness-dsl/core` (`workspace:*`), `openai`, `zod`, and Node built-ins; `@harness-dsl/gemini` depends exclusively on `@harness-dsl/core` (`workspace:*`), `@google/genai`, `zod`, and Node built-ins.
+
+### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
+
+| Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Anthropic Messages API wire client & TypeScript types (`@harness-dsl/claude`) | `@anthropic-ai/sdk` | `^1.6.0` (npm `1.6.0`, `Apache-2.0`, `0` deprecated, `0` CVEs) | Hand-rolled `fetch` wrapper (forbidden by Rule 3.5) | Official Anthropic SDK; instantiate per invocation or seat with injectable `fetch` / `ClaudeHttpTransport` seam for deterministic offline testing and pass `ctx.signal` (`AbortSignal`) | Approved (`Rule 3.5`) |
+| OpenAI Responses API wire client & TypeScript types (`@harness-dsl/openai`) | `openai` | `^7.53.0` (npm `7.53.0`, `Apache-2.0`, `0` deprecated, `0` CVEs) | Hand-rolled `fetch` wrapper (forbidden by Rule 3.5) | Official OpenAI SDK supporting `/v1/responses` (`previous_response_id`, `encrypted_content`, `json_schema`); supports injectable `fetch` / `OpenAiHttpTransport` seam and `AbortSignal` | Approved (`Rule 3.5`) |
+| Google Gemini `generateContent` wire client & TypeScript types (`@harness-dsl/gemini`) | `@google/genai` | `^3.0.0` (npm `3.0.0`, `Apache-2.0`, `0` deprecated, `0` CVEs) | `@google/generative-ai` (legacy SDK deprecated in favor of `@google/genai`), hand-rolled `fetch` wrapper (forbidden by Rule 3.5) | Official Google Gen AI SDK (`ai.models.generateContent` with `thinkingConfig`, `thoughtSignature`, `responseJsonSchema`); supports injectable `GeminiHttpTransport` seam and `AbortSignal` | Approved (`Rule 3.5`) |
+| Structured output & schema validation (`outputSchema.parse`) | `zod` (`+ zodToJsonSchema` from `@harness-dsl/core`) | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validator (forbidden by Rule 3.5) | Pure TypeScript runtime validation | Approved (`Rule 3.5`) |
 
 ---
 
@@ -32,21 +41,20 @@
 
 ## 3. Planned Module Decomposition & Public Exports
 
-Every file in `packages/{claude,openai,gemini}/src/**` and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file plus `TSPropertySignature` property sub-interfaces only, 1 `class` per file, 1 builder factory function per `create-*.ts` file, `internal/` helpers, pure `src/index.ts` barrels, full 3-part `/** ... */` JSDoc on every declaration and `TSMethodSignature`, and zero inline/non-JSDoc comments).
+Every file in `packages/{claude,openai,gemini}/src/**` and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single-kind entity files per Rule 1.1, 1 root `interface` per file plus reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces per Rule 1.2, 1 `class` per file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rule 1.3, 1 builder factory function per `create-*.ts` file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.6 & 3.3, `internal/` helpers, pure `src/index.ts` barrels, complete `/** ... */` JSDoc per Rules 2.1–2.3, and zero inline/non-JSDoc comments per Rule 2.4).
 
 ### 3.1 `packages/claude` (`@harness-dsl/claude`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/claude-model-options.ts` | `interface` | `ClaudeModelOptions` |
 | `src/builders/claude-account-seat-builder.ts` | `interface` | `ClaudeAccountSeatBuilder` |
 | `src/builders/create-claude-account-seat-builder.ts` | `function` | `createClaudeAccountSeatBuilder` |
 | `src/builders/claude-model-builder.ts` | `interface` | `ClaudeModelBuilder` |
 | `src/builders/create-claude-model-builder.ts` | `function` | `createClaudeModelBuilder` |
-| `src/builders/claude-namespace-contract.ts` | `interface` | `ClaudeNamespace` |
+| `src/builders/claude-namespace-contract.ts` | `interface` | `ClaudeNamespace` (plus `TSMethodSignature` sub-interface `ClaudeModelOptions`) |
 | `src/builders/claude-namespace.ts` | `const` | `claude: ClaudeNamespace` |
 | `src/driver/claude-http-transport.ts` | `interface` | `ClaudeHttpTransport` |
-| `src/driver/default-claude-http-transport.constants.ts` | `const` | `defaultClaudeHttpTransport: ClaudeHttpTransport` |
+| `src/driver/default-claude-http-transport.constants.ts` | `const` | `defaultClaudeHttpTransport: ClaudeHttpTransport` (backed by `@anthropic-ai/sdk`) |
 | `src/driver/internal/claude-wire-converter.ts` | `function` | `buildAnthropicMessagesRequest`, `parseAnthropicMessagesResponse`, `projectCanonicalToAnthropicMessage` |
 | `src/driver/internal/claude-fork-and-notes.ts` | `function` | `prepareClaudeForkFrames`, `appendClaudeToolResultNotes` |
 | `src/driver/claude-model-driver.ts` | `class` | `ClaudeModelDriver` (implementing `ModelDriver` with `vendorId: 'anthropic'`) |
@@ -58,15 +66,14 @@ Every file in `packages/{claude,openai,gemini}/src/**` and `test/fixtures/**` ad
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/openai-model-options.ts` | `interface` | `OpenAiModelOptions` |
 | `src/builders/openai-account-seat-builder.ts` | `interface` | `OpenAiAccountSeatBuilder` |
 | `src/builders/create-openai-account-seat-builder.ts` | `function` | `createOpenAiAccountSeatBuilder` |
 | `src/builders/openai-model-builder.ts` | `interface` | `OpenAiModelBuilder` |
 | `src/builders/create-openai-model-builder.ts` | `function` | `createOpenAiModelBuilder` |
-| `src/builders/openai-namespace-contract.ts` | `interface` | `OpenAiNamespace` |
+| `src/builders/openai-namespace-contract.ts` | `interface` | `OpenAiNamespace` (plus `TSMethodSignature` sub-interface `OpenAiModelOptions`) |
 | `src/builders/openai-namespace.ts` | `const` | `openai: OpenAiNamespace` |
 | `src/driver/openai-http-transport.ts` | `interface` | `OpenAiHttpTransport` |
-| `src/driver/default-openai-http-transport.constants.ts` | `const` | `defaultOpenAiHttpTransport: OpenAiHttpTransport` |
+| `src/driver/default-openai-http-transport.constants.ts` | `const` | `defaultOpenAiHttpTransport: OpenAiHttpTransport` (backed by `openai` SDK) |
 | `src/driver/internal/openai-wire-converter.ts` | `function` | `buildOpenAiResponsesRequest`, `parseOpenAiResponsesOutput`, `stripOpenAiServerItemIdsAndEncryptedContent` |
 | `src/driver/internal/openai-fork-and-notes.ts` | `function` | `prepareOpenAiForkFrames`, `appendOpenAiToolResultNotes` |
 | `src/driver/openai-model-driver.ts` | `class` | `OpenAiModelDriver` (implementing `ModelDriver` with `vendorId: 'openai'`) |
@@ -78,15 +85,14 @@ Every file in `packages/{claude,openai,gemini}/src/**` and `test/fixtures/**` ad
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/gemini-model-options.ts` | `interface` | `GeminiModelOptions` |
 | `src/builders/gemini-account-seat-builder.ts` | `interface` | `GeminiAccountSeatBuilder` |
 | `src/builders/create-gemini-account-seat-builder.ts` | `function` | `createGeminiAccountSeatBuilder` |
 | `src/builders/gemini-model-builder.ts` | `interface` | `GeminiModelBuilder` |
 | `src/builders/create-gemini-model-builder.ts` | `function` | `createGeminiModelBuilder` |
-| `src/builders/gemini-namespace-contract.ts` | `interface` | `GeminiNamespace` |
+| `src/builders/gemini-namespace-contract.ts` | `interface` | `GeminiNamespace` (plus `TSMethodSignature` sub-interface `GeminiModelOptions`) |
 | `src/builders/gemini-namespace.ts` | `const` | `gemini: GeminiNamespace` |
 | `src/driver/gemini-http-transport.ts` | `interface` | `GeminiHttpTransport` |
-| `src/driver/default-gemini-http-transport.constants.ts` | `const` | `defaultGeminiHttpTransport: GeminiHttpTransport` |
+| `src/driver/default-gemini-http-transport.constants.ts` | `const` | `defaultGeminiHttpTransport: GeminiHttpTransport` (backed by `@google/genai` SDK) |
 | `src/driver/internal/gemini-wire-converter.ts` | `function` | `buildGeminiGenerateContentRequest`, `parseGeminiGenerateContentResponse`, `stripGeminiThoughtPartsAndSignatures` |
 | `src/driver/internal/gemini-fork-and-notes.ts` | `function` | `prepareGeminiForkFrames`, `appendGeminiToolResultNotes` |
 | `src/driver/gemini-model-driver.ts` | `class` | `GeminiModelDriver` (implementing `ModelDriver` with `vendorId: 'google'`) |
@@ -98,13 +104,14 @@ Every file in `packages/{claude,openai,gemini}/src/**` and `test/fixtures/**` ad
 
 ## 4. Detailed Implementation Requirements
 
-### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
-1. **Zero Co-Location of Entity Kinds**:
-   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/{claude,openai,gemini}/src/**` or `packages/{claude,openai,gemini}/test/fixtures/**`.
-   - Every builder interface (`*-builder.ts`), options/transport interface (`*-options.ts`, `*-http-transport.ts`), and namespace contract (`*-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file; every `ModelDriver` class and recorded transport fixture class gets its own single-class file; every `const` (`claude`, `openai`, `gemini`, `default*HttpTransport`, `*Executors`) lives in its own `const`-only file.
-2. **Full 3-Part JSDoc & Official Vendor SDK Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
+### 4.0 Single-Kind File Separation, Co-Location & JSDoc Discipline (`docs/CODING_GUIDELINES.md` §§1–3)
+1. **Single-Kind Entity Files & Co-Location (`Rules 1.1–1.7 & 3.3`)**:
+   - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** live in the same file in `packages/{claude,openai,gemini}/src/**` or `packages/{claude,openai,gemini}/test/fixtures/**`.
+   - Each root `interface` (`*-builder.ts`, `*-http-transport.ts`, `*-namespace-contract.ts`) lives in its own single-interface file, co-locating secondary interfaces reachable via `TSPropertySignature` or `TSMethodSignature` parameter/return types (`ClaudeModelOptions`, `OpenAiModelOptions`, `GeminiModelOptions`) per Rule 1.2.
+   - Every builder factory function (`create-*.ts`) gets its own single-function file; every `ModelDriver` class and recorded transport fixture class gets its own single-class file; every `const` (`claude`, `openai`, `gemini`, `default*HttpTransport`, `*Executors`) lives in its own `const`-only file.
+2. **JSDoc Anatomy & Official Vendor SDK Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
    - Use the official vendor SDKs installed in each package (`@anthropic-ai/sdk` in `@harness-dsl/claude`, `openai` in `@harness-dsl/openai`, and `@google/genai` in `@harness-dsl/gemini`) alongside injectable `HttpTransport` test seams.
-   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/claude --filter @harness-dsl/openai --filter @harness-dsl/gemini lint`.
+   - Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) in `src/**` and `test/fixtures/**` must carry the 3-part JSDoc anatomy per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by an empty `*` line, followed by `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` where applicable; vertical ASCII column alignment of `@template` and `@param` tags is not required; `private` class methods and small `internal/` helper functions `<= 20` lines require only a 1-paragraph summary + required `@tags`), enforced by `pnpm --filter @harness-dsl/claude --filter @harness-dsl/openai --filter @harness-dsl/gemini lint`.
 
 ### 4.1 `@harness-dsl/claude` (`SPEC.md` §4.1 lines 2663–2667)
 1. **Builders (`claude.*`)**:

@@ -8,11 +8,23 @@
   - `packages/node/src/**`
   - `packages/node/test/**`
 - **`forbidden_dirs`**:
-  - `packages/core/**`
+  - `packages/core/**`, `packages/lockfile/**`
   - `packages/{sqlite,postgres,fs,markdown,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@harness-dsl/node` must have **zero runtime or type imports** from any other M3 adapter package. It depends exclusively on `@harness-dsl/core` (`workspace:*`), `zod`, and Node built-ins (`node:child_process`, `node:net`, `node:http`, `node:crypto`, `node:events`).
+  - `@harness-dsl/node` must have **zero runtime or type imports** from any other M3 adapter package. It depends exclusively on `@harness-dsl/core` (`workspace:*`), `node-pty`, `@modelcontextprotocol/sdk`, `pidtree`, `fkill`, `get-port`, `wait-on`, `p-queue`, `p-limit`, `zod`, and Node built-ins (`node:child_process`, `node:net`, `node:http`, `node:crypto`, `node:events`).
+
+### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
+
+| Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Interactive PTY daemon sessions (`local.daemon(...).interact(...)`) | `node-pty` | `^1.1.0` (npm `1.1.0`, `MIT`, `0` deprecated, `0` CVEs) | `child_process.spawn` with `script`/`stty` shell wrappers (fragile across macOS BSD vs Linux `util-linux` flags and forbidden by Rule 3.5) | Native POSIX/ConPTY pseudoterminal addon; disable echo via `stty -echo` initialization, serialize interactive turns via `p-queue` (`concurrency: 1`), and call `ptyProcess.kill()` inside `try / finally` | Approved (`Rule 3.5`) |
+| MCP stdio & SSE control-plane protocol (`local.mcpStdio`, `local.mcpSse`) | `@modelcontextprotocol/sdk` (`Server`, `StdioServerTransport`, `SSEServerTransport`) | `^1.32.2` (npm `1.32.2`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled JSON-RPC 2.0 stdio/SSE framing (forbidden by Rule 3.5) | Official MCP TypeScript SDK; normalize incoming `'data'` stream chunks to `Buffer` and never call `setEncoding('utf8')` on `Readable` streams passed to `StdioServerTransport` (`docs/lessons/BUILDER.md`); close server in `try / finally` | Approved (`Rule 3.5`) |
+| Descendant process-tree enumeration & graceful/forceful teardown (`terminateProcessGroupWithGrace`) | `pidtree` (`^1.0.0`, `MIT`) + `fkill` (`^10.0.3`, `MIT`) | npm `1.0.0` & `10.0.3` (`0` deprecated, `0` CVEs) | `tree-kill` (unmaintained since 2021 with shell-injection / zombie-reaping issues); hand-rolled `ps` parser (forbidden by Rule 3.5) | Enumerates full descendant PID tree via `pidtree`, sends `SIGTERM`, awaits grace window, and force-kills remaining PIDs via `fkill(..., { force: true, silent: true })` | Approved (`Rule 3.5`) |
+| Ephemeral conflict-free TCP port allocation (`local.daemon(...).port(...)`) | `get-port` (`getPort`) | `^7.2.0` (npm `7.2.0`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled `net.createServer().listen(0)` port prober (forbidden by Rule 3.5) | Pure ESM dynamic port allocator with exclusion set support so multi-port daemons never receive duplicate ports | Approved (`Rule 3.5`) |
+| TCP listener readiness verification (`waitForTcpPortReady`) | `wait-on` (`+ @types/wait-on`) | `^9.5.1` (npm `9.5.1`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled `net.Socket` polling loop (forbidden by Rule 3.5) | Polls `tcp:127.0.0.1:${port}` after `.readyWhenStdout(regex)` matches before resolving `ServiceSession` | Approved (`Rule 3.5`) |
+| Runner slot & PTY turn serialization (`NodeRunnerDriver`, `PtyFramedInteractiveSession`) | `p-queue` (`^9.1.0`, `MIT`) + `p-limit` (`^7.3.0`, `MIT`) | npm `10.0.0` (`^9.1.0` pinned) & `7.3.3` (`0` deprecated, `0` CVEs) | Hand-rolled semaphore queues (forbidden by Rule 3.5) | Separates one-shot command concurrency (`withSlot`) from long-lived daemon concurrency (`withDaemonSlot`); queued-wait-only `AbortSignal` handling (`docs/lessons/BUILDER.md`) | Approved (`Rule 3.5`) |
+| Command & interaction input/output validation | `zod` | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validation (forbidden by Rule 3.5) | Pure TypeScript runtime validation | Approved (`Rule 3.5`) |
 
 ---
 
@@ -30,42 +42,37 @@
 
 ## 3. Planned Module Decomposition & Public Exports (`packages/node/src/**`)
 
-Every file in `packages/node/src/**` and `packages/node/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, zero co-location of `interface` / `function` / `class` / `const` / `type`, strictly 1 top-level `interface` per file plus `TSPropertySignature` property sub-interfaces only, 1 `class` per file, 1 builder factory function per `create-*.ts` file, `internal/` helpers, pure `src/index.ts` barrel, full 3-part `/** ... */` JSDoc on every declaration and `TSMethodSignature`, and zero inline/non-JSDoc comments).
+Every file in `packages/node/src/**` and `packages/node/test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §1–§5 (`<= 250` lines per file, single-kind entity files per Rule 1.1, 1 root `interface` per file plus reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces per Rule 1.2, 1 `class` per file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rule 1.3, 1 builder factory function per `create-*.ts` file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.6 & 3.3, `internal/` helpers, pure `src/index.ts` barrel, complete `/** ... */` JSDoc per Rules 2.1–2.3, and zero inline/non-JSDoc comments per Rule 2.4).
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/local-runner-options.ts` | `interface` | `LocalRunnerOptions` |
 | `src/builders/local-runner-builder.ts` | `interface` | `LocalRunnerBuilder` |
 | `src/builders/create-local-runner-builder.ts` | `function` | `createLocalRunnerBuilder` |
-| `src/builders/local-command-unrepeatable-options.ts` | `interface` | `LocalCommandUnrepeatableOptions` |
-| `src/builders/local-command-builder.ts` | `interface` | `LocalCommandBuilder<TIn, TOut, THandle>` |
+| `src/builders/local-command-builder.ts` | `interface` | `LocalCommandBuilder<TIn, TOut, THandle>` (plus `TSMethodSignature` sub-interface `LocalCommandUnrepeatableOptions`) |
 | `src/builders/create-local-command-builder.ts` | `function` | `createLocalCommandBuilder` |
-| `src/builders/local-stream-check-circuit-breaker-options.ts` | `interface` | `LocalStreamCheckCircuitBreakerOptions` |
-| `src/builders/local-stream-check-builder.ts` | `interface` | `LocalStreamCheckBuilder<THandle>` |
+| `src/builders/local-stream-check-builder.ts` | `interface` | `LocalStreamCheckBuilder<THandle>` (plus `TSMethodSignature` sub-interface `LocalStreamCheckCircuitBreakerOptions`) |
 | `src/builders/create-local-stream-check-builder.ts` | `function` | `createLocalStreamCheckBuilder` |
-| `src/builders/local-daemon-interact-options.ts` | `interface` | `LocalDaemonInteractOptions<TInput>` |
-| `src/builders/local-daemon-builder.ts` | `interface` | `LocalDaemonBuilder` |
+| `src/builders/local-daemon-builder.ts` | `interface` | `LocalDaemonBuilder` (plus `TSMethodSignature` sub-interface `LocalDaemonInteractOptions<TInput>`) |
 | `src/builders/create-local-daemon-builder.ts` | `function` | `createLocalDaemonBuilder` |
-| `src/builders/mcp-server-options.ts` | `interface` | `McpServerOptions` |
 | `src/builders/create-allow-binaries-builder.ts` | `function` | `createAllowBinariesBuilder` |
 | `src/builders/create-deny-network-builder.ts` | `function` | `createDenyNetworkBuilder` |
 | `src/builders/create-mcp-server-builder.ts` | `function` | `createMcpServerBuilder` |
 | `src/builders/create-mcp-stdio-builder.ts` | `function` | `createMcpStdioBuilder` |
 | `src/builders/create-mcp-sse-builder.ts` | `function` | `createMcpSseBuilder` |
-| `src/builders/local-namespace-contract.ts` | `interface` | `LocalNamespace` |
+| `src/builders/local-namespace-contract.ts` | `interface` | `LocalNamespace` (plus `TSMethodSignature` sub-interface `LocalRunnerOptions`) |
 | `src/builders/local-namespace.ts` | `const` | `local: LocalNamespace` |
-| `src/builders/mcp-namespace-contract.ts` | `interface` | `McpNamespace` |
+| `src/builders/mcp-namespace-contract.ts` | `interface` | `McpNamespace` (plus `TSMethodSignature` sub-interface `McpServerOptions`) |
 | `src/builders/mcp-namespace.ts` | `const` | `mcp: McpNamespace` |
 | `src/executors/node-subprocess-env.constants.ts` | `const` | `ISOLATED_GIT_ENV_OVERRIDES`, `DEFAULT_SUBPROCESS_GRACE_MS` |
-| `src/executors/internal/process-group-lifecycle.ts` | `function` | `spawnDetachedSubprocess`, `terminateProcessGroupWithGrace`, `resolveWorktreeEnvAndCwd` |
-| `src/executors/internal/daemon-ports-and-scope-key.ts` | `function` | `allocateDynamicPorts`, `waitForTcpPortReady`, `sanitizeDaemonScopeKey` |
-| `src/executors/node-runner-driver.ts` | `class` | `NodeRunnerDriver` (implementing `RunnerDriver` with `withSlot` and `withDaemonSlot`) |
+| `src/executors/internal/process-group-lifecycle.ts` | `function` | `spawnDetachedSubprocess`, `terminateProcessGroupWithGrace`, `resolveWorktreeEnvAndCwd` (backed by `pidtree` and `fkill`) |
+| `src/executors/internal/daemon-ports-and-scope-key.ts` | `function` | `allocateDynamicPorts`, `waitForTcpPortReady`, `sanitizeDaemonScopeKey` (backed by `get-port` and `wait-on`) |
+| `src/executors/node-runner-driver.ts` | `class` | `NodeRunnerDriver` (implementing `RunnerDriver` with `withSlot` and `withDaemonSlot` backed by `p-limit` / `p-queue`) |
 | `src/executors/local-command-executors.ts` | `function` | `executeLocalCommandStep`, `executeLocalCommandCheck`, `createLocalCommandToolDriver` |
 | `src/executors/local-stream-check-executors.ts` | `function` | `executeLocalStreamCheck`, `createLocalStreamCheckToolDriver` |
 | `src/executors/local-daemon-service.ts` | `function` | `startLocalDaemonService`, `createLocalServiceToolDriver` |
-| `src/executors/internal/pty-framed-session.ts` | `class` | `PtyFramedInteractiveSession` |
+| `src/executors/internal/pty-framed-session.ts` | `class` | `PtyFramedInteractiveSession` (backed by `node-pty` and `p-queue`) |
 | `src/executors/node-guard-executors.ts` | `function` | `evaluateNodeAllowBinariesGuard`, `evaluateNodeDenyNetworkGuard` |
-| `src/executors/node-control-plane-and-mcp-adapters.ts` | `function` | `createNodeHttpControlPlaneAdapter`, `createNodeMcpStdioAdapter`, `createNodeMcpSseAdapter` |
+| `src/executors/node-control-plane-and-mcp-adapters.ts` | `function` | `createNodeHttpControlPlaneAdapter`, `createNodeMcpStdioAdapter`, `createNodeMcpSseAdapter` (backed by `@modelcontextprotocol/sdk`) |
 | `src/executors/create-node-executors.ts` | `function` | `createNodeExecutors` |
 | `src/executors/node-executors.constants.ts` | `const` | `nodeExecutors: RuntimeExecutorRegistrySlice` |
 | `src/index.ts` | `barrel` | Pure explicit re-exports of `local`, `LocalNamespace`, `mcp`, `McpNamespace`, `nodeExecutors`, `createNodeExecutors`, `NodeRunnerDriver`, `sanitizeDaemonScopeKey`, `LocalRunnerBuilder`, `LocalRunnerOptions`, `LocalCommandBuilder`, `LocalCommandUnrepeatableOptions`, `LocalStreamCheckBuilder`, `LocalStreamCheckCircuitBreakerOptions`, `LocalDaemonBuilder`, `LocalDaemonInteractOptions`, `McpServerOptions`, all `create*` builder factories, and all `Node*` / `Local*` AST node types from `@harness-dsl/core` |
@@ -74,13 +81,14 @@ Every file in `packages/node/src/**` and `packages/node/test/fixtures/**` adhere
 
 ## 4. Detailed Implementation Requirements
 
-### 4.0 Strict File Separation & Full 3-Part JSDoc (`docs/CODING_GUIDELINES.md` §§1–2)
-1. **Zero Co-Location of Entity Kinds**:
-   - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/node/src/**` or `packages/node/test/fixtures/**`.
-   - Every builder interface (`*-builder.ts`), options interface (`*-options.ts`), and namespace contract (`local-namespace-contract.ts`, `mcp-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); `NodeRunnerDriver` and `PtyFramedInteractiveSession` each get their own single-class file; every `const` (`local`, `mcp`, `nodeExecutors`, `ISOLATED_GIT_ENV_OVERRIDES`) lives in its own `const`-only file.
-2. **Full 3-Part JSDoc & Approved Library Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
-   - Use `node-pty` for PTY daemon sessions, `@modelcontextprotocol/sdk` for MCP stdio/SSE control-plane servers, `pidtree` + `fkill` for process-tree teardown, `get-port` for dynamic port allocation, `wait-on` for TCP port readiness polling, and `p-queue` / `p-limit` for runner slot concurrency.
-   - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/node lint`.
+### 4.0 Single-Kind File Separation, Co-Location & JSDoc Discipline (`docs/CODING_GUIDELINES.md` §§1–3)
+1. **Single-Kind Entity Files & Co-Location (`Rules 1.1–1.7 & 3.3`)**:
+   - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** live in the same file in `packages/node/src/**` or `packages/node/test/fixtures/**`.
+   - Each root `interface` (`*-builder.ts`, `local-namespace-contract.ts`, `mcp-namespace-contract.ts`) lives in its own single-interface file, co-locating secondary interfaces reachable via `TSPropertySignature` or `TSMethodSignature` parameter/return types (`LocalRunnerOptions`, `LocalCommandUnrepeatableOptions`, `LocalStreamCheckCircuitBreakerOptions`, `LocalDaemonInteractOptions<TInput>`, `McpServerOptions`) per Rule 1.2.
+   - Every builder factory function (`create-*.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); `NodeRunnerDriver` and `PtyFramedInteractiveSession` each get their own single-class file; every `const` (`local`, `mcp`, `nodeExecutors`, `ISOLATED_GIT_ENV_OVERRIDES`) lives in its own `const`-only file.
+2. **JSDoc Anatomy & Approved Library Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
+   - Use `node-pty` for PTY daemon sessions, `@modelcontextprotocol/sdk` for MCP stdio/SSE control-plane servers (normalizing incoming `'data'` stream chunks to `Buffer` and never calling `setEncoding('utf8')` on `Readable` streams passed to `StdioServerTransport` per `docs/lessons/BUILDER.md`), `pidtree` + `fkill` for process-tree teardown, `get-port` for dynamic port allocation, `wait-on` for TCP port readiness polling, and `p-queue` / `p-limit` for runner slot concurrency.
+   - Every `class`, top-level `interface`, public `function` (or `internal/` function `> 20` lines), non-`private` class method (`MethodDefinition`), and interface method (`TSMethodSignature`) in `src/**` and `test/fixtures/**` must carry the 3-part JSDoc anatomy per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by an empty `*` line, followed by `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` where applicable; vertical ASCII column alignment of `@template` and `@param` tags is not required; `private` class methods and small `internal/` helper functions `<= 20` lines require only a 1-paragraph summary + required `@tags`), enforced by `pnpm --filter @harness-dsl/node lint`.
 
 ### 4.1 `local.runner({ id?, slots, maxDaemons? })` & `NodeRunnerDriver` (`SPEC.md` §4.2 line 2783)
 - Compiles to `NodeRunnerNode` (`readonly type: 'node:runner'`, defaulting `id` to `'default-runner'` and `maxDaemons` to `slots`).
