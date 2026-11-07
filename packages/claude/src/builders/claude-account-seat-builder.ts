@@ -18,6 +18,8 @@ export interface ClaudeAccountSeatBuilder extends AstBuilder<ClaudeAccountSeatNo
    * @param {string} path - Path to the Claude CLI directory (such as `'~/.claude-a'`).
    *
    * @returns {ClaudeAccountSeatBuilder} New immutable account seat builder with `configDir` configured.
+   *
+   * @throws {Error} If `path` is empty or whitespace-only.
    */
   configDir(path: string): ClaudeAccountSeatBuilder;
 
@@ -29,6 +31,8 @@ export interface ClaudeAccountSeatBuilder extends AstBuilder<ClaudeAccountSeatNo
    * @param {string | EnvRef} envOrKey - Symbolic `EnvRef` or literal API key string.
    *
    * @returns {ClaudeAccountSeatBuilder} New immutable account seat builder with `apiKey` configured.
+   *
+   * @throws {Error} If `envOrKey` is an empty or whitespace-only string.
    */
   apiKey(envOrKey: string | EnvRef): ClaudeAccountSeatBuilder;
 

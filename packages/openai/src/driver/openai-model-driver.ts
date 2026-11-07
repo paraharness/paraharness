@@ -13,16 +13,14 @@ import {
   OPENAI_RESPONSES_ENDPOINT,
   defaultOpenAiHttpTransport,
 } from './default-openai-http-transport.constants.js';
-import {
-  appendOpenAiToolResultNotes,
-  prepareOpenAiForkFrames,
-} from './internal/openai-fork-and-notes.js';
-import { parseOpenAiRetryAfterResetAtMs } from './internal/openai-http-transport.js';
+import { extractOpenAiResponseBody } from './internal/extract-openai-response-body.js';
+import { openaiAppendToolResultNotes } from './internal/openai-append-tool-result-notes.js';
+import { openaiPrepareFork } from './internal/openai-prepare-fork.js';
 import {
   buildOpenAiResponsesRequest,
   parseOpenAiResponsesOutput,
 } from './internal/openai-wire-converter.js';
-import { resolveOpenAiSeatAuth } from './internal/openai-wire-helpers.js';
+import { resolveOpenAiSeatAuth } from './internal/resolve-openai-seat-auth.js';
 import type { OpenAiHttpTransport } from './openai-http-transport.js';
 
 /**
@@ -53,9 +51,9 @@ export class OpenAiModelDriver implements ModelDriver {
    *
    * Defers all credential and environment variable lookups until `invokeTurn()` is executed.
    *
-   * @param {OpenAiHttpTransport}              [transport] - HTTP transport for `/v1/responses`.
-   * @param {OpenAiModelNode | undefined}      [modelNode] - Optional bound `OpenAiModelNode`.
-   * @param {RuntimeDriverContext | undefined} [driverCtx] - Optional runtime driver context.
+   * @param {OpenAiHttpTransport}              [transport=defaultOpenAiHttpTransport] - HTTP transport for `/v1/responses`.
+   * @param {OpenAiModelNode | undefined}      [modelNode]                            - Optional bound `OpenAiModelNode`.
+   * @param {RuntimeDriverContext | undefined} [driverCtx]                            - Optional runtime driver context.
    */
   constructor(
     transport: OpenAiHttpTransport = defaultOpenAiHttpTransport,
@@ -76,11 +74,16 @@ export class OpenAiModelDriver implements ModelDriver {
    * @param {ModelTurnRequest} req - Turn request payload, wire prefix, and structured output schema.
    *
    * @returns {Promise<ModelTurnResponse>} Raw wire response, canonical message, structured output, and usage metrics.
+   *
+   * @throws {Error} On HTTP `429` rate limits, non-2xx statuses, aborted signals, or `outputSchema` validation failures.
    */
   async invokeTurn(req: ModelTurnRequest): Promise<ModelTurnResponse> {
-    const auth = resolveOpenAiSeatAuth(req.accountConfig, this.modelNode, (val) =>
-      this.driverCtx?.resolveEnv(val),
-    );
+    req.signal?.throwIfAborted();
+    const auth = resolveOpenAiSeatAuth({
+      accountConfig: req.accountConfig,
+      modelNode: this.modelNode,
+      driverCtx: this.driverCtx,
+    });
     const body = buildOpenAiResponsesRequest(req, auth.seatId);
     const response = await this.transport.sendResponsesRequest({
       url: OPENAI_RESPONSES_ENDPOINT,
@@ -90,37 +93,12 @@ export class OpenAiModelDriver implements ModelDriver {
       authSource: auth.authSource,
       signal: req.signal,
     });
-    const resetAtMs =
-      response.resetAtMs ??
-      parseOpenAiRetryAfterResetAtMs(
-        response.headers?.['retry-after'] ?? response.headers?.['Retry-After'],
-      );
-    if (response.status === 429) {
-      throw Object.assign(
-        new Error(
-          `OpenAI /v1/responses rate limit (429) on model '${req.modelId}' (seat '${auth.seatId ?? 'default'}').`,
-        ),
-        { status: 429, resetAtMs: resetAtMs ?? Date.now() + 60_000 },
-      );
-    }
-    if (response.status < 200 || response.status >= 300) {
-      const detail =
-        response.bodyText !== undefined && response.bodyText.trim().length > 0
-          ? `: ${response.bodyText.trim()}`
-          : '';
-      throw Object.assign(
-        new Error(
-          `OpenAI /v1/responses failed with HTTP ${String(response.status)} for model '${req.modelId}'${detail}.`,
-        ),
-        { status: response.status },
-      );
-    }
-    const parsedBody =
-      response.body ??
-      (response.bodyText !== undefined && response.bodyText.trim().length > 0
-        ? (JSON.parse(response.bodyText) as Readonly<Record<string, unknown>>)
-        : Object.freeze({}));
-    return parseOpenAiResponsesOutput(parsedBody, req, auth.seatId);
+    const responseBody = extractOpenAiResponseBody({
+      response,
+      modelId: req.modelId,
+      seatId: auth.seatId,
+    });
+    return parseOpenAiResponsesOutput(responseBody, req, auth.seatId);
   }
 
   /**
@@ -135,7 +113,7 @@ export class OpenAiModelDriver implements ModelDriver {
    * @returns {Promise<readonly WireFrameRecord[]>} Synthesized wire frame chain to persist in `LedgerStore`.
    */
   prepareFork(ctx: ForkContext, target: PrepareForkTarget): Promise<readonly WireFrameRecord[]> {
-    return Promise.resolve(prepareOpenAiForkFrames(ctx, target));
+    return Promise.resolve(openaiPrepareFork(ctx, target));
   }
 
   /**
@@ -143,10 +121,10 @@ export class OpenAiModelDriver implements ModelDriver {
    *
    * Updates both `rawWireFrame` (`function_call_output` or user message items) and `frame.canonical`.
    *
-   * @param {WireFrameRecord}                          frame        - Existing `tool` or `user` wire frame record.
-   * @param {readonly string[]}                        notes        - Synchronization note strings to append.
-   * @param {string | undefined}                       targetCallId - Optional tool `callId` to target on a `tool` frame.
-   * @param {AppendToolResultNotesOptions | undefined} opts         - Optional error status override.
+   * @param {WireFrameRecord}                          frame          - Existing `tool` or `user` wire frame record.
+   * @param {readonly string[]}                        notes          - Synchronization note strings to append.
+   * @param {string | undefined}                       [targetCallId] - Optional tool `callId` to target on a `tool` frame.
+   * @param {AppendToolResultNotesOptions | undefined} [opts]         - Optional error status override.
    *
    * @returns {Promise<WireFrameRecord>} Updated wire frame record to persist via `LedgerStore.replaceMessageFrame()`.
    */
@@ -156,6 +134,8 @@ export class OpenAiModelDriver implements ModelDriver {
     targetCallId?: string,
     opts?: AppendToolResultNotesOptions,
   ): Promise<WireFrameRecord> {
-    return Promise.resolve(appendOpenAiToolResultNotes(frame, notes, targetCallId, opts));
+    return Promise.resolve(
+      openaiAppendToolResultNotes({ frame, notes, targetCallId, opts }),
+    );
   }
 }

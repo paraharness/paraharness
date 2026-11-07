@@ -50,6 +50,8 @@ export class RecordedClaudeTransport implements ClaudeHttpTransport {
    * @param {ClaudeHttpRequest} request - Outbound Anthropic `/v1/messages` request.
    *
    * @returns {Promise<ClaudeHttpResponse>} Next scripted HTTP response.
+   *
+   * @throws {Error} If `request.signal` is aborted or the scripted response queue is exhausted.
    */
   sendMessagesRequest(request: ClaudeHttpRequest): Promise<ClaudeHttpResponse> {
     request.signal?.throwIfAborted();

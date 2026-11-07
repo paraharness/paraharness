@@ -12,6 +12,8 @@ import type { ClaudeAccountSeatBuilder } from './claude-account-seat-builder.js'
  * @param {string | EnvRef | undefined} apiKey    - Optional literal API key or symbolic `EnvRef`.
  *
  * @returns {ClaudeAccountSeatBuilder} Immutable builder compiling to `ClaudeAccountSeatNode`.
+ *
+ * @throws {Error} If `id` is empty or whitespace-only.
  */
 export function createClaudeAccountSeatBuilder(
   id: string,

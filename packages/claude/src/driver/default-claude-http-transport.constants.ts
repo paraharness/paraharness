@@ -1,7 +1,7 @@
 import type { ClaudeHttpRequest } from './claude-http-request.js';
 import type { ClaudeHttpResponse } from './claude-http-response.js';
 import type { ClaudeHttpTransport } from './claude-http-transport.js';
-import { sendClaudeMessagesViaSdk } from './internal/claude-http-transport.js';
+import { sendClaudeMessagesViaSdk } from './internal/send-claude-messages-via-sdk.js';
 
 /** Default Anthropic Messages API HTTPS endpoint URL. */
 export const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages';
@@ -30,6 +30,17 @@ export const CLAUDE_CREDENTIAL_FILENAMES: readonly string[] = Object.freeze([
 
 /** Default `@anthropic-ai/sdk`-backed HTTP transport implementation for Anthropic `/v1/messages`. */
 export const defaultClaudeHttpTransport: ClaudeHttpTransport = Object.freeze<ClaudeHttpTransport>({
+  /**
+   * Dispatches a `/v1/messages` POST request via the official `@anthropic-ai/sdk` client.
+   *
+   * Forwards `request` directly to `sendClaudeMessagesViaSdk()`.
+   *
+   * @param {ClaudeHttpRequest} request - Wire-formatted Anthropic `/v1/messages` request.
+   *
+   * @returns {Promise<ClaudeHttpResponse>} HTTP status, parsed body, and optional `resetAtMs`.
+   *
+   * @throws {Error} If `request.signal` is aborted or a network transport exception occurs.
+   */
   sendMessagesRequest(request: ClaudeHttpRequest): Promise<ClaudeHttpResponse> {
     return sendClaudeMessagesViaSdk(request);
   },

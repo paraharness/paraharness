@@ -19,6 +19,8 @@ import type { ClaudeModelOptions } from './claude-model-options.js';
  * @param {PoolNode<ClaudeAccountSeatNode> | undefined} accountPool - Optional compiled pool of Claude account seats.
  *
  * @returns {ClaudeModelBuilder} Immutable builder compiling to `ClaudeModelNode`.
+ *
+ * @throws {Error} If `alias` or `options.id` is empty or whitespace-only.
  */
 export function createClaudeModelBuilder(
   alias: string,

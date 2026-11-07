@@ -7,6 +7,16 @@ import {
   type ClaudeHttpTransport,
 } from '../src/index.js';
 
+function extractFetchUrl(input: string | URL | Request): string {
+  if (typeof input === 'string') {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  return input.url;
+}
+
 describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP status handling', () => {
   it('dispatches defaultClaudeHttpTransport requests through the official @anthropic-ai/sdk client', async () => {
     const capturedCalls: Array<{
@@ -15,11 +25,11 @@ describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP stat
       readonly body: Readonly<Record<string, unknown>>;
     }> = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async (
+    globalThis.fetch = (
       input: string | URL | Request,
       init?: RequestInit,
     ): Promise<Response> => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const url = extractFetchUrl(input);
       const headers = new Headers(init?.headers);
       const rawBody = typeof init?.body === 'string' ? init.body : '{}';
       capturedCalls.push({
@@ -27,15 +37,17 @@ describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP stat
         headers,
         body: JSON.parse(rawBody) as Readonly<Record<string, unknown>>,
       });
-      return new Response(
-        JSON.stringify({
-          id: 'msg_sdk_01',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: 'SDK response ok' }],
-          usage: { input_tokens: 15, output_tokens: 5 },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'msg_sdk_01',
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'text', text: 'SDK response ok' }],
+            usage: { input_tokens: 15, output_tokens: 5 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
       );
     };
 
@@ -50,13 +62,13 @@ describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP stat
         },
       });
 
-      const res = await driver.invokeTurn({
+      const turnResult = await driver.invokeTurn({
         modelId: 'claude-sonnet-4-6',
         accountConfig: seat,
         history: [],
       });
 
-      expect(res.canonical.visibleText).toBe('SDK response ok');
+      expect(turnResult.canonical.visibleText).toBe('SDK response ok');
       expect(capturedCalls).toHaveLength(1);
       expect(capturedCalls[0]?.url).toBe('https://api.anthropic.com/v1/messages');
       expect(capturedCalls[0]?.headers.get('x-stainless-lang')).toBe('js');
@@ -69,18 +81,22 @@ describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP stat
 
   it('checks HTTP status before JSON parsing on non-JSON 502 and 429 responses via defaultClaudeHttpTransport', async () => {
     const originalFetch = globalThis.fetch;
-    let mode: '502' | '429' = '502';
-    globalThis.fetch = async (): Promise<Response> => {
-      if (mode === '502') {
-        return new Response('<html><body>502 Bad Gateway</body></html>', {
-          status: 502,
-          headers: { 'content-type': 'text/html' },
-        });
-      }
-      return new Response('Rate limit exceeded (plain text)', {
+    const queuedResponses: Response[] = [
+      new Response('<html><body>502 Bad Gateway</body></html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+      }),
+      new Response('Rate limit exceeded (plain text)', {
         status: 429,
         headers: { 'content-type': 'text/plain', 'retry-after': '12' },
-      });
+      }),
+    ];
+    globalThis.fetch = (): Promise<Response> => {
+      const nextResponse = queuedResponses.shift();
+      if (nextResponse === undefined) {
+        return Promise.reject(new Error('Queued fetch responses exhausted.'));
+      }
+      return Promise.resolve(nextResponse);
     };
 
     try {
@@ -88,7 +104,11 @@ describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP stat
       await expect(
         driver.invokeTurn({ modelId: 'claude-sonnet-4-6', history: [] }),
       ).rejects.toSatisfy((err: unknown) => {
-        const errorObj = err as { readonly name?: string; readonly status?: number; readonly message?: string };
+        const errorObj = err as {
+          readonly name?: string;
+          readonly status?: number;
+          readonly message?: string;
+        };
         return (
           errorObj.name !== 'SyntaxError' &&
           errorObj.status === 502 &&
@@ -96,7 +116,6 @@ describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP stat
         );
       });
 
-      mode = '429';
       const beforeMs = Date.now();
       await expect(
         driver.invokeTurn({ modelId: 'claude-sonnet-4-6', history: [] }),
@@ -131,7 +150,11 @@ describe('@harness-dsl/claude official @anthropic-ai/sdk transport and HTTP stat
     await expect(
       driver.invokeTurn({ modelId: 'claude-sonnet-4-6', history: [] }),
     ).rejects.toSatisfy((err: unknown) => {
-      const errorObj = err as { readonly name?: string; readonly status?: number; readonly message?: string };
+      const errorObj = err as {
+        readonly name?: string;
+        readonly status?: number;
+        readonly message?: string;
+      };
       return (
         errorObj.name !== 'SyntaxError' &&
         errorObj.status === 502 &&

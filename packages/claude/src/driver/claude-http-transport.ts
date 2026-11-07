@@ -17,6 +17,8 @@ export interface ClaudeHttpTransport {
    * @param {ClaudeHttpRequest} request - Wire-formatted Anthropic Messages API request.
    *
    * @returns {Promise<ClaudeHttpResponse>} HTTP status code, response body, and optional rate-limit reset timestamp.
+   *
+   * @throws {Error} If `request.signal` is aborted or an unrecoverable transport failure occurs.
    */
   sendMessagesRequest(request: ClaudeHttpRequest): Promise<ClaudeHttpResponse>;
 }

@@ -18,6 +18,8 @@ export interface OpenAiAccountSeatBuilder extends AstBuilder<OpenAiAccountSeatNo
    * @param {string} path - Path to the Codex CLI directory (such as `'~/.codex-a'`).
    *
    * @returns {OpenAiAccountSeatBuilder} New immutable account seat builder with `configDir` configured.
+   *
+   * @throws {Error} If `path` is an empty or whitespace-only string.
    */
   configDir(path: string): OpenAiAccountSeatBuilder;
 
@@ -29,6 +31,8 @@ export interface OpenAiAccountSeatBuilder extends AstBuilder<OpenAiAccountSeatNo
    * @param {string | EnvRef} envOrKey - Symbolic `EnvRef` or literal API key string.
    *
    * @returns {OpenAiAccountSeatBuilder} New immutable account seat builder with `apiKey` configured.
+   *
+   * @throws {Error} If `envOrKey` is an empty or whitespace-only string.
    */
   apiKey(envOrKey: string | EnvRef): OpenAiAccountSeatBuilder;
 

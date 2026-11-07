@@ -17,6 +17,8 @@ export interface OpenAiHttpTransport {
    * @param {OpenAiHttpRequest} request - Wire-formatted OpenAI Responses API request.
    *
    * @returns {Promise<OpenAiHttpResponse>} HTTP status code, response body, and optional rate-limit reset timestamp.
+   *
+   * @throws {Error} If `request.signal` is aborted or an unrecoverable transport error occurs.
    */
   sendResponsesRequest(request: OpenAiHttpRequest): Promise<OpenAiHttpResponse>;
 }

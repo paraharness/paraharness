@@ -7,11 +7,13 @@ import type { GeminiAccountSeatBuilder } from './gemini-account-seat-builder.js'
  * Performs zero filesystem reads or environment variable lookups at builder construction time,
  * deferring credential resolution to `GeminiModelDriver.invokeTurn()`.
  *
- * @param {string}                      id        - Non-empty unique seat identifier.
- * @param {string | undefined}          configDir - Optional Gemini CLI/ADC configuration directory path.
- * @param {string | EnvRef | undefined} apiKey    - Optional literal API key or symbolic `EnvRef`.
+ * @param {string}                      id          - Non-empty unique seat identifier.
+ * @param {string | undefined}          [configDir] - Optional Gemini CLI/ADC configuration directory path.
+ * @param {string | EnvRef | undefined} [apiKey]    - Optional literal API key or symbolic `EnvRef`.
  *
  * @returns {GeminiAccountSeatBuilder} Immutable builder compiling to `GeminiAccountSeatNode`.
+ *
+ * @throws {Error} If `id` is an empty or whitespace-only string.
  */
 export function createGeminiAccountSeatBuilder(
   id: string,

@@ -17,6 +17,8 @@ export interface GeminiNamespace {
    * @param {string} id - Unique identifier for the Gemini account seat.
    *
    * @returns {GeminiAccountSeatBuilder} Fluent builder for the Gemini account seat.
+   *
+   * @throws {Error} If `id` is an empty or whitespace-only string.
    */
   account(id: string): GeminiAccountSeatBuilder;
 
@@ -28,6 +30,8 @@ export interface GeminiNamespace {
    * @param {string} id - Unique identifier for the Gemini CLI seat.
    *
    * @returns {GeminiAccountSeatBuilder} Fluent builder for the Gemini account seat.
+   *
+   * @throws {Error} If `id` is an empty or whitespace-only string.
    */
   cliAccount(id: string): GeminiAccountSeatBuilder;
 
@@ -40,6 +44,8 @@ export interface GeminiNamespace {
    * @param {GeminiModelOptions} options - Gemini model identifier and optional thinking effort.
    *
    * @returns {GeminiModelBuilder} Fluent builder for the Gemini model node.
+   *
+   * @throws {Error} If `alias` or `options.id` is an empty or whitespace-only string.
    */
   model(alias: string, options: GeminiModelOptions): GeminiModelBuilder;
 }

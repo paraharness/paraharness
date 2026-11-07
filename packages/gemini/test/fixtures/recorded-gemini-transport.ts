@@ -34,6 +34,8 @@ export class RecordedGeminiTransport implements GeminiHttpTransport {
    * @param {GeminiHttpRequest} request - Outgoing Gemini GenerateContent HTTP request envelope.
    *
    * @returns {Promise<GeminiHttpResponse>} Next scripted HTTP response envelope.
+   *
+   * @throws {Error} If `request.signal` is aborted or the scripted response queue is exhausted.
    */
   sendGenerateContentRequest(request: GeminiHttpRequest): Promise<GeminiHttpResponse> {
     request.signal?.throwIfAborted();

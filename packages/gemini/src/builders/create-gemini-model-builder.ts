@@ -14,11 +14,13 @@ import type { GeminiModelOptions } from './gemini-model-options.js';
  * Validates that both `alias` and `options.id` are non-empty strings and compiles to a frozen
  * passive `GeminiModelNode` without performing network or environment I/O.
  *
- * @param {string}                                      alias       - Logical alias of the model.
- * @param {GeminiModelOptions}                          options     - Provider model identifier and optional effort level.
- * @param {PoolNode<GeminiAccountSeatNode> | undefined} accountPool - Optional compiled pool of Gemini account seats.
+ * @param {string}                                      alias         - Logical alias of the model.
+ * @param {GeminiModelOptions}                          options       - Provider model identifier and optional effort level.
+ * @param {PoolNode<GeminiAccountSeatNode> | undefined} [accountPool] - Optional compiled pool of Gemini account seats.
  *
  * @returns {GeminiModelBuilder} Immutable builder compiling to `GeminiModelNode`.
+ *
+ * @throws {Error} If `alias` or `options.id` is an empty or whitespace-only string.
  */
 export function createGeminiModelBuilder(
   alias: string,

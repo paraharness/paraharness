@@ -17,6 +17,8 @@ export interface ClaudeNamespace {
    * @param {string} id - Unique identifier for the Claude account seat.
    *
    * @returns {ClaudeAccountSeatBuilder} Fluent builder for the Claude account seat.
+   *
+   * @throws {Error} If `id` is empty or whitespace-only.
    */
   cliAccount(id: string): ClaudeAccountSeatBuilder;
 
@@ -28,6 +30,8 @@ export interface ClaudeNamespace {
    * @param {string} id - Unique identifier for the Claude account seat.
    *
    * @returns {ClaudeAccountSeatBuilder} Fluent builder for the Claude account seat.
+   *
+   * @throws {Error} If `id` is empty or whitespace-only.
    */
   account(id: string): ClaudeAccountSeatBuilder;
 
@@ -40,6 +44,8 @@ export interface ClaudeNamespace {
    * @param {ClaudeModelOptions} options - Anthropic model identifier and optional thinking effort.
    *
    * @returns {ClaudeModelBuilder} Fluent builder for the Claude model node.
+   *
+   * @throws {Error} If `alias` or `options.id` is empty or whitespace-only.
    */
   model(alias: string, options: ClaudeModelOptions): ClaudeModelBuilder;
 }

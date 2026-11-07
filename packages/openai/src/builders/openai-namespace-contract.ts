@@ -17,6 +17,8 @@ export interface OpenAiNamespace {
    * @param {string} id - Unique identifier for the OpenAI account seat.
    *
    * @returns {OpenAiAccountSeatBuilder} Fluent builder for the OpenAI account seat.
+   *
+   * @throws {Error} If `id` is an empty or whitespace-only string.
    */
   account(id: string): OpenAiAccountSeatBuilder;
 
@@ -28,6 +30,8 @@ export interface OpenAiNamespace {
    * @param {string} id - Unique identifier for the OpenAI Codex CLI seat.
    *
    * @returns {OpenAiAccountSeatBuilder} Fluent builder for the OpenAI account seat.
+   *
+   * @throws {Error} If `id` is an empty or whitespace-only string.
    */
   cliAccount(id: string): OpenAiAccountSeatBuilder;
 
@@ -40,6 +44,8 @@ export interface OpenAiNamespace {
    * @param {OpenAiModelOptions} options - OpenAI model identifier and optional reasoning effort.
    *
    * @returns {OpenAiModelBuilder} Fluent builder for the OpenAI model node.
+   *
+   * @throws {Error} If `alias` or `options.id` is an empty or whitespace-only string.
    */
   model(alias: string, options: OpenAiModelOptions): OpenAiModelBuilder;
 }

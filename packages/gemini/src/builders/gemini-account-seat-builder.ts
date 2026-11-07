@@ -18,6 +18,8 @@ export interface GeminiAccountSeatBuilder extends AstBuilder<GeminiAccountSeatNo
    * @param {string} path - Path to the Gemini CLI/ADC directory (such as `'~/.gemini-a'`).
    *
    * @returns {GeminiAccountSeatBuilder} New immutable account seat builder with `configDir` configured.
+   *
+   * @throws {Error} If `path` is an empty or whitespace-only string.
    */
   configDir(path: string): GeminiAccountSeatBuilder;
 
@@ -29,6 +31,8 @@ export interface GeminiAccountSeatBuilder extends AstBuilder<GeminiAccountSeatNo
    * @param {string | EnvRef} envOrKey - Symbolic `EnvRef` or literal API key string.
    *
    * @returns {GeminiAccountSeatBuilder} New immutable account seat builder with `apiKey` configured.
+   *
+   * @throws {Error} If `envOrKey` is an empty or whitespace-only string.
    */
   apiKey(envOrKey: string | EnvRef): GeminiAccountSeatBuilder;
 

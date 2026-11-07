@@ -14,11 +14,13 @@ import type { OpenAiModelOptions } from './openai-model-options.js';
  * Validates that both `alias` and `options.id` are non-empty strings and compiles to a frozen
  * passive `OpenAiModelNode` without performing network or environment I/O.
  *
- * @param {string}                                      alias       - Logical alias of the model.
- * @param {OpenAiModelOptions}                          options     - Provider model identifier and optional effort level.
- * @param {PoolNode<OpenAiAccountSeatNode> | undefined} accountPool - Optional compiled pool of OpenAI account seats.
+ * @param {string}                                      alias         - Logical alias of the model.
+ * @param {OpenAiModelOptions}                          options       - Provider model identifier and optional effort level.
+ * @param {PoolNode<OpenAiAccountSeatNode> | undefined} [accountPool] - Optional compiled pool of OpenAI account seats.
  *
  * @returns {OpenAiModelBuilder} Immutable builder compiling to `OpenAiModelNode`.
+ *
+ * @throws {Error} If `alias` or `options.id` is an empty or whitespace-only string.
  */
 export function createOpenAiModelBuilder(
   alias: string,

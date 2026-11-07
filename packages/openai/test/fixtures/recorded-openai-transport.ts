@@ -50,6 +50,8 @@ export class RecordedOpenAiTransport implements OpenAiHttpTransport {
    * @param {OpenAiHttpRequest} request - Outbound OpenAI `/v1/responses` request.
    *
    * @returns {Promise<OpenAiHttpResponse>} Next scripted HTTP response.
+   *
+   * @throws {Error} If `request.signal` is aborted or the scripted response queue is exhausted.
    */
   sendResponsesRequest(request: OpenAiHttpRequest): Promise<OpenAiHttpResponse> {
     request.signal?.throwIfAborted();

@@ -1,89 +1,17 @@
 import {
   zodToJsonSchema,
   type CanonicalMessage,
-  type CanonicalToolCall,
   type ModelTurnRequest,
   type ModelTurnResponse,
-  type WireFrameRecord,
 } from '@harness-dsl/core';
 import {
   CLAUDE_THINKING_BUDGETS,
   DEFAULT_CLAUDE_MAX_TOKENS,
 } from '../default-claude-http-transport.constants.js';
-import { resolveAnthropicWireTools } from './claude-wire-helpers.js';
-
-/**
- * Projects a vendor-neutral `CanonicalMessage` into an Anthropic `/v1/messages` wire message object.
- *
- * Omits `{ type: 'text' }` blocks on `assistant` messages whenever `canonical.visibleText === ''`
- * and `canonical.toolCalls` is non-empty so Anthropic never rejects empty text blocks.
- *
- * @param {CanonicalMessage} canonical - Vendor-neutral canonical message to project.
- *
- * @returns {Readonly<Record<string, unknown>>} Anthropic wire message with `role` and `content` array.
- */
-export function projectCanonicalToAnthropicMessage(
-  canonical: CanonicalMessage,
-): Readonly<Record<string, unknown>> {
-  if (canonical.role === 'tool') {
-    const blocks: Readonly<Record<string, unknown>>[] = [];
-    for (const res of canonical.toolResults ?? []) {
-      blocks.push(
-        res.isError
-          ? Object.freeze({ type: 'tool_result', tool_use_id: res.callId, content: res.content, is_error: true })
-          : Object.freeze({ type: 'tool_result', tool_use_id: res.callId, content: res.content }),
-      );
-    }
-    return Object.freeze({ role: 'user', content: Object.freeze(blocks) });
-  }
-  if (canonical.role === 'assistant') {
-    const blocks: Readonly<Record<string, unknown>>[] = [];
-    const hasToolCalls = (canonical.toolCalls?.length ?? 0) > 0;
-    if (canonical.visibleText.length > 0 || !hasToolCalls) {
-      blocks.push(Object.freeze({ type: 'text', text: canonical.visibleText }));
-    }
-    for (const call of canonical.toolCalls ?? []) {
-      const parsedInput =
-        call.argsJson.trim().length > 0
-          ? (JSON.parse(call.argsJson) as Readonly<Record<string, unknown>>)
-          : {};
-      blocks.push(Object.freeze({ type: 'tool_use', id: call.id, name: call.name, input: parsedInput }));
-    }
-    return Object.freeze({ role: 'assistant', content: Object.freeze(blocks) });
-  }
-  return Object.freeze({
-    role: 'user',
-    content: Object.freeze([Object.freeze({ type: 'text', text: canonical.visibleText })]),
-  });
-}
-
-/**
- * Decodes a single `WireFrameRecord` into an Anthropic `/v1/messages` wire message object.
- *
- * Uses `rawWireFrame` directly when it already holds a valid Anthropic `{ role, content }` message
- * (preserving `thinking` blocks, `signature` fields, and `cache_control`), and otherwise projects
- * from `frame.canonical`.
- *
- * @param {WireFrameRecord} frame - Conversation history frame record.
- *
- * @returns {Readonly<Record<string, unknown>>} Anthropic wire message object.
- */
-export function decodeFrameToAnthropicMessage(
-  frame: WireFrameRecord,
-): Readonly<Record<string, unknown>> {
-  const text = new TextDecoder().decode(frame.rawWireFrame).trim();
-  if (text.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(text) as Readonly<Record<string, unknown>>;
-      if ((parsed['role'] === 'user' || parsed['role'] === 'assistant') && Array.isArray(parsed['content'])) {
-        return parsed;
-      }
-    } catch {
-      return projectCanonicalToAnthropicMessage(frame.canonical);
-    }
-  }
-  return projectCanonicalToAnthropicMessage(frame.canonical);
-}
+import { computeAnthropicTurnUsage } from './compute-anthropic-turn-usage.js';
+import { decodeFrameToAnthropicMessage } from './decode-frame-to-anthropic-message.js';
+import { extractAnthropicContentBlocks } from './extract-anthropic-content-blocks.js';
+import { resolveAnthropicWireTools } from './resolve-anthropic-wire-tools.js';
 
 /**
  * Assembles an Anthropic `/v1/messages` request payload from a `ModelTurnRequest`.
@@ -141,44 +69,32 @@ export function buildAnthropicMessagesRequest(
  * @param {ModelTurnRequest}                  req          - Originating turn request with optional `outputSchema`.
  *
  * @returns {ModelTurnResponse} Parsed turn response with raw wire bytes, canonical message, and usage.
+ *
+ * @throws {Error} If `req.outputSchema` is present and the response JSON fails schema validation.
  */
 export function parseAnthropicMessagesResponse(
   responseBody: Readonly<Record<string, unknown>>,
   req: ModelTurnRequest,
 ): ModelTurnResponse {
-  const rawContent = Array.isArray(responseBody['content'])
-    ? (responseBody['content'] as readonly Readonly<Record<string, unknown>>[])
-    : [];
-  const textParts: string[] = [];
-  const toolCalls: CanonicalToolCall[] = [];
-  for (const block of rawContent) {
-    if (block['type'] === 'text' && typeof block['text'] === 'string') {
-      textParts.push(block['text']);
-    } else if (block['type'] === 'tool_use' && typeof block['id'] === 'string' && typeof block['name'] === 'string') {
-      toolCalls.push(Object.freeze({ id: block['id'], name: block['name'], argsJson: JSON.stringify(block['input'] ?? {}) }));
-    }
-  }
-  const visibleText = textParts.join('');
-  const wireFrame = new TextEncoder().encode(JSON.stringify({ role: 'assistant', content: rawContent }));
-  const structuredOutput =
-    toolCalls.length === 0 && req.outputSchema !== undefined && visibleText.trim().length > 0
-      ? req.outputSchema.parse(JSON.parse(visibleText))
-      : undefined;
-  const usageRaw = (responseBody['usage'] ?? {}) as Readonly<Record<string, unknown>>;
-  const inputTokens = typeof usageRaw['input_tokens'] === 'number' ? usageRaw['input_tokens'] : 0;
-  const cachedInputTokens = typeof usageRaw['cache_read_input_tokens'] === 'number' ? usageRaw['cache_read_input_tokens'] : 0;
-  const outputTokens = typeof usageRaw['output_tokens'] === 'number' ? usageRaw['output_tokens'] : 0;
-  const costUsd = typeof usageRaw['cost_usd'] === 'number' ? usageRaw['cost_usd'] : (inputTokens * 0.003 + outputTokens * 0.015) / 1_000;
+  const { rawContent, visibleText, toolCalls } = extractAnthropicContentBlocks(responseBody);
+  const wireFrame = new TextEncoder().encode(
+    JSON.stringify({ role: 'assistant', content: rawContent }),
+  );
+  const shouldParseOutput =
+    toolCalls.length === 0 && req.outputSchema !== undefined && visibleText.trim().length > 0;
+  const structuredOutput = shouldParseOutput
+    ? req.outputSchema?.parse(JSON.parse(visibleText))
+    : undefined;
   const canonical = Object.freeze<CanonicalMessage>({
     role: 'assistant',
     visibleText,
-    toolCalls: toolCalls.length > 0 ? Object.freeze(toolCalls) : undefined,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     toolResults: undefined,
   });
   return Object.freeze<ModelTurnResponse>({
     wireFrame,
     canonical,
     structuredOutput,
-    usage: Object.freeze({ inputTokens, cachedInputTokens, outputTokens, costUsd }),
+    usage: computeAnthropicTurnUsage(responseBody),
   });
 }

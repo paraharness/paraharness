@@ -17,6 +17,8 @@ export interface GeminiHttpTransport {
    * @param {GeminiHttpRequest} request - Wire-formatted Gemini `generateContent` request.
    *
    * @returns {Promise<GeminiHttpResponse>} HTTP status code, response body, and optional rate-limit reset timestamp.
+   *
+   * @throws {Error} If `request.signal` is aborted or an unrecoverable transport error occurs.
    */
   sendGenerateContentRequest(request: GeminiHttpRequest): Promise<GeminiHttpResponse>;
 }

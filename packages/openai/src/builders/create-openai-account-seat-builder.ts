@@ -8,10 +8,12 @@ import type { OpenAiAccountSeatBuilder } from './openai-account-seat-builder.js'
  * deferring credential resolution to `OpenAiModelDriver.invokeTurn()`.
  *
  * @param {string}                      id        - Non-empty unique seat identifier.
- * @param {string | undefined}          configDir - Optional Codex CLI configuration directory path.
- * @param {string | EnvRef | undefined} apiKey    - Optional literal API key or symbolic `EnvRef`.
+ * @param {string | undefined}          [configDir] - Optional Codex CLI configuration directory path.
+ * @param {string | EnvRef | undefined} [apiKey]    - Optional literal API key or symbolic `EnvRef`.
  *
  * @returns {OpenAiAccountSeatBuilder} Immutable builder compiling to `OpenAiAccountSeatNode`.
+ *
+ * @throws {Error} If `id` is an empty or whitespace-only string.
  */
 export function createOpenAiAccountSeatBuilder(
   id: string,
