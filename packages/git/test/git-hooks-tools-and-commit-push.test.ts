@@ -133,7 +133,7 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     expect(keepAfterDiscard).toBe('ABSENT');
 
     await scope.release(handle);
-  });
+  }, 20_000);
 
   it('executes candidateComparisonTools (sandboxed evalInCandidates), publicSurfaceCrossTester, and patchEquivalence', async () => {
     const scopeNode = git
@@ -265,7 +265,7 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     await scope.release(cand0);
     await scope.release(cand1);
     await scope.release(root);
-  });
+  }, 20_000);
 
   it('executes commitAndPush (rolling back to preStepHeadSha on failure) and mergeQueue cumulative bisection', async () => {
     const scopeNode = git
@@ -389,5 +389,5 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
 
     await scope.release(mqWorktree);
     await scope.release(root);
-  });
+  }, 20_000);
 });

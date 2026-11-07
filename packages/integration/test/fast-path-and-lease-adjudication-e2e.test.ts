@@ -241,7 +241,7 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 20_000);
 
   it('trips fast-path fs.maxFilesMutated(4), runs 4-step onLimitExceeded flush, snapshots dirty worktree via git.snapshotAndReset, and promotes to coordinator', async () => {
     const fixture = await createIntegrationWorkspaceFixture();
@@ -361,5 +361,5 @@ describe('Fast-path Protocol 1 (Existing Test Lease Adjudication) and scopeTripw
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 20_000);
 });

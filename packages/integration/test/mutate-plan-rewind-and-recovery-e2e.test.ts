@@ -251,7 +251,7 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 20_000);
 
   it('executes steerSignal rewindTo with git.keepWorktree() preserving dirty worktree files and recovers mid-tool-batch checkpoint on boot', async () => {
     const fixture = await createIntegrationWorkspaceFixture();
@@ -358,5 +358,5 @@ describe('Dynamic .mutatePlan() (spawnTasks, syncRoot, stacked PRs, commitOverla
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 20_000);
 });

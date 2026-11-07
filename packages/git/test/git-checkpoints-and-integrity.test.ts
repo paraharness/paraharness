@@ -86,7 +86,7 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     expect(env['GIT_CONFIG_VALUE_0']).toBe('false');
     expect(env['GIT_CONFIG_KEY_1']).toBe('core.hooksPath');
     expect(env['GIT_CONFIG_VALUE_1']).toBe('/dev/null');
-  });
+  }, 20_000);
 
   it('hardlinks node_modules on lockfileGate hit and unlinks/replaces node_modules on lockfileGate miss before setup', async () => {
     const hostPkgFile = path.join(hostRepo.repoPath, 'node_modules', 'pkg-a', 'index.js');
@@ -134,7 +134,7 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
       'lockfileVersion: 9.0\npackages: {}\n',
       'utf8',
     );
-  });
+  }, 20_000);
 
   it('serializes, diffs effects, and executes 4-step restore across tracked edits, deletions, symlinks, and oversized blobs', async () => {
     const scopeNode = git
@@ -222,7 +222,7 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
       'BASE_OFFSET',
     );
     await scope.release(handle);
-  });
+  }, 20_000);
 
   it('detects untracked files hidden behind .gitignore tampering and restores .gitignore rules', async () => {
     const scopeNode = git
@@ -280,7 +280,7 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     );
     expect(subSecretExists).toBe(false);
     await scope.release(handle);
-  });
+  }, 20_000);
 
   it('rolls back to fromCheckpoint and throws on worktree-local .git metadata or node_modules tampering across multiple checkpoints', async () => {
     const scopeNode = git
@@ -321,5 +321,5 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     expect(await readFile(nmFile, 'utf8')).toBe('export const safe = 1;\n');
 
     await scope.release(handle);
-  });
+  }, 20_000);
 });

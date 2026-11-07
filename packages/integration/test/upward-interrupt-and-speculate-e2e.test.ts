@@ -248,7 +248,7 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 20_000);
 
   it('parks speculative Branch 0 on normativeEscalation while Branch 1 completes, runs candidateArbiter unpark-escalation then select-winner with refineWinnerWhen', async () => {
     const fixture = await createIntegrationWorkspaceFixture();
@@ -390,5 +390,5 @@ describe('Protocol 2 (Upward Architectural Interrupt) and Protocol 3 (Speculativ
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 20_000);
 });

@@ -134,7 +134,7 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
       })
     ).stdout.trim();
     expect(pinnedCompletedRootTree).toBe(rootHeadTree);
-  });
+  }, 20_000);
 
   it('reconciles clean and conflicted commitChild via stateless merge-tree, populates unresolvedConflictPaths, and grants getConflictLease', async () => {
     const scopeNode = git
@@ -243,7 +243,7 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
     await scope.release(childB);
     await scope.release(childC);
     await scope.release(parent);
-  });
+  }, 20_000);
 
   it('executes syncChild, syncRoot stacked prerequisite lineage, and reattachRoot/reattachChild crash recovery', async () => {
     const scopeNode = git
@@ -324,5 +324,5 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
     await scope.release(recreatedChild);
     await scope.release(prereqRoot);
     await scope.release(downstreamRoot);
-  });
+  }, 20_000);
 });

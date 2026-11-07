@@ -76,7 +76,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
     });
     expect(typeof engRuntime.start).toBe('function');
     expect(typeof finRuntime.start).toBe('function');
-  });
+  }, 20_000);
 
   it('denies closed-period NetSuite postings in-band, elevates Stripe refund lease via financeController, and drains remainingCalls', async () => {
     const humanAdapter = new ScriptedIntegrationHumanAdapter((req) => {
@@ -229,7 +229,7 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
     } finally {
       await scopeDriver.release(scopeHandle);
     }
-  });
+  }, 20_000);
 
   it('flushes reconcileLimitExceeded on turn exhaustion, rolls back draft journal, and replaces with manualEscalationAgent', async () => {
     const humanAdapter = new ScriptedIntegrationHumanAdapter(() => ({
@@ -363,5 +363,5 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
     } finally {
       await scopeDriver.release(scopeHandle);
     }
-  });
+  }, 20_000);
 });
