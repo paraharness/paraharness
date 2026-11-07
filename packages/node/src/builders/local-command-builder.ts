@@ -94,12 +94,12 @@ export interface LocalCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
    *
    * @template TNewIn New validated command input payload type.
    *
-   * @param {z.ZodType<TNewIn, z.ZodTypeDef, unknown>} schema - Zod input schema.
+   * @param {z.ZodType<TNewIn>} schema - Zod input schema.
    *
    * @returns {LocalCommandBuilder<TNewIn, TOut, THandle>} Updated immutable command builder narrowed to `TNewIn`.
    */
   input<TNewIn>(
-    schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewIn>,
   ): LocalCommandBuilder<TNewIn, TOut, THandle>;
 
   /**
@@ -109,12 +109,12 @@ export interface LocalCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
    *
    * @template TNewOut New validated command output payload type.
    *
-   * @param {z.ZodType<TNewOut, z.ZodTypeDef, unknown>} schema - Zod output schema.
+   * @param {z.ZodType<TNewOut>} schema - Zod output schema.
    *
    * @returns {LocalCommandBuilder<TIn, TNewOut, THandle>} Updated immutable command builder narrowed to `TNewOut`.
    */
   output<TNewOut>(
-    schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewOut>,
   ): LocalCommandBuilder<TIn, TNewOut, THandle>;
 
   /**

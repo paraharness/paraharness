@@ -49,7 +49,7 @@ export function createFlowFromState<
 ): FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs> {
   return Object.freeze<FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>>({
     id: state.id,
-    input: <TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>) =>
+    input: <TNewIn>(schema: z.ZodType<TNewIn>) =>
       createFlowFromState<TNewIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>({ ...state, inputSchema: schema, nodes: [] }),
     scope: <TScope extends IsolationScopeASTNode>(scope: MaybeBuilder<TScope>) =>
       createFlowFromState<TIn, ExtractScopeHandle<TScope>, TStepIds, ExtractScopeReceipt<TScope>, TCustomMetrics, TStepOutputs>({ ...state, scope: extractAST(scope), nodes: [] }),

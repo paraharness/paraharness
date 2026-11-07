@@ -22,7 +22,7 @@ export interface GithubCreateOrUpdatePrOptions<TIn = unknown> {
   /** Synchronous projection deriving the pull request markdown body from `TIn`. */
   readonly body: BivariantCallback<[input: TIn], string>;
   /** Optional Zod schema validating the step input payload. */
-  readonly inputSchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TIn>;
   /** Optional Zod schema validating the step output payload. */
   readonly outputSchema?: z.ZodTypeAny;
 }

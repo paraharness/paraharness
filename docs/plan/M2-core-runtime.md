@@ -101,8 +101,10 @@ Every file in `packages/core/src/runtime/**` and `packages/core/test/fixtures/**
 2. **Full 3-Part JSDoc Requirement**:
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/core lint`.
 
-### 4.1 `ScopeLockManager` & Serialized Per-Step `StepContinuationQueue` (`SPEC.md` §3.7.2)
-1. **Per-Handle Shared-Read / Exclusive-Write Lock (`ScopeLockManager`)**:
+### 4.1 `ScopeLockManager` & Serialized Per-Step `StepContinuationQueue` (`SPEC.md` §3.7.2 & `CODING_GUIDELINES.md` Rule 3.5)
+1. **Approved Library Usage (`p-queue`, `p-limit`, `diff`, `@dagrejs/graphlib`)**:
+   - Use `p-queue` (`concurrency: 1`) inside `StepContinuationQueue` and `ScopeLockManager` writer serialization, `p-limit` for bounded fork/speculate concurrency, `diff` (`createTwoFilesPatch`) inside `computeInRunGroundingDiffs`, and `@dagrejs/graphlib` (`Graph`, `alg.findCycles`) for dynamic prerequisite cycle detection in `executeAddDependencies` / `LaneScheduler`.
+2. **Per-Handle Shared-Read / Exclusive-Write Lock (`ScopeLockManager`)**:
    - `acquireRead(handle)` grants concurrent shared read leases around `scope.forkChild`, `scope.inspect`, and parent tools with `effectTracking: 'declared'` whose `describeEffects` return only non-mutating effects (`mutatesScope !== true`).
    - `acquireWrite(handle)` grants an exclusive write lease around `scope.commitChild`, `scope.syncChild`, `scope.syncRoot`, and parent tools whose `describeEffects` include `mutatesScope: true` or whose `effectTracking === 'subprocess-post-flight'`. Child forks execute against their own isolated `childHandle` without holding locks on `parentHandle`.
 2. **Per-`stepExecId` Serialized Continuation Queue (`StepContinuationQueue`)**:

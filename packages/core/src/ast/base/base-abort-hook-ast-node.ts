@@ -20,7 +20,7 @@ export interface BaseAbortHookASTNode<
   /** Logical identifier of the abort hook. */
   readonly id: string;
   /** Zod schema validating metadata returned by the abort hook executor. */
-  readonly metaSchema: z.ZodType<TAbortMeta, z.ZodTypeDef, unknown>;
+  readonly metaSchema: z.ZodType<TAbortMeta>;
   /** Phantom type brand binding the hook to its compatible scope handle type. */
   readonly __handleBrand?: THandle;
 }

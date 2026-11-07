@@ -74,9 +74,9 @@ export interface AgentNode<TIn = unknown, TOut = unknown, THandle = unknown> {
   /** Deterministic `beforeStop` checks verified whenever the agent emits a completion turn. */
   readonly beforeStopChecks: readonly CheckASTNode<THandle>[];
   /** Zod schema validating the agent's input payload. */
-  readonly inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<TIn>;
   /** Zod schema validating the agent's structured output payload. */
-  readonly outputSchema: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<TOut>;
   /** Optional synchronous extractor mapping `TIn` to `ResolutionContext.activePartitions`. */
   readonly extractPartitions?: BivariantCallback<[input: TIn], readonly string[]>;
   /** Voluntary interrupts the agent may raise via synthetic interrupt tool calls. */

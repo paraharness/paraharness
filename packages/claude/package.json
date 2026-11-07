@@ -14,8 +14,9 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@harness-dsl/core": "workspace:*",
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

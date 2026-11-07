@@ -113,7 +113,7 @@ export interface SpeculateCapabilityNode<
   /** Tool name exposed to the parent agent for launching the tournament. */
   readonly toolName: string;
   /** Zod schema validating the parent agent's speculation tool call arguments. */
-  readonly requestSchema: z.ZodType<TReq, z.ZodTypeDef, unknown>;
+  readonly requestSchema: z.ZodType<TReq>;
   /** Worker agent or loop executed in parallel across all $B$ tournament branches. */
   readonly workerExecutable:
     | AgentNode<TChildIn, TChildOut, THandle>

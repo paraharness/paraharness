@@ -19,6 +19,7 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
+      "@harness-dsl/lockfile": ["packages/lockfile/src/index.ts"],
       "@harness-dsl/core": ["packages/core/src/index.ts"],
       "@harness-dsl/core/runtime": ["packages/core/src/runtime/index.ts"],
       "@harness-dsl/sqlite": ["packages/sqlite/src/index.ts"],

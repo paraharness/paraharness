@@ -38,12 +38,12 @@ export interface EscalateCapabilityBuilder<TPayload = unknown, TResponse = unkno
    *
    * @template TNewResp Validated human decision response type.
    *
-   * @param {z.ZodType<TNewResp, z.ZodTypeDef, unknown>} schema - Zod schema validating the human response.
+   * @param {z.ZodType<TNewResp>} schema - Zod schema validating the human response.
    *
    * @returns {EscalateCapabilityBuilder<TPayload, TNewResp>} New immutable escalation builder.
    */
   response<TNewResp>(
-    schema: z.ZodType<TNewResp, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewResp>,
   ): EscalateCapabilityBuilder<TPayload, TNewResp>;
 
   /**

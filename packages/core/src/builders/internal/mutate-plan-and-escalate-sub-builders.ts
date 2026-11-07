@@ -43,7 +43,7 @@ export function createMutatePlanFromState<TItem = unknown>(
 ): MutatePlanCapabilityBuilder<TItem> {
   return Object.freeze<MutatePlanCapabilityBuilder<TItem>>({
     canSpawnTasks<TNewItem, TSig = unknown>(
-      itemSchema: z.ZodType<TNewItem, z.ZodTypeDef, unknown>,
+      itemSchema: z.ZodType<TNewItem>,
       options: SpawnTasksBuilderOptions<TNewItem, TSig>,
     ): MutatePlanCapabilityBuilder<TNewItem> {
       const maxPrerequisiteDepth = options.maxPrerequisiteDepth ?? 3;

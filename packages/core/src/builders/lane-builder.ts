@@ -36,12 +36,12 @@ export interface LaneBuilder<TIn = unknown, TStepIds extends string = string>
    *
    * @template TNewIn Validated lane work item input type.
    *
-   * @param {z.ZodType<TNewIn, z.ZodTypeDef, unknown>} schema - Zod schema validating lane work items.
+   * @param {z.ZodType<TNewIn>} schema - Zod schema validating lane work items.
    *
    * @returns {LaneBuilder<TNewIn, TStepIds>} New immutable lane builder.
    */
   input<TNewIn>(
-    schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewIn>,
   ): LaneBuilder<TNewIn, TStepIds>;
 
   /**

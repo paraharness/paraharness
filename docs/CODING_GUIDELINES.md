@@ -464,6 +464,18 @@ export function computeSha256Hex(payload: string): string {
 }
 ```
 
+### Rule 3.5 — Library-First Mandate (Zero Hand-Rolled Commodity Utilities)
+- Choose an Owner-approved library that fits over hand-rolled commodity infrastructure (`CLAUDE.MD` §How to work #2). Hand-rolling commodity parsers, graph traversals, diffs, search indices, queues, globs, atomic writes, process-tree killers, port probers, or vendor HTTP wire clients is a Defect Gate violation:
+  - **`@harness-dsl/lockfile`**: `p-queue` (`concurrency: 1` per-path in-process serialization) + atomic `open(lockPath, 'wx')`, `.unref()`ed `utimes` heartbeat, and dead-PID / stale-`mtime` atomic reclamation.
+  - **`@harness-dsl/core`**: `zod` v4 (`z.toJSONSchema()` for `zodToJsonSchema`), `@dagrejs/graphlib` (`Graph`, `alg.findCycles`, `alg.preorder` for topology & prerequisite DAGs), `diff` (`createTwoFilesPatch` for grounding diffs), `p-queue` (`concurrency: 1` for `StepContinuationQueue` & `ScopeLockManager` writer serialization), `p-limit` (bounded fork/speculate concurrency).
+  - **`@harness-dsl/sqlite` & `@harness-dsl/postgres`**: `better-sqlite3` (`sqlite`), `pg` (`Pool` in `postgres` + `@electric-sql/pglite` in tests), `@dagrejs/graphlib`, `node-diff3` (`diff3Merge` for 3-way contract overlay merges), `minisearch` (BM25 lesson recall), `p-queue`.
+  - **`@harness-dsl/fs`**: `@harness-dsl/lockfile` (`withFileLock`), `tinyglobby` (directory globbing), `picomatch` (pre-compiled path matchers), `write-file-atomic` (crash-safe atomic writes), `minisearch` (BM25 JSONL lesson recall), `p-queue`.
+  - **`@harness-dsl/markdown`**: `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, `yaml` (frontmatter YAML parsing), `tinyglobby`, `picomatch`.
+  - **`@harness-dsl/node`**: `node-pty` (PTY daemon sessions), `@modelcontextprotocol/sdk` (MCP stdio/SSE control-plane servers), `pidtree` + `fkill` (process-tree teardown), `get-port` (ephemeral port allocation), `wait-on` (TCP port readiness), `p-queue`, `p-limit`.
+  - **`@harness-dsl/git`**: `@harness-dsl/lockfile` (`withFileLock`), `es-module-lexer` (export surface extraction in `publicSurfaceCrossTester`), `write-file-atomic` (`harness-meta.json` persistence), `picomatch`, `p-queue`.
+  - **`@harness-dsl/claude`, `@harness-dsl/openai`, `@harness-dsl/gemini`**: `@anthropic-ai/sdk`, `openai`, `@google/genai`.
+  - **`@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, `@harness-dsl/netsuite`**: `@octokit/rest` + `@octokit/webhooks`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook`, `stripe`, `big.js` (exact decimal arithmetic).
+
 ## 4. Library-Grade Runtime Performance
 
 ### Rule 4.1 — Zero-Allocation Loops Over Spreads & Chained Array Combinators

@@ -22,7 +22,7 @@ export interface GitMergeQueueOptions<TIn = unknown, TOut = unknown> {
   /** Deterministic verification check executed against the cumulative merge head. */
   readonly verifyWith: MaybeBuilder<BaseCheckASTNode<string, GitWorktreeHandle>>;
   /** Optional Zod schema validating the merge queue step input payload. */
-  readonly inputSchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TIn>;
   /** Optional Zod schema validating the merge queue step output payload. */
-  readonly outputSchema?: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema?: z.ZodType<TOut>;
 }

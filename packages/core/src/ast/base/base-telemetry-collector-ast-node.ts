@@ -18,5 +18,5 @@ export interface BaseTelemetryCollectorASTNode<
   /** Logical identifier of the telemetry collector. */
   readonly id: string;
   /** Zod schema validating the aggregated custom metrics object. */
-  readonly schema: z.ZodType<TMetrics, z.ZodTypeDef, unknown>;
+  readonly schema: z.ZodType<TMetrics>;
 }

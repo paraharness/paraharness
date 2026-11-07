@@ -42,12 +42,12 @@ export interface ForkCapabilityBuilder<
    *
    * @template TNewReq Validated fork request payload type.
    *
-   * @param {z.ZodType<TNewReq, z.ZodTypeDef, unknown>} schema - Zod schema for the fork request.
+   * @param {z.ZodType<TNewReq>} schema - Zod schema for the fork request.
    *
    * @returns {ForkCapabilityBuilder<TParentIn, TNewReq, TChildIn, TChildOut, THandle>} New immutable fork builder.
    */
   requestSchema<TNewReq>(
-    schema: z.ZodType<TNewReq, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewReq>,
   ): ForkCapabilityBuilder<TParentIn, TNewReq, TChildIn, TChildOut, THandle>;
 
   /**

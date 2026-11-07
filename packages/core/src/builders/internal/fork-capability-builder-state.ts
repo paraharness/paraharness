@@ -31,7 +31,7 @@ export interface ForkCapabilityBuilderState<
   /** Transcript sharing mode (`'shared-prefix-only'` or `'clone-transcript'`). */
   readonly historyMode: 'shared-prefix-only' | 'clone-transcript';
   /** Zod schema validating the parent agent's fork tool call arguments. */
-  readonly requestSchema: z.ZodType<TReq, z.ZodTypeDef, unknown> | undefined;
+  readonly requestSchema: z.ZodType<TReq> | undefined;
   /** Synchronous mapper projecting `(parentInput, req)` into `TChildIn`. */
   readonly mapInput: ((parentInput: TParentIn, req: TReq) => TChildIn) | undefined;
   /** Optional conditional model routing configuration for the child session. */

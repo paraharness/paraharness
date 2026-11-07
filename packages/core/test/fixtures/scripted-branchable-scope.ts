@@ -18,9 +18,9 @@ export class ScriptedBranchableScope implements BranchableScope<string, Record<s
   /** Literal marker confirming branching support. */
   readonly supportsBranching = true as const;
   /** Zod schema validating inspection receipts. */
-  readonly receiptSchema = z.record(z.unknown());
+  readonly receiptSchema = z.record(z.string(), z.unknown());
   /** Zod schema validating synchronization receipts. */
-  readonly syncSchema = z.record(z.unknown());
+  readonly syncSchema = z.record(z.string(), z.unknown());
   /** Mutable state map per scope handle. */
   readonly handleState = new Map<string, Record<string, unknown>>();
   /** Saved checkpoints keyed by checkpoint token. */

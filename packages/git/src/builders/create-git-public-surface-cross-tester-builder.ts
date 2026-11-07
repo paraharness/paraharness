@@ -27,7 +27,7 @@ export function createGitPublicSurfaceCrossTesterBuilder(
   GitPublicSurfaceCrossTesterNode
 > {
   const id = options.id ?? 'git-public-surface-cross-tester';
-  const reportSchema: z.ZodType<Record<string, unknown>, z.ZodTypeDef, unknown> = z
+  const reportSchema: z.ZodType<Record<string, unknown>> = z
     .object({
       passedCrossTests: z.number(),
       failedCrossTests: z.number(),

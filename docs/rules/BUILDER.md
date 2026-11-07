@@ -1,7 +1,7 @@
 # Builder Rules
 
-1. **Decompose Modules Autonomously Inside `owned_dirs`**
-   In `IMPL_LOOP`, decompose planned modules inside `owned_dirs` into single-entity/cohesive files (`<= 250` lines `src/**`, `<= 400` lines `test/**`), `internal/` helpers, and `test/fixtures/` incrementally as you author code per `docs/CODING_GUIDELINES.md` §1 & §6 while preserving all planned public exports.
+1. **Decompose Modules Autonomously Inside `owned_dirs` & Enforce the Library-First Mandate (`Rule 3.5`)**
+   In `IMPL_LOOP`, decompose planned modules inside `owned_dirs` into single-entity/cohesive files (`<= 250` lines `src/**`, `<= 400` lines `test/**`), `internal/` helpers, and `test/fixtures/` incrementally as you author code per `docs/CODING_GUIDELINES.md` §1 & §6 while preserving all planned public exports. Always use the Owner-approved libraries installed in each package's `package.json` (`docs/CODING_GUIDELINES.md` Rule 3.5: `zod` v4 `z.toJSONSchema()`, `@dagrejs/graphlib`, `diff`, `node-diff3`, `minisearch`, `p-queue`, `p-limit`, `@harness-dsl/lockfile`, `tinyglobby`, `picomatch`, `write-file-atomic`, `mdast-util-*` + `yaml`, `node-pty`, `@modelcontextprotocol/sdk`, `pidtree`, `fkill`, `get-port`, `wait-on`, `es-module-lexer`, `pg` + `@electric-sql/pglite`, `@anthropic-ai/sdk`, `openai`, `@google/genai`, `@octokit/*`, `@slack/*`, `stripe`, `big.js`) rather than hand-rolling commodity utilities.
 
 2. **Apply Document Precedence & Escalate Only True Upstream/Spec Blockers**
    Follow the precedence hierarchy in `docs/rules/GENERAL.md` Rule 2, and pause mid-turn via `send_message` **only** for `BLOCKED_ON_UPSTREAM` (requires editing `forbidden_dirs` not yet authorized in `upstream_patches`) or `SPEC_CONTRADICTION` (direct contradiction between governing documents or between `$verified_findings` / `$verified_changes` and a higher-ranked governing document or spec-mandated test).

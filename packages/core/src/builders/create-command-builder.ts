@@ -43,7 +43,7 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
 
   return Object.freeze<CommandBuilder<TIn, TOut, THandle>>({
     id,
-    input<TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>): CommandBuilder<TNewIn, TOut, THandle> {
+    input<TNewIn>(schema: z.ZodType<TNewIn>): CommandBuilder<TNewIn, TOut, THandle> {
       return createCommandBuilder<TNewIn, TOut, THandle>(id, {
         inputSchema: schema,
         outputSchema: state.outputSchema,
@@ -51,7 +51,7 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
         fn: undefined,
       });
     },
-    output<TNewOut>(schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>): CommandBuilder<TIn, TNewOut, THandle> {
+    output<TNewOut>(schema: z.ZodType<TNewOut>): CommandBuilder<TIn, TNewOut, THandle> {
       return createCommandBuilder<TIn, TNewOut, THandle>(id, {
         inputSchema: state.inputSchema,
         outputSchema: schema,

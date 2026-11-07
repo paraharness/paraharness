@@ -27,7 +27,7 @@ import { deepFreeze } from './deep-freeze.js';
 export function createAskEdgeFromState<TPayload = unknown, TDecision = unknown>(state: {
   readonly interrupt: InterruptNode<TPayload>;
   readonly human: HumanNode<'bidirectional'>;
-  readonly responseSchema: z.ZodType<TDecision, z.ZodTypeDef, unknown>;
+  readonly responseSchema: z.ZodType<TDecision>;
   readonly elevateLeaseWhen: AskLeaseElevationConfig<TDecision> | undefined;
   readonly resumeWith: ((decision: TDecision) => string) | undefined;
 }): AskInterruptBuilder<TPayload, TDecision> {

@@ -15,13 +15,13 @@ export interface ScopedHumanNameBuilder {
    *
    * @template TResponse Validated human decision response type.
    *
-   * @param {z.ZodType<TResponse, z.ZodTypeDef, unknown>} responseSchema - Zod schema validating the human's response.
+   * @param {z.ZodType<TResponse>} responseSchema - Zod schema validating the human's response.
    *
    * @returns {ScopedHumanTargetBuilder<TResponse>} Fluent builder compiling to `ScopedHumanTargetNode<TResponse>`.
    *
    * @throws {Error} If the underlying `HumanNode` channel is not `'bidirectional'`.
    */
   output<TResponse>(
-    responseSchema: z.ZodType<TResponse, z.ZodTypeDef, unknown>,
+    responseSchema: z.ZodType<TResponse>,
   ): ScopedHumanTargetBuilder<TResponse>;
 }

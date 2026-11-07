@@ -26,5 +26,5 @@ export interface CrossVerifierBuilder<
   /** Unique identifier of the cross-verifier primitive. */
   readonly id: string;
   /** Zod schema validating each candidate branch's cross-verification report. */
-  readonly reportSchema: z.ZodType<TCrossReport, z.ZodTypeDef, unknown>;
+  readonly reportSchema: z.ZodType<TCrossReport>;
 }

@@ -16,7 +16,7 @@ export class NetSuiteDraftScopeDriver
   readonly id: string;
 
   /** Zod schema validating `DraftJournalReceipt` objects emitted by `inspect()`. */
-  readonly receiptSchema: z.ZodType<DraftJournalReceipt, z.ZodTypeDef, unknown>;
+  readonly receiptSchema: z.ZodType<DraftJournalReceipt>;
 
   /** Active draft journal handles indexed by `runId` for crash-recovery reattachment. */
   private readonly handlesByRunId = new Map<string, NetSuiteDraftHandle>();

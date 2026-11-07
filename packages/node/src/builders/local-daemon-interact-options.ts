@@ -38,7 +38,7 @@ export interface LocalDaemonInteractOptions<TInput = { readonly input: string }>
   /** Optional human-readable tool description (defaults to `` `Interact with service via ${toolName}` ``). */
   readonly description?: string;
   /** Optional Zod input validation schema (defaults to `z.object({ input: z.string() })`). */
-  readonly inputSchema?: z.ZodType<TInput, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TInput>;
   /** Pure factory mapping allocated ports, sanitized `scopeKey`, and `worktreePath` to the interactive CLI `argv`. */
   readonly command: (ctx: LocalDaemonCommandContext) => readonly string[];
   /** Prompt delimiter string, `RegExp`, or serialized pattern descriptor marking the end of each output frame. */

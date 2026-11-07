@@ -38,7 +38,7 @@ export function createLaneFromState<TIn = unknown, TStepIds extends string = str
 ): LaneBuilder<TIn, TStepIds> {
   return Object.freeze<LaneBuilder<TIn, TStepIds>>({
     id: state.id,
-    input: <TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>): LaneBuilder<TNewIn, TStepIds> =>
+    input: <TNewIn>(schema: z.ZodType<TNewIn>): LaneBuilder<TNewIn, TStepIds> =>
       createLaneFromState<TNewIn, TStepIds>({
         ...state,
         inputSchema: schema,

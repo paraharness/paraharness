@@ -1,0 +1,174 @@
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { acquireFileLock, withFileLock } from '../src/index.js';
+
+interface DeferredLatch {
+  readonly promise: Promise<void>;
+  readonly resolve: () => void;
+}
+
+function createDeferredLatch(): DeferredLatch {
+  let resolveFn: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolveFn = resolve;
+  });
+  return { promise, resolve: resolveFn };
+}
+
+describe('@harness-dsl/lockfile — cross-process and in-process file locking', () => {
+  let tempDir = '';
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'harness-lockfile-test-'));
+  });
+
+  afterEach(async () => {
+    if (tempDir.length > 0) {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('serializes concurrent in-process callers in strict FIFO order via PQueue and cleans up lockfile on release', async () => {
+    const lockPath = path.join(tempDir, 'nested', 'state.lock');
+    const executionOrder: string[] = [];
+    const firstEntered = createDeferredLatch();
+    const releaseFirst = createDeferredLatch();
+
+    const firstTask = withFileLock(lockPath, async () => {
+      executionOrder.push('first-enter');
+      const rawRecord = JSON.parse(await readFile(lockPath, 'utf8')) as {
+        readonly pid: number;
+        readonly ownerToken: string;
+      };
+      expect(rawRecord.pid).toBe(process.pid);
+      expect(rawRecord.ownerToken.length).toBeGreaterThan(0);
+      firstEntered.resolve();
+      await releaseFirst.promise;
+      executionOrder.push('first-exit');
+      return 'first-done';
+    });
+
+    await firstEntered.promise;
+
+    const secondTask = withFileLock(lockPath, async () => {
+      executionOrder.push('second-enter');
+      return 'second-done';
+    });
+
+    const thirdTask = withFileLock(lockPath, async () => {
+      executionOrder.push('third-enter');
+      return 'third-done';
+    });
+
+    expect(executionOrder).toEqual(['first-enter']);
+    releaseFirst.resolve();
+
+    const results = await Promise.all([firstTask, secondTask, thirdTask]);
+    expect(results).toEqual(['first-done', 'second-done', 'third-done']);
+    expect(executionOrder).toEqual(['first-enter', 'first-exit', 'second-enter', 'third-enter']);
+    await expect(stat(lockPath)).rejects.toThrow();
+  });
+
+  it('automatically reclaims a stale lockfile left behind by a dead holder PID (simulated SIGKILL crash)', async () => {
+    const lockPath = path.join(tempDir, 'crashed-holder.lock');
+    await writeFile(
+      lockPath,
+      JSON.stringify({
+        pid: 999_999_999,
+        acquiredAtMs: Date.now(),
+        ownerToken: 'dead-holder-token',
+      }),
+      'utf8',
+    );
+
+    const lease = await acquireFileLock(lockPath, {
+      staleMs: 60_000,
+      timeoutMs: 1_000,
+      retryDelayMs: 5,
+    });
+    try {
+      expect(lease.lockPath).toBe(path.resolve(lockPath));
+      expect(lease.ownerToken).not.toBe('dead-holder-token');
+      const reclaimedRecord = JSON.parse(await readFile(lockPath, 'utf8')) as {
+        readonly pid: number;
+        readonly ownerToken: string;
+      };
+      expect(reclaimedRecord.pid).toBe(process.pid);
+      expect(reclaimedRecord.ownerToken).toBe(lease.ownerToken);
+    } finally {
+      await lease.release();
+      await lease.release();
+    }
+
+    await expect(stat(lockPath)).rejects.toThrow();
+  });
+
+  it('automatically reclaims a lockfile whose mtime heartbeat has expired past staleMs', async () => {
+    const lockPath = path.join(tempDir, 'expired-heartbeat.lock');
+    await writeFile(
+      lockPath,
+      JSON.stringify({
+        pid: process.pid,
+        acquiredAtMs: Date.now() - 30_000,
+        ownerToken: 'stale-heartbeat-token',
+      }),
+      'utf8',
+    );
+    const expiredDate = new Date(Date.now() - 30_000);
+    await utimes(lockPath, expiredDate, expiredDate);
+
+    const result = await withFileLock(
+      lockPath,
+      async () => {
+        const currentRecord = JSON.parse(await readFile(lockPath, 'utf8')) as {
+          readonly ownerToken: string;
+        };
+        expect(currentRecord.ownerToken).not.toBe('stale-heartbeat-token');
+        return 'reclaimed-ok';
+      },
+      { staleMs: 5_000, timeoutMs: 1_000, retryDelayMs: 5 },
+    );
+
+    expect(result).toBe('reclaimed-ok');
+  });
+
+  it('times out when an active holder PID with a fresh heartbeat holds the lockfile beyond timeoutMs', async () => {
+    const lockPath = path.join(tempDir, 'contended-live.lock');
+    await writeFile(
+      lockPath,
+      JSON.stringify({
+        pid: process.pid,
+        acquiredAtMs: Date.now(),
+        ownerToken: 'live-holder-token',
+      }),
+      'utf8',
+    );
+
+    await expect(
+      acquireFileLock(lockPath, {
+        timeoutMs: 25,
+        staleMs: 60_000,
+        retryDelayMs: 5,
+      }),
+    ).rejects.toThrowError(`Timed out after 25ms waiting for file lock '${path.resolve(lockPath)}'.`);
+  });
+
+  it('releases the lock in finally when work rejects and rejects empty lockPath inputs', async () => {
+    const lockPath = path.join(tempDir, 'error-release.lock');
+
+    await expect(acquireFileLock('   ')).rejects.toThrowError(
+      'acquireFileLock requires a non-empty lockPath.',
+    );
+
+    await expect(
+      withFileLock(lockPath, async () => {
+        throw new Error('critical-section-failure');
+      }),
+    ).rejects.toThrowError('critical-section-failure');
+
+    const followUp = await withFileLock(lockPath, async () => 'recovered');
+    expect(followUp).toBe('recovered');
+  });
+});

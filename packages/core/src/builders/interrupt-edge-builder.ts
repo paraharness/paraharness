@@ -55,14 +55,14 @@ export interface InterruptEdgeBuilder<
    * @template TDecision Validated human decision response type.
    * @template TMode     Channel interaction mode of `human`.
    *
-   * @param {MaybeBuilder<HumanNode<TMode>>}              human          - Bidirectional human authority node or builder.
-   * @param {z.ZodType<TDecision, z.ZodTypeDef, unknown>} responseSchema - Zod schema validating the human's decision.
+   * @param {MaybeBuilder<HumanNode<TMode>>} human          - Bidirectional human authority node or builder.
+   * @param {z.ZodType<TDecision>}           responseSchema - Zod schema validating the human's decision.
    *
    * @returns {AskInterruptBuilder<TPayload, TDecision>} Fluent ask sub-builder.
    */
   ask<TDecision, TMode extends 'bidirectional' | 'notify-only' = 'bidirectional' | 'notify-only'>(
     human: MaybeBuilder<HumanNode<TMode>>,
-    responseSchema: z.ZodType<TDecision, z.ZodTypeDef, unknown>,
+    responseSchema: z.ZodType<TDecision>,
   ): AskInterruptBuilder<TPayload, TDecision>;
 
   /**

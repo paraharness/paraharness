@@ -203,17 +203,17 @@ describe('Built-in Zod schemas and SpeculationInputSchema', () => {
 });
 
 describe('Deterministic canonical zodToJsonSchema converter', () => {
-  it('converts primitives, literals, enums, arrays, tuples, records, and nested objects with sorted keys', () => {
+  it('converts primitives, literals, enums, arrays, tuples, records, nested objects, and preserves .min()/.max()/.int()/.regex() constraints', () => {
     const complexSchema = z
       .object({
-        zebra: z.string().describe('Zebra field'),
-        alpha: z.number(),
+        zebra: z.string().min(3).regex(/^[a-z]+$/).describe('Zebra field'),
+        alpha: z.number().int().min(1).max(30),
         optionalFlag: z.boolean().optional(),
         defaultedCount: z.number().default(5),
         nullableNote: z.string().nullable(),
         mode: z.enum(['fast', 'thorough']),
         exactTag: z.literal('v1'),
-        items: z.array(z.string()),
+        items: z.array(z.string()).min(1),
         pair: z.tuple([z.string(), z.number()]),
         labels: z.record(z.string(), z.number()),
       })
@@ -222,56 +222,50 @@ describe('Deterministic canonical zodToJsonSchema converter', () => {
     const jsonSchema = zodToJsonSchema(complexSchema);
 
     expect(Object.isFrozen(jsonSchema)).toBe(true);
+    expect('$schema' in jsonSchema).toBe(false);
     expect(jsonSchema).toEqual({
       additionalProperties: false,
       description: 'Canonical test object',
       properties: {
-        alpha: { type: 'number' },
+        alpha: { type: 'integer', minimum: 1, maximum: 30 },
         defaultedCount: { default: 5, type: 'number' },
         exactTag: { const: 'v1', type: 'string' },
-        items: { items: { type: 'string' }, type: 'array' },
-        labels: { additionalProperties: { type: 'number' }, type: 'object' },
+        items: { items: { type: 'string' }, minItems: 1, type: 'array' },
+        labels: {
+          additionalProperties: { type: 'number' },
+          propertyNames: { type: 'string' },
+          type: 'object',
+        },
         mode: { enum: ['fast', 'thorough'], type: 'string' },
-        nullableNote: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        nullableNote: { type: ['string', 'null'] },
         optionalFlag: { type: 'boolean' },
         pair: {
           items: false,
+          maxItems: 2,
+          minItems: 2,
           prefixItems: [{ type: 'string' }, { type: 'number' }],
           type: 'array',
         },
-        zebra: { description: 'Zebra field', type: 'string' },
+        zebra: {
+          description: 'Zebra field',
+          minLength: 3,
+          pattern: '^[a-z]+$',
+          type: 'string',
+        },
       },
-      required: ['alpha', 'exactTag', 'items', 'labels', 'mode', 'nullableNote', 'pair', 'zebra'],
+      required: [
+        'zebra',
+        'alpha',
+        'defaultedCount',
+        'nullableNote',
+        'mode',
+        'exactTag',
+        'items',
+        'pair',
+        'labels',
+      ],
       type: 'object',
     });
-
-    expect(Object.keys(jsonSchema)).toEqual([
-      'additionalProperties',
-      'description',
-      'properties',
-      'required',
-      'type',
-    ]);
-    const propsValue = jsonSchema['properties'] as Record<string, Record<string, unknown>>;
-    expect(Object.keys(propsValue)).toEqual([
-      'alpha',
-      'defaultedCount',
-      'exactTag',
-      'items',
-      'labels',
-      'mode',
-      'nullableNote',
-      'optionalFlag',
-      'pair',
-      'zebra',
-    ]);
-    expect(Object.keys(propsValue['defaultedCount'] ?? {})).toEqual(['default', 'type']);
-    expect(Object.keys(propsValue['exactTag'] ?? {})).toEqual(['const', 'type']);
-    expect(Object.keys(propsValue['items'] ?? {})).toEqual(['items', 'type']);
-    expect(Object.keys(propsValue['labels'] ?? {})).toEqual(['additionalProperties', 'type']);
-    expect(Object.keys(propsValue['mode'] ?? {})).toEqual(['enum', 'type']);
-    expect(Object.keys(propsValue['pair'] ?? {})).toEqual(['items', 'prefixItems', 'type']);
-    expect(Object.keys(propsValue['zebra'] ?? {})).toEqual(['description', 'type']);
   });
 
   it('handles literal null, literal bigint, and numeric nativeEnum without reverse-mapping keys', () => {
@@ -281,11 +275,14 @@ describe('Deterministic canonical zodToJsonSchema converter', () => {
       High = 2,
     }
     expect(zodToJsonSchema(z.literal(null))).toEqual({ const: null, type: 'null' });
-    expect(zodToJsonSchema(z.literal(42n))).toEqual({ const: 42, type: 'integer' });
-    expect(zodToJsonSchema(z.nativeEnum(NumericSeverity))).toEqual({ enum: [0, 1, 2] });
+    expect(zodToJsonSchema(z.literal(42n))).toEqual({ const: 42, type: 'number' });
+    expect(zodToJsonSchema(z.nativeEnum(NumericSeverity))).toEqual({
+      enum: [0, 1, 2],
+      type: 'number',
+    });
   });
 
-  it('converts discriminated unions, intersections, and effects deterministically', () => {
+  it('converts discriminated unions, intersections, and refinements via native z.toJSONSchema()', () => {
     const unionSchema = z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('a'), value: z.string() }),
       z.object({ kind: z.literal('b'), count: z.number() }),
@@ -297,7 +294,7 @@ describe('Deterministic canonical zodToJsonSchema converter', () => {
     const refinedSchema = z.string().refine((val: string) => val.length > 0);
 
     expect(zodToJsonSchema(unionSchema)).toEqual({
-      anyOf: [
+      oneOf: [
         {
           additionalProperties: false,
           properties: {
@@ -313,30 +310,20 @@ describe('Deterministic canonical zodToJsonSchema converter', () => {
             count: { type: 'number' },
             kind: { const: 'b', type: 'string' },
           },
-          required: ['count', 'kind'],
+          required: ['kind', 'count'],
           type: 'object',
         },
       ],
-      discriminator: {
-        propertyName: 'kind',
-      },
     });
 
     expect(zodToJsonSchema(intersectionSchema)).toEqual({
-      allOf: [
-        {
-          additionalProperties: false,
-          properties: { id: { type: 'string' } },
-          required: ['id'],
-          type: 'object',
-        },
-        {
-          additionalProperties: false,
-          properties: { active: { type: 'boolean' } },
-          required: ['active'],
-          type: 'object',
-        },
-      ],
+      additionalProperties: false,
+      properties: {
+        active: { type: 'boolean' },
+        id: { type: 'string' },
+      },
+      required: ['id', 'active'],
+      type: 'object',
     });
 
     expect(zodToJsonSchema(refinedSchema)).toEqual({ type: 'string' });

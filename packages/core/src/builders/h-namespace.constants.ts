@@ -72,10 +72,10 @@ export const H: HarnessNamespace = Object.freeze<HarnessNamespace>({
       key,
     });
   },
-  signal<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload, z.ZodTypeDef, unknown>): SignalBuilder<TPayload> {
+  signal<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload>): SignalBuilder<TPayload> {
     return createSignalBuilder<TPayload>(id, schema);
   },
-  interrupt<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload, z.ZodTypeDef, unknown>): InterruptBuilder<TPayload> {
+  interrupt<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload>): InterruptBuilder<TPayload> {
     return createInterruptBuilder<TPayload>(id, schema);
   },
   stream<TEvent = unknown, TPayload = unknown>(id: string): StreamBuilder<TEvent, TPayload> {

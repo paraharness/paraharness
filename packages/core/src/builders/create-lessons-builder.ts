@@ -46,7 +46,7 @@ export function createLessonsBuilder<TIn = unknown>(
     id,
     store: (lessonStore: MaybeBuilder<LessonStoreASTNode>) =>
       createLessonsBuilder<TIn>(id, { ...options, store: extractAST(lessonStore) }),
-    queryFrom: <TNextIn>(schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>, mapper: (input: TNextIn) => string) =>
+    queryFrom: <TNextIn>(schema: z.ZodType<TNextIn>, mapper: (input: TNextIn) => string) =>
       createLessonsBuilder<TNextIn>(id, {
         store: options?.store,
         querySchema: schema,

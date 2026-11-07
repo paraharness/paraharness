@@ -14,5 +14,5 @@ export interface InterruptNode<TPayload = unknown> {
   /** Unique logical identifier of the interrupt. */
   readonly id: string;
   /** Zod schema used to validate payloads raised with this interrupt. */
-  readonly schema: z.ZodType<TPayload, z.ZodTypeDef, unknown>;
+  readonly schema: z.ZodType<TPayload>;
 }

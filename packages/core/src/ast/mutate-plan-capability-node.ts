@@ -28,7 +28,7 @@ export interface SpawnTasksSignalResumeCondition<TSig = unknown> {
  */
 export interface SpawnTasksConfig<TItem = unknown> {
   /** Zod schema validating each spawned work item. */
-  readonly itemSchema: z.ZodType<TItem, z.ZodTypeDef, unknown>;
+  readonly itemSchema: z.ZodType<TItem>;
   /** Maximum number of prerequisite tasks a single run may spawn. */
   readonly maxSpawnedPerRun: number;
   /** Maximum transitive prerequisite depth allowed in the lane DAG (default `3`). */

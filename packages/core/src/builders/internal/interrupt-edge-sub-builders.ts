@@ -66,7 +66,7 @@ export function createInterruptEdgeFromState<
     },
     ask<TDecision, TMode extends 'bidirectional' | 'notify-only' = 'bidirectional' | 'notify-only'>(
       human: MaybeBuilder<HumanNode<TMode>>,
-      responseSchema: z.ZodType<TDecision, z.ZodTypeDef, unknown>,
+      responseSchema: z.ZodType<TDecision>,
     ): AskInterruptBuilder<TPayload, TDecision> {
       const humanNode = validateBidirectionalHumanChannel(extractAST(human), '.ask()');
       return createAskEdgeFromState({

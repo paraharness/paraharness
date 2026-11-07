@@ -41,13 +41,13 @@ export interface LessonsBuilder<TIn = unknown> extends AstBuilder<LessonsNode<TI
    *
    * @template TNextIn Actor input payload type validated by `schema`.
    *
-   * @param {z.ZodType<TNextIn, z.ZodTypeDef, unknown>} schema - Zod schema for the query input.
-   * @param {(input: TNextIn) => string}                mapper - Synchronous query string projector.
+   * @param {z.ZodType<TNextIn>}         schema - Zod schema for the query input.
+   * @param {(input: TNextIn) => string} mapper - Synchronous query string projector.
    *
    * @returns {LessonsBuilder<TNextIn>} New immutable lessons builder narrowed to `TNextIn`.
    */
   queryFrom<TNextIn>(
-    schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNextIn>,
     mapper: (input: TNextIn) => string,
   ): LessonsBuilder<TNextIn>;
 

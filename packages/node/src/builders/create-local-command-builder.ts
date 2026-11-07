@@ -71,7 +71,7 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
       }
       return createLocalCommandBuilder(id, { ...state, timeoutMinutes: minutes });
     },
-    input<TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>): LocalCommandBuilder<TNewIn, TOut, THandle> {
+    input<TNewIn>(schema: z.ZodType<TNewIn>): LocalCommandBuilder<TNewIn, TOut, THandle> {
       const { inputSchema: prevSchema, argv: prevArgv, stdinMode: prevStdin, unrepeatable: prevUnrep } = state;
       const prevKey = prevUnrep?.key;
       return createLocalCommandBuilder<TNewIn, TOut, THandle>(id, {
@@ -89,7 +89,7 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
               }),
       });
     },
-    output<TNewOut>(schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>): LocalCommandBuilder<TIn, TNewOut, THandle> {
+    output<TNewOut>(schema: z.ZodType<TNewOut>): LocalCommandBuilder<TIn, TNewOut, THandle> {
       return createLocalCommandBuilder<TIn, TNewOut, THandle>(id, { ...state, outputSchema: schema });
     },
     unrepeatable<TPreIn = TIn>(

@@ -16,7 +16,7 @@ export interface InterruptBuilder<TPayload = unknown> extends AstBuilder<Interru
   /** Unique logical identifier of the interrupt. */
   readonly id: string;
   /** Zod schema used to validate payloads raised with this interrupt. */
-  readonly schema: z.ZodType<TPayload, z.ZodTypeDef, unknown>;
+  readonly schema: z.ZodType<TPayload>;
 
   /**
    * Binds a new Zod payload schema to the interrupt definition, returning a strongly typed builder clone.
@@ -26,9 +26,9 @@ export interface InterruptBuilder<TPayload = unknown> extends AstBuilder<Interru
    *
    * @template TNext Validated output type of `schema`.
    *
-   * @param {z.ZodType<TNext, z.ZodTypeDef, unknown>} schema - Zod schema governing raised interrupt payloads.
+   * @param {z.ZodType<TNext>} schema - Zod schema governing raised interrupt payloads.
    *
    * @returns {InterruptBuilder<TNext>} New immutable `InterruptBuilder` typed to `TNext`.
    */
-  payload<TNext>(schema: z.ZodType<TNext, z.ZodTypeDef, unknown>): InterruptBuilder<TNext>;
+  payload<TNext>(schema: z.ZodType<TNext>): InterruptBuilder<TNext>;
 }

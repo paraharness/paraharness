@@ -3,10 +3,11 @@
 ## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
 - **Milestone**: `M1` (Wave 1a — Sequential Core Spine `b`)
-- **Package**: `@harness-dsl/core` (`packages/core`) and Monorepo Workspace Manifests
+- **Package**: `@harness-dsl/core` (`packages/core`), `@harness-dsl/lockfile` (`packages/lockfile`), and Monorepo Workspace Manifests
 - **`owned_dirs`**:
   - Root workspace configuration: `pnpm-workspace.yaml`
-  - Package manifests and TypeScript configs for all 15 workspace packages: `packages/{core,sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/{package.json,tsconfig.json}`
+  - Package manifests and TypeScript configs for all 16 workspace packages: `packages/{lockfile,core,sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/{package.json,tsconfig.json}`
+  - Standalone file lock package: `packages/lockfile/**` (`acquireFileLock`, `withFileLock` backed by `p-queue` and cross-process atomic `open(..., 'wx')` + `utimes` heartbeat + dead-PID/stale reclamation)
   - `@harness-dsl/core` contract, AST, port, schema, topology, builder, and namespace files:
     - `packages/core/src/ast/**`
     - `packages/core/src/ports/**`
@@ -292,9 +293,8 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
 | `src/schemas/core-rules.schema.ts` | `schema` | `ScopePredicateSchema`, `ScopePredicate`, `GlobalRuleSchema`, `GlobalRule`, `ScopedRuleSchema`, `ScopedRule` |
 | `src/schemas/budget-and-lesson.schema.ts` | `schema` | `BudgetApprovalSchema`, `BudgetApproval`, `DistilledLessonCandidateSchema`, `ResumeForkInputSchema`, `ResumeForkInput` |
 | `src/schemas/speculation-schemas.ts` | `function` | `SpeculationCandidateSchema`, `SpeculationInputSchema` |
-| `src/schemas/internal/convert-zod-def.ts` | `function` | `convertZodDefToJsonSchema`, `unwrapZodModifiers`, `convertObjectShape` |
-| `src/schemas/zod-to-json-schema.ts` | `function` | `zodToJsonSchema(schema: z.ZodTypeAny): Readonly<Record<string, unknown>>` |
-| `src/topology/internal/validate-topology-dag.ts` | `function` | `validateTopologyDAG`, `computeTransitiveDependents` |
+| `src/schemas/zod-to-json-schema.ts` | `function` | `zodToJsonSchema(schema: z.ZodTypeAny): Readonly<Record<string, unknown>>` (delegating to Zod v4 `z.toJSONSchema()`) |
+| `src/topology/internal/validate-topology-dag.ts` | `function` | `validateTopologyDAG`, `computeTransitiveDependents` (backed by `@dagrejs/graphlib` `Graph`, `alg.findCycles`, `alg.preorder`) |
 | `src/topology/topology-queries.ts` | `function` | `dependentsOf<TPartition extends string>(topology: MaybeBuilder<TopologyNode<TPartition>>, partitionId: TPartition): readonly TPartition[]`, `affectedBy<TPartition extends string>(topology: MaybeBuilder<TopologyNode<TPartition>>, partitionId: TPartition): readonly TPartition[]` |
 
 ### 3.4 Fluent Builders Layer & `H` Namespace (`packages/core/src/builders/**`, `packages/core/src/h-namespace*`)
@@ -399,13 +399,12 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
      - `"name": "@harness-dsl/<pkg>"`, `"version": "0.1.0"`, `"private": true`, `"type": "module"`.
      - `"exports"`: `{ ".": "./src/index.ts" }` on all adapter/integration packages, and `{ ".": "./src/index.ts", "./runtime": "./src/runtime/index.ts" }` on `@harness-dsl/core` (required under `moduleResolution: "NodeNext"`).
      - `"scripts"`: `{ "lint": "eslint src test", "typecheck": "tsc --noEmit", "test": "vitest run --config ../../vitest.config.ts --dir test --passWithNoTests" }` so `pnpm --filter @harness-dsl/<pkg> lint`, `typecheck`, and `test` execute cleanly on that package.
-     - `"dependencies"` and `"devDependencies"`:
-       - `@harness-dsl/core`: `"dependencies": { "zod": "^3.24.2" }`.
-       - `@harness-dsl/sqlite`: `"dependencies": { "@harness-dsl/core": "workspace:*", "better-sqlite3": "^12.11.1", "zod": "^3.24.2" }`, `"devDependencies": { "@types/better-sqlite3": "^9.6.0" }`.
-       - `@harness-dsl/postgres`: `"dependencies": { "@harness-dsl/core": "workspace:*", "zod": "^3.24.2" }`, `"devDependencies": { "better-sqlite3": "^12.11.1", "@types/better-sqlite3": "^9.6.0" }` (zero external `pg` npm dependency; uses `PostgresQueryClient` / `PostgresPoolFactory` contract in `src/**` and `better-sqlite3` in `test/fixtures/sqlite-backed-pg-client.ts`).
-       - `@harness-dsl/fs` and `@harness-dsl/git`: `"dependencies": { "@harness-dsl/core": "workspace:*", "picomatch": "^4.0.2", "zod": "^3.24.2" }`, `"devDependencies": { "@types/picomatch": "^4.0.2" }`.
-       - `@harness-dsl/{markdown,node,claude,openai,gemini,github,slack,stripe,netsuite}`: `"dependencies": { "@harness-dsl/core": "workspace:*", "zod": "^3.24.2" }`.
-       - `@harness-dsl/integration`: `"dependencies"` containing `"workspace:*"` for `@harness-dsl/core` and all 13 peer adapter packages plus `"zod": "^3.24.2"`.
+     - `"dependencies"` and `"devDependencies"` (`docs/CODING_GUIDELINES.md` Rule 3.5):
+       - `@harness-dsl/lockfile`: `"dependencies": { "p-queue": "^9.1.0" }`.
+       - `@harness-dsl/core`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "diff": "^9.0.0", "p-limit": "^7.3.0", "p-queue": "^9.1.0", "zod": "^4.6.7" }`.
+       - `@harness-dsl/sqlite`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@harness-dsl/core": "workspace:*", "better-sqlite3": "^12.8.0", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "zod": "^4.6.7" }`, `"devDependencies": { "@types/better-sqlite3": "^9.6.0" }`.
+       - `@harness-dsl/postgres`: `"dependencies": { "@dagrejs/graphlib": "^4.0.7", "@electric-sql/pglite": "^0.5.15", "@harness-dsl/core": "workspace:*", "minisearch": "^7.2.0", "node-diff3": "^3.2.1", "p-queue": "^9.1.0", "pg": "^8.23.1", "zod": "^4.6.7" }`, `"devDependencies": { "@types/pg": "^8.23.1" }`.
+       - `@harness-dsl/{fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}`: `"dependencies"` with `"zod": "^4.6.7"`, `"@harness-dsl/lockfile": "workspace:*"` (for `fs` and `git`), and the Owner-approved libraries per `docs/CODING_GUIDELINES.md` Rule 3.5.
 4. **`packages/<pkg>/tsconfig.json` for all 15 workspace packages**:
    - `{ "extends": "../../tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["src/**/*.ts", "test/**/*.ts"] }`.
 
@@ -428,8 +427,8 @@ Every file in `packages/core/src/**` and `packages/core/test/fixtures/**` adhere
              : never;
          }[keyof CustomDomainASTRegistry];
      ```
-4. **Zod `.default()` Variance (`z.ZodType<T, z.ZodTypeDef, any>`) & `FlowBuilder` / `LoopBuilder` Generic Propagation**:
-   - All Zod schema properties on AST nodes (`SignalNode.schema`, `InterruptNode.schema`, `CommandNode.inputSchema`/`outputSchema`, `AgentNode.inputSchema`/`outputSchema`, `LoopNode.inputSchema`/`outputSchema`, `FlowBranchNode.outputSchema`, `FlowNode.inputSchema`, `LaneNode.inputSchema`, `BaseIsolationScopeASTNode.receiptSchema`/`syncSchema`, `BaseDomainStepASTNode.inputSchema`/`outputSchema`, `BaseTelemetryCollectorASTNode.schema`, `BaseAbortHookASTNode.metaSchema`, `BaseCrossVerifierASTNode.reportSchema`, `ForkCapabilityNode.requestSchema`, `SpeculateCapabilityNode.requestSchema`, `MutatePlanCapabilityNode.spawnTasks.itemSchema`, `EscalateCapabilityNode.responseSchema`, `ScopedHumanTargetNode.outputSchema`, `LessonsNode.querySchema`) and their corresponding builder method parameters must be typed as `z.ZodType<T, z.ZodTypeDef, any>` (or `z.ZodType<T, z.ZodTypeDef, unknown>`) so `T` always infers as `z.output<S>` across schemas using `.default(...)` (such as `workItem`, `workReceipt`, `evaluationResult`, `forkRequestSchema`, `arbiterVerdictSchema`, `ownerDecisionSchema`, and `git.ScopeReceiptSchema`).
+4. **Zod `.default()` Variance (`z.ZodType<T>`) & `FlowBuilder` / `LoopBuilder` Generic Propagation**:
+   - All Zod schema properties on AST nodes (`SignalNode.schema`, `InterruptNode.schema`, `CommandNode.inputSchema`/`outputSchema`, `AgentNode.inputSchema`/`outputSchema`, `LoopNode.inputSchema`/`outputSchema`, `FlowBranchNode.outputSchema`, `FlowNode.inputSchema`, `LaneNode.inputSchema`, `BaseIsolationScopeASTNode.receiptSchema`/`syncSchema`, `BaseDomainStepASTNode.inputSchema`/`outputSchema`, `BaseTelemetryCollectorASTNode.schema`, `BaseAbortHookASTNode.metaSchema`, `BaseCrossVerifierASTNode.reportSchema`, `ForkCapabilityNode.requestSchema`, `SpeculateCapabilityNode.requestSchema`, `MutatePlanCapabilityNode.spawnTasks.itemSchema`, `EscalateCapabilityNode.responseSchema`, `ScopedHumanTargetNode.outputSchema`, `LessonsNode.querySchema`) and their corresponding builder method parameters must be typed as `z.ZodType<T>` (in Zod v4, `ZodType<out Output = unknown, out Input = unknown>` is covariant in `Input` and defaults `Input = unknown`) so `T` always infers as `z.output<S>` across schemas using `.default(...)` (such as `workItem`, `workReceipt`, `evaluationResult`, `forkRequestSchema`, `arbiterVerdictSchema`, `ownerDecisionSchema`, and `git.ScopeReceiptSchema`).
    - `FlowBuilder<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>` propagates:
      - `TReceipt` (inferred from `.scope(scope)`'s `IsolationScopeASTNode<THandle, TReceipt, any, any>`),
      - `TCustomMetrics` (inferred from `.telemetry(collector)`'s `TelemetryCollectorASTNode<TCustomMetrics>`),

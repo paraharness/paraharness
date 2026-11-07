@@ -84,9 +84,9 @@ export interface LoopNode<
   /** Canonical role key of the inner `.act()` actor (`actStep.actor.roleKey`). */
   readonly roleKey: string;
   /** Zod schema validating loop input. */
-  readonly inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<TIn>;
   /** Zod schema validating loop output. */
-  readonly outputSchema: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<TOut>;
   /** Optional synchronous partition extractor mapping `TIn` to active partition IDs. */
   readonly extractPartitions?: BivariantCallback<[input: TIn], readonly string[]>;
   /** Maximum number of `.act() -> .evaluate()` iterations before failing the loop. */

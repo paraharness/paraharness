@@ -42,7 +42,7 @@ export interface FlowBranchNode<
   /** Unique literal identifier of the branch node within the enclosing flow. */
   readonly id: TBranchId;
   /** Zod schema validating the output of whichever branch case executes. */
-  readonly outputSchema: z.ZodType<TBranchOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<TBranchOut>;
   /** Ordered list of conditional `when` branch cases evaluated in declaration order. */
   readonly cases: readonly FlowBranchCase<TFlowIn, THandle>[];
   /** Fallback steps executed when no `cases` predicate matches. */

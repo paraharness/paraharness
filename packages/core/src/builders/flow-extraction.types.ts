@@ -26,7 +26,7 @@ export type ExtractScopeHandle<TScope> = TScope extends BaseIsolationScopeASTNod
  * @template TScope Isolation scope AST node type.
  */
 export type ExtractScopeReceipt<TScope> = TScope extends {
-  readonly receiptSchema: z.ZodType<infer TReceipt, z.ZodTypeDef, unknown>;
+  readonly receiptSchema: z.ZodType<infer TReceipt>;
 }
   ? TReceipt
   : unknown;
@@ -39,7 +39,7 @@ export type ExtractScopeReceipt<TScope> = TScope extends {
  * @template TCollector Telemetry collector AST node type.
  */
 export type ExtractTelemetryMetrics<TCollector> = TCollector extends {
-  readonly schema: z.ZodType<infer TMetrics extends Record<string, unknown>, z.ZodTypeDef, unknown>;
+  readonly schema: z.ZodType<infer TMetrics extends Record<string, unknown>>;
 }
   ? TMetrics
   : Record<string, unknown>;
@@ -52,7 +52,7 @@ export type ExtractTelemetryMetrics<TCollector> = TCollector extends {
  * @template TStep Step AST node type.
  */
 export type ExtractStepInput<TStep> = TStep extends {
-  readonly inputSchema: z.ZodType<infer TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<infer TIn>;
 }
   ? TIn
   : unknown;
@@ -65,7 +65,7 @@ export type ExtractStepInput<TStep> = TStep extends {
  * @template TStep Step AST node type.
  */
 export type ExtractStepOutput<TStep> = TStep extends {
-  readonly outputSchema: z.ZodType<infer TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<infer TOut>;
 }
   ? TOut
   : unknown;
@@ -78,11 +78,7 @@ export type ExtractStepOutput<TStep> = TStep extends {
  * @template THook Abort hook AST node type.
  */
 export type ExtractAbortMeta<THook> = THook extends {
-  readonly metaSchema: z.ZodType<
-    infer TAbortMeta extends Record<string, unknown>,
-    z.ZodTypeDef,
-    unknown
-  >;
+  readonly metaSchema: z.ZodType<infer TAbortMeta extends Record<string, unknown>>;
 }
   ? TAbortMeta
   : Record<string, unknown>;

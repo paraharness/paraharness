@@ -19,7 +19,7 @@ export interface CreateLessonsBuilderOptions<TIn = unknown> {
   /** Backing lesson store AST node. */
   readonly store?: LessonStoreASTNode;
   /** Optional query input Zod schema. */
-  readonly querySchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly querySchema?: z.ZodType<TIn>;
   /** Optional query string mapper. */
   readonly queryMapper?: (input: TIn) => string;
   /** Optional distillation configuration. */

@@ -23,7 +23,7 @@ export interface FlowNode<
   /** Unique identifier of the flow. */
   readonly id: string;
   /** Zod schema validating the work item input entering the flow. */
-  readonly inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<TIn>;
   /** Passive isolation scope AST node governing workspace lifecycle, checkpoints, and branching. */
   readonly scope: IsolationScopeASTNode<THandle, Record<string, unknown>, Record<string, unknown>>;
   /** Optional passive telemetry collector AST node folding observed `ToolEffect` lists into custom metrics. */

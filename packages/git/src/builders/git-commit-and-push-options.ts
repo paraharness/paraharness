@@ -20,7 +20,7 @@ export interface GitCommitAndPushOptions<TIn = unknown> {
   /** Pure projection deriving the commit message from `TIn`. */
   readonly message: BivariantCallback<[input: TIn], string>;
   /** Optional Zod schema validating the step input payload. */
-  readonly inputSchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TIn>;
   /** Optional runner pool governing subprocess slot concurrency. */
   readonly runner?: MaybeBuilder<NodeRunnerNode>;
   /** Optional environment variables or symbolic `EnvRef` bindings injected into git commands. */

@@ -33,9 +33,9 @@ export interface BaseIsolationScopeASTNode<
   /** Compile-time boolean brand indicating whether `BranchableScope` is supported. */
   readonly supportsBranching: [TTier] extends ['branchable'] ? true : false;
   /** Zod schema validating scope receipts returned by `inspect()` and `commitChild()`. */
-  readonly receiptSchema: z.ZodType<TReceipt, z.ZodTypeDef, unknown>;
+  readonly receiptSchema: z.ZodType<TReceipt>;
   /** Optional Zod schema validating sync receipts returned by `syncChild()` and `syncRoot()`. */
-  readonly syncSchema?: z.ZodType<TSync, z.ZodTypeDef, unknown>;
+  readonly syncSchema?: z.ZodType<TSync>;
   /** Optional deterministic check enforced after a conflicted merge or rebase. */
   readonly conflictCleanCheck?: BaseCheckASTNode<string, THandle>;
   /** Phantom type brand binding the scope node to its runtime handle type. */

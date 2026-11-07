@@ -79,7 +79,8 @@ Every file in `packages/git/src/**` and `packages/git/test/fixtures/**` adheres 
 1. **Zero Co-Location of Entity Kinds**:
    - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/git/src/**` or `packages/git/test/fixtures/**` (sole exception: `src/schemas/git-receipts.schema.ts` pairing Zod schemas with their `z.infer` types).
    - Every builder interface (`*-builder.ts`), options/payload interface (`*-options.ts`, `git-checkpoint-payload.ts`), and namespace contract (`git-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); `GitCowWorktreeScopeDriver` gets its own single-class file; `git` and `gitExecutors` live in their own `const`-only files.
-2. **Full 3-Part JSDoc Requirement**:
+2. **Full 3-Part JSDoc & Approved Library Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
+   - Use `@harness-dsl/lockfile` (`withFileLock`), `es-module-lexer` for export surface extraction in `publicSurfaceCrossTester`, `write-file-atomic` for `harness-meta.json` persistence, `picomatch` for path exclusion globs, and `p-queue` (`concurrency: 1`) for per-`parentHandle` flush serialization.
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/git lint`.
 
 ### 4.1 `GitNamespace`, `GitCowWorktreeBuilder`, Disjoint Worktree Layout & Crash Reattachment (`SPEC.md` §4.4 lines 3049–3058)

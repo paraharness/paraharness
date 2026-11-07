@@ -21,11 +21,11 @@ export interface InterruptPayloadBuilder<TPayload = unknown>
    *
    * @template TNext New interrupt payload output type inferred from `schema`.
    *
-   * @param {z.ZodType<TNext, z.ZodTypeDef, unknown>} schema - Zod schema validating interrupt payloads.
+   * @param {z.ZodType<TNext>} schema - Zod schema validating interrupt payloads.
    *
    * @returns {InterruptPayloadBuilder<TNext>} New immutable interrupt builder instance.
    */
   payload<TNext>(
-    schema: z.ZodType<TNext, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNext>,
   ): InterruptPayloadBuilder<TNext>;
 }

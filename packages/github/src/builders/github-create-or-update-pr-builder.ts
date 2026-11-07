@@ -25,12 +25,12 @@ export interface GithubCreateOrUpdatePrBuilder<
    *
    * @template TNextIn New validated step input payload type.
    *
-   * @param {z.ZodType<TNextIn, z.ZodTypeDef, unknown>} schema - Zod schema validating step input.
+   * @param {z.ZodType<TNextIn>} schema - Zod schema validating step input.
    *
    * @returns {GithubCreateOrUpdatePrBuilder<TNextIn, TOut, THandle>} Updated immutable builder instance.
    */
   input<TNextIn>(
-    schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNextIn>,
   ): GithubCreateOrUpdatePrBuilder<TNextIn, TOut, THandle>;
 
   /**
@@ -40,12 +40,12 @@ export interface GithubCreateOrUpdatePrBuilder<
    *
    * @template TNextOut New validated step output payload type.
    *
-   * @param {z.ZodType<TNextOut, z.ZodTypeDef, unknown>} schema - Zod schema validating step output.
+   * @param {z.ZodType<TNextOut>} schema - Zod schema validating step output.
    *
    * @returns {GithubCreateOrUpdatePrBuilder<TIn, TNextOut, THandle>} Updated immutable builder instance.
    */
   output<TNextOut>(
-    schema: z.ZodType<TNextOut, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNextOut>,
   ): GithubCreateOrUpdatePrBuilder<TIn, TNextOut, THandle>;
 
   /**

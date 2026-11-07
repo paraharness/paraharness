@@ -23,9 +23,9 @@ export interface BaseDomainStepASTNode<
   /** Logical identifier of the step node. */
   readonly id: string;
   /** Zod schema validating the step's input payload at entry. */
-  readonly inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<TIn>;
   /** Zod schema validating the step's output payload at exit. */
-  readonly outputSchema: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<TOut>;
   /** Phantom type brand binding the step to its compatible scope handle type. */
   readonly __handleBrand?: BivariantCallback<[handle: THandle], void>;
 }

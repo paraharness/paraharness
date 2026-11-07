@@ -11,17 +11,17 @@ import type { InterruptPayloadBuilder as ConfigurableInterruptBuilder } from './
  *
  * @template TPayload Interrupt payload type.
  *
- * @param {string}                                     id       - Unique interrupt identifier.
- * @param {z.ZodType<TPayload, z.ZodTypeDef, unknown>} [schema] - Optional initial Zod payload schema (defaults to `z.unknown()`).
+ * @param {string}              id       - Unique interrupt identifier.
+ * @param {z.ZodType<TPayload>} [schema] - Optional initial Zod payload schema (defaults to `z.unknown()`).
  *
  * @returns {ConfigurableInterruptBuilder<TPayload>} Frozen interrupt builder instance.
  */
 export function createInterruptBuilder<TPayload = unknown>(
   id: string,
-  schema?: z.ZodType<TPayload, z.ZodTypeDef, unknown>,
+  schema?: z.ZodType<TPayload>,
 ): ConfigurableInterruptBuilder<TPayload> {
   assertNonEmptyIdentifier('H.interrupt', id);
-  const resolvedSchema = (schema ?? z.unknown()) as z.ZodType<TPayload, z.ZodTypeDef, unknown>;
+  const resolvedSchema = (schema ?? z.unknown()) as z.ZodType<TPayload>;
   const compiledNode: InterruptNode<TPayload> = deepFreeze<InterruptNode<TPayload>>({
     type: 'harness:interrupt',
     id,
@@ -33,7 +33,7 @@ export function createInterruptBuilder<TPayload = unknown>(
     id,
     schema: resolvedSchema,
     payload<TNext>(
-      nextSchema: z.ZodType<TNext, z.ZodTypeDef, unknown>,
+      nextSchema: z.ZodType<TNext>,
     ): ConfigurableInterruptBuilder<TNext> {
       return createInterruptBuilder<TNext>(id, nextSchema);
     },

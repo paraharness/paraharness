@@ -135,10 +135,10 @@ export interface AgentBuilder<TIn = unknown, TOut = unknown, THandle = unknown>
    *
    * Resets input-dependent `partitions`, `capabilities`, and `onInterrupt` handlers when changed.
    * @template TNewIn Validated actor input payload type.
-   * @param {z.ZodType<TNewIn, z.ZodTypeDef, unknown>} schema - Zod schema validating agent input.
+   * @param {z.ZodType<TNewIn>} schema - Zod schema validating agent input.
    * @returns {AgentBuilder<TNewIn, TOut, THandle>} New immutable agent builder.
    */
-  input<TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>): AgentBuilder<TNewIn, TOut, THandle>;
+  input<TNewIn>(schema: z.ZodType<TNewIn>): AgentBuilder<TNewIn, TOut, THandle>;
   /**
    * Binds an optional synchronous extractor mapping `TIn` to `ResolutionContext.activePartitions`.
    *
@@ -152,10 +152,10 @@ export interface AgentBuilder<TIn = unknown, TOut = unknown, THandle = unknown>
    *
    * Validated automatically during the `beforeStop` completion gate.
    * @template TNewOut Validated actor output payload type.
-   * @param {z.ZodType<TNewOut, z.ZodTypeDef, unknown>} schema - Zod schema validating agent output.
+   * @param {z.ZodType<TNewOut>} schema - Zod schema validating agent output.
    * @returns {AgentBuilder<TIn, TNewOut, THandle>} New immutable agent builder.
    */
-  output<TNewOut>(schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>): AgentBuilder<TIn, TNewOut, THandle>;
+  output<TNewOut>(schema: z.ZodType<TNewOut>): AgentBuilder<TIn, TNewOut, THandle>;
   /**
    * Declares voluntary interrupts the agent may raise via synthetic interrupt tool calls.
    *

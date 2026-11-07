@@ -20,11 +20,11 @@ export interface SignalPayloadBuilder<TPayload = unknown> extends SignalBuilder<
    *
    * @template TNext New signal payload output type inferred from `schema`.
    *
-   * @param {z.ZodType<TNext, z.ZodTypeDef, unknown>} schema - Zod schema validating signal payloads.
+   * @param {z.ZodType<TNext>} schema - Zod schema validating signal payloads.
    *
    * @returns {SignalPayloadBuilder<TNext>} New immutable signal builder instance.
    */
   payload<TNext>(
-    schema: z.ZodType<TNext, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNext>,
   ): SignalPayloadBuilder<TNext>;
 }

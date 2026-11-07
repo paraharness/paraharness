@@ -18,7 +18,7 @@ export interface EscalateCapabilityBuilderState<TPayload = unknown, TResponse = 
   /** Bidirectional human authority paged when the escalation tool is invoked. */
   readonly human: HumanNode<'bidirectional'> | undefined;
   /** Zod schema validating the human authority's decision response. */
-  readonly responseSchema: z.ZodType<TResponse, z.ZodTypeDef, unknown> | undefined;
+  readonly responseSchema: z.ZodType<TResponse> | undefined;
   /** Optional conditional capability lease elevation rule evaluated on human response. */
   readonly elevateLeaseWhen: EscalateLeaseElevationConfig<TResponse> | undefined;
 }

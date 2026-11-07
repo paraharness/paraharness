@@ -38,7 +38,7 @@ export function createSpeculateFromState<
   state: SpeculateCapabilityState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict>,
 ): SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate> {
   return Object.freeze<SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>>({
-    requestSchema: <TNewReq>(schema: z.ZodType<TNewReq, z.ZodTypeDef, unknown>) =>
+    requestSchema: <TNewReq>(schema: z.ZodType<TNewReq>) =>
       createSpeculateFromState({ ...state, requestSchema: schema, mapBranches: undefined }),
     worker: <TNewChildIn, TNewChildOut>(
       workerExecutable: MaybeBuilder<AgentNode<TNewChildIn, TNewChildOut, THandle> | LoopNode<TNewChildIn, TNewChildOut, THandle, string>>,

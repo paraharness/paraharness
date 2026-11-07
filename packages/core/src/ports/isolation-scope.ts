@@ -16,7 +16,7 @@ export interface IsolationScope<
   /** Unique identifier of the isolation scope driver. */
   readonly id: string;
   /** Zod schema validating receipts returned by `inspect()`. */
-  readonly receiptSchema: z.ZodType<TReceipt, z.ZodTypeDef, unknown>;
+  readonly receiptSchema: z.ZodType<TReceipt>;
 
   /**
    * Provisions and initializes an isolated root scope handle for `runId`.

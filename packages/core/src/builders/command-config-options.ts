@@ -13,9 +13,9 @@ import type { ExecutionContext } from '../ports/execution-context.js';
  */
 export interface CommandConfigOptions<TIn = unknown, TOut = unknown, THandle = unknown> {
   /** Zod schema validating step input before invoking `fn`. */
-  readonly input: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly input: z.ZodType<TIn>;
   /** Zod schema validating step output returned by `fn`. */
-  readonly output: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly output: z.ZodType<TOut>;
   /** Optional synchronous partition extractor mapping validated `TIn` to active partition IDs. */
   readonly extractPartitions?: (input: TIn) => readonly string[];
   /** Passive step callback invoked by the runtime's `executeCommand` executor. */

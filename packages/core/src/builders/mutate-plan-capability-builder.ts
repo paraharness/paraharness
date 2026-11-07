@@ -23,13 +23,13 @@ export interface MutatePlanCapabilityBuilder<TItem = unknown>
    * @template TNewItem Spawned work item payload type validated by `itemSchema`.
    * @template TSig     Signal payload type for signal-correlated wakeup.
    *
-   * @param {z.ZodType<TNewItem, z.ZodTypeDef, unknown>}  itemSchema - Zod schema validating spawned task items.
-   * @param {SpawnTasksBuilderOptions<TNewItem, TSig>}    options    - Spawn limits, patch, and wakeup options.
+   * @param {z.ZodType<TNewItem>}                      itemSchema - Zod schema validating spawned task items.
+   * @param {SpawnTasksBuilderOptions<TNewItem, TSig>} options    - Spawn limits, patch, and wakeup options.
    *
    * @returns {MutatePlanCapabilityBuilder<TNewItem>} New immutable plan mutation builder.
    */
   canSpawnTasks<TNewItem, TSig = unknown>(
-    itemSchema: z.ZodType<TNewItem, z.ZodTypeDef, unknown>,
+    itemSchema: z.ZodType<TNewItem>,
     options: SpawnTasksBuilderOptions<TNewItem, TSig>,
   ): MutatePlanCapabilityBuilder<TNewItem>;
 

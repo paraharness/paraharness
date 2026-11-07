@@ -37,9 +37,9 @@ export function createLoopFromState<TIn = unknown, TOut = unknown, THandle = unk
   return Object.freeze<LoopBuilder<TIn, TOut, THandle, TActStepId>>({
     id: state.id,
     roleKey: state.roleKey,
-    input: <TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>) =>
+    input: <TNewIn>(schema: z.ZodType<TNewIn>) =>
       createLoopFromState<TNewIn, TOut, THandle, TActStepId>({ ...state, inputSchema: schema, extractPartitions: undefined, actStep: undefined, evaluateStep: undefined }),
-    output: <TNewOut>(schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>) =>
+    output: <TNewOut>(schema: z.ZodType<TNewOut>) =>
       createLoopFromState<TIn, TNewOut, THandle, TActStepId>({ ...state, outputSchema: schema, actStep: undefined, evaluateStep: undefined }),
     partitions: (extractor: (input: TIn) => readonly string[]) => createLoopFromState({ ...state, extractPartitions: extractor }),
     maxIterations: (count: number) => {

@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config';
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const packages = [
+  'lockfile',
   'core',
   'sqlite',
   'postgres',

@@ -16,7 +16,7 @@ export interface SignalBuilder<TPayload = unknown> extends AstBuilder<SignalNode
   /** Unique logical identifier of the signal. */
   readonly id: string;
   /** Zod schema used to validate payloads emitted for this signal. */
-  readonly schema: z.ZodType<TPayload, z.ZodTypeDef, unknown>;
+  readonly schema: z.ZodType<TPayload>;
 
   /**
    * Binds a new Zod payload schema to the signal definition, returning a strongly typed builder clone.
@@ -26,9 +26,9 @@ export interface SignalBuilder<TPayload = unknown> extends AstBuilder<SignalNode
    *
    * @template TNext Validated output type of `schema`.
    *
-   * @param {z.ZodType<TNext, z.ZodTypeDef, unknown>} schema - Zod schema governing emitted signal payloads.
+   * @param {z.ZodType<TNext>} schema - Zod schema governing emitted signal payloads.
    *
    * @returns {SignalBuilder<TNext>} New immutable `SignalBuilder` typed to `TNext`.
    */
-  payload<TNext>(schema: z.ZodType<TNext, z.ZodTypeDef, unknown>): SignalBuilder<TNext>;
+  payload<TNext>(schema: z.ZodType<TNext>): SignalBuilder<TNext>;
 }

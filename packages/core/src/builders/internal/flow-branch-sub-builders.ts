@@ -20,7 +20,7 @@ import { deepFreeze } from './deep-freeze.js';
  * @template TCustomMetrics Custom step telemetry metrics type.
  * @template TStepOutputs   Accumulated step outputs map type.
  *
- * @param {{ readonly id: TBranchId; readonly outputSchema?: z.ZodType<TBranchOut, z.ZodTypeDef, unknown>; readonly cases: readonly FlowBranchCase<TFlowIn, THandle>[]; readonly otherwiseSteps: ReadonlyArray<FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<unknown, unknown, THandle>> }} state - Current branch builder state.
+ * @param {{ readonly id: TBranchId; readonly outputSchema?: z.ZodType<TBranchOut>; readonly cases: readonly FlowBranchCase<TFlowIn, THandle>[]; readonly otherwiseSteps: ReadonlyArray<FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<unknown, unknown, THandle>> }} state - Current branch builder state.
  *
  * @returns {FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>} Frozen branch builder.
  */
@@ -34,12 +34,12 @@ export function createFlowBranchFromState<
   TStepOutputs extends Record<string, unknown> = Record<string, never>,
 >(state: {
   readonly id: TBranchId;
-  readonly outputSchema?: z.ZodType<TBranchOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema?: z.ZodType<TBranchOut>;
   readonly cases: readonly FlowBranchCase<TFlowIn, THandle>[];
   readonly otherwiseSteps: ReadonlyArray<FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<unknown, unknown, THandle>>;
 }): FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs> {
   return Object.freeze<FlowBranchBuilder<TFlowIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>>({
-    output: <TNewBranchOut>(schema: z.ZodType<TNewBranchOut, z.ZodTypeDef, unknown>) =>
+    output: <TNewBranchOut>(schema: z.ZodType<TNewBranchOut>) =>
       createFlowBranchFromState<TFlowIn, TNewBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>({
         id: state.id,
         outputSchema: schema,

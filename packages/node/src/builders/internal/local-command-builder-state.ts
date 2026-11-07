@@ -29,11 +29,11 @@ export interface LocalCommandBuilderState<TIn = unknown, TOut = unknown, THandle
   /** Optional timeout in minutes. */
   readonly timeoutMinutes?: number;
   /** Input validation schema. */
-  readonly inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<TIn>;
   /** Whether `.input(schema)` was explicitly invoked by the caller. */
   readonly hasExplicitInputSchema: boolean;
   /** Output validation schema. */
-  readonly outputSchema: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<TOut>;
   /** Optional idempotency pre-check configuration. */
   readonly unrepeatable?: LocalCommandUnrepeatableConfig<TIn, THandle>;
 }

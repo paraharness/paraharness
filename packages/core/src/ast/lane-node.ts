@@ -109,7 +109,7 @@ export interface LaneNode<TIn = unknown, TStepIds extends string = string> {
   /** Unique identifier of the lane. */
   readonly id: string;
   /** Zod schema validating work items entering the lane. */
-  readonly inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<TIn>;
   /** Synchronous extractor returning the unique deduplication key (`itemKey`) for each work item. */
   readonly keyMapper: BivariantCallback<[input: TIn], string>;
   /** Optional external issue tracker configuration. */

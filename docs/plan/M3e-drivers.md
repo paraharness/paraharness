@@ -102,7 +102,8 @@ Every file in `packages/{claude,openai,gemini}/src/**` and `test/fixtures/**` ad
 1. **Zero Co-Location of Entity Kinds**:
    - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/{claude,openai,gemini}/src/**` or `packages/{claude,openai,gemini}/test/fixtures/**`.
    - Every builder interface (`*-builder.ts`), options/transport interface (`*-options.ts`, `*-http-transport.ts`), and namespace contract (`*-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file; every `ModelDriver` class and recorded transport fixture class gets its own single-class file; every `const` (`claude`, `openai`, `gemini`, `default*HttpTransport`, `*Executors`) lives in its own `const`-only file.
-2. **Full 3-Part JSDoc Requirement**:
+2. **Full 3-Part JSDoc & Official Vendor SDK Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
+   - Use the official vendor SDKs installed in each package (`@anthropic-ai/sdk` in `@harness-dsl/claude`, `openai` in `@harness-dsl/openai`, and `@google/genai` in `@harness-dsl/gemini`) alongside injectable `HttpTransport` test seams.
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/claude --filter @harness-dsl/openai --filter @harness-dsl/gemini lint`.
 
 ### 4.1 `@harness-dsl/claude` (`SPEC.md` §4.1 lines 2663–2667)

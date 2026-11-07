@@ -49,12 +49,12 @@ export interface FlowBuilder<
    *
    * @template TNewIn Validated flow input payload type.
    *
-   * @param {z.ZodType<TNewIn, z.ZodTypeDef, unknown>} schema - Zod schema validating flow input.
+   * @param {z.ZodType<TNewIn>} schema - Zod schema validating flow input.
    *
    * @returns {FlowBuilder<TNewIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>} New immutable flow builder.
    */
   input<TNewIn>(
-    schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewIn>,
   ): FlowBuilder<TNewIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>;
 
   /**

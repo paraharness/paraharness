@@ -21,7 +21,7 @@ export interface LaneBuilderState<TIn = unknown, TStepIds extends string = strin
   /** Unique lane identifier passed to `H.lane(id)`. */
   readonly id: string;
   /** Zod schema validating work items entering the lane. */
-  readonly inputSchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TIn>;
   /** Synchronous extractor returning the deduplication `itemKey` for each work item. */
   readonly keyMapper?: (input: TIn) => string;
   /** Optional external issue tracker polling and state mapping configuration. */

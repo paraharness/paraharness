@@ -24,7 +24,7 @@ export interface FlowBuilderState<
   /** Unique flow identifier passed to `H.flow(id)`. */
   readonly id: string;
   /** Zod schema validating work item input payloads entering the flow. */
-  readonly inputSchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TIn>;
   /** Capability-tiered isolation scope node governing workspace lifecycle. */
   readonly scope?: IsolationScopeASTNode<THandle>;
   /** Optional telemetry collector folding observed tool effects into custom metrics. */

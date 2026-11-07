@@ -33,8 +33,8 @@ export function createGithubCreateOrUpdatePrBuilder<
       `Invalid repo '${String(options.repo)}' in github.createOrUpdatePr '${id}': expected 'owner/repo'.`,
     );
   }
-  const currentInputSchema = (options.inputSchema ?? z.unknown()) as z.ZodType<TIn, z.ZodTypeDef, unknown>;
-  const currentOutputSchema = (options.outputSchema ?? z.unknown()) as z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  const currentInputSchema = (options.inputSchema ?? z.unknown()) as z.ZodType<TIn>;
+  const currentOutputSchema = (options.outputSchema ?? z.unknown()) as z.ZodType<TOut>;
   const untypedBranch: BivariantCallback<[input: unknown], string> = options.branch;
   const untypedBaseBranch: BivariantCallback<[input: unknown], string> | undefined = options.baseBranch;
   const untypedTitle: BivariantCallback<[input: unknown], string> = options.title;
@@ -43,7 +43,7 @@ export function createGithubCreateOrUpdatePrBuilder<
   return Object.freeze<GithubCreateOrUpdatePrBuilder<TIn, TOut, THandle>>({
     id,
     input<TNextIn>(
-      schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
+      schema: z.ZodType<TNextIn>,
     ): GithubCreateOrUpdatePrBuilder<TNextIn, TOut, THandle> {
       return createGithubCreateOrUpdatePrBuilder<TNextIn, TOut, THandle>(id, {
         repo: options.repo,
@@ -57,7 +57,7 @@ export function createGithubCreateOrUpdatePrBuilder<
       });
     },
     output<TNextOut>(
-      schema: z.ZodType<TNextOut, z.ZodTypeDef, unknown>,
+      schema: z.ZodType<TNextOut>,
     ): GithubCreateOrUpdatePrBuilder<TIn, TNextOut, THandle> {
       return createGithubCreateOrUpdatePrBuilder<TIn, TNextOut, THandle>(id, {
         repo: options.repo,

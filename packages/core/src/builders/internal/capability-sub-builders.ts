@@ -38,7 +38,7 @@ export function createForkCapabilityFromState<
       return createForkCapabilityFromState({ ...state, historyMode: mode });
     },
     requestSchema<TNewReq>(
-      schema: z.ZodType<TNewReq, z.ZodTypeDef, unknown>,
+      schema: z.ZodType<TNewReq>,
     ): ForkCapabilityBuilder<TParentIn, TNewReq, TChildIn, TChildOut, THandle> {
       return createForkCapabilityFromState<TParentIn, TNewReq, TChildIn, TChildOut, THandle>({
         toolName: state.toolName,

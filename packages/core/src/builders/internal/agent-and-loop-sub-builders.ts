@@ -71,7 +71,7 @@ export function createAgentFromState<TIn = unknown, TOut = unknown, THandle = un
     timeoutMinutes: (minutes: number) => createAgentFromState({ ...state, timeoutMinutes: minutes }),
     beforeStop: (...checks: ReadonlyArray<MaybeBuilder<CheckASTNode<THandle>> | ReadonlyArray<MaybeBuilder<CheckASTNode<THandle>>>>) =>
       createAgentFromState({ ...state, beforeStopChecks: [...state.beforeStopChecks, ...flattenExtractedNodes<CheckASTNode<THandle>>(checks)] }),
-    input: <TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>) =>
+    input: <TNewIn>(schema: z.ZodType<TNewIn>) =>
       createAgentFromState<TNewIn, TOut, THandle>({
         ...state,
         inputSchema: schema,
@@ -80,7 +80,7 @@ export function createAgentFromState<TIn = unknown, TOut = unknown, THandle = un
         onInterruptHandlers: [],
       }),
     partitions: (extractor: (input: TIn) => readonly string[]) => createAgentFromState({ ...state, extractPartitions: extractor }),
-    output: <TNewOut>(schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>) =>
+    output: <TNewOut>(schema: z.ZodType<TNewOut>) =>
       createAgentFromState<TIn, TNewOut, THandle>({ ...state, outputSchema: schema }),
     canRaise: (...interrupts: ReadonlyArray<MaybeBuilder<InterruptNode<unknown>> | ReadonlyArray<MaybeBuilder<InterruptNode<unknown>>>>) =>
       createAgentFromState({ ...state, canRaiseInterrupts: [...state.canRaiseInterrupts, ...flattenExtractedNodes<InterruptNode<unknown>>(interrupts)] }),

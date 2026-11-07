@@ -18,12 +18,12 @@ export interface GitMergeQueueBuilder<TIn = unknown, TOut = unknown>
    *
    * @template TNextIn Updated step input payload type inferred from `schema`.
    *
-   * @param {z.ZodType<TNextIn, z.ZodTypeDef, unknown>} schema - Zod schema for step input validation.
+   * @param {z.ZodType<TNextIn>} schema - Zod schema for step input validation.
    *
    * @returns {GitMergeQueueBuilder<TNextIn, TOut>} Updated immutable merge queue builder instance.
    */
   input<TNextIn>(
-    schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNextIn>,
   ): GitMergeQueueBuilder<TNextIn, TOut>;
 
   /**
@@ -33,11 +33,11 @@ export interface GitMergeQueueBuilder<TIn = unknown, TOut = unknown>
    *
    * @template TNextOut Updated step output payload type inferred from `schema`.
    *
-   * @param {z.ZodType<TNextOut, z.ZodTypeDef, unknown>} schema - Zod schema for step output validation.
+   * @param {z.ZodType<TNextOut>} schema - Zod schema for step output validation.
    *
    * @returns {GitMergeQueueBuilder<TIn, TNextOut>} Updated immutable merge queue builder instance.
    */
   output<TNextOut>(
-    schema: z.ZodType<TNextOut, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNextOut>,
   ): GitMergeQueueBuilder<TIn, TNextOut>;
 }

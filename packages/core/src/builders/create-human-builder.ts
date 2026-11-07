@@ -60,7 +60,7 @@ export function createHumanBuilder<
       assertNonEmptyIdentifier('H.human.withName', alias);
       return Object.freeze<ScopedHumanAliasBuilder>({
         output<TResponse>(
-          responseSchema: z.ZodType<TResponse, z.ZodTypeDef, unknown>,
+          responseSchema: z.ZodType<TResponse>,
         ): ScopedHumanTargetBuilder<TResponse> {
           const bidirectionalHuman = validateBidirectionalHumanChannel(
             compileNode(),

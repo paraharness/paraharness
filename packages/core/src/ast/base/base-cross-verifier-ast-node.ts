@@ -22,7 +22,7 @@ export interface BaseCrossVerifierASTNode<
   /** Logical identifier of the cross-verifier. */
   readonly id: string;
   /** Zod schema validating the cross-verification report attached to each candidate. */
-  readonly reportSchema: z.ZodType<TCrossReport, z.ZodTypeDef, unknown>;
+  readonly reportSchema: z.ZodType<TCrossReport>;
   /** Phantom type brand binding the verifier to its compatible scope handle type. */
   readonly __handleBrand?: THandle;
   /** Phantom type brand binding the verifier to its compatible scope receipt type. */

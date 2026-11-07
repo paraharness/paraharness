@@ -13,9 +13,9 @@ import type { ExecutionContext } from '../ports/execution-context.js';
  */
 export interface CreateCommandBuilderState<TIn = unknown, TOut = unknown, THandle = unknown> {
   /** Input schema. */
-  readonly inputSchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TIn>;
   /** Output schema. */
-  readonly outputSchema?: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema?: z.ZodType<TOut>;
   /** Optional partition extractor. */
   readonly extractPartitions?: (input: TIn) => readonly string[];
   /** Passive step callback. */

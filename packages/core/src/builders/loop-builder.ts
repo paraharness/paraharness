@@ -38,12 +38,12 @@ export interface LoopBuilder<
    *
    * @template TNewIn Validated loop input payload type.
    *
-   * @param {z.ZodType<TNewIn, z.ZodTypeDef, unknown>} schema - Zod schema validating loop input.
+   * @param {z.ZodType<TNewIn>} schema - Zod schema validating loop input.
    *
    * @returns {LoopBuilder<TNewIn, TOut, THandle, TActStepId>} New immutable loop builder.
    */
   input<TNewIn>(
-    schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewIn>,
   ): LoopBuilder<TNewIn, TOut, THandle, TActStepId>;
 
   /**
@@ -53,12 +53,12 @@ export interface LoopBuilder<
    *
    * @template TNewOut Validated loop output payload type.
    *
-   * @param {z.ZodType<TNewOut, z.ZodTypeDef, unknown>} schema - Zod schema validating loop output.
+   * @param {z.ZodType<TNewOut>} schema - Zod schema validating loop output.
    *
    * @returns {LoopBuilder<TIn, TNewOut, THandle, TActStepId>} New immutable loop builder.
    */
   output<TNewOut>(
-    schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewOut>,
   ): LoopBuilder<TIn, TNewOut, THandle, TActStepId>;
 
   /**

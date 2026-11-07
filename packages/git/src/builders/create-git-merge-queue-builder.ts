@@ -34,7 +34,7 @@ export function createGitMergeQueueBuilder<TIn = unknown, TOut = unknown>(
   }
   return Object.freeze<GitMergeQueueBuilder<TIn, TOut>>({
     input<TNextIn>(
-      schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
+      schema: z.ZodType<TNextIn>,
     ): GitMergeQueueBuilder<TNextIn, TOut> {
       return createGitMergeQueueBuilder<TNextIn, TOut>(id, {
         targetBranch: options.targetBranch,
@@ -45,7 +45,7 @@ export function createGitMergeQueueBuilder<TIn = unknown, TOut = unknown>(
       });
     },
     output<TNextOut>(
-      schema: z.ZodType<TNextOut, z.ZodTypeDef, unknown>,
+      schema: z.ZodType<TNextOut>,
     ): GitMergeQueueBuilder<TIn, TNextOut> {
       return createGitMergeQueueBuilder<TIn, TNextOut>(id, {
         targetBranch: options.targetBranch,
@@ -56,9 +56,9 @@ export function createGitMergeQueueBuilder<TIn = unknown, TOut = unknown>(
       });
     },
     toAST(): GitMergeQueueNode<TIn, TOut> {
-      const inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown> =
+      const inputSchema: z.ZodType<TIn> =
         options.inputSchema ?? z.custom<TIn>(() => true);
-      const outputSchema: z.ZodType<TOut, z.ZodTypeDef, unknown> =
+      const outputSchema: z.ZodType<TOut> =
         options.outputSchema ?? z.custom<TOut>(() => true);
       return Object.freeze<GitMergeQueueNode<TIn, TOut>>({
         type: 'git:merge-queue',

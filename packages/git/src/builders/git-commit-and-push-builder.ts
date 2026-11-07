@@ -24,12 +24,12 @@ export interface GitCommitAndPushBuilder<TIn = unknown>
    *
    * @template TNextIn Updated step input payload type inferred from `schema`.
    *
-   * @param {z.ZodType<TNextIn, z.ZodTypeDef, unknown>} schema - Zod schema for step input validation.
+   * @param {z.ZodType<TNextIn>} schema - Zod schema for step input validation.
    *
    * @returns {GitCommitAndPushBuilder<TNextIn>} Updated immutable step builder instance.
    */
   input<TNextIn>(
-    schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNextIn>,
   ): GitCommitAndPushBuilder<TNextIn>;
 
   /**

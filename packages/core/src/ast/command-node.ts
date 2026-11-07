@@ -18,9 +18,9 @@ export interface CommandNode<TIn = unknown, TOut = unknown, THandle = unknown> {
   /** Unique identifier of the command step. */
   readonly id: string;
   /** Zod schema validating step input before invoking `fn`. */
-  readonly inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema: z.ZodType<TIn>;
   /** Zod schema validating step output returned by `fn`. */
-  readonly outputSchema: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<TOut>;
   /** Optional synchronous partition extractor mapping validated `TIn` to active partition IDs. */
   readonly extractPartitions?: BivariantCallback<[input: TIn], readonly string[]>;
   /** Passive step callback invoked by the runtime's `executeCommand` executor. */

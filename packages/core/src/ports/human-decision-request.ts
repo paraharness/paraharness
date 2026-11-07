@@ -19,7 +19,7 @@ export interface HumanDecisionRequest<TRequest = unknown, TResponse = unknown> {
   /** Structured decision brief payload presented to the human operator. */
   readonly payload: TRequest;
   /** Zod schema used to validate and parse the human operator's response. */
-  readonly responseSchema: z.ZodType<TResponse, z.ZodTypeDef, unknown>;
+  readonly responseSchema: z.ZodType<TResponse>;
   /** Optional heartbeat interval in seconds before yielding the concurrency slot. */
   readonly keepAliveSeconds?: number;
   /** Optional abort signal triggered if the decision request is cancelled or superseded. */

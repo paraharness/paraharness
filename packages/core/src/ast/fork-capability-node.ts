@@ -54,7 +54,7 @@ export interface ForkCapabilityNode<
   /** Transcript history sharing mode (`'shared-prefix-only'` default or `'clone-transcript'`). */
   readonly historyMode: 'shared-prefix-only' | 'clone-transcript';
   /** Zod schema validating the parent agent's fork tool call arguments. */
-  readonly requestSchema: z.ZodType<TReq, z.ZodTypeDef, unknown>;
+  readonly requestSchema: z.ZodType<TReq>;
   /** Synchronous mapper projecting `(parentInput, req)` into the child executable's input `TChildIn`. */
   readonly mapInput: BivariantCallback<[parentInput: TParentIn, req: TReq], TChildIn>;
   /** Optional dynamic model routing configuration for child forks. */

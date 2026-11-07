@@ -17,5 +17,5 @@ export interface ScopedHumanTargetNode<TResponse = unknown> {
   /** Role alias displayed in decision requests and audit logs. */
   readonly alias: string;
   /** Zod schema validating the human's decision response. */
-  readonly outputSchema: z.ZodType<TResponse, z.ZodTypeDef, unknown>;
+  readonly outputSchema: z.ZodType<TResponse>;
 }

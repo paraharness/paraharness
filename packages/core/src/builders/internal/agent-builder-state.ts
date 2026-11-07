@@ -60,9 +60,9 @@ export interface AgentBuilderState<TIn = unknown, TOut = unknown, THandle = unkn
   /** Deterministic `beforeStop` verification checks. */
   readonly beforeStopChecks: readonly CheckASTNode<THandle>[];
   /** Zod schema validating actor input payloads. */
-  readonly inputSchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly inputSchema?: z.ZodType<TIn>;
   /** Zod schema validating actor output payloads. */
-  readonly outputSchema?: z.ZodType<TOut, z.ZodTypeDef, unknown>;
+  readonly outputSchema?: z.ZodType<TOut>;
   /** Optional synchronous partition extractor mapping `TIn` to active partition IDs. */
   readonly extractPartitions?: (input: TIn) => readonly string[];
   /** Voluntary interrupts the actor is permitted to raise. */

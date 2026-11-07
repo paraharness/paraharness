@@ -37,7 +37,7 @@ export interface AskInterruptHandlerNode<TPayload = unknown, TDecision = unknown
   /** Bidirectional human authority paged to resolve the interrupt. */
   readonly human: HumanNode<'bidirectional'>;
   /** Zod schema validating the human's decision response. */
-  readonly responseSchema: z.ZodType<TDecision, z.ZodTypeDef, unknown>;
+  readonly responseSchema: z.ZodType<TDecision>;
   /** Optional lease elevation rule applied to the outer interrupted actor when the human approves a lease. */
   readonly elevateLeaseWhen?: AskLeaseElevationConfig<TDecision>;
   /** Synchronous formatter producing the feedback string returned to the interrupted actor or adjudicator. */

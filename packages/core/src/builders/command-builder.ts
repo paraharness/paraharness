@@ -25,12 +25,12 @@ export interface CommandBuilder<TIn = unknown, TOut = unknown, THandle = unknown
    *
    * @template TNewIn Validated command input payload type.
    *
-   * @param {z.ZodType<TNewIn, z.ZodTypeDef, unknown>} schema - Zod schema validating step input.
+   * @param {z.ZodType<TNewIn>} schema - Zod schema validating step input.
    *
    * @returns {CommandBuilder<TNewIn, TOut, THandle>} New immutable command builder.
    */
   input<TNewIn>(
-    schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewIn>,
   ): CommandBuilder<TNewIn, TOut, THandle>;
 
   /**
@@ -40,12 +40,12 @@ export interface CommandBuilder<TIn = unknown, TOut = unknown, THandle = unknown
    *
    * @template TNewOut Validated command output payload type.
    *
-   * @param {z.ZodType<TNewOut, z.ZodTypeDef, unknown>} schema - Zod schema validating step output.
+   * @param {z.ZodType<TNewOut>} schema - Zod schema validating step output.
    *
    * @returns {CommandBuilder<TIn, TNewOut, THandle>} New immutable command builder.
    */
   output<TNewOut>(
-    schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewOut>,
   ): CommandBuilder<TIn, TNewOut, THandle>;
 
   /**

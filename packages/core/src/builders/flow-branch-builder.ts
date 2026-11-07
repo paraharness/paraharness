@@ -33,12 +33,12 @@ export interface FlowBranchBuilder<
    *
    * @template TNewBranchOut Unified branch output payload type.
    *
-   * @param {z.ZodType<TNewBranchOut, z.ZodTypeDef, unknown>} schema - Zod schema validating the branch output.
+   * @param {z.ZodType<TNewBranchOut>} schema - Zod schema validating the branch output.
    *
    * @returns {FlowBranchBuilder<TFlowIn, TNewBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>} New immutable branch builder.
    */
   output<TNewBranchOut>(
-    schema: z.ZodType<TNewBranchOut, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewBranchOut>,
   ): FlowBranchBuilder<
     TFlowIn,
     TNewBranchOut,

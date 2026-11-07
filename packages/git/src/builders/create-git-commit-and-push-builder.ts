@@ -32,7 +32,7 @@ export function createGitCommitAndPushBuilder<TIn = unknown>(
   }
   return Object.freeze<GitCommitAndPushBuilder<TIn>>({
     input<TNextIn>(
-      schema: z.ZodType<TNextIn, z.ZodTypeDef, unknown>,
+      schema: z.ZodType<TNextIn>,
     ): GitCommitAndPushBuilder<TNextIn> {
       return createGitCommitAndPushBuilder<TNextIn>(id, {
         branch: (nextIn: TNextIn): string => options.branch(nextIn as never),
@@ -64,7 +64,7 @@ export function createGitCommitAndPushBuilder<TIn = unknown>(
               slots: 4,
               maxDaemons: 2,
             });
-      const inputSchema: z.ZodType<TIn, z.ZodTypeDef, unknown> =
+      const inputSchema: z.ZodType<TIn> =
         options.inputSchema ?? z.custom<TIn>(() => true);
       return Object.freeze<GitCommitAndPushNode<TIn>>({
         type: 'git:commit-and-push',

@@ -42,12 +42,12 @@ export interface SpeculateCapabilityBuilder<
    *
    * @template TNewReq Validated speculation request payload type.
    *
-   * @param {z.ZodType<TNewReq, z.ZodTypeDef, unknown>} schema - Zod schema for the speculation request.
+   * @param {z.ZodType<TNewReq>} schema - Zod schema for the speculation request.
    *
    * @returns {SpeculateCapabilityBuilder<TParentIn, TNewReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>} New immutable speculate builder.
    */
   requestSchema<TNewReq>(
-    schema: z.ZodType<TNewReq, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<TNewReq>,
   ): SpeculateCapabilityBuilder<
     TParentIn,
     TNewReq,

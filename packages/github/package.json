@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@harness-dsl/core": "workspace:*",
-    "zod": "^3.24.2"
+    "@octokit/rest": "^22.0.1",
+    "@octokit/webhooks": "^14.2.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

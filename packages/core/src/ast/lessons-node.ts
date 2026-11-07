@@ -89,7 +89,7 @@ export interface LessonsNode<TIn = unknown> {
   /** Passive backing store AST node (`FsJsonlLessonStoreNode`, `SqliteLessonsNode`, or `PostgresLessonsNode`). */
   readonly store: LessonStoreASTNode;
   /** Optional Zod schema validating the input passed to `queryMapper`. */
-  readonly querySchema?: z.ZodType<TIn, z.ZodTypeDef, unknown>;
+  readonly querySchema?: z.ZodType<TIn>;
   /** Optional synchronous query extractor mapping actor input `TIn` to a search query string. */
   readonly queryMapper?: BivariantCallback<[input: TIn], string>;
   /** Optional contrastive distillation configuration. */

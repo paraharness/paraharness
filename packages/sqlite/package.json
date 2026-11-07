@@ -14,9 +14,13 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
+    "@dagrejs/graphlib": "^4.0.7",
     "@harness-dsl/core": "workspace:*",
-    "better-sqlite3": "^12.11.1",
-    "zod": "^3.24.2"
+    "better-sqlite3": "^12.8.0",
+    "minisearch": "^7.2.0",
+    "node-diff3": "^3.2.1",
+    "p-queue": "^9.1.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

@@ -36,7 +36,7 @@ export function createEscalateFromState<TPayload = unknown, TResponse = unknown>
       });
     },
     response<TNewResp>(
-      schema: z.ZodType<TNewResp, z.ZodTypeDef, unknown>,
+      schema: z.ZodType<TNewResp>,
     ): EscalateCapabilityBuilder<TPayload, TNewResp> {
       return createEscalateFromState<TPayload, TNewResp>({
         interrupt: state.interrupt,

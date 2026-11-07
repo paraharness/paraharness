@@ -11,17 +11,17 @@ import type { SignalPayloadBuilder as ConfigurableSignalBuilder } from './signal
  *
  * @template TPayload Signal payload type.
  *
- * @param {string}                                     id       - Unique signal identifier.
- * @param {z.ZodType<TPayload, z.ZodTypeDef, unknown>} [schema] - Optional initial Zod payload schema (defaults to `z.unknown()`).
+ * @param {string}              id       - Unique signal identifier.
+ * @param {z.ZodType<TPayload>} [schema] - Optional initial Zod payload schema (defaults to `z.unknown()`).
  *
  * @returns {ConfigurableSignalBuilder<TPayload>} Frozen signal builder instance.
  */
 export function createSignalBuilder<TPayload = unknown>(
   id: string,
-  schema?: z.ZodType<TPayload, z.ZodTypeDef, unknown>,
+  schema?: z.ZodType<TPayload>,
 ): ConfigurableSignalBuilder<TPayload> {
   assertNonEmptyIdentifier('H.signal', id);
-  const resolvedSchema = (schema ?? z.unknown()) as z.ZodType<TPayload, z.ZodTypeDef, unknown>;
+  const resolvedSchema = (schema ?? z.unknown()) as z.ZodType<TPayload>;
   const compiledNode: SignalNode<TPayload> = deepFreeze<SignalNode<TPayload>>({
     type: 'harness:signal',
     id,
@@ -33,7 +33,7 @@ export function createSignalBuilder<TPayload = unknown>(
     id,
     schema: resolvedSchema,
     payload<TNext>(
-      nextSchema: z.ZodType<TNext, z.ZodTypeDef, unknown>,
+      nextSchema: z.ZodType<TNext>,
     ): ConfigurableSignalBuilder<TNext> {
       return createSignalBuilder<TNext>(id, nextSchema);
     },

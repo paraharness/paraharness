@@ -16,7 +16,7 @@ import '../nodes/netsuite-registry-augmentation.js';
 export function createNetSuiteDraftJournalScopeBuilder(
   id = 'netsuite:draft-journal-scope',
 ): NetSuiteDraftScopeNode {
-  const receiptSchema: z.ZodType<DraftJournalReceipt, z.ZodTypeDef, unknown> = z
+  const receiptSchema: z.ZodType<DraftJournalReceipt> = z
     .object({
       journalId: z.string(),
       runId: z.string(),

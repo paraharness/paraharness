@@ -22,7 +22,7 @@ export interface BranchableScope<
   /** Literal capability marker confirming child branching support. */
   readonly supportsBranching: true;
   /** Zod schema validating synchronization receipts returned by `syncChild()` and `syncRoot()`. */
-  readonly syncSchema: z.ZodType<TSync, z.ZodTypeDef, unknown>;
+  readonly syncSchema: z.ZodType<TSync>;
 
   /**
    * Forks an isolated child scope handle cloned from `parent`.

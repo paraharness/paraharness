@@ -24,7 +24,7 @@ export function createGitPatchEquivalenceBuilder(
   Record<string, unknown>,
   GitPatchEquivalenceNode
 > {
-  const reportSchema: z.ZodType<Record<string, unknown>, z.ZodTypeDef, unknown> = z
+  const reportSchema: z.ZodType<Record<string, unknown>> = z
     .object({
       equivalenceGroupIndex: z.number(),
       equivalentBranchIndices: z.array(z.number()),

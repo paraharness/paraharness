@@ -78,7 +78,8 @@ Every file in `packages/node/src/**` and `packages/node/test/fixtures/**` adhere
 1. **Zero Co-Location of Entity Kinds**:
    - `interface`, `function`, `class`, `const`, and `type` declarations must **never** live in the same file in `packages/node/src/**` or `packages/node/test/fixtures/**`.
    - Every builder interface (`*-builder.ts`), options interface (`*-options.ts`), and namespace contract (`local-namespace-contract.ts`, `mcp-namespace-contract.ts`) gets its own single-interface file; every builder factory function (`create-*.ts`) gets its own single-function file (and at most 4 cohesive functions `<= 40` lines each—or 1 function when `> 40` lines—per `function`-only file per Rule 1.6); `NodeRunnerDriver` and `PtyFramedInteractiveSession` each get their own single-class file; every `const` (`local`, `mcp`, `nodeExecutors`, `ISOLATED_GIT_ENV_OVERRIDES`) lives in its own `const`-only file.
-2. **Full 3-Part JSDoc Requirement**:
+2. **Full 3-Part JSDoc & Approved Library Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
+   - Use `node-pty` for PTY daemon sessions, `@modelcontextprotocol/sdk` for MCP stdio/SSE control-plane servers, `pidtree` + `fkill` for process-tree teardown, `get-port` for dynamic port allocation, `wait-on` for TCP port readiness polling, and `p-queue` / `p-limit` for runner slot concurrency.
    - Every `interface`, `class`, `function`, class method, **interface method signature (`TSMethodSignature`)**, `type`, and exported `const` in `src/**` and `test/fixtures/**` must carry full 3-part JSDoc per `docs/CODING_GUIDELINES.md` §2 (2-paragraph Summary + Detailed description separated by a blank `*` line, vertically aligned `@template` and `@param {Type} name - Description`, and `@returns {Type} Description`), enforced by `pnpm --filter @harness-dsl/node lint`.
 
 ### 4.1 `local.runner({ id?, slots, maxDaemons? })` & `NodeRunnerDriver` (`SPEC.md` §4.2 line 2783)

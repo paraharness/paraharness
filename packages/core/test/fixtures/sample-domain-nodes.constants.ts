@@ -26,7 +26,7 @@ import type { SampleTier1ScopeNode } from './sample-tier1-scope-node.js';
 import type { SampleTier2ScopeNode } from './sample-tier2-scope-node.js';
 
 /** Zod schema for a sample `GitScopeReceipt` in tests (using `.default('main')` on `baseBranch`). */
-export const SAMPLE_SCOPE_RECEIPT_SCHEMA: z.ZodType<GitScopeReceipt, z.ZodTypeDef, unknown> = z.object({
+export const SAMPLE_SCOPE_RECEIPT_SCHEMA: z.ZodType<GitScopeReceipt> = z.object({
   headRef: z.string(),
   baseRef: z.string(),
   branchName: z.string().optional(),
@@ -36,7 +36,7 @@ export const SAMPLE_SCOPE_RECEIPT_SCHEMA: z.ZodType<GitScopeReceipt, z.ZodTypeDe
 });
 
 /** Zod schema for a sample `GitSyncReceipt` in tests. */
-export const SAMPLE_SYNC_RECEIPT_SCHEMA: z.ZodType<GitSyncReceipt, z.ZodTypeDef, unknown> = z.object({
+export const SAMPLE_SYNC_RECEIPT_SCHEMA: z.ZodType<GitSyncReceipt> = z.object({
   rebasedOntoRef: z.string(),
   baseBranch: z.string(),
   updatedFiles: z.array(z.string()),
@@ -46,7 +46,7 @@ export const SAMPLE_SYNC_RECEIPT_SCHEMA: z.ZodType<GitSyncReceipt, z.ZodTypeDef,
 export const SAMPLE_TELEMETRY_SCHEMA = z.object({ filesRead: z.array(z.string()), filesMutated: z.array(z.string()) });
 
 /** Zod schema for sample abort hook metadata (`abortedSnapshotRef`, `resetToRef`). */
-export const SAMPLE_ABORT_META_SCHEMA: z.ZodType<GitAbortMeta, z.ZodTypeDef, unknown> = z.object({
+export const SAMPLE_ABORT_META_SCHEMA: z.ZodType<GitAbortMeta> = z.object({
   abortedSnapshotRef: z.string(),
   resetToRef: z.string(),
 });

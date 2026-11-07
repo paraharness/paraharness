@@ -14,5 +14,5 @@ export interface SignalNode<TPayload = unknown> {
   /** Unique logical identifier of the signal. */
   readonly id: string;
   /** Zod schema used to validate payloads emitted for this signal. */
-  readonly schema: z.ZodType<TPayload, z.ZodTypeDef, unknown>;
+  readonly schema: z.ZodType<TPayload>;
 }
