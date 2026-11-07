@@ -82,12 +82,12 @@ export function resolveJailedWorktreePath(
 }
 
 /**
- * Pre-compiles a path matcher testing both exact normalized file paths and `picomatch` globs (`SPEC.md` §4.3).
+ * Pre-compiles a path matcher testing exact normalized file paths, positive `picomatch` globs, and negated `!` globs (`SPEC.md` §4.3).
  *
  * Ensures literal bracketed paths (such as `app/users/[id]/page.test.tsx`) match via $O(1)$
- * `Set` lookup alongside standard POSIX glob patterns.
+ * `Set` lookup alongside standard POSIX glob patterns and `!` exclusions.
  *
- * @param {readonly string[]} globs - Exact file paths or POSIX glob patterns.
+ * @param {readonly string[]} globs - Exact file paths or POSIX glob patterns (including optional `!` negations).
  *
  * @returns {(candidatePath: string) => boolean} Reusable synchronous predicate testing a normalized POSIX path.
  */
@@ -98,23 +98,27 @@ export function compileGlobOrExactMatcher(
     return (): boolean => false;
   }
   const exactPaths = new Set<string>();
-  const compiledMatchers: Array<(input: string) => boolean> = [];
+  const positiveMatchers: Array<(input: string) => boolean> = [];
+  const ignoreMatchers: Array<(input: string) => boolean> = [];
   for (const rawPattern of globs) {
     const normalizedPattern = rawPattern.replace(/\\/g, '/').replace(/^\.\//, '');
-    exactPaths.add(normalizedPattern);
-    compiledMatchers.push(picomatch(normalizedPattern, { dot: true }));
+    if (normalizedPattern.startsWith('!') && normalizedPattern.length > 1) {
+      ignoreMatchers.push(picomatch(normalizedPattern.slice(1).replace(/^\.\//, ''), { dot: true }));
+    } else {
+      exactPaths.add(normalizedPattern);
+      positiveMatchers.push(picomatch(normalizedPattern, { dot: true }));
+    }
   }
   return (candidatePath: string): boolean => {
     const normalizedCandidate = candidatePath.replace(/\\/g, '/').replace(/^\.\//, '');
-    if (exactPaths.has(normalizedCandidate)) {
-      return true;
+    for (const isIgnored of ignoreMatchers) {
+      if (isIgnored(normalizedCandidate)) return false;
     }
-    for (const isMatch of compiledMatchers) {
-      if (isMatch(normalizedCandidate)) {
-        return true;
-      }
+    if (exactPaths.has(normalizedCandidate)) return true;
+    for (const isMatch of positiveMatchers) {
+      if (isMatch(normalizedCandidate)) return true;
     }
-    return false;
+    return positiveMatchers.length === 0 && exactPaths.size === 0 && ignoreMatchers.length > 0;
   };
 }
 

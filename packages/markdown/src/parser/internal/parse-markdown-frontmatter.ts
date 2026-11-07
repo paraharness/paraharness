@@ -1,42 +1,42 @@
+import { frontmatterFromMarkdown } from 'mdast-util-frontmatter';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { toMarkdown } from 'mdast-util-to-markdown';
+import { frontmatter } from 'micromark-extension-frontmatter';
+import { parse as parseYaml } from 'yaml';
 import type { ParsedMarkdownDocument } from '../parsed-markdown-document.js';
 
 /**
- * Parses a single scalar or inline-array YAML value string into its JavaScript representation.
+ * Recursively freezes arrays and plain object records produced by `yaml.parse`.
  *
- * Supports quoted strings, booleans, finite numbers, and bracketed inline arrays (`[a, b]`).
+ * Ensures that parsed frontmatter metadata on `ParsedMarkdownDocument` cannot be mutated
+ * after resolution (`Rule 5.1`).
  *
- * @param {string} rawValue - Trimmed YAML value token.
+ * @param {unknown} value - Parsed YAML value to deeply freeze.
  *
- * @returns {unknown} Parsed primitive or frozen array value.
+ * @returns {unknown} Deeply frozen YAML value.
  */
-function parseYamlValueToken(rawValue: string): unknown {
-  if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
-    const inner = rawValue.slice(1, -1).trim();
-    if (inner.length === 0) return Object.freeze([]);
-    const items: unknown[] = [];
-    for (const part of inner.split(',')) {
-      items.push(parseYamlValueToken(part.trim()));
+function freezeFrontmatterValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    for (let idx = 0; idx < value.length; idx += 1) {
+      value[idx] = freezeFrontmatterValue(value[idx]);
     }
-    return Object.freeze(items);
+    return Object.freeze(value);
   }
-  if (
-    (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
-    (rawValue.startsWith("'") && rawValue.endsWith("'"))
-  ) {
-    return rawValue.slice(1, -1);
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    for (const key of Object.keys(record)) {
+      record[key] = freezeFrontmatterValue(record[key]);
+    }
+    return Object.freeze(record);
   }
-  if (rawValue === 'true') return true;
-  if (rawValue === 'false') return false;
-  if (rawValue.length > 0 && /^-?\d+(\.\d+)?$/.test(rawValue)) {
-    return Number(rawValue);
-  }
-  return rawValue;
+  return value;
 }
 
 /**
- * Parses leading YAML frontmatter and body content from a raw Markdown string.
+ * Parses leading YAML frontmatter and body content from a raw Markdown string via `mdast` and `yaml`.
  *
- * Recognizes `---` fenced blocks at byte 0 supporting scalar keys, inline arrays, and indented `- item` lists.
+ * Uses `mdast-util-from-markdown` with `micromark-extension-frontmatter` and `mdast-util-frontmatter`
+ * to isolate the leading `yaml` AST node and parses its contents via `yaml.parse`.
  *
  * @param {string} rawMarkdown - Raw UTF-8 Markdown document text.
  *
@@ -44,46 +44,56 @@ function parseYamlValueToken(rawValue: string): unknown {
  */
 export function parseMarkdownFrontmatter(rawMarkdown: string): ParsedMarkdownDocument {
   const normalized = rawMarkdown.replace(/\r\n/g, '\n');
-  const endMarkerIdx = normalized.startsWith('---\n') ? normalized.indexOf('\n---', 4) : -1;
-  if (endMarkerIdx === -1) {
-    return Object.freeze<ParsedMarkdownDocument>({ frontmatter: Object.freeze({}), body: normalized.trim() });
+  const tree = fromMarkdown(normalized, {
+    extensions: [frontmatter(['yaml'])],
+    mdastExtensions: [frontmatterFromMarkdown(['yaml'])],
+  });
+  const firstNode = tree.children[0];
+  if (firstNode === undefined || firstNode.type !== 'yaml') {
+    return Object.freeze<ParsedMarkdownDocument>({
+      frontmatter: Object.freeze({}),
+      body: normalized.trim(),
+    });
   }
-  const yamlBlock = normalized.slice(4, endMarkerIdx);
-  const afterFence = normalized.slice(endMarkerIdx + 4).replace(/^\n/, '');
-  const frontmatter: Record<string, unknown> = {};
-  const listKeys = new Set<string>();
-  let activeListKey: string | undefined;
-  for (const line of yamlBlock.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) continue;
-    if (trimmed.startsWith('- ') && activeListKey !== undefined) {
-      const activeList = frontmatter[activeListKey] as unknown[];
-      activeList.push(parseYamlValueToken(trimmed.slice(2).trim()));
-      continue;
-    }
-    const colonIdx = trimmed.indexOf(':');
-    if (colonIdx <= 0) continue;
-    const key = trimmed.slice(0, colonIdx).trim();
-    const rest = trimmed.slice(colonIdx + 1).trim();
-    activeListKey = rest.length === 0 ? key : undefined;
-    if (rest.length === 0) {
-      frontmatter[key] = [];
-      listKeys.add(key);
-    } else {
-      frontmatter[key] = parseYamlValueToken(rest);
-    }
+  const rawParsed: unknown = parseYaml(firstNode.value);
+  const frontmatterRecord =
+    typeof rawParsed === 'object' && rawParsed !== null && !Array.isArray(rawParsed)
+      ? (freezeFrontmatterValue(rawParsed) as Readonly<Record<string, unknown>>)
+      : Object.freeze({});
+  const endOffset = firstNode.position?.end.offset;
+  const body =
+    endOffset !== undefined
+      ? normalized.slice(endOffset).trim()
+      : toMarkdown({ type: 'root', children: tree.children.slice(1) }).trim();
+  return Object.freeze<ParsedMarkdownDocument>({ frontmatter: frontmatterRecord, body });
+}
+
+/**
+ * Extracts the plain text title from an `mdast` `heading` node by walking its phrasing children.
+ *
+ * Concatenates nested text and inline-code values so ATX headings match target strings accurately.
+ *
+ * @param {unknown} node - `mdast` node to extract text from.
+ *
+ * @returns {string} Concatenated plain text content of `node`.
+ */
+function extractMdastNodeText(node: unknown): string {
+  if (typeof node !== 'object' || node === null) return '';
+  const record = node as { readonly value?: unknown; readonly children?: readonly unknown[] };
+  if (typeof record.value === 'string') return record.value;
+  if (!Array.isArray(record.children)) return '';
+  let text = '';
+  for (const child of record.children) {
+    text += extractMdastNodeText(child);
   }
-  for (const listKey of listKeys) {
-    const listVal = frontmatter[listKey];
-    if (Array.isArray(listVal)) Object.freeze(listVal);
-  }
-  return Object.freeze<ParsedMarkdownDocument>({ frontmatter: Object.freeze(frontmatter), body: afterFence.trim() });
+  return text;
 }
 
 /**
  * Extracts the Markdown body text under a specific ATX heading up to the next heading of equal or higher rank.
  *
- * Strips leading YAML frontmatter before scanning headings and throws if `heading` is not present.
+ * Walks top-level `mdast` `heading` nodes (ignoring `#` lines inside fenced code blocks) and slices
+ * the section content up to the next heading with `depth <= targetDepth`.
  *
  * @param {string} rawMarkdown - Raw UTF-8 Markdown document text.
  * @param {string} heading     - Target heading title (with or without leading `#` characters).
@@ -91,30 +101,33 @@ export function parseMarkdownFrontmatter(rawMarkdown: string): ParsedMarkdownDoc
  * @returns {string} Trimmed Markdown content beneath `heading`.
  */
 export function extractMarkdownHeadingSection(rawMarkdown: string, heading: string): string {
-  const parsed = parseMarkdownFrontmatter(rawMarkdown);
+  const normalized = rawMarkdown.replace(/\r\n/g, '\n');
   const normalizedTarget = heading.replace(/^#+\s*/, '').trim();
-  const lines = parsed.body.split('\n');
-  let capturedDepth = 0;
-  const collected: string[] = [];
-  for (const line of lines) {
-    const match = /^(#{1,6})\s+(.*)$/.exec(line.trim());
-    if (match !== null) {
-      const hashes = match[1] ?? '#';
-      const title = (match[2] ?? '').trim();
-      if (capturedDepth > 0 && hashes.length <= capturedDepth) {
-        break;
-      }
-      if (capturedDepth === 0 && title === normalizedTarget) {
-        capturedDepth = hashes.length;
+  const tree = fromMarkdown(normalized, {
+    extensions: [frontmatter(['yaml'])],
+    mdastExtensions: [frontmatterFromMarkdown(['yaml'])],
+  });
+  let targetDepth = 0;
+  const sectionNodes: typeof tree.children = [];
+  for (const child of tree.children) {
+    if (child.type === 'heading') {
+      const title = extractMdastNodeText(child).trim();
+      if (targetDepth > 0 && child.depth <= targetDepth) break;
+      if (targetDepth === 0 && title === normalizedTarget) {
+        targetDepth = child.depth;
         continue;
       }
     }
-    if (capturedDepth > 0) {
-      collected.push(line);
-    }
+    if (targetDepth > 0) sectionNodes.push(child);
   }
-  if (capturedDepth === 0) {
+  if (targetDepth === 0) {
     throw new Error(`Markdown section '${heading}' was not found in document.`);
   }
-  return collected.join('\n').trim();
+  if (sectionNodes.length === 0) return '';
+  const startOffset = sectionNodes[0]?.position?.start.offset;
+  const endOffset = sectionNodes[sectionNodes.length - 1]?.position?.end.offset;
+  if (startOffset !== undefined && endOffset !== undefined) {
+    return normalized.slice(startOffset, endOffset).trim();
+  }
+  return toMarkdown({ type: 'root', children: sectionNodes }).trim();
 }

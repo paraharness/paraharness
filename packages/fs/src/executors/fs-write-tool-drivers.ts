@@ -6,7 +6,7 @@ import type {
   ToolEffect,
   ToolExecutionResult,
 } from '@harness-dsl/core';
-import { createFsWriteEffect } from './internal/enumerate-workspace-files.js';
+import { createFsWriteEffect } from './internal/create-fs-tool-effects.js';
 import {
   checkPathsExistAtBaseRef,
   resolveJailedWorktreePath,

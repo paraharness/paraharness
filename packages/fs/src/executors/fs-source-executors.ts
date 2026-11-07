@@ -6,7 +6,7 @@ import type {
   ResolutionContext,
   ResolvedSourceArtifact,
 } from '@harness-dsl/core';
-import { enumerateWorkspaceFilesSync } from './internal/enumerate-workspace-files.js';
+import { enumerateWorkspaceFiles } from './internal/enumerate-workspace-files.js';
 import {
   extractWorktreeRootAndBaseRef,
   resolveJailedWorktreePath,
@@ -58,7 +58,7 @@ export async function executeFsGlobSource(
   ResolvedSourceArtifact<ReadonlyArray<{ readonly path: string; readonly content: string }>>
 > {
   const { rootPath } = extractWorktreeRootAndBaseRef(ctx.scopeHandle);
-  const matchedRelPaths = enumerateWorkspaceFilesSync(rootPath, node.pattern);
+  const matchedRelPaths = await enumerateWorkspaceFiles(rootPath, node.pattern);
   const entries: Array<{ readonly path: string; readonly content: string }> = [];
   const hash = createHash('sha256');
   for (const relPath of matchedRelPaths) {

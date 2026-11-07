@@ -7,6 +7,7 @@ import type {
   ResolutionContext,
   ResolvedSourceArtifact,
 } from '@harness-dsl/core';
+import picomatch from 'picomatch';
 import {
   extractMarkdownHeadingSection,
   parseMarkdownFrontmatter,
@@ -69,7 +70,7 @@ export async function executeMarkdownFrontmatterSource<T = unknown>(
     kind === 'global-rules' ||
     kind === 'scoped-rules' ||
     kind === 'skills' ||
-    (kind === 'frontmatter' && /[*?[\]{}]/.test(node.pathOrGlob));
+    (kind === 'frontmatter' && picomatch.scan(node.pathOrGlob).isGlob);
   if (!isCollectionKind && matchedPaths.length === 0) {
     throw new Error(`Markdown source '${node.id}' matched 0 files for '${node.pathOrGlob}'.`);
   }

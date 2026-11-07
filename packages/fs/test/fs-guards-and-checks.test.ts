@@ -235,11 +235,20 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
     expect(readOnlyRes.allowed).toBe(false);
 
     const allowOnlyRes = evaluateFsAllowOnlyGuard(
-      fs.allowOnly(['packages/api/**']),
-      makeGuardInput([makeWriteEffect(['packages/db/schema.ts'])]),
+      fs.allowOnly(['packages/{api,web}/**', '!packages/api/internal/**']),
+      makeGuardInput([
+        makeWriteEffect([
+          'packages/db/schema.ts',
+          'packages/api/internal/secret.ts',
+          'packages/web/index.tsx',
+        ]),
+      ]),
       ctx,
     );
     expect(allowOnlyRes.allowed).toBe(false);
+    expect(allowOnlyRes.violatedEffects).toEqual([
+      makeWriteEffect(['packages/db/schema.ts', 'packages/api/internal/secret.ts']),
+    ]);
 
     const rrbwGuard = fs.requireReadBeforeWrite();
     const unreadExisting = makeWriteEffect(

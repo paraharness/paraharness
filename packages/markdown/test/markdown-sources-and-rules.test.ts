@@ -88,21 +88,32 @@ describe('@harness-dsl/markdown builders, parser, and executors', () => {
     expect(markdownExecutors.sources?.['markdown:section']).toBe(executeMarkdownSectionSource);
   });
 
-  it('parses YAML frontmatter scalars, inline arrays, multi-line lists, and heading sections', () => {
+  it('parses YAML frontmatter scalars, flow arrays with braces, nested maps, block scalars, and heading sections ignoring code block hashes', () => {
     const rawDoc = [
       '---',
       'id: db-migration-safety',
       'enabled: true',
       'priority: 10',
       'partitions: [db, api]',
-      'globs:',
-      '  - "packages/db/migrations/*.sql"',
-      "  - 'packages/db/src/schema.ts'",
+      'globs: ["packages/{db,api}/migrations/*.sql", "packages/db/src/schema.ts"]',
+      'metadata:',
+      '  owner: platform',
+      '  tags:',
+      '    - safety',
+      '    - ddl',
+      'summary: |',
+      '  Multi-line block scalar',
+      '  preserving internal newlines.',
       '---',
       '# Migration Overview',
       'Intro paragraph.',
       '## Safety Checklist',
       '1. Never drop columns without dual-write.',
+      '```bash',
+      '# Bash comment that must not terminate the heading section',
+      '## Secondary bash comment inside fenced code block',
+      'psql -c "SELECT 1;"',
+      '```',
       '### Sub-check',
       'Verify locks.',
       '## Rollback Plan',
@@ -115,13 +126,27 @@ describe('@harness-dsl/markdown builders, parser, and executors', () => {
       enabled: true,
       priority: 10,
       partitions: ['db', 'api'],
-      globs: ['packages/db/migrations/*.sql', 'packages/db/src/schema.ts'],
+      globs: ['packages/{db,api}/migrations/*.sql', 'packages/db/src/schema.ts'],
+      metadata: {
+        owner: 'platform',
+        tags: ['safety', 'ddl'],
+      },
+      summary: 'Multi-line block scalar\npreserving internal newlines.\n',
     });
     expect(parsed.body).toContain('# Migration Overview');
 
     const safetySection = extractMarkdownHeadingSection(rawDoc, 'Safety Checklist');
     expect(safetySection).toBe(
-      ['1. Never drop columns without dual-write.', '### Sub-check', 'Verify locks.'].join('\n'),
+      [
+        '1. Never drop columns without dual-write.',
+        '```bash',
+        '# Bash comment that must not terminate the heading section',
+        '## Secondary bash comment inside fenced code block',
+        'psql -c "SELECT 1;"',
+        '```',
+        '### Sub-check',
+        'Verify locks.',
+      ].join('\n'),
     );
   });
 

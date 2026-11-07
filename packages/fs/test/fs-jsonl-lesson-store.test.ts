@@ -167,5 +167,18 @@ describe('@harness-dsl/fs FsJsonlLessonStore', () => {
       partitions: ['db', 'web'],
     });
     expect(afterRetire.map((c) => c.id)).toEqual([dbLessonId]);
+
+    const fuzzyAndPrefixRank = await store.admit({
+      partition: 'db',
+      directive: 'Always validate foreign key cascades before dropping tables.',
+      epochAtCreation: 1,
+      createdByRunId: 'run-prereq-3',
+    });
+    const bm25Ranked = await store.queryCandidates({
+      queryText: 'postgressql concurr',
+      partitions: ['db'],
+    });
+    expect(bm25Ranked.map((c) => c.id)).toEqual([dbLessonId, fuzzyAndPrefixRank]);
+    expect((bm25Ranked[0]?.relevanceScore ?? 0) > (bm25Ranked[1]?.relevanceScore ?? 0)).toBe(true);
   });
 });

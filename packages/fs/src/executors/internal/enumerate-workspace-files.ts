@@ -1,110 +1,143 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import {
+  type Dirent,
+  type PathLike,
+  existsSync,
+  readdir,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import path from 'node:path';
 import type { ToolEffect } from '@harness-dsl/core';
-import type { FsToolEffect } from '../fs-tool-effect.js';
+import { type FileSystemAdapter, glob, globSync } from 'tinyglobby';
 import {
   compileGlobOrExactMatcher,
   extractWorktreeRootAndBaseRef,
 } from './jail-and-glob-helpers.js';
 
 /**
- * Enumerates all jailed workspace-relative POSIX file paths matching `globPattern` in lexicographical order.
+ * Filters directory entries for `tinyglobby` so symlinks escaping `realRoot`, broken symlinks, and cycles are skipped.
  *
- * Skips `.git` and `node_modules` directories and ignores any symlink whose resolved `realpathSync`
- * target escapes `realRoot`.
+ * Enforces `realpathSync` containment inside `realRoot` and prevents cyclic directory symlink recursion.
  *
- * @param {string} rootPath    - Worktree or repository root directory path.
- * @param {string} globPattern - POSIX glob pattern to match against relative paths.
+ * @param {string}            realRoot    - Canonicalized `realpathSync` root directory of the workspace.
+ * @param {Set<string>}       visitedDirs - Set of canonical directory paths already visited in this walk.
+ * @param {string}            dirPath     - Current directory path being read by `tinyglobby`.
+ * @param {readonly Dirent[]} entries     - Raw directory entries returned by `fs.readdir`.
  *
- * @returns {readonly string[]} Sorted frozen array of matching relative POSIX file paths.
+ * @returns {Dirent[]} Filtered array of jailed directory entries.
  */
-export function enumerateWorkspaceFilesSync(rootPath: string, globPattern: string): readonly string[] {
-  const realRoot = realpathSync(path.resolve(rootPath));
-  const isMatch = compileGlobOrExactMatcher([globPattern]);
-  const matched: string[] = [];
-  const visitedDirs = new Set<string>([realRoot]);
-  const stack: string[] = [realRoot];
-  while (stack.length > 0) {
-    const currentDir = stack.pop();
-    if (currentDir === undefined) continue;
-    const realCurrentDir = realpathSync(currentDir);
-    for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
-      if (entry.name === '.git' || entry.name === 'node_modules') continue;
-      const fullPath = path.join(currentDir, entry.name);
-      let realEntryPath: string;
-      try {
-        realEntryPath = realpathSync(fullPath);
-      } catch {
-        continue;
-      }
-      const realRel = path.relative(realRoot, realEntryPath);
-      if (realRel === '..' || realRel.startsWith('../') || realRel.startsWith(`..${path.sep}`) || path.isAbsolute(realRel)) continue;
-      const entryStat = statSync(realEntryPath);
-      const isCycle = visitedDirs.has(realEntryPath) || realCurrentDir === realEntryPath || realCurrentDir.startsWith(`${realEntryPath}${path.sep}`);
-      if (entryStat.isDirectory() && entry.isSymbolicLink() && isCycle) continue;
-      if (entryStat.isDirectory() && entry.isSymbolicLink()) visitedDirs.add(realEntryPath);
-      if (entryStat.isDirectory()) {
-        stack.push(fullPath);
-        continue;
-      }
-      if (!entryStat.isFile()) continue;
-      const posixRel = path.relative(realRoot, fullPath).split(path.sep).join('/');
-      if (isMatch(posixRel)) matched.push(posixRel);
+function filterJailedDirents(
+  realRoot: string,
+  visitedDirs: Set<string>,
+  dirPath: string,
+  entries: readonly Dirent[],
+): Dirent[] {
+  let realDir: string;
+  try {
+    realDir = realpathSync(dirPath);
+  } catch {
+    return [];
+  }
+  const dirRel = path.relative(realRoot, realDir);
+  if (dirRel === '..' || dirRel.startsWith('../') || dirRel.startsWith(`..${path.sep}`) || path.isAbsolute(dirRel)) return [];
+  const allowed: Dirent[] = [];
+  for (const entry of entries) {
+    if (entry.name === '.git' || entry.name === 'node_modules') continue;
+    let realTarget: string;
+    try {
+      realTarget = realpathSync(path.join(dirPath, entry.name));
+    } catch {
+      continue;
     }
+    const rel = path.relative(realRoot, realTarget);
+    if (rel === '..' || rel.startsWith('../') || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) continue;
+    if (entry.isSymbolicLink() && statSync(realTarget).isDirectory()) {
+      if (visitedDirs.has(realTarget) || realDir === realTarget || realDir.startsWith(`${realTarget}${path.sep}`)) continue;
+      visitedDirs.add(realTarget);
+    }
+    allowed.push(entry);
+  }
+  return allowed;
+}
+
+/**
+ * Asynchronously enumerates all jailed workspace-relative POSIX file paths matching `globPattern` via `tinyglobby`.
+ *
+ * Uses `glob` from `tinyglobby` with `picomatch` verification, skipping `.git`, `node_modules`,
+ * and any symlink target escaping `rootPath`.
+ *
+ * @param {string}                     rootPath    - Worktree or repository root directory path.
+ * @param {string | readonly string[]} globPattern - POSIX glob pattern(s) to match against relative paths.
+ *
+ * @returns {Promise<readonly string[]>} Sorted frozen array of matching relative POSIX file paths.
+ */
+export async function enumerateWorkspaceFiles(
+  rootPath: string,
+  globPattern: string | readonly string[],
+): Promise<readonly string[]> {
+  const realRoot = realpathSync(path.resolve(rootPath));
+  const visited = new Set<string>([realRoot]);
+  const patternList = typeof globPattern === 'string' ? [globPattern] : globPattern;
+  const isMatch = compileGlobOrExactMatcher(patternList);
+  const rawMatches = await glob(patternList, {
+    cwd: realRoot,
+    dot: true,
+    onlyFiles: true,
+    ignore: ['**/.git/**', '**/node_modules/**'],
+    fs: {
+      readdir: ((dir: string, _opts: unknown, cb?: (err: NodeJS.ErrnoException | null, files: Dirent[]) => void) => {
+        readdir(dir, { withFileTypes: true }, (err, list) => cb?.(err, err !== null ? [] : filterJailedDirents(realRoot, visited, String(dir), list)));
+      }) as typeof readdir,
+    },
+  });
+  const matched: string[] = [];
+  for (const entry of rawMatches) {
+    const cleanRel = entry.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (isMatch(cleanRel)) matched.push(cleanRel);
   }
   matched.sort((a, b) => a.localeCompare(b));
   return Object.freeze(matched);
 }
 
 /**
- * Constructs a frozen read-mode `FsToolEffect` record (`mutatesScope: false`).
+ * Synchronously enumerates all jailed workspace-relative POSIX file paths matching `globPattern` via `tinyglobby`.
  *
- * Preserves monomorphic property order across all `FsToolEffect` instances (`Rule 4.3`).
+ * Uses `globSync` from `tinyglobby` with `picomatch` verification for synchronous `describeEffects` evaluation.
  *
- * @param {readonly string[]} paths - Canonicalized worktree-relative POSIX file paths read.
+ * @param {string}                     rootPath    - Worktree or repository root directory path.
+ * @param {string | readonly string[]} globPattern - POSIX glob pattern(s) to match against relative paths.
  *
- * @returns {FsToolEffect} Deeply frozen read `FsToolEffect`.
+ * @returns {readonly string[]} Sorted frozen array of matching relative POSIX file paths.
  */
-export function createFsReadEffect(paths: readonly string[]): FsToolEffect {
-  return Object.freeze<FsToolEffect>({
-    kind: 'fs:effect',
-    mutatesScope: false,
-    attributes: Object.freeze({
-      mode: 'read',
-      paths: Object.freeze([...paths]),
-      existingPathsAtBaseRef: undefined,
-      proposedContent: undefined,
-    }),
+export function enumerateWorkspaceFilesSync(
+  rootPath: string,
+  globPattern: string | readonly string[],
+): readonly string[] {
+  const realRoot = realpathSync(path.resolve(rootPath));
+  const visited = new Set<string>([realRoot]);
+  const patternList = typeof globPattern === 'string' ? [globPattern] : globPattern;
+  const isMatch = compileGlobOrExactMatcher(patternList);
+  const rawMatches = globSync(patternList, {
+    cwd: realRoot,
+    dot: true,
+    onlyFiles: true,
+    ignore: ['**/.git/**', '**/node_modules/**'],
+    fs: {
+      readdirSync: ((dir: PathLike, opts?: unknown) => {
+        const list = filterJailedDirents(realRoot, visited, String(dir), readdirSync(dir, { withFileTypes: true }));
+        return typeof opts === 'object' && opts !== null ? list : list.map((d) => d.name);
+      }) as FileSystemAdapter['readdirSync'],
+    },
   });
-}
-
-/**
- * Constructs a frozen write-mode `FsToolEffect` record (`mutatesScope: true`).
- *
- * Populates `existingPathsAtBaseRef` and `proposedContent` for downstream policy guards (`SPEC.md` §4.3).
- *
- * @param {readonly string[]}                paths                  - Canonicalized worktree-relative POSIX paths mutated.
- * @param {readonly string[]}                existingPathsAtBaseRef - Subset of `paths` existing at `baseRef`.
- * @param {Readonly<Record<string, string>>} proposedContent        - Proposed post-edit UTF-8 content per path.
- *
- * @returns {FsToolEffect} Deeply frozen write `FsToolEffect`.
- */
-export function createFsWriteEffect(
-  paths: readonly string[],
-  existingPathsAtBaseRef: readonly string[],
-  proposedContent: Readonly<Record<string, string>>,
-): FsToolEffect {
-  return Object.freeze<FsToolEffect>({
-    kind: 'fs:effect',
-    mutatesScope: true,
-    attributes: Object.freeze({
-      mode: 'write',
-      paths: Object.freeze([...paths]),
-      existingPathsAtBaseRef: Object.freeze([...existingPathsAtBaseRef]),
-      proposedContent: Object.freeze({ ...proposedContent }),
-    }),
-  });
+  const matched: string[] = [];
+  for (const entry of rawMatches) {
+    const cleanRel = entry.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (isMatch(cleanRel)) matched.push(cleanRel);
+  }
+  matched.sort((a, b) => a.localeCompare(b));
+  return Object.freeze(matched);
 }
 
 /**

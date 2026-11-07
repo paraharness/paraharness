@@ -1,5 +1,6 @@
-import { readdir, stat } from 'node:fs/promises';
-import { basename, extname, posix, relative, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { basename, extname, posix, resolve } from 'node:path';
 import {
   type FsGlobMatcherNode,
   GlobalRuleSchema,
@@ -7,55 +8,14 @@ import {
   type ScopePredicate,
   ScopedRuleSchema,
 } from '@harness-dsl/core';
+import picomatch from 'picomatch';
+import { glob } from 'tinyglobby';
 import type { ParsedMarkdownDocument } from '../parsed-markdown-document.js';
-
-/**
- * Compiles a POSIX glob pattern into an anchored `RegExp` without external glob dependencies.
- *
- * Supports recursive directory wildcards, single-segment wildcards, and single-character wildcards.
- *
- * @param {string} globPattern - Normalized POSIX glob pattern string.
- *
- * @returns {RegExp} Anchored regular expression matching candidate relative POSIX paths.
- */
-export function compilePosixGlobToRegExp(globPattern: string): RegExp {
-  const normalized = globPattern.replace(/\\/g, '/').replace(/^\.\//, '');
-  let regexStr = '^';
-  let idx = 0;
-  while (idx < normalized.length) {
-    const ch = normalized[idx];
-    if (ch === '*' && normalized[idx + 1] === '*') {
-      regexStr += normalized[idx + 2] === '/' ? '(?:.+/)?' : '.*';
-      idx += normalized[idx + 2] === '/' ? 3 : 2;
-      continue;
-    }
-    if (ch === '[' && normalized.indexOf(']', idx + 1) > idx + 1) {
-      const closeIdx = normalized.indexOf(']', idx + 1);
-      const inner = normalized.slice(idx + 1, closeIdx);
-      regexStr += `[${inner.startsWith('!') ? `^${inner.slice(1)}` : inner}]`;
-      idx = closeIdx + 1;
-      continue;
-    }
-    if (ch === '{' && normalized.indexOf('}', idx + 1) > idx + 1) {
-      const closeIdx = normalized.indexOf('}', idx + 1);
-      const branches: string[] = [];
-      for (const opt of normalized.slice(idx + 1, closeIdx).split(',')) {
-        branches.push(compilePosixGlobToRegExp(opt).source.slice(1, -1));
-      }
-      regexStr += `(?:${branches.join('|')})`;
-      idx = closeIdx + 1;
-      continue;
-    }
-    regexStr += ch === '*' ? '[^/]*' : ch === '?' ? '[^/]' : ch !== undefined && /[.+^${}()|[\]\\]/.test(ch) ? `\\${ch}` : (ch ?? '');
-    idx += 1;
-  }
-  return new RegExp(`${regexStr}$`);
-}
 
 /**
  * Resolves a host-root-relative file path or glob pattern into sorted relative POSIX paths.
  *
- * Walks the filesystem under `hostRoot` when glob tokens are present or verifies direct file existence.
+ * Uses `tinyglobby` and `picomatch` when glob tokens are present or expands directory paths to `**\/*.md`.
  *
  * @param {string} hostRoot   - Absolute host repository root path.
  * @param {string} pathOrGlob - Relative path or glob pattern to resolve.
@@ -67,35 +27,31 @@ export async function resolveMarkdownFiles(
   pathOrGlob: string,
 ): Promise<readonly string[]> {
   let cleanPattern = pathOrGlob.replace(/\\/g, '/').replace(/^\.\//, '');
-  let firstGlobIdx = cleanPattern.search(/[*?[\]{}]/);
-  if (firstGlobIdx === -1) {
+  const initialScan = picomatch.scan(cleanPattern);
+  if (!initialScan.isGlob && !initialScan.negated) {
     const absPath = resolve(hostRoot, cleanPattern);
     const targetStat = await stat(absPath);
     if (targetStat.isFile()) return Object.freeze([cleanPattern]);
     if (!targetStat.isDirectory()) throw new Error(`Markdown path '${pathOrGlob}' is not a regular file.`);
     cleanPattern = `${cleanPattern.replace(/\/+$/, '')}/**/*.md`;
-    firstGlobIdx = cleanPattern.search(/[*?[\]{}]/);
   }
-  const slashIdx = cleanPattern.lastIndexOf('/', firstGlobIdx);
-  const startDir = slashIdx > 0 ? resolve(hostRoot, cleanPattern.slice(0, slashIdx)) : hostRoot;
-  const matcher = compilePosixGlobToRegExp(cleanPattern);
+  const activeScan = picomatch.scan(cleanPattern);
+  const isAbs = cleanPattern.startsWith('/');
+  const searchCwd = isAbs ? (activeScan.base.length > 0 ? activeScan.base : '/') : hostRoot;
+  if (!existsSync(searchCwd)) return Object.freeze([]);
+  const relGlob = isAbs ? posix.relative(searchCwd, cleanPattern) : cleanPattern;
+  const rawEntries = await glob(relGlob, {
+    cwd: searchCwd,
+    dot: true,
+    onlyFiles: true,
+    ignore: ['**/.git/**', '**/node_modules/**'],
+  });
+  const isMatch = picomatch(cleanPattern, { dot: true });
   const matched: string[] = [];
-  const queue: string[] = [startDir];
-  while (queue.length > 0) {
-    const currentDir = queue.pop();
-    if (currentDir === undefined) break;
-    const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (entry.name === '.git' || entry.name === 'node_modules') continue;
-      const fullPath = resolve(currentDir, entry.name);
-      if (entry.isDirectory()) {
-        queue.push(fullPath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const candidate = (cleanPattern.startsWith('/') ? fullPath : relative(hostRoot, fullPath)).split('\\').join(posix.sep);
-      if (matcher.test(candidate)) matched.push(candidate);
-    }
+  for (const entry of rawEntries) {
+    const cleanEntry = entry.replace(/\\/g, '/').replace(/\/+$/, '');
+    const candidate = isAbs ? posix.join(searchCwd, cleanEntry) : cleanEntry;
+    if (isMatch(candidate)) matched.push(candidate);
   }
   matched.sort((a, b) => a.localeCompare(b));
   return Object.freeze(matched);

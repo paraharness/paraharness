@@ -1,81 +1,53 @@
-import { constants, existsSync } from 'node:fs';
-import { mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { type FileLockOptions, withFileLock } from '@harness-dsl/lockfile';
+import writeFileAtomic from 'write-file-atomic';
 import type { FsLessonDefinitionRecord } from './fs-lesson-definition-record.js';
 import type { FsLessonStatsEntry } from './fs-lesson-stats-entry.js';
 
 /**
- * Acquires a non-blocking advisory lockfile (`O_CREAT | O_EXCL`) with async backoff and executes `work`.
+ * Acquires an exclusive advisory lockfile via `@harness-dsl/lockfile` and executes `work`.
  *
- * Ensures cross-process serialization on `lockFilePath` without blocking libuv worker threads
- * and unlinks the lockfile in `finally` (`SPEC.md` §4.3).
+ * Ensures cross-process and in-process serialization on `lockFilePath` with heartbeat
+ * and stale-lock reclamation (`SPEC.md` §4.3).
  *
  * @template TResult Return type of the critical section callback.
  *
  * @param {string}                  lockFilePath - Absolute host-root path to the lockfile.
  * @param {() => Promise<TResult>}  work         - Async operation executed while holding the lock.
+ * @param {FileLockOptions}         [options]    - Optional lockfile timing overrides.
  *
  * @returns {Promise<TResult>} Result resolved by `work`.
  */
-export async function withNonBlockingAdvisoryFileLock<TResult>(
+export function withNonBlockingAdvisoryFileLock<TResult>(
   lockFilePath: string,
   work: () => Promise<TResult>,
+  options?: FileLockOptions,
 ): Promise<TResult> {
-  await mkdir(path.dirname(lockFilePath), { recursive: true });
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    try {
-      handle = await open(lockFilePath, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600);
-      break;
-    } catch (err) {
-      const code = (err as { readonly code?: string } | null)?.code;
-      if (code !== 'EEXIST') throw err;
-      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(25, 2 + attempt)));
-    }
-  }
-  if (handle === undefined) {
-    throw new Error(`Timed out acquiring advisory lesson lock '${lockFilePath}'.`);
-  }
-  try {
-    await handle.writeFile(`${String(process.pid)}\n`, 'utf8');
-    return await work();
-  } finally {
-    await handle.close();
-    await unlink(lockFilePath).catch(() => undefined);
-  }
+  return withFileLock(lockFilePath, work, options);
 }
 
 /**
- * Writes `payload` as formatted JSON to a temporary sibling file, flushes via `datasync`, and atomically renames to `targetPath`.
+ * Writes `payload` as formatted JSON to `targetPath` atomically via `write-file-atomic`.
  *
- * Guarantees crash-safe atomic updates for both `<definitionsDir>/<lessonId>.json` and `statsPath` (`SPEC.md` §4.3).
+ * Guarantees crash-safe atomic updates (`fsync: true` + atomic `rename`) for both
+ * `<definitionsDir>/<lessonId>.json` and `statsPath` (`SPEC.md` §4.3).
  *
  * @param {string}  targetPath - Destination file path.
  * @param {unknown} payload    - JSON-serializable value to write.
- * @param {number}  counter    - Monotonic temp-file suffix counter.
  *
  * @returns {Promise<void>} Resolves once `fsync` and atomic `rename` complete.
  */
 export async function atomicWriteJsonFile(
   targetPath: string,
   payload: unknown,
-  counter: number,
 ): Promise<void> {
   await mkdir(path.dirname(targetPath), { recursive: true });
-  const tmpPath = `${targetPath}.tmp.${String(process.pid)}.${String(counter)}`;
-  const handle = await open(tmpPath, constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY, 0o644);
-  try {
-    try {
-      await handle.writeFile(`${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-      await handle.datasync();
-    } finally {
-      await handle.close();
-    }
-    await rename(tmpPath, targetPath);
-  } catch (err) {
-    await unlink(tmpPath).catch(() => undefined);
-    throw err;
-  }
+  await writeFileAtomic(targetPath, `${JSON.stringify(payload, null, 2)}\n`, {
+    encoding: 'utf8',
+    fsync: true,
+  });
 }
 
 /**

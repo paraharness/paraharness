@@ -8,8 +8,9 @@ import type {
   ToolEffect,
   ToolExecutionResult,
 } from '@harness-dsl/core';
+import { createFsReadEffect } from './internal/create-fs-tool-effects.js';
 import {
-  createFsReadEffect,
+  enumerateWorkspaceFiles,
   enumerateWorkspaceFilesSync,
 } from './internal/enumerate-workspace-files.js';
 import {
@@ -70,7 +71,7 @@ export function createFsGlobToolDriver<THandle = unknown>(): ToolDriver<
     async execute(node: FsGlobToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
       const parsed = node.inputSchema.parse(args) as { readonly pattern: string };
       const { rootPath } = extractWorktreeRootAndBaseRef(ctx.scopeHandle);
-      const matched = enumerateWorkspaceFilesSync(rootPath, parsed.pattern);
+      const matched = await enumerateWorkspaceFiles(rootPath, parsed.pattern);
       return Object.freeze<ToolExecutionResult>({ content: matched.join('\n') });
     },
   });

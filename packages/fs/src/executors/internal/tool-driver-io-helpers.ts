@@ -2,10 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolEffect, ToolExecutionResult } from '@harness-dsl/core';
-import {
-  createFsWriteEffect,
-  enumerateWorkspaceFilesSync,
-} from './enumerate-workspace-files.js';
+import { createFsWriteEffect } from './create-fs-tool-effects.js';
+import { enumerateWorkspaceFiles } from './enumerate-workspace-files.js';
 import {
   checkPathsExistAtBaseRef,
   extractWorktreeRootAndBaseRef,
@@ -27,7 +25,7 @@ export async function grepWorkspaceFiles(
   parsed: { readonly pattern: string; readonly glob?: string; readonly flags?: string },
 ): Promise<string> {
   const { rootPath } = extractWorktreeRootAndBaseRef(scopeHandle);
-  const candidateFiles = enumerateWorkspaceFilesSync(rootPath, parsed.glob ?? '**/*');
+  const candidateFiles = await enumerateWorkspaceFiles(rootPath, parsed.glob ?? '**/*');
   const regex = new RegExp(parsed.pattern, (parsed.flags ?? '').replace(/g/g, ''));
   const matches: string[] = [];
   for (const relPath of candidateFiles) {

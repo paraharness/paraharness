@@ -128,8 +128,14 @@ describe('@harness-dsl/fs tools and sources', () => {
     expect(readRes.content).toBe('export const ALPHA = 1;\nexport const BETA = 2;\n');
 
     const globDriver = createFsGlobToolDriver();
-    const globRes = await globDriver.execute(globNode, { pattern: 'src/**/*.ts' }, ctx);
-    expect(globRes.content).toBe('src/alpha.ts\nsrc/nested/gamma.ts');
+    const globRes = await globDriver.execute(
+      globNode,
+      { pattern: 'src/{nested,other}/*.ts' },
+      ctx,
+    );
+    expect(globRes.content).toBe('src/nested/gamma.ts');
+    const allSrcGlobRes = await globDriver.execute(globNode, { pattern: 'src/**/*.ts' }, ctx);
+    expect(allSrcGlobRes.content).toBe('src/alpha.ts\nsrc/nested/gamma.ts');
 
     const grepDriver = createFsGrepToolDriver();
     const grepRes = await grepDriver.execute(grepNode, { pattern: 'needle' }, ctx);

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { LessonRecord } from '@harness-dsl/core';
+import MiniSearch from 'minisearch';
 import type { FsLessonDefinitionRecord } from './fs-lesson-definition-record.js';
 import type { FsLessonStatsEntry } from './fs-lesson-stats-entry.js';
 
@@ -22,10 +23,59 @@ export function computeLessonId(partition: string | undefined, directive: string
 }
 
 /**
- * Computes normalized text similarity $R(L, Q) \in [0, 1]$ between `queryText` and a lesson definition.
+ * Computes normalized BM25 text similarity $R(L, Q) \in [0, 1]$ across `definitions` using `MiniSearch`.
  *
- * Calculates token overlap across lowercased alphanumeric tokens in `queryText` and the lesson's
- * `partition` and `directive` text (`SPEC.md` §2.7 & §3.4.3).
+ * Indexes `directive` and `partition` fields with `{ prefix: true, fuzzy: 0.2 }` and normalizes
+ * BM25 scores against the top-scoring candidate (`SPEC.md` §2.7 & §3.4.3).
+ *
+ * @param {string}                                   queryText   - Search query extracted from actor input.
+ * @param {readonly FsLessonDefinitionRecord[]}      definitions - Active non-retired lesson definitions.
+ * @param {ReadonlySet<string> | readonly string[]}  partitions  - Active task partitions.
+ *
+ * @returns {ReadonlyMap<string, number>} Map of `lessonId` to normalized relevance score in `[0, 1]`.
+ */
+export function scoreLessonsWithMiniSearch(
+  queryText: string,
+  definitions: readonly FsLessonDefinitionRecord[],
+  partitions: ReadonlySet<string> | readonly string[],
+): ReadonlyMap<string, number> {
+  const scoresById = new Map<string, number>();
+  if (definitions.length === 0) return scoresById;
+  const trimmedQuery = queryText.trim();
+  if (trimmedQuery.length === 0) {
+    for (const def of definitions) scoresById.set(def.id, 1);
+    return scoresById;
+  }
+  const miniSearch = new MiniSearch<{ readonly id: string; readonly directive: string; readonly partition: string }>({
+    fields: ['directive', 'partition'],
+    storeFields: ['id'],
+    searchOptions: { prefix: true, fuzzy: 0.2 },
+  });
+  for (const def of definitions) {
+    miniSearch.add({ id: def.id, directive: def.directive, partition: def.partition ?? '' });
+  }
+  const hits = miniSearch.search(trimmedQuery, { prefix: true, fuzzy: 0.2 });
+  const maxScore = hits[0]?.score ?? 0;
+  const rawScoreById = new Map<string, number>();
+  for (const hit of hits) rawScoreById.set(String(hit.id), hit.score);
+  const partitionSet = partitions instanceof Set ? partitions : new Set(partitions);
+  for (const def of definitions) {
+    const rawScore = rawScoreById.get(def.id);
+    if (rawScore !== undefined && maxScore > 0) {
+      scoresById.set(def.id, Math.min(1, Math.max(0.1, rawScore / maxScore)));
+    } else if (def.partition !== undefined && partitionSet.has(def.partition)) {
+      scoresById.set(def.id, 0.05);
+    } else {
+      scoresById.set(def.id, 0);
+    }
+  }
+  return scoresById;
+}
+
+/**
+ * Computes normalized text similarity $R(L, Q) \in [0, 1]$ for a single lesson definition via `MiniSearch`.
+ *
+ * Delegates to `scoreLessonsWithMiniSearch` over a single-element definition array (`SPEC.md` §2.7).
  *
  * @param {string}                                   queryText  - Search query extracted from actor input.
  * @param {FsLessonDefinitionRecord}                 definition - Immutable lesson definition record.
@@ -38,27 +88,7 @@ export function computeQueryRelevanceScore(
   definition: FsLessonDefinitionRecord,
   partitions: ReadonlySet<string> | readonly string[],
 ): number {
-  const queryMatches = queryText.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  if (queryMatches.length === 0) {
-    return 1;
-  }
-  const queryTokenSet = new Set(queryMatches);
-  const docText = `${definition.partition ?? ''} ${definition.directive}`.toLowerCase();
-  const docTokenSet = new Set(docText.match(/[a-z0-9]+/g) ?? []);
-  let matchedCount = 0;
-  for (const token of queryTokenSet) {
-    if (docTokenSet.has(token)) {
-      matchedCount += 1;
-    }
-  }
-  if (matchedCount > 0) {
-    return matchedCount / queryTokenSet.size;
-  }
-  const partitionSet = partitions instanceof Set ? partitions : new Set(partitions);
-  if (definition.partition !== undefined && partitionSet.has(definition.partition)) {
-    return 0.25;
-  }
-  return 0.05;
+  return scoreLessonsWithMiniSearch(queryText, [definition], partitions).get(definition.id) ?? 0;
 }
 
 /**

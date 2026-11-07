@@ -6,6 +6,7 @@ import type {
   LessonRecord,
   LessonStore,
 } from '@harness-dsl/core';
+import PQueue from 'p-queue';
 import type { FsLessonDefinitionRecord } from './internal/fs-lesson-definition-record.js';
 import {
   atomicWriteJsonFile,
@@ -15,8 +16,8 @@ import {
 } from './internal/fs-lesson-lock-and-atomic-io.js';
 import {
   computeLessonId,
-  computeQueryRelevanceScore,
   mergeDefinitionAndStats,
+  scoreLessonsWithMiniSearch,
 } from './internal/fs-lesson-relevance.js';
 
 /**
@@ -24,8 +25,8 @@ import {
  *
  * Resolves `definitionsDir`, `statsPath`, and `lockFile` against the immutable host repository
  * root (Invariant 5), writes immutable `<definitionsDir>/<lessonId>.json` definition files on
- * `admit()`, and updates mutable telemetry counters in `statsPath` under an in-process async
- * queue combined with a non-blocking advisory lockfile and atomic temp-file rename.
+ * `admit()`, and updates mutable telemetry counters in `statsPath` under a `PQueue({ concurrency: 1 })`
+ * queue combined with `@harness-dsl/lockfile` and `write-file-atomic`.
  */
 export class FsJsonlLessonStore implements LessonStore {
   /** Absolute host-root directory path storing immutable `<lessonId>.json` definitions. */
@@ -34,10 +35,8 @@ export class FsJsonlLessonStore implements LessonStore {
   private readonly statsFilePath: string;
   /** Absolute host-root advisory lockfile path. */
   private readonly lockFilePath: string;
-  /** Serialized in-process async mutex promise chain. */
-  private mutexTail: Promise<unknown> = Promise.resolve();
-  /** Monotonic counter for atomic temporary file suffixes. */
-  private tempCounter = 0;
+  /** Serialized in-process async mutex queue (`concurrency: 1`). */
+  private readonly mutexQueue = new PQueue({ concurrency: 1 });
 
   /**
    * Initializes an `FsJsonlLessonStore` bound to the host repository root (`SPEC.md` Invariant 5).
@@ -54,7 +53,7 @@ export class FsJsonlLessonStore implements LessonStore {
   }
 
   /**
-   * Enqueues `operation` onto the in-process mutex queue and acquires the advisory file lock.
+   * Enqueues `operation` onto the in-process `PQueue` (`concurrency: 1`) and acquires the advisory file lock.
    *
    * Guarantees strict serialization across concurrent calls within the process and across processes.
    * @template TResult Result type of the locked operation.
@@ -62,16 +61,11 @@ export class FsJsonlLessonStore implements LessonStore {
    * @returns {Promise<TResult>} Result returned by `operation`.
    */
   private enqueueLocked<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
-    const next = this.mutexTail.then(
-      () => withNonBlockingAdvisoryFileLock(this.lockFilePath, operation),
-      () => withNonBlockingAdvisoryFileLock(this.lockFilePath, operation),
-    );
-    this.mutexTail = next.then(() => undefined, () => undefined);
-    return next;
+    return this.mutexQueue.add(() => withNonBlockingAdvisoryFileLock(this.lockFilePath, operation));
   }
 
   /**
-   * Queries non-retired candidate lessons and populates `relevanceScore` in `[0, 1]`.
+   * Queries non-retired candidate lessons and populates `relevanceScore` in `[0, 1]` via `MiniSearch`.
    *
    * Orders returned candidate lessons deterministically by descending `relevanceScore` and `id`.
    * @param {Record<string, unknown>} req - Query text and active partitions.
@@ -81,12 +75,14 @@ export class FsJsonlLessonStore implements LessonStore {
     return this.enqueueLocked(async () => {
       const definitions = await readAllLessonDefinitions(this.definitionsDirPath);
       const statsMap = await readLessonStatsFile(this.statsFilePath);
-      const partitionSet = new Set<string>(req.partitions);
-      const records: LessonRecord[] = [];
+      const activeDefinitions: FsLessonDefinitionRecord[] = [];
       for (const def of definitions) {
-        const stats = statsMap[def.id];
-        if (stats?.retired === true) continue;
-        records.push(mergeDefinitionAndStats(def, stats, computeQueryRelevanceScore(req.queryText, def, partitionSet)));
+        if (statsMap[def.id]?.retired !== true) activeDefinitions.push(def);
+      }
+      const scoresById = scoreLessonsWithMiniSearch(req.queryText, activeDefinitions, new Set<string>(req.partitions));
+      const records: LessonRecord[] = [];
+      for (const def of activeDefinitions) {
+        records.push(mergeDefinitionAndStats(def, statsMap[def.id], scoresById.get(def.id) ?? 0));
       }
       records.sort((a, b) => ((b.relevanceScore ?? 0) !== (a.relevanceScore ?? 0) ? (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0) : a.id.localeCompare(b.id)));
       return Object.freeze(records);
@@ -106,14 +102,12 @@ export class FsJsonlLessonStore implements LessonStore {
       const defPath = path.join(this.definitionsDirPath, `${lessonId}.json`);
       if (!existsSync(defPath)) {
         const defRecord: FsLessonDefinitionRecord = Object.freeze({ id: lessonId, partition: lesson.partition, directive: lesson.directive, epochAtCreation: lesson.epochAtCreation, createdByRunId: lesson.createdByRunId });
-        this.tempCounter += 1;
-        await atomicWriteJsonFile(defPath, defRecord, this.tempCounter);
+        await atomicWriteJsonFile(defPath, defRecord);
       }
       const statsMap = await readLessonStatsFile(this.statsFilePath);
       if (statsMap[lessonId] === undefined) {
         statsMap[lessonId] = { recentOutcomes: [], totalCleanPasses: 0, totalViolated: 0, retired: false };
-        this.tempCounter += 1;
-        await atomicWriteJsonFile(this.statsFilePath, statsMap, this.tempCounter);
+        await atomicWriteJsonFile(this.statsFilePath, statsMap);
       }
       return lessonId;
     });
@@ -152,8 +146,7 @@ export class FsJsonlLessonStore implements LessonStore {
         };
         touchedIds.add(outcomeEntry.lessonId);
       }
-      this.tempCounter += 1;
-      await atomicWriteJsonFile(this.statsFilePath, statsMap, this.tempCounter);
+      await atomicWriteJsonFile(this.statsFilePath, statsMap);
       const updated: LessonRecord[] = [];
       for (const id of touchedIds) {
         const def = defById.get(id);
@@ -194,8 +187,7 @@ export class FsJsonlLessonStore implements LessonStore {
         mutated = true;
       }
       if (mutated) {
-        this.tempCounter += 1;
-        await atomicWriteJsonFile(this.statsFilePath, statsMap, this.tempCounter);
+        await atomicWriteJsonFile(this.statsFilePath, statsMap);
       }
     });
   }
@@ -214,8 +206,7 @@ export class FsJsonlLessonStore implements LessonStore {
       const statsMap = await readLessonStatsFile(this.statsFilePath);
       const prev = statsMap[lessonId] ?? { recentOutcomes: [], totalCleanPasses: 0, totalViolated: 0 };
       statsMap[lessonId] = { ...prev, signalLastEmittedAt: { ...(prev.signalLastEmittedAt ?? {}), [signalId]: emittedAt } };
-      this.tempCounter += 1;
-      await atomicWriteJsonFile(this.statsFilePath, statsMap, this.tempCounter);
+      await atomicWriteJsonFile(this.statsFilePath, statsMap);
     });
   }
 
@@ -241,8 +232,7 @@ export class FsJsonlLessonStore implements LessonStore {
           retired: true,
         };
       }
-      this.tempCounter += 1;
-      await atomicWriteJsonFile(this.statsFilePath, statsMap, this.tempCounter);
+      await atomicWriteJsonFile(this.statsFilePath, statsMap);
     });
   }
 }
