@@ -1,9 +1,7 @@
 import BetterSqlite3 from 'better-sqlite3';
-import type {
-  PostgresPoolFactory,
-  PostgresQueryClient,
-  PostgresQueryResult,
-} from '../../src/index.js';
+import type { PostgresPoolFactory } from '../../src/ddl/postgres-pool-factory.js';
+import type { PostgresQueryClient } from '../../src/ddl/postgres-query-client.js';
+import type { PostgresQueryResult } from '../../src/ddl/postgres-query-result.js';
 
 /**
  * In-memory `better-sqlite3`-backed implementation of `PostgresQueryClient` and `PostgresPoolFactory` for deterministic offline tests.
@@ -104,8 +102,8 @@ export class SqliteBackedPgClient implements PostgresQueryClient, PostgresPoolFa
       const boundValues: unknown[] = [];
       const sqliteSql = normalizedDdl.replace(/\$(\d+)/g, (_match, digits: string) => {
         const index = Number.parseInt(digits, 10) - 1;
-        const val = params[index];
-        boundValues.push(val === undefined ? null : val);
+        const paramValue = params[index];
+        boundValues.push(paramValue === undefined ? null : paramValue);
         return '?';
       });
 
@@ -124,10 +122,10 @@ export class SqliteBackedPgClient implements PostgresQueryClient, PostgresPoolFa
       }
 
       const stmt = this.db.prepare(sqliteSql);
-      const info = stmt.run(...boundValues);
+      const runResult = stmt.run(...boundValues);
       return Promise.resolve({
         rows: [],
-        rowCount: info.changes,
+        rowCount: runResult.changes,
       });
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));

@@ -53,11 +53,18 @@ export function openSqliteConnection(uriOrDb: string | Database.Database): Datab
     db = uriOrDb;
   }
 
-  for (const pragmaSql of SQLITE_PRAGMA_STATEMENTS) {
-    db.exec(pragmaSql);
+  try {
+    for (const pragmaSql of SQLITE_PRAGMA_STATEMENTS) {
+      db.exec(pragmaSql);
+    }
+    for (const ddlSql of SQLITE_DDL_STATEMENTS) {
+      db.exec(ddlSql);
+    }
+    return db;
+  } catch (error) {
+    if (typeof uriOrDb === 'string') {
+      db.close();
+    }
+    throw error;
   }
-  for (const ddlSql of SQLITE_DDL_STATEMENTS) {
-    db.exec(ddlSql);
-  }
-  return db;
 }

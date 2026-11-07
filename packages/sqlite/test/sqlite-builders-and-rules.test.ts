@@ -5,6 +5,9 @@ import { z } from 'zod';
 import { H, createExecutorRegistry } from '@harness-dsl/core';
 import type { ResolutionContext, RuntimeDriverContext } from '@harness-dsl/core';
 import {
+  SqliteLedgerStore,
+  SqliteLessonStore,
+  SqliteTopologyStore,
   createCompactionConfigBuilder,
   createSqliteExecutors,
   createSqliteGlobalRulesBuilder,
@@ -206,24 +209,29 @@ describe('sqlite AST builders and global-rules source executor', () => {
       sqlite.lessonStore(tempDb.dbPath).toAST(),
       driverCtx,
     );
+    try {
+      const runResult = await ledgerStore.createOrResumeRun({
+        runId: 'run-slice-1',
+        laneId: 'lane-1',
+        itemKey: 'item-1',
+        inputJson: '{"hello":"world"}',
+        compiledPrefixesJson: { default: '{}' },
+        approvedMaxCostUsd: 5,
+      });
+      expect(runResult.status).toBe('RUNNING');
 
-    const runResult = await ledgerStore.createOrResumeRun({
-      runId: 'run-slice-1',
-      laneId: 'lane-1',
-      itemKey: 'item-1',
-      inputJson: '{"hello":"world"}',
-      compiledPrefixesJson: { default: '{}' },
-      approvedMaxCostUsd: 5,
-    });
-    expect(runResult.status).toBe('RUNNING');
+      const partitions = await topologyStore.getPartitions('run-slice-1');
+      expect(partitions.size).toBe(0);
 
-    const partitions = await topologyStore.getPartitions('run-slice-1');
-    expect(partitions.size).toBe(0);
-
-    const candidates = await lessonStore.queryCandidates({
-      queryText: 'sqlite',
-      partitions: ['core'],
-    });
-    expect(candidates).toEqual([]);
+      const candidates = await lessonStore.queryCandidates({
+        queryText: 'sqlite',
+        partitions: ['core'],
+      });
+      expect(candidates).toEqual([]);
+    } finally {
+      (ledgerStore as SqliteLedgerStore).close();
+      (topologyStore as SqliteTopologyStore).close();
+      (lessonStore as SqliteLessonStore).close();
+    }
   });
 });

@@ -19,15 +19,17 @@ export async function createOrResumeRunInPg(
   client: PostgresQueryClient,
   run: CreateOrResumeRunInput,
 ): Promise<CreateOrResumeRunResult> {
-  const existingRes = await client.query<PgRunRow>('SELECT * FROM harness_runs WHERE run_id = $1', [run.runId]);
-  const existing = existingRes.rows[0];
+  const existingQueryResult = await client.query<PgRunRow>('SELECT * FROM harness_runs WHERE run_id = $1', [run.runId]);
+  const existing = existingQueryResult.rows[0];
   const now = new Date().toISOString();
   if (existing === undefined) {
     const prefixesStr = run.compiledPrefixesJson !== undefined ? JSON.stringify(run.compiledPrefixesJson) : null;
+    await client.query("DELETE FROM harness_runs WHERE lane_id = $1 AND item_key = $2 AND status = 'QUEUED' AND run_id != $3", [run.laneId, run.itemKey, run.runId]);
     await client.query(
       'INSERT INTO harness_runs (run_id, lane_id, item_key, status, current_step_id, input_json, rewind_pending_to_step_id, compiled_prefixes_json, cost_usd, approved_max_cost_usd, terminal_state, scope_receipt_json, created_at, updated_at) VALUES ($1, $2, $3, $4, NULL, $5, NULL, $6, $7, $8, NULL, NULL, $9, $10)',
       [run.runId, run.laneId, run.itemKey, 'RUNNING', run.inputJson, prefixesStr, run.costUsd ?? 0, run.approvedMaxCostUsd ?? null, now, now],
     );
+    await client.query("INSERT INTO harness_lane_items (lane_id, item_key, input_json, priority, depends_on_json, latest_spawned_tip_key) VALUES ($1, $2, $3, 'normal', '[]', NULL) ON CONFLICT (lane_id, item_key) DO NOTHING", [run.laneId, run.itemKey, run.inputJson]);
     return Object.freeze<CreateOrResumeRunResult>({
       status: 'RUNNING', currentStepId: null, inputJson: run.inputJson, rewindPendingToStepId: undefined,
       compiledPrefixesJson: run.compiledPrefixesJson ? Object.freeze({ ...run.compiledPrefixesJson }) : undefined,
@@ -37,9 +39,9 @@ export async function createOrResumeRunInPg(
   const nextCost = run.costUsd !== undefined ? run.costUsd : existing.cost_usd;
   const nextApproved = run.approvedMaxCostUsd !== undefined ? run.approvedMaxCostUsd : (existing.approved_max_cost_usd ?? undefined);
   await client.query('UPDATE harness_runs SET cost_usd = $1, approved_max_cost_usd = $2, updated_at = $3 WHERE run_id = $4', [nextCost, nextApproved ?? null, now, run.runId]);
-  const stepRes = await client.query<Pick<PgStepRow, 'step_id' | 'output_json'>>("SELECT step_id, output_json FROM harness_steps WHERE run_id = $1 AND status = 'COMPLETED' ORDER BY seq ASC", [run.runId]);
+  const stepQueryResult = await client.query<Pick<PgStepRow, 'step_id' | 'output_json'>>("SELECT step_id, output_json FROM harness_steps WHERE run_id = $1 AND status = 'COMPLETED' ORDER BY seq ASC", [run.runId]);
   const completedOutputs = new Map<string, string>();
-  for (const row of stepRes.rows) {
+  for (const row of stepQueryResult.rows) {
     if (row.output_json !== null) completedOutputs.set(row.step_id, row.output_json);
   }
   const pinnedPrefixes = existing.compiled_prefixes_json !== null ? Object.freeze(JSON.parse(existing.compiled_prefixes_json) as Record<string, string>) : undefined;
@@ -121,11 +123,11 @@ export async function getRunTerminalReceiptsFromPg(
 ): Promise<ReadonlyMap<string, RunTerminalReceiptRecord>> {
   const receipts = new Map<string, RunTerminalReceiptRecord>();
   for (const itemKey of itemKeys) {
-    const res = await client.query<{ readonly item_key: string; readonly run_id: string; readonly terminal_state: string; readonly scope_receipt_json: string | null }>(
+    const queryResult = await client.query<{ readonly item_key: string; readonly run_id: string; readonly terminal_state: string; readonly scope_receipt_json: string | null }>(
       'SELECT item_key, run_id, terminal_state, scope_receipt_json FROM harness_terminal_receipts WHERE item_key = $1',
       [itemKey],
     );
-    const row = res.rows[0];
+    const row = queryResult.rows[0];
     if (row !== undefined) {
       receipts.set(row.item_key, Object.freeze<RunTerminalReceiptRecord>({
         runId: row.run_id, terminalState: row.terminal_state, scopeReceiptJson: row.scope_receipt_json ?? undefined,

@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import type { SqliteOverlayStepMutationEntry } from './sqlite-overlay-step-mutation-entry.js';
 import type { SqliteTopologyBaseRow } from './sqlite-topology-base-row.js';
 import type { SqliteTopologyOverlayRow } from './sqlite-topology-overlay-row.js';
+import { threeWayMergeContract } from './three-way-merge-contract.js';
 import type { UpdateContractInOverlayParams } from './update-contract-in-overlay-params.js';
 
 /**
@@ -115,24 +116,24 @@ export function syncPrerequisiteOverlays(
   const now = new Date().toISOString();
   const selectPrereqStmt = db.prepare("SELECT * FROM harness_topology_overlays WHERE run_id = ? AND status IN ('ACTIVE', 'SEALED_UNMERGED') AND (mutated_in_run = 1 OR has_uncommitted_changes = 1)");
   const selectTargetStmt = db.prepare('SELECT * FROM harness_topology_overlays WHERE run_id = ? AND partition_id = ?');
+  const upsertStmt = db.prepare('INSERT OR REPLACE INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)');
   for (const prereqRunId of prerequisiteRunIds) {
     const prereqRows = selectPrereqStmt.all(prereqRunId) as SqliteTopologyOverlayRow[];
     for (const prereqRow of prereqRows) {
       const targetRow = selectTargetStmt.get(targetRunId, prereqRow.partition_id) as SqliteTopologyOverlayRow | undefined;
+      const prereqAbsorbed = new Set<string>(JSON.parse(prereqRow.absorbed_run_ids_json) as string[]);
       const absorbed = new Set<string>(targetRow !== undefined ? (JSON.parse(targetRow.absorbed_run_ids_json) as string[]) : []);
-      for (const id of JSON.parse(prereqRow.absorbed_run_ids_json) as string[]) absorbed.add(id);
+      for (const id of prereqAbsorbed) absorbed.add(id);
       absorbed.add(prereqRunId);
+      const isStackedChildFold = targetRow !== undefined && (prereqAbsorbed.has(targetRunId) || prereqRow.base_contract_text_at_acquire === targetRow.contract_text);
+      const targetMutated = targetRow !== undefined && targetRow.mutated_in_run === 1;
+      const mergeBase = isStackedChildFold ? prereqRow.base_contract_text_at_acquire : (targetRow?.base_contract_text_at_acquire ?? prereqRow.base_contract_text_at_acquire);
+      const mergedContractText = targetMutated ? threeWayMergeContract(mergeBase, prereqRow.contract_text, targetRow.contract_text) : prereqRow.contract_text;
+      const nextAcquireBase = targetMutated && isStackedChildFold ? targetRow.base_contract_text_at_acquire : prereqRow.contract_text;
+      const nextLastMutatedBy = targetMutated ? (isStackedChildFold ? (prereqRow.last_mutated_by_run_id ?? targetRow.last_mutated_by_run_id) : (targetRow.last_mutated_by_run_id ?? prereqRow.last_mutated_by_run_id)) : prereqRow.last_mutated_by_run_id;
       const nextEpoch = targetRow !== undefined ? Math.max(targetRow.epoch, prereqRow.epoch) : prereqRow.epoch;
       const initialBase = targetRow !== undefined ? targetRow.initial_base_contract_text : prereqRow.initial_base_contract_text;
-      db.prepare(
-        'INSERT OR REPLACE INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)',
-      ).run(
-        targetRunId, prereqRow.partition_id, nextEpoch, prereqRow.contract_text,
-        prereqRow.contract_text, initialBase, prereqRow.contract_text, nextEpoch,
-        prereqRow.last_mutated_by_run_id, targetRow !== undefined ? targetRow.mutated_in_run : 0,
-        prereqRow.last_mutated_by_run_id, targetRow !== undefined ? targetRow.status : 'ACTIVE',
-        now, JSON.stringify(Array.from(absorbed)), targetRow !== undefined ? targetRow.step_mutations_json : '[]',
-      );
+      upsertStmt.run(targetRunId, prereqRow.partition_id, nextEpoch, mergedContractText, nextAcquireBase, initialBase, prereqRow.contract_text, nextEpoch, prereqRow.last_mutated_by_run_id, targetRow !== undefined ? targetRow.mutated_in_run : 0, nextLastMutatedBy, targetRow !== undefined ? targetRow.status : 'ACTIVE', now, JSON.stringify(Array.from(absorbed)), targetRow !== undefined ? targetRow.step_mutations_json : '[]');
     }
   }
 }

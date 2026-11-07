@@ -33,15 +33,6 @@ import { executePostgresGlobalRulesSource } from './postgres-rules-source-execut
 export function createPostgresExecutors(
   poolOrClient?: PostgresPoolFactory | PostgresQueryClient,
 ): RuntimeExecutorRegistrySlice {
-  const requirePool = (nodeType: string): PostgresPoolFactory | PostgresQueryClient => {
-    if (poolOrClient === undefined) {
-      throw new Error(
-        `Cannot instantiate '${nodeType}': pass a PostgresPoolFactory or PostgresQueryClient to createPostgresExecutors(poolFactory).`,
-      );
-    }
-    return poolOrClient;
-  };
-
   return Object.freeze<RuntimeExecutorRegistrySlice>({
     sources: Object.freeze({
       'postgres:global-rules': (
@@ -56,7 +47,8 @@ export function createPostgresExecutors(
         const client = resolvePostgresClient(
           node.uri,
           (value) => ctx.resolveEnv(value),
-          requirePool(node.type),
+          poolOrClient,
+          node.type,
         );
         return new PostgresLedgerStore(client);
       },
@@ -69,7 +61,8 @@ export function createPostgresExecutors(
         const client = resolvePostgresClient(
           node.uri,
           (value) => ctx.resolveEnv(value),
-          requirePool(node.type),
+          poolOrClient,
+          node.type,
         );
         return new PostgresTopologyStore(client);
       },
@@ -79,7 +72,8 @@ export function createPostgresExecutors(
         const client = resolvePostgresClient(
           node.uri,
           (value) => ctx.resolveEnv(value),
-          requirePool(node.type),
+          poolOrClient,
+          node.type,
         );
         return new PostgresLessonStore(client);
       },

@@ -19,10 +19,10 @@ export async function queryLessonCandidatesInPg(
   client: PostgresQueryClient,
   req: { readonly queryText: string; readonly partitions: readonly string[] },
 ): Promise<readonly LessonRecord[]> {
-  const res = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE retired = 0 ORDER BY id ASC');
+  const queryResult = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE retired = 0 ORDER BY id ASC');
   const partitionSet = new Set<string>(req.partitions);
   const candidates: LessonRecord[] = [];
-  for (const row of res.rows) {
+  for (const row of queryResult.rows) {
     if (row.partition !== null && !partitionSet.has(row.partition)) continue;
     const relevanceScore = computeNormalizedRelevance(row.directive, req.queryText);
     const signalMap = row.signal_last_emitted_at_json !== null ? Object.freeze(JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>) : undefined;
@@ -54,8 +54,8 @@ export async function admitLessonInPg(
 ): Promise<string> {
   const hashHex = createHash('sha256').update(`${lesson.partition ?? ''}:${lesson.directive}`, 'utf8').digest('hex').slice(0, 16);
   const lessonId = `lesson_${hashHex}`;
-  const existingRes = await client.query<{ readonly id: string }>('SELECT id FROM harness_lessons WHERE id = $1', [lessonId]);
-  if (existingRes.rows[0] !== undefined) {
+  const existingQueryResult = await client.query<{ readonly id: string }>('SELECT id FROM harness_lessons WHERE id = $1', [lessonId]);
+  if (existingQueryResult.rows[0] !== undefined) {
     await client.query(
       'UPDATE harness_lessons SET epoch_at_creation = $1, created_by_run_id = COALESCE($2, created_by_run_id), retired = 0 WHERE id = $3',
       [lesson.epochAtCreation, lesson.createdByRunId ?? null, lessonId],
@@ -83,22 +83,22 @@ export async function recordLessonOutcomesInPg(
   client: PostgresQueryClient,
   outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>,
 ): Promise<readonly LessonRecord[]> {
-  const touchedIds: string[] = [];
+  const touchedIds = new Set<string>();
   for (const entry of outcomes) {
-    const res = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE id = $1', [entry.lessonId]);
-    const row = res.rows[0];
+    const queryResult = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE id = $1', [entry.lessonId]);
+    const row = queryResult.rows[0];
     if (row === undefined) continue;
     const recent = JSON.parse(row.recent_outcomes_json) as LessonOutcome[];
     recent.push(entry.outcome);
     const cleanPasses = row.total_clean_passes + (entry.outcome === 'clean_pass' ? 1 : 0);
     const violated = row.total_violated + (entry.outcome === 'violated' ? 1 : 0);
     await client.query('UPDATE harness_lessons SET recent_outcomes_json = $1, total_clean_passes = $2, total_violated = $3 WHERE id = $4', [JSON.stringify(recent), cleanPasses, violated, entry.lessonId]);
-    if (!touchedIds.includes(entry.lessonId)) touchedIds.push(entry.lessonId);
+    touchedIds.add(entry.lessonId);
   }
   const updatedRecords: LessonRecord[] = [];
   for (const id of touchedIds) {
-    const res = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE id = $1', [id]);
-    const row = res.rows[0];
+    const queryResult = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE id = $1', [id]);
+    const row = queryResult.rows[0];
     if (row === undefined) continue;
     const signalMap = row.signal_last_emitted_at_json !== null ? Object.freeze(JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>) : undefined;
     updatedRecords.push(Object.freeze<LessonRecord>({

@@ -81,20 +81,22 @@ export function buildChainedLaneDependencies(
   const spawned = req.spawnedItems ?? [];
   let rollingTip = prevTipKey;
   for (const spawnedTask of spawned) {
-    const taskDeps: string[] = rollingTip !== undefined && !spawnedTask.dependsOn.includes(rollingTip) ? [rollingTip] : [];
-    for (const dep of spawnedTask.dependsOn) if (!taskDeps.includes(dep)) taskDeps.push(dep);
-    depsByItem.set(spawnedTask.itemKey, taskDeps);
+    const taskDepSet = new Set<string>();
+    if (rollingTip !== undefined) taskDepSet.add(rollingTip);
+    for (const dep of spawnedTask.dependsOn) taskDepSet.add(dep);
+    depsByItem.set(spawnedTask.itemKey, Array.from(taskDepSet));
     rollingTip = spawnedTask.itemKey;
   }
-  const nextParentDeps: string[] = [];
+  const nextParentDepSet = new Set<string>();
   for (const existingDep of currentParentDeps) {
-    if ((spawned.length === 0 || existingDep !== prevTipKey) && !nextParentDeps.includes(existingDep)) nextParentDeps.push(existingDep);
+    if (spawned.length === 0 || existingDep !== prevTipKey) nextParentDepSet.add(existingDep);
   }
-  if (spawned.length > 0 && rollingTip !== undefined && !nextParentDeps.includes(rollingTip)) nextParentDeps.push(rollingTip);
+  if (spawned.length > 0 && rollingTip !== undefined) nextParentDepSet.add(rollingTip);
   for (const addedDep of req.addedDependencies ?? []) {
-    if (!nextParentDeps.includes(addedDep)) nextParentDeps.push(addedDep);
+    nextParentDepSet.add(addedDep);
     if (!depsByItem.has(addedDep)) depsByItem.set(addedDep, []);
   }
+  const nextParentDeps = Array.from(nextParentDepSet);
   depsByItem.set(req.parentItemKey, nextParentDeps);
   assertValidLaneDag(depsByItem, req.maxPrerequisiteDepth, req.laneId);
   return { depsByItem, rollingTip, nextParentDeps };

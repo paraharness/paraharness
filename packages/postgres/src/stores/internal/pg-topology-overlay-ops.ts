@@ -3,6 +3,7 @@ import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { PgOverlayStepMutationEntry } from './pg-overlay-step-mutation-entry.js';
 import type { PgTopologyBaseRow } from './pg-topology-base-row.js';
 import type { PgTopologyOverlayRow } from './pg-topology-overlay-row.js';
+import { threeWayMergeContract } from './three-way-merge-contract.js';
 import type { UpdateContractInOverlayParams } from './update-contract-in-overlay-params.js';
 
 /**
@@ -19,18 +20,18 @@ export async function getPartitionsWithPgOverlay(
   client: PostgresQueryClient,
   runId?: string,
 ): Promise<ReadonlyMap<string, TopologyPartitionState>> {
-  const baseRes = await client.query<PgTopologyBaseRow>('SELECT * FROM harness_topology_base ORDER BY partition_id ASC');
+  const baseQueryResult = await client.query<PgTopologyBaseRow>('SELECT * FROM harness_topology_base ORDER BY partition_id ASC');
   const partitions = new Map<string, TopologyPartitionState>();
-  for (const baseRow of baseRes.rows) {
+  for (const baseRow of baseQueryResult.rows) {
     partitions.set(baseRow.partition_id, Object.freeze<TopologyPartitionState>({
       partitionId: baseRow.partition_id, epoch: baseRow.epoch, contractText: baseRow.contract_text,
       updatedAt: baseRow.updated_at, lastMutatedByRunId: baseRow.last_mutated_by_run_id ?? undefined,
     }));
   }
   if (runId === undefined) return partitions;
-  const overlayRes = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1 ORDER BY partition_id ASC', [runId]);
+  const overlayQueryResult = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1 ORDER BY partition_id ASC', [runId]);
   const overlayPartitions = new Set<string>();
-  for (const ovRow of overlayRes.rows) {
+  for (const ovRow of overlayQueryResult.rows) {
     overlayPartitions.add(ovRow.partition_id);
     if (ovRow.has_uncommitted_changes === 1 || ovRow.mutated_in_run === 1) {
       partitions.set(ovRow.partition_id, Object.freeze<TopologyPartitionState>({
@@ -39,7 +40,7 @@ export async function getPartitionsWithPgOverlay(
       }));
     }
   }
-  for (const baseRow of baseRes.rows) {
+  for (const baseRow of baseQueryResult.rows) {
     if (!overlayPartitions.has(baseRow.partition_id)) {
       await client.query(
         "INSERT INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, 0, $10, 'ACTIVE', $11, '[]', '[]') ON CONFLICT (run_id, partition_id) DO NOTHING",
@@ -64,10 +65,10 @@ export async function updateContractInPgOverlay(
   client: PostgresQueryClient,
   params: UpdateContractInOverlayParams,
 ): Promise<{ readonly newEpoch: number }> {
-  const baseRes = await client.query<PgTopologyBaseRow>('SELECT * FROM harness_topology_base WHERE partition_id = $1', [params.partitionId]);
-  const ovRes = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1 AND partition_id = $2', [params.runId, params.partitionId]);
-  const baseRow = baseRes.rows[0];
-  const ovRow = ovRes.rows[0];
+  const baseQueryResult = await client.query<PgTopologyBaseRow>('SELECT * FROM harness_topology_base WHERE partition_id = $1', [params.partitionId]);
+  const ovQueryResult = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1 AND partition_id = $2', [params.runId, params.partitionId]);
+  const baseRow = baseQueryResult.rows[0];
+  const ovRow = ovQueryResult.rows[0];
   const now = new Date().toISOString();
   const baseEpoch = baseRow?.epoch ?? 0;
   const baseText = baseRow?.contract_text ?? '';
@@ -116,29 +117,29 @@ export async function syncPrerequisitePgOverlays(
   prerequisiteRunIds: readonly string[],
 ): Promise<void> {
   const now = new Date().toISOString();
+  const upsertSql =
+    'INSERT INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12, $13, $14, $15) ON CONFLICT (run_id, partition_id) DO UPDATE SET epoch = EXCLUDED.epoch, contract_text = EXCLUDED.contract_text, base_contract_text_at_acquire = EXCLUDED.base_contract_text_at_acquire, initial_base_contract_text = EXCLUDED.initial_base_contract_text, baseline_contract_text = EXCLUDED.baseline_contract_text, baseline_epoch = EXCLUDED.baseline_epoch, baseline_last_mutated_by_run_id = EXCLUDED.baseline_last_mutated_by_run_id, mutated_in_run = EXCLUDED.mutated_in_run, has_uncommitted_changes = 1, last_mutated_by_run_id = EXCLUDED.last_mutated_by_run_id, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at, absorbed_run_ids_json = EXCLUDED.absorbed_run_ids_json, step_mutations_json = EXCLUDED.step_mutations_json';
   for (const prereqRunId of prerequisiteRunIds) {
-    const prereqRes = await client.query<PgTopologyOverlayRow>(
+    const prereqQueryResult = await client.query<PgTopologyOverlayRow>(
       "SELECT * FROM harness_topology_overlays WHERE run_id = $1 AND status IN ('ACTIVE', 'SEALED_UNMERGED') AND (mutated_in_run = 1 OR has_uncommitted_changes = 1)",
       [prereqRunId],
     );
-    for (const prereqRow of prereqRes.rows) {
-      const targetRes = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1 AND partition_id = $2', [targetRunId, prereqRow.partition_id]);
-      const targetRow = targetRes.rows[0];
+    for (const prereqRow of prereqQueryResult.rows) {
+      const targetQueryResult = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1 AND partition_id = $2', [targetRunId, prereqRow.partition_id]);
+      const targetRow = targetQueryResult.rows[0];
+      const prereqAbsorbed = new Set<string>(JSON.parse(prereqRow.absorbed_run_ids_json) as string[]);
       const absorbed = new Set<string>(targetRow !== undefined ? (JSON.parse(targetRow.absorbed_run_ids_json) as string[]) : []);
-      for (const id of JSON.parse(prereqRow.absorbed_run_ids_json) as string[]) absorbed.add(id);
+      for (const id of prereqAbsorbed) absorbed.add(id);
       absorbed.add(prereqRunId);
+      const isStackedChildFold = targetRow !== undefined && (prereqAbsorbed.has(targetRunId) || prereqRow.base_contract_text_at_acquire === targetRow.contract_text);
+      const targetMutated = targetRow !== undefined && targetRow.mutated_in_run === 1;
+      const mergeBase = isStackedChildFold ? prereqRow.base_contract_text_at_acquire : (targetRow?.base_contract_text_at_acquire ?? prereqRow.base_contract_text_at_acquire);
+      const mergedContractText = targetMutated ? threeWayMergeContract(mergeBase, prereqRow.contract_text, targetRow.contract_text) : prereqRow.contract_text;
+      const nextAcquireBase = targetMutated && isStackedChildFold ? targetRow.base_contract_text_at_acquire : prereqRow.contract_text;
+      const nextLastMutatedBy = targetMutated ? (isStackedChildFold ? (prereqRow.last_mutated_by_run_id ?? targetRow.last_mutated_by_run_id) : (targetRow.last_mutated_by_run_id ?? prereqRow.last_mutated_by_run_id)) : prereqRow.last_mutated_by_run_id;
       const nextEpoch = targetRow !== undefined ? Math.max(targetRow.epoch, prereqRow.epoch) : prereqRow.epoch;
       const initialBase = targetRow !== undefined ? targetRow.initial_base_contract_text : prereqRow.initial_base_contract_text;
-      await client.query(
-        'INSERT INTO harness_topology_overlays (run_id, partition_id, epoch, contract_text, base_contract_text_at_acquire, initial_base_contract_text, baseline_contract_text, baseline_epoch, baseline_last_mutated_by_run_id, mutated_in_run, has_uncommitted_changes, last_mutated_by_run_id, status, updated_at, absorbed_run_ids_json, step_mutations_json) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12, $13, $14, $15) ON CONFLICT (run_id, partition_id) DO UPDATE SET epoch = EXCLUDED.epoch, contract_text = EXCLUDED.contract_text, base_contract_text_at_acquire = EXCLUDED.base_contract_text_at_acquire, initial_base_contract_text = EXCLUDED.initial_base_contract_text, baseline_contract_text = EXCLUDED.baseline_contract_text, baseline_epoch = EXCLUDED.baseline_epoch, baseline_last_mutated_by_run_id = EXCLUDED.baseline_last_mutated_by_run_id, mutated_in_run = EXCLUDED.mutated_in_run, has_uncommitted_changes = 1, last_mutated_by_run_id = EXCLUDED.last_mutated_by_run_id, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at, absorbed_run_ids_json = EXCLUDED.absorbed_run_ids_json, step_mutations_json = EXCLUDED.step_mutations_json',
-        [
-          targetRunId, prereqRow.partition_id, nextEpoch, prereqRow.contract_text,
-          prereqRow.contract_text, initialBase, prereqRow.contract_text, nextEpoch,
-          prereqRow.last_mutated_by_run_id, targetRow !== undefined ? targetRow.mutated_in_run : 0,
-          prereqRow.last_mutated_by_run_id, targetRow !== undefined ? targetRow.status : 'ACTIVE',
-          now, JSON.stringify(Array.from(absorbed)), targetRow !== undefined ? targetRow.step_mutations_json : '[]',
-        ],
-      );
+      await client.query(upsertSql, [targetRunId, prereqRow.partition_id, nextEpoch, mergedContractText, nextAcquireBase, initialBase, prereqRow.contract_text, nextEpoch, prereqRow.last_mutated_by_run_id, targetRow !== undefined ? targetRow.mutated_in_run : 0, nextLastMutatedBy, targetRow !== undefined ? targetRow.status : 'ACTIVE', now, JSON.stringify(Array.from(absorbed)), targetRow !== undefined ? targetRow.step_mutations_json : '[]']);
     }
   }
 }
@@ -159,10 +160,10 @@ export async function resetPgOverlayByScope(
   runId: string,
   opts?: { readonly scope?: 'step' | 'run'; readonly stepExecId?: string },
 ): Promise<void> {
-  const res = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1', [runId]);
+  const queryResult = await client.query<PgTopologyOverlayRow>('SELECT * FROM harness_topology_overlays WHERE run_id = $1', [runId]);
   const now = new Date().toISOString();
   if (opts?.scope === 'step' && opts.stepExecId !== undefined) {
-    for (const row of res.rows) {
+    for (const row of queryResult.rows) {
       const history = JSON.parse(row.step_mutations_json) as PgOverlayStepMutationEntry[];
       const firstMatchIdx = history.findIndex((entry) => entry.stepExecId === opts.stepExecId);
       if (firstMatchIdx < 0) continue;
@@ -176,7 +177,7 @@ export async function resetPgOverlayByScope(
     }
     return;
   }
-  for (const row of res.rows) {
+  for (const row of queryResult.rows) {
     const hasSyncedBaseline = row.baseline_contract_text !== row.initial_base_contract_text || row.absorbed_run_ids_json !== '[]';
     await client.query(
       "UPDATE harness_topology_overlays SET contract_text = $1, epoch = $2, mutated_in_run = 0, has_uncommitted_changes = $3, last_mutated_by_run_id = $4, step_mutations_json = '[]', updated_at = $5 WHERE run_id = $6 AND partition_id = $7",

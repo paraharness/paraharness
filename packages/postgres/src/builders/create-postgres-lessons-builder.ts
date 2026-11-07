@@ -12,6 +12,9 @@ import type { PostgresLessonsBuilder } from './postgres-lessons-builder.js';
  * @returns {PostgresLessonsBuilder} Immutable builder for `PostgresLessonsNode`.
  */
 export function createPostgresLessonsBuilder(uri: string | EnvRef): PostgresLessonsBuilder {
+  if (typeof uri === 'string' && uri.trim().length === 0) {
+    throw new Error('postgres.lessonStore(uri) requires a non-empty database URI.');
+  }
   return Object.freeze<PostgresLessonsBuilder>({
     toAST(): PostgresLessonsNode {
       return Object.freeze<PostgresLessonsNode>({

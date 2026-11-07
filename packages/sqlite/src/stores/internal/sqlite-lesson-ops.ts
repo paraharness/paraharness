@@ -84,7 +84,7 @@ export function recordLessonOutcomesInSqlite(
 ): readonly LessonRecord[] {
   const selectStmt = db.prepare('SELECT * FROM harness_lessons WHERE id = ?');
   const updateStmt = db.prepare('UPDATE harness_lessons SET recent_outcomes_json = ?, total_clean_passes = ?, total_violated = ? WHERE id = ?');
-  const touchedIds: string[] = [];
+  const touchedIds = new Set<string>();
   for (const entry of outcomes) {
     const row = selectStmt.get(entry.lessonId) as SqliteLessonRow | undefined;
     if (row === undefined) continue;
@@ -93,7 +93,7 @@ export function recordLessonOutcomesInSqlite(
     const cleanPasses = row.total_clean_passes + (entry.outcome === 'clean_pass' ? 1 : 0);
     const violated = row.total_violated + (entry.outcome === 'violated' ? 1 : 0);
     updateStmt.run(JSON.stringify(recent), cleanPasses, violated, entry.lessonId);
-    if (!touchedIds.includes(entry.lessonId)) touchedIds.push(entry.lessonId);
+    touchedIds.add(entry.lessonId);
   }
   const updatedRecords: LessonRecord[] = [];
   for (const id of touchedIds) {

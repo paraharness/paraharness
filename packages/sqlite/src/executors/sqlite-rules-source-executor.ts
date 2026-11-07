@@ -61,8 +61,6 @@ export function executeSqliteGlobalRulesSource(
       }),
     );
   } finally {
-    if (resolvedUri !== ':memory:') {
-      db.close();
-    }
+    db.close();
   }
 }

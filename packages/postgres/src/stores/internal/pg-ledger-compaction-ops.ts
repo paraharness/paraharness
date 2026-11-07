@@ -16,11 +16,11 @@ export async function compactRunFramesInPg(
   client: PostgresQueryClient,
   runId: string,
 ): Promise<void> {
-  const res = await client.query<{ readonly status: string }>(
+  const queryResult = await client.query<{ readonly status: string }>(
     'SELECT status FROM harness_runs WHERE run_id = $1',
     [runId],
   );
-  const runRow = res.rows[0];
+  const runRow = queryResult.rows[0];
   if (
     runRow !== undefined &&
     (runRow.status === 'QUEUED' ||

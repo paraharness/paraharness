@@ -68,13 +68,16 @@ export async function recordStepTransitionInPg(
   client: PostgresQueryClient,
   transition: RecordStepTransitionInput,
 ): Promise<void> {
+  const stepQueryResult = await client.query<{ readonly run_id: string }>('SELECT run_id FROM harness_steps WHERE step_exec_id = $1', [transition.stepExecId]);
+  const stepRow = stepQueryResult.rows[0];
+  if (stepRow === undefined) {
+    throw new Error(`Cannot transition unknown stepExecId '${transition.stepExecId}' in PostgreSQL ledger.`);
+  }
   await client.query(
     'UPDATE harness_steps SET status = $1, output_json = COALESCE($2, output_json), base_scope_checkpoint = COALESCE($3, base_scope_checkpoint), head_scope_checkpoint = COALESCE($4, head_scope_checkpoint), telemetry_json = $5 WHERE step_exec_id = $6',
     [transition.status, transition.outputJson ?? null, transition.baseScopeCheckpoint ?? null, transition.headScopeCheckpoint ?? null, transition.telemetryJson, transition.stepExecId],
   );
-  const stepRes = await client.query<{ readonly run_id: string }>('SELECT run_id FROM harness_steps WHERE step_exec_id = $1', [transition.stepExecId]);
-  const stepRow = stepRes.rows[0];
-  if (stepRow !== undefined && (transition.status === 'SUSPENDED' || transition.status === 'RUNNING')) {
+  if (transition.status === 'SUSPENDED' || transition.status === 'RUNNING') {
     await client.query('UPDATE harness_runs SET status = $1, updated_at = $2 WHERE run_id = $3', [transition.status, new Date().toISOString(), stepRow.run_id]);
   }
 }
@@ -91,21 +94,24 @@ export async function recordStepTransitionInPg(
 export async function getInterruptedStepsOnBootFromPg(
   client: PostgresQueryClient,
 ): Promise<readonly InterruptedStepBootRecord[]> {
-  const runRes = await client.query<PgRunRow>("SELECT * FROM harness_runs WHERE status IN ('QUEUED', 'RUNNING', 'WAITING', 'SUSPENDED') ORDER BY created_at ASC");
+  const runQueryResult = await client.query<PgRunRow>("SELECT * FROM harness_runs WHERE status IN ('QUEUED', 'RUNNING', 'WAITING', 'SUSPENDED') ORDER BY created_at ASC");
   const results: InterruptedStepBootRecord[] = [];
-  for (const runRow of runRes.rows) {
-    const stepRes = await client.query<PgStepRow>('SELECT * FROM harness_steps WHERE run_id = $1 ORDER BY seq DESC LIMIT 1', [runRow.run_id]);
-    const stepRow = stepRes.rows[0];
-    const laneRes = await client.query<{ readonly depends_on_json: string }>('SELECT depends_on_json FROM harness_lane_items WHERE lane_id = $1 AND item_key = $2', [runRow.lane_id, runRow.item_key]);
-    const laneRow = laneRes.rows[0];
+  for (const runRow of runQueryResult.rows) {
+    const stepQueryResult = await client.query<PgStepRow>('SELECT * FROM harness_steps WHERE run_id = $1 ORDER BY seq DESC LIMIT 1', [runRow.run_id]);
+    const stepRow = stepQueryResult.rows[0];
+    const active = stepRow !== undefined && (stepRow.status === 'RUNNING' || stepRow.status === 'SUSPENDED');
+    const laneQueryResult = await client.query<{ readonly depends_on_json: string }>('SELECT depends_on_json FROM harness_lane_items WHERE lane_id = $1 AND item_key = $2', [runRow.lane_id, runRow.item_key]);
+    const laneRow = laneQueryResult.rows[0];
     const dependsOn = laneRow !== undefined ? (JSON.parse(laneRow.depends_on_json) as string[]) : [];
-    const stack = stepRow !== undefined ? (JSON.parse(stepRow.continuation_stack_json) as ContinuationFrame[]) : [];
+    const stack: readonly ContinuationFrame[] = active ? (JSON.parse(stepRow.continuation_stack_json) as ContinuationFrame[]) : [];
     results.push(Object.freeze<InterruptedStepBootRecord>({
       runId: runRow.run_id, laneId: runRow.lane_id, itemKey: runRow.item_key, inputJson: runRow.input_json,
       status: runRow.status as 'QUEUED' | 'RUNNING' | 'WAITING' | 'SUSPENDED', dependsOn: Object.freeze([...dependsOn]),
-      stepExecId: stepRow?.step_exec_id ?? null, stepId: stepRow?.step_id ?? runRow.current_step_id,
-      executableId: stepRow?.executable_id ?? undefined, baseScopeCheckpoint: stepRow?.base_scope_checkpoint ?? undefined,
-      headScopeCheckpoint: stepRow?.head_scope_checkpoint ?? undefined, continuationStack: Object.freeze([...stack]),
+      stepExecId: active ? stepRow.step_exec_id : null, stepId: active ? stepRow.step_id : null,
+      executableId: active ? (stepRow.executable_id ?? undefined) : undefined,
+      baseScopeCheckpoint: active ? (stepRow.base_scope_checkpoint ?? undefined) : undefined,
+      headScopeCheckpoint: active ? (stepRow.head_scope_checkpoint ?? undefined) : undefined,
+      continuationStack: Object.freeze([...stack]),
     }));
   }
   return Object.freeze(results);

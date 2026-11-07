@@ -102,6 +102,9 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     expect(createPostgresTopologyBuilder('postgres://localhost/db').toAST().uri).toBe('postgres://localhost/db');
     expect(createPostgresLessonsBuilder('postgres://localhost/db').toAST().uri).toBe('postgres://localhost/db');
     expect(createPostgresGlobalRulesBuilder('postgres://localhost/db', { table: 'rules_v1' }).toAST().table).toBe('rules_v1');
+    expect(() => postgres.ledger('   ')).toThrow(/non-empty database URI/);
+    expect(() => postgres.topologyStore('')).toThrow(/non-empty database URI/);
+    expect(() => postgres.lessonStore('   ')).toThrow(/non-empty database URI/);
     expect(() => postgres.globalRules(dbUrlEnv, { table: 'invalid; DROP TABLE runs;' })).toThrow(/Invalid PostgreSQL identifier/);
     expect(() => createCompactionConfigBuilder().retainFailedRunsForDays(-3)).toThrow(/positive finite number/);
     expect(postgresExecutors.sources?.['postgres:global-rules']).toBeTypeOf('function');
@@ -117,9 +120,9 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
       runId: 'run-pg-rules',
       activePartitions: ['core'],
       observedEffects: [],
-      resolveEnv(val) {
-        if (typeof val === 'string') return val;
-        return val.key === 'DATABASE_URL' ? 'postgres://test-host:5432/harness' : undefined;
+      resolveEnv(envOrUri) {
+        if (typeof envOrUri === 'string') return envOrUri;
+        return envOrUri.key === 'DATABASE_URL' ? 'postgres://test-host:5432/harness' : undefined;
       },
     };
     const driverCtx: RuntimeDriverContext = {
@@ -166,136 +169,108 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
 
   it('executes PostgresLedgerStore lifecycle, DAG cycle/depth validation, fork epochs, and isolated frame compaction', async () => {
     const startRes = await ledgerStore.createOrResumeRun({
-      runId: 'pg-run-1',
-      laneId: 'lane-pg',
-      itemKey: 'ISS-10',
-      inputJson: '{"step":0}',
-      compiledPrefixesJson: { main: '{"pinned":true}' },
-      costUsd: 0.5,
-      approvedMaxCostUsd: 20,
+      runId: 'pg-run-1', laneId: 'lane-pg', itemKey: 'ISS-10', inputJson: '{"step":0}',
+      compiledPrefixesJson: { main: '{"pinned":true}' }, costUsd: 0.5, approvedMaxCostUsd: 20,
     });
     expect(startRes.compiledPrefixesJson).toEqual({ main: '{"pinned":true}' });
 
     await ledgerStore.recordStepStart({
-      stepExecId: 'pg-step-1',
-      runId: 'pg-run-1',
-      stepId: 'act-1',
-      executableId: 'actor-1',
-      inputMsgId: null,
-      baseScopeCheckpoint: 'cp-0',
-      continuationStack: [],
+      stepExecId: 'pg-step-1', runId: 'pg-run-1', stepId: 'act-1', executableId: 'actor-1',
+      inputMsgId: null, baseScopeCheckpoint: 'cp-0', continuationStack: [],
     });
 
     const agentFrame: AgentContinuationFrame = {
-      kind: 'agent-frame',
-      agentId: 'actor-1',
-      roleKey: 'role-1',
-      modelId: 'gpt-4o',
-      stepExecId: 'pg-step-1',
-      inputJson: '{"step":0}',
-      leafMessageId: 'pg-m-1',
-      turnsTaken: 1,
-      costUsd: 0.1,
-      elapsedDurationMs: 50,
-      activeLeases: [],
-      activeSkillIds: [],
-      activeSkillActivations: {},
-      observedEffects: [],
-      injectedScopedRuleIds: [],
+      kind: 'agent-frame', agentId: 'actor-1', roleKey: 'role-1', modelId: 'gpt-4o',
+      stepExecId: 'pg-step-1', inputJson: '{"step":0}', leafMessageId: 'pg-m-1',
+      turnsTaken: 1, costUsd: 0.1, elapsedDurationMs: 50, activeLeases: [], activeSkillIds: [],
+      activeSkillActivations: {}, observedEffects: [], injectedScopedRuleIds: [],
       pausedAtPhase: 'TOOL_BOUNDARY',
       pauseState: { kind: 'active-turn', inFlightPreToolCheckpoint: 'cp-in-flight-pg' },
     };
-    await ledgerStore.updateContinuationStack('pg-run-1', 'pg-step-1', [agentFrame], {
-      baseScopeCheckpoint: 'cp-1',
-    });
-    await ledgerStore.updateRunInput('pg-run-1', {
-      inputJson: '{"step":1}',
-      rewindPendingToStepId: 'act-0',
-    });
+    await ledgerStore.updateContinuationStack('pg-run-1', 'pg-step-1', [agentFrame], { baseScopeCheckpoint: 'cp-1' });
+    await ledgerStore.updateRunInput('pg-run-1', { inputJson: '{"step":1}', rewindPendingToStepId: 'act-0' });
 
     const bootRecords = await ledgerStore.getInterruptedStepsOnBoot();
     expect(bootRecords).toHaveLength(1);
     expect(bootRecords[0]?.baseScopeCheckpoint).toBe('cp-1');
 
     await ledgerStore.recordStepTransition({
-      stepExecId: 'pg-step-1',
-      status: 'COMPLETED',
-      outputJson: '{"ok":true}',
-      telemetryJson: '{"status":"COMPLETED"}',
+      stepExecId: 'pg-step-1', status: 'COMPLETED', outputJson: '{"ok":true}', telemetryJson: '{"status":"COMPLETED"}',
     });
+    await expect(
+      ledgerStore.recordStepTransition({ stepExecId: 'unknown-step', status: 'COMPLETED', telemetryJson: '{}' }),
+    ).rejects.toThrow(/unknown stepExecId/i);
+
+    const betweenStepsBoot = await ledgerStore.getInterruptedStepsOnBoot();
+    expect(betweenStepsBoot).toEqual([
+      {
+        runId: 'pg-run-1', laneId: 'lane-pg', itemKey: 'ISS-10', inputJson: '{"step":1}',
+        status: 'RUNNING', dependsOn: [], stepExecId: null, stepId: null,
+        executableId: undefined, baseScopeCheckpoint: undefined, headScopeCheckpoint: undefined,
+        continuationStack: [],
+      },
+    ]);
 
     const resumed = await ledgerStore.createOrResumeRun({
-      runId: 'pg-run-1',
-      laneId: 'lane-pg',
-      itemKey: 'ISS-10',
-      inputJson: '{"ignored":true}',
-      compiledPrefixesJson: { main: '{"overwritten":false}' },
+      runId: 'pg-run-1', laneId: 'lane-pg', itemKey: 'ISS-10',
+      inputJson: '{"ignored":true}', compiledPrefixesJson: { main: '{"overwritten":false}' },
     });
     expect(resumed.compiledPrefixesJson).toEqual({ main: '{"pinned":true}' });
     expect(resumed.completedStepOutputsJson.get('act-1')).toBe('{"ok":true}');
 
     await ledgerStore.mutateLanePlan({
-      laneId: 'lane-pg',
-      parentRunId: 'pg-run-1',
-      parentItemKey: 'P_root',
+      laneId: 'lane-pg', parentRunId: 'pg-run-1', parentItemKey: 'ISS-10',
       spawnedItems: [
-        { itemKey: 'C_1', inputJson: '{}', dependsOn: [], priority: 'normal' },
-        { itemKey: 'C_2', inputJson: '{}', dependsOn: [], priority: 'high' },
+        { itemKey: 'C_1', inputJson: '{"c":1}', dependsOn: [], priority: 'normal' },
+        { itemKey: 'C_2', inputJson: '{"c":2}', dependsOn: [], priority: 'high' },
       ],
-      addedDependencies: [],
-      maxPrerequisiteDepth: 3,
+      addedDependencies: [], maxPrerequisiteDepth: 3,
     });
+
+    const bootAfterSpawn = await ledgerStore.getInterruptedStepsOnBoot();
+    expect(
+      bootAfterSpawn.map((entry) => ({ itemKey: entry.itemKey, status: entry.status, dependsOn: entry.dependsOn })),
+    ).toEqual([
+      { itemKey: 'ISS-10', status: 'RUNNING', dependsOn: ['C_2'] },
+      { itemKey: 'C_1', status: 'QUEUED', dependsOn: [] },
+      { itemKey: 'C_2', status: 'QUEUED', dependsOn: ['C_1'] },
+    ]);
 
     await expect(
       ledgerStore.mutateLanePlan({
-        laneId: 'lane-pg',
-        parentRunId: 'pg-run-1',
-        parentItemKey: 'C_1',
-        spawnedItems: [],
-        addedDependencies: ['P_root'],
-        maxPrerequisiteDepth: 5,
+        laneId: 'lane-pg', parentRunId: 'pg-run-1', parentItemKey: 'C_1',
+        spawnedItems: [], addedDependencies: ['ISS-10'], maxPrerequisiteDepth: 5,
       }),
     ).rejects.toThrow(/cycle/i);
 
     await expect(
       ledgerStore.mutateLanePlan({
-        laneId: 'lane-pg',
-        parentRunId: 'pg-run-1',
-        parentItemKey: 'P_above',
-        spawnedItems: [],
-        addedDependencies: ['P_root'],
-        maxPrerequisiteDepth: 2,
+        laneId: 'lane-pg', parentRunId: 'pg-run-1', parentItemKey: 'P_above',
+        spawnedItems: [], addedDependencies: ['ISS-10'], maxPrerequisiteDepth: 2,
       }),
     ).rejects.toThrow(/maxPrerequisiteDepth/);
 
     const fork1: SuspendedForkRecord = {
-      suspendedForkId: 'f-pg#1',
-      forkId: 'f-pg',
-      suspensionEpoch: 1,
-      runId: 'pg-run-1',
-      parentStepExecId: 'pg-step-1',
-      forkToolName: 'fork_worker',
-      activePartitions: ['db'],
-      suspensionReason: 'INTERRUPT_RAISED',
-      conflictRetryCount: 0,
-      conflictCheckArmed: false,
-      continuationStack: [],
+      suspendedForkId: 'f-pg#1', forkId: 'f-pg', suspensionEpoch: 1, runId: 'pg-run-1',
+      parentStepExecId: 'pg-step-1', forkToolName: 'fork_worker', activePartitions: ['db'],
+      suspensionReason: 'INTERRUPT_RAISED', conflictRetryCount: 0, conflictCheckArmed: false, continuationStack: [],
     };
     await ledgerStore.recordForkSuspension(fork1);
     await ledgerStore.recordForkSuspension({ ...fork1, suspendedForkId: 'f-pg#2', suspensionEpoch: 2 });
     expect((await ledgerStore.getSuspendedForks('pg-run-1')).map((f) => f.suspendedForkId)).toEqual(['f-pg#1', 'f-pg#2']);
-    await ledgerStore.resolveSuspendedFork('f-pg#2', 'ABORTED');
+    await ledgerStore.resolveSuspendedFork('f-pg#3', 'ABORTED');
     expect(await ledgerStore.getSuspendedForks('pg-run-1')).toEqual([]);
 
-    await ledgerStore.createOrResumeRun({
-      runId: 'pg-run-active',
-      laneId: 'lane-pg',
-      itemKey: 'ISS-10',
-      inputJson: '{}',
-    });
+    await ledgerStore.createOrResumeRun({ runId: 'pg-run-active', laneId: 'lane-pg', itemKey: 'ISS-10', inputJson: '{}' });
     await ledgerStore.appendMessageFrame('pg-run-1', createSampleWireFrame('pm-1', null, 'root'));
     await ledgerStore.appendMessageFrame('pg-run-1', createSampleWireFrame('pm-2', 'pm-1', 'leaf'));
     await ledgerStore.appendMessageFrame('pg-run-active', createSampleWireFrame('pm-active', null, 'active-body'));
+    await expect(
+      ledgerStore.replaceMessageFrame('pg-run-1', createSampleWireFrame('pm-missing', null, 'x')),
+    ).rejects.toThrow(/frame not found/i);
+    await expect(
+      ledgerStore.markFrameTombstone('pg-run-1', 'pm-missing', 'call-x', '[Tombstone]'),
+    ).rejects.toThrow(/unknown messageId/i);
     await ledgerStore.markFrameTombstone('pg-run-1', 'pm-1', 'call-pm-1', '[Tombstone]');
     await ledgerStore.recordRunTerminalReceipt('pg-run-1', 'ISS-10', 'done', '{"sha":"999"}');
     expect((await ledgerStore.getRunTerminalReceipts(['ISS-10'])).get('ISS-10')?.terminalState).toBe('done');
@@ -307,14 +282,54 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     expect(new TextDecoder().decode((await ledgerStore.getMessageChain('pm-active'))[0]?.rawWireFrame)).toBe('active-body');
   });
 
-  it('executes PostgresTopologyStore CoW overlays and PostgresLessonStore lifecycle', async () => {
-    expect(await topologyStore.updateContract('r-1', 'api', 'v1-top\nv1-bottom', 's-1')).toEqual({ newEpoch: 1 });
-    expect(await topologyStore.updateContract('r-1', 'api', 'v1-top\nv1-mid\nv1-bottom', 's-2')).toEqual({ newEpoch: 1 });
+  it('executes PostgresTopologyStore CoW overlays, 3-way merge, syncRunOverlays, and PostgresLessonStore lifecycle', async () => {
+    const [concurrentA, concurrentB] = await Promise.all([
+      topologyStore.updateContract('r-1', 'api', 'v1-top\nv1-bottom', 's-1'),
+      topologyStore.updateContract('r-1', 'api', 'v1-top\nv1-mid\nv1-bottom', 's-2'),
+    ]);
+    expect(concurrentA).toEqual({ newEpoch: 1 });
+    expect(concurrentB).toEqual({ newEpoch: 1 });
     await topologyStore.resetRunOverlay('r-1', { scope: 'step', stepExecId: 's-2' });
     expect((await topologyStore.getPartitions('r-1')).get('api')?.contractText).toBe('v1-top\nv1-bottom');
     await topologyStore.sealRunOverlay('r-1');
     const committed = await topologyStore.commitRunOverlay('r-1');
     expect(committed).toEqual({ committedRunIds: ['r-1'], updatedEpochs: new Map([['api', 1]]) });
+
+    await topologyStore.getPartitions('r-branch-a');
+    await topologyStore.getPartitions('r-branch-b');
+    await topologyStore.updateContract('r-branch-a', 'api', 'v2-top\nv1-bottom\nv2-extra', 's-ba');
+    await topologyStore.sealRunOverlay('r-branch-a');
+    await topologyStore.commitRunOverlay('r-branch-a');
+
+    await topologyStore.updateContract('r-branch-b', 'api', 'v1-top\nv2-bottom', 's-bb');
+    await topologyStore.sealRunOverlay('r-branch-b');
+    const mergedBranchB = await topologyStore.commitRunOverlay('r-branch-b');
+    expect(mergedBranchB).toEqual({ committedRunIds: ['r-branch-b'], updatedEpochs: new Map([['api', 3]]) });
+    expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe('v2-top\nv2-extra\nv2-bottom');
+
+    await topologyStore.updateContract('r-prereq', 'api', 'v3-prereq\nv2-extra\nv2-bottom', 's-p');
+    await topologyStore.sealRunOverlay('r-prereq');
+    await topologyStore.updateContract('r-parent', 'api', 'v2-top\nv2-extra\nv3-parent', 's-par');
+    await topologyStore.syncRunOverlays('r-parent', ['r-prereq']);
+    expect((await topologyStore.getPartitions('r-parent')).get('api')?.contractText).toBe(
+      'v3-prereq\nv2-extra\nv3-parent',
+    );
+    expect((await topologyStore.getPartitions('r-parent')).get('api')?.lastMutatedByRunId).toBe('r-parent');
+
+    await topologyStore.resetRunOverlay('r-parent', { scope: 'run' });
+    expect((await topologyStore.getPartitions('r-parent')).get('api')?.contractText).toBe(
+      'v3-prereq\nv2-extra\nv2-bottom',
+    );
+    await topologyStore.sealRunOverlay('r-parent');
+    const stackedCommit = await topologyStore.commitRunOverlay('r-parent');
+    expect(stackedCommit.committedRunIds).toEqual(['r-prereq', 'r-parent']);
+    expect(stackedCommit.updatedEpochs).toEqual(new Map([['api', 4]]));
+
+    await topologyStore.updateContract('r-discard', 'api', 'discard-me', 's-d');
+    await topologyStore.discardRunOverlay('r-discard');
+    expect((await topologyStore.getPartitions('r-discard')).get('api')?.contractText).toBe(
+      'v3-prereq\nv2-extra\nv2-bottom',
+    );
 
     const lessonId = await lessonStore.admit({
       partition: 'api',

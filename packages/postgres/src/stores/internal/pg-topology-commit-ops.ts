@@ -40,35 +40,35 @@ export async function commitPgOverlayThreeWayMerge(
   client: PostgresQueryClient,
   runId: string,
 ): Promise<CommitRunOverlayResult> {
-  const ovRes = await client.query<PgTopologyOverlayRow>(
+  const ovQueryResult = await client.query<PgTopologyOverlayRow>(
     'SELECT * FROM harness_topology_overlays WHERE run_id = $1 AND (mutated_in_run = 1 OR has_uncommitted_changes = 1) ORDER BY partition_id ASC',
     [runId],
   );
   const committedRunSet = new Set<string>();
-  const updatedEpochs = new Map<string, number>();
-  const now = new Date().toISOString();
-  for (const ovRow of ovRes.rows) {
+  for (const ovRow of ovQueryResult.rows) {
     for (const absorbedId of JSON.parse(ovRow.absorbed_run_ids_json) as string[]) {
-      committedRunSet.add(absorbedId);
-    }
-    const baseRes = await client.query<PgTopologyBaseRow>('SELECT * FROM harness_topology_base WHERE partition_id = $1', [ovRow.partition_id]);
-    const baseRow = baseRes.rows[0];
-    const currentBaseText = baseRow?.contract_text ?? '';
-    const currentBaseEpoch = baseRow?.epoch ?? 0;
-    const mergeBaseText = currentBaseText === ovRow.initial_base_contract_text ? ovRow.initial_base_contract_text : ovRow.base_contract_text_at_acquire;
-    const mergedText = threeWayMergeContract(mergeBaseText, currentBaseText, ovRow.contract_text);
-    if (baseRow === undefined || mergedText !== currentBaseText || ovRow.mutated_in_run === 1) {
-      const nextBaseEpoch = currentBaseEpoch + 1;
-      const mutatorRunId = ovRow.last_mutated_by_run_id ?? runId;
-      await client.query(
-        'INSERT INTO harness_topology_base (partition_id, epoch, contract_text, updated_at, last_mutated_by_run_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (partition_id) DO UPDATE SET epoch = EXCLUDED.epoch, contract_text = EXCLUDED.contract_text, updated_at = EXCLUDED.updated_at, last_mutated_by_run_id = EXCLUDED.last_mutated_by_run_id',
-        [ovRow.partition_id, nextBaseEpoch, mergedText, now, mutatorRunId],
-      );
-      updatedEpochs.set(ovRow.partition_id, nextBaseEpoch);
+      const sealedQueryResult = await client.query<{ readonly found: number }>("SELECT 1 AS found FROM harness_topology_overlays WHERE run_id = $1 AND status = 'SEALED_UNMERGED' LIMIT 1", [absorbedId]);
+      if (sealedQueryResult.rows[0] !== undefined) committedRunSet.add(absorbedId);
     }
   }
   committedRunSet.add(runId);
   const committedRunIds = Array.from(committedRunSet);
+  const updatedEpochs = new Map<string, number>();
+  const now = new Date().toISOString();
+  for (const ovRow of ovQueryResult.rows) {
+    const baseQueryResult = await client.query<PgTopologyBaseRow>('SELECT * FROM harness_topology_base WHERE partition_id = $1', [ovRow.partition_id]);
+    const baseRow = baseQueryResult.rows[0];
+    const currentBaseText = baseRow?.contract_text ?? '';
+    const currentBaseEpoch = baseRow?.epoch ?? 0;
+    const mergeBaseText = currentBaseText === ovRow.initial_base_contract_text ? ovRow.initial_base_contract_text : ovRow.base_contract_text_at_acquire;
+    const mergedText = threeWayMergeContract(mergeBaseText, currentBaseText, ovRow.contract_text);
+    const nextBaseEpoch = currentBaseEpoch + 1;
+    await client.query(
+      'INSERT INTO harness_topology_base (partition_id, epoch, contract_text, updated_at, last_mutated_by_run_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (partition_id) DO UPDATE SET epoch = EXCLUDED.epoch, contract_text = EXCLUDED.contract_text, updated_at = EXCLUDED.updated_at, last_mutated_by_run_id = EXCLUDED.last_mutated_by_run_id',
+      [ovRow.partition_id, nextBaseEpoch, mergedText, now, ovRow.last_mutated_by_run_id ?? runId],
+    );
+    updatedEpochs.set(ovRow.partition_id, nextBaseEpoch);
+  }
   for (const committedId of committedRunIds) {
     await client.query('DELETE FROM harness_topology_overlays WHERE run_id = $1', [committedId]);
   }

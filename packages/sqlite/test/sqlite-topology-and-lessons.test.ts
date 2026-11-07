@@ -124,6 +124,27 @@ describe('SqliteTopologyStore CoW overlays and SqliteLessonStore lifecycle', () 
     expect((await topologyStore.getPartitions()).get('billing')?.contractText).toBe(
       'header-prereq\nbody-child\nfooter-b',
     );
+
+    await topologyStore.updateContract(
+      'run-parent-mutated',
+      'billing',
+      'header-prereq\nbody-child\nfooter-parent',
+      's-pm',
+    );
+    await topologyStore.updateContract(
+      'run-spawned-prereq',
+      'billing',
+      'header-spawned\nbody-child\nfooter-b',
+      's-sp',
+    );
+    await topologyStore.sealRunOverlay('run-spawned-prereq');
+    await topologyStore.syncRunOverlays('run-parent-mutated', ['run-spawned-prereq']);
+
+    const mergedInRunView = (await topologyStore.getPartitions('run-parent-mutated')).get(
+      'billing',
+    );
+    expect(mergedInRunView?.contractText).toBe('header-spawned\nbody-child\nfooter-parent');
+    expect(mergedInRunView?.lastMutatedByRunId).toBe('run-parent-mutated');
   });
 
   it('admits, queries with relevanceScore, records outcomes, syncs epochs, marks signals, and retires lessons', async () => {

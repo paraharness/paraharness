@@ -138,6 +138,24 @@ describe('SqliteLedgerStore durability, DAG mutation, wire frames, and compactio
       }),
     });
 
+    const betweenStepsBoot = await store.getInterruptedStepsOnBoot();
+    expect(betweenStepsBoot).toEqual([
+      {
+        runId: 'run-1',
+        laneId: 'lane-main',
+        itemKey: 'ISS-1',
+        inputJson: '{"v":2}',
+        status: 'RUNNING',
+        dependsOn: [],
+        stepExecId: null,
+        stepId: null,
+        executableId: undefined,
+        baseScopeCheckpoint: undefined,
+        headScopeCheckpoint: undefined,
+        continuationStack: [],
+      },
+    ]);
+
     const resumed = await store.createOrResumeRun({
       runId: 'run-1',
       laneId: 'lane-main',
@@ -194,6 +212,19 @@ describe('SqliteLedgerStore durability, DAG mutation, wire frames, and compactio
       addedDependencies: [],
       maxPrerequisiteDepth: 4,
     });
+
+    const bootChain = await store.getInterruptedStepsOnBoot();
+    expect(
+      bootChain.map((entry) => ({
+        itemKey: entry.itemKey,
+        status: entry.status,
+        dependsOn: entry.dependsOn,
+      })),
+    ).toEqual([
+      { itemKey: 'T_prevTip', status: 'QUEUED', dependsOn: [] },
+      { itemKey: 'T_1', status: 'QUEUED', dependsOn: ['T_prevTip'] },
+      { itemKey: 'T_2', status: 'QUEUED', dependsOn: ['T_1'] },
+    ]);
 
     await expect(
       store.mutateLanePlan({

@@ -43,7 +43,10 @@ export class PostgresLessonStore implements LessonStore {
    */
   private ensureReady(): Promise<PostgresQueryClient> {
     if (this.initPromise === undefined) {
-      this.initPromise = ensurePostgresSchemaInitialized(this.client);
+      this.initPromise = ensurePostgresSchemaInitialized(this.client).catch((error: unknown) => {
+        this.initPromise = undefined;
+        throw error;
+      });
     }
     return this.initPromise;
   }
@@ -134,11 +137,11 @@ export class PostgresLessonStore implements LessonStore {
   async markSignalEmitted(lessonId: string, signalId: string, emittedAt: string): Promise<void> {
     const client = await this.ensureReady();
     await runInPostgresTransaction(client, async () => {
-      const res = await client.query<{ readonly signal_last_emitted_at_json: string | null }>(
+      const queryResult = await client.query<{ readonly signal_last_emitted_at_json: string | null }>(
         'SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = $1',
         [lessonId],
       );
-      const row = res.rows[0];
+      const row = queryResult.rows[0];
       if (row === undefined) return;
       const map: Record<string, string> =
         row.signal_last_emitted_at_json !== null

@@ -53,7 +53,10 @@ export class PostgresTopologyStore implements TopologyStore {
    */
   private ensureReady(): Promise<PostgresQueryClient> {
     if (this.initPromise === undefined) {
-      this.initPromise = ensurePostgresSchemaInitialized(this.client);
+      this.initPromise = ensurePostgresSchemaInitialized(this.client).catch((error: unknown) => {
+        this.initPromise = undefined;
+        throw error;
+      });
     }
     return this.initPromise;
   }

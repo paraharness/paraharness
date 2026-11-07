@@ -12,6 +12,9 @@ import type { PostgresTopologyBuilder } from './postgres-topology-builder.js';
  * @returns {PostgresTopologyBuilder} Immutable builder for `PostgresTopologyNode`.
  */
 export function createPostgresTopologyBuilder(uri: string | EnvRef): PostgresTopologyBuilder {
+  if (typeof uri === 'string' && uri.trim().length === 0) {
+    throw new Error('postgres.topologyStore(uri) requires a non-empty database URI.');
+  }
   return Object.freeze<PostgresTopologyBuilder>({
     toAST(): PostgresTopologyNode {
       return Object.freeze<PostgresTopologyNode>({

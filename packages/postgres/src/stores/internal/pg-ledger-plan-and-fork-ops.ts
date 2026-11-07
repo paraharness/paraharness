@@ -18,16 +18,22 @@ export async function mutateLanePlanInPg(
   client: PostgresQueryClient,
   req: MutateLanePlanRequest,
 ): Promise<void> {
-  const existingRes = await client.query<{ readonly item_key: string; readonly depends_on_json: string; readonly latest_spawned_tip_key: string | null }>(
+  const existingQueryResult = await client.query<{ readonly item_key: string; readonly depends_on_json: string; readonly latest_spawned_tip_key: string | null }>(
     'SELECT item_key, depends_on_json, latest_spawned_tip_key FROM harness_lane_items WHERE lane_id = $1',
     [req.laneId],
   );
-  const { depsByItem, rollingTip, nextParentDeps } = buildChainedLaneDependencies(existingRes.rows, req);
+  const { depsByItem, rollingTip, nextParentDeps } = buildChainedLaneDependencies(existingQueryResult.rows, req);
+  const now = new Date().toISOString();
   for (const spawnedTask of req.spawnedItems ?? []) {
     const taskDeps = depsByItem.get(spawnedTask.itemKey) ?? [];
     await client.query(
       'INSERT INTO harness_lane_items (lane_id, item_key, input_json, priority, depends_on_json, latest_spawned_tip_key) VALUES ($1, $2, $3, $4, $5, NULL) ON CONFLICT (lane_id, item_key) DO UPDATE SET input_json = EXCLUDED.input_json, priority = EXCLUDED.priority, depends_on_json = EXCLUDED.depends_on_json',
       [req.laneId, spawnedTask.itemKey, spawnedTask.inputJson, spawnedTask.priority, JSON.stringify(taskDeps)],
+    );
+    const queuedRunId = `queued:${req.laneId}:${spawnedTask.itemKey}`;
+    await client.query(
+      "INSERT INTO harness_runs (run_id, lane_id, item_key, status, current_step_id, input_json, cost_usd, created_at, updated_at) VALUES ($1, $2, $3, 'QUEUED', NULL, $4, 0, $5, $5) ON CONFLICT (run_id) DO NOTHING",
+      [queuedRunId, req.laneId, spawnedTask.itemKey, spawnedTask.inputJson, now],
     );
   }
   for (const addedDep of req.addedDependencies ?? []) {
@@ -36,11 +42,11 @@ export async function mutateLanePlanInPg(
       [req.laneId, addedDep],
     );
   }
-  const parentRes = await client.query<{ readonly input_json: string; readonly priority: string }>(
+  const parentQueryResult = await client.query<{ readonly input_json: string; readonly priority: string }>(
     'SELECT input_json, priority FROM harness_lane_items WHERE lane_id = $1 AND item_key = $2',
     [req.laneId, req.parentItemKey],
   );
-  const parentExists = parentRes.rows[0];
+  const parentExists = parentQueryResult.rows[0];
   await client.query(
     'INSERT INTO harness_lane_items (lane_id, item_key, input_json, priority, depends_on_json, latest_spawned_tip_key) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (lane_id, item_key) DO UPDATE SET depends_on_json = EXCLUDED.depends_on_json, latest_spawned_tip_key = EXCLUDED.latest_spawned_tip_key',
     [req.laneId, req.parentItemKey, parentExists?.input_json ?? '{}', parentExists?.priority ?? 'normal', JSON.stringify(nextParentDeps), rollingTip ?? null],
@@ -83,13 +89,13 @@ export async function getSuspendedForksFromPg(
   runId: string,
   opts?: { readonly forkIds?: readonly string[]; readonly parentStepExecId?: string },
 ): Promise<readonly SuspendedForkRecord[]> {
-  const res = await client.query<PgSuspendedForkRow>(
+  const queryResult = await client.query<PgSuspendedForkRow>(
     "SELECT * FROM harness_suspended_forks WHERE run_id = $1 AND status = 'SUSPENDED' ORDER BY suspension_epoch ASC",
     [runId],
   );
   const forkFilter = opts?.forkIds !== undefined ? new Set<string>(opts.forkIds) : undefined;
   const results: SuspendedForkRecord[] = [];
-  for (const row of res.rows) {
+  for (const row of queryResult.rows) {
     if (opts?.parentStepExecId !== undefined && row.parent_step_exec_id !== opts.parentStepExecId) continue;
     if (forkFilter !== undefined && !forkFilter.has(row.fork_id) && !forkFilter.has(row.suspended_fork_id)) continue;
     results.push(Object.freeze(JSON.parse(row.record_json) as SuspendedForkRecord));
@@ -113,17 +119,27 @@ export async function resolveSuspendedForkInPg(
   suspendedForkId: string,
   status: 'RESUMED' | 'ABORTED',
 ): Promise<void> {
-  const res = await client.query<Pick<PgSuspendedForkRow, 'run_id' | 'fork_id' | 'suspension_epoch'>>(
+  const queryResult = await client.query<Pick<PgSuspendedForkRow, 'run_id' | 'fork_id' | 'suspension_epoch'>>(
     'SELECT run_id, fork_id, suspension_epoch FROM harness_suspended_forks WHERE suspended_fork_id = $1',
     [suspendedForkId],
   );
-  const target = res.rows[0];
-  if (target === undefined) {
-    await client.query("UPDATE harness_suspended_forks SET status = $1 WHERE suspended_fork_id = $2 AND status = 'SUSPENDED'", [status, suspendedForkId]);
+  const target = queryResult.rows[0];
+  if (target !== undefined) {
+    await client.query(
+      "UPDATE harness_suspended_forks SET status = $1 WHERE run_id = $2 AND fork_id = $3 AND suspension_epoch <= $4 AND status = 'SUSPENDED'",
+      [status, target.run_id, target.fork_id, target.suspension_epoch],
+    );
     return;
   }
-  await client.query(
-    "UPDATE harness_suspended_forks SET status = $1 WHERE run_id = $2 AND fork_id = $3 AND suspension_epoch <= $4 AND status = 'SUSPENDED'",
-    [status, target.run_id, target.fork_id, target.suspension_epoch],
-  );
+  const hashIdx = suspendedForkId.lastIndexOf('#');
+  if (hashIdx > 0) {
+    const forkId = suspendedForkId.slice(0, hashIdx);
+    const epoch = Number.parseInt(suspendedForkId.slice(hashIdx + 1), 10);
+    if (Number.isInteger(epoch)) {
+      await client.query(
+        "UPDATE harness_suspended_forks SET status = $1 WHERE fork_id = $2 AND suspension_epoch <= $3 AND status = 'SUSPENDED'",
+        [status, forkId, epoch],
+      );
+    }
+  }
 }

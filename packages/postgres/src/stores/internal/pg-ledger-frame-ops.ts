@@ -57,7 +57,7 @@ export async function replaceMessageFrameInPg(
 ): Promise<void> {
   const tombstonesJson =
     frame.compactedTombstones !== undefined ? JSON.stringify(frame.compactedTombstones) : null;
-  await client.query(
+  const updateResult = await client.query(
     'UPDATE harness_wire_frames SET raw_wire_frame = $1, canonical_json = $2, prefix_digest = $3, compacted_tombstones_json = COALESCE($4, compacted_tombstones_json) WHERE message_id = $5 AND run_id = $6',
     [
       Buffer.from(frame.rawWireFrame),
@@ -68,6 +68,9 @@ export async function replaceMessageFrameInPg(
       runId,
     ],
   );
+  if (updateResult.rowCount === 0) {
+    throw new Error(`Cannot replace message frame '${frame.messageId}' for runId '${runId}': frame not found.`);
+  }
 }
 
 /**
@@ -84,12 +87,14 @@ export async function markFrameTombstoneInPg(
   client: PostgresQueryClient,
   params: MarkFrameTombstoneParams,
 ): Promise<void> {
-  const res = await client.query<{ readonly compacted_tombstones_json: string | null }>(
+  const queryResult = await client.query<{ readonly compacted_tombstones_json: string | null }>(
     'SELECT compacted_tombstones_json FROM harness_wire_frames WHERE message_id = $1 AND run_id = $2',
     [params.messageId, params.runId],
   );
-  const row = res.rows[0];
-  if (row === undefined) return;
+  const row = queryResult.rows[0];
+  if (row === undefined) {
+    throw new Error(`Cannot mark tombstone on unknown messageId '${params.messageId}' in runId '${params.runId}'.`);
+  }
   const currentMap: Record<string, string> =
     row.compacted_tombstones_json !== null
       ? (JSON.parse(row.compacted_tombstones_json) as Record<string, string>)
@@ -123,11 +128,11 @@ export async function getMessageChainFromPg(
       throw new Error(`Cycle detected in wire frame chain at messageId '${currentId}'.`);
     }
     visited.add(currentId);
-    const res: PostgresQueryResult<PgWireFrameRow> = await client.query<PgWireFrameRow>(
+    const queryResult: PostgresQueryResult<PgWireFrameRow> = await client.query<PgWireFrameRow>(
       'SELECT * FROM harness_wire_frames WHERE message_id = $1',
       [currentId],
     );
-    const row: PgWireFrameRow | undefined = res.rows[0];
+    const row: PgWireFrameRow | undefined = queryResult.rows[0];
     if (row === undefined) break;
     const tombstones =
       row.compacted_tombstones_json !== null

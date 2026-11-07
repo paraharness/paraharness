@@ -1,7 +1,7 @@
 /**
  * Extracts normalized lowercase alphanumeric word tokens and character 3-grams from `text`.
  *
- * Produces a deduplicated `Set<string>` used to compute Jaccard/overlap similarity in `[0, 1]`.
+ * Produces a deduplicated `Set<string>` used to compute Jaccard and query-coverage similarity in `[0, 1]`.
  *
  * @param {string} text - Input directive or search query string.
  *
@@ -29,7 +29,7 @@ function extractTokensAndTrigrams(text: string): Set<string> {
  * Computes normalized text relevance $R(L, Q) \in [0, 1]$ between a lesson `directive` and `queryText`.
  *
  * Returns `1` when `queryText` is empty or identical to `directive`, and otherwise computes the
- * normalized token and character-trigram overlap coefficient in `[0, 1]`.
+ * normalized token and character-trigram overlap coefficient in `[0, 1]` (`SPEC.md` §3.4.3).
  *
  * @param {string} directive - Lesson directive text $L$.
  * @param {string} queryText - Search query text $Q$.

@@ -1,7 +1,14 @@
+import type { PostgresQueryClient } from './postgres-query-client.js';
+
 /**
  * Strict regular expression validating SQL table and column identifiers (`^[A-Za-z_][A-Za-z0-9_]*$`).
  */
 export const POSTGRES_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Per-client transaction serialization queues preventing overlapping `BEGIN` / `COMMIT` blocks on a single `PostgresQueryClient`.
+ */
+export const POSTGRES_TRANSACTION_QUEUES = new WeakMap<PostgresQueryClient, Promise<unknown>>();
 
 /**
  * Ordered PostgreSQL DDL statements initializing the ledger, topology CoW overlay, and lesson store tables.

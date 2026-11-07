@@ -5,6 +5,7 @@ import type { PostgresQueryResult } from '../postgres-query-result.js';
 import {
   POSTGRES_DDL_STATEMENTS,
   POSTGRES_IDENTIFIER_REGEX,
+  POSTGRES_TRANSACTION_QUEUES,
 } from '../postgres-schema.constants.js';
 
 /**
@@ -47,19 +48,26 @@ export async function ensurePostgresSchemaInitialized(
  * Resolves a literal connection URI or symbolic `EnvRef` via `resolveEnv` and returns a `PostgresQueryClient`
  * bound to `poolOrClient`.
  *
- * Validates that the resolved URI is non-empty and delegates asynchronous pool acquisition lazily inside `query()`.
+ * Validates that `poolOrClient` is defined and the resolved URI is non-empty, delegating asynchronous pool acquisition lazily inside `query()`.
  *
- * @param {string | EnvRef}                                uri          - Literal PostgreSQL URI or symbolic `EnvRef`.
- * @param {(value: string | EnvRef) => string | undefined} resolveEnv   - Late-bound environment resolver from runtime context.
- * @param {PostgresPoolFactory | PostgresQueryClient}      poolOrClient - Pool factory or pre-bound query client.
+ * @param {string | EnvRef}                                uri            - Literal PostgreSQL URI or symbolic `EnvRef`.
+ * @param {(value: string | EnvRef) => string | undefined} resolveEnv     - Late-bound environment resolver from runtime context.
+ * @param {PostgresPoolFactory | PostgresQueryClient}      [poolOrClient] - Pool factory or pre-bound query client.
+ * @param {string}                                         [nodeType]     - Optional AST node type label for diagnostic error messages.
  *
  * @returns {PostgresQueryClient} Bound PostgreSQL query client.
  */
 export function resolvePostgresClient(
   uri: string | EnvRef,
   resolveEnv: (value: string | EnvRef) => string | undefined,
-  poolOrClient: PostgresPoolFactory | PostgresQueryClient,
+  poolOrClient?: PostgresPoolFactory | PostgresQueryClient,
+  nodeType = 'postgres',
 ): PostgresQueryClient {
+  if (poolOrClient === undefined) {
+    throw new Error(
+      `Cannot instantiate '${nodeType}': pass a PostgresPoolFactory or PostgresQueryClient to createPostgresExecutors(poolFactory).`,
+    );
+  }
   const resolvedUri = resolveEnv(uri) ?? (typeof uri === 'string' ? uri : undefined);
   if (resolvedUri === undefined || resolvedUri.trim().length === 0) {
     const label = typeof uri === 'string' ? uri : `H.env('${uri.key}')`;
@@ -90,9 +98,10 @@ export function resolvePostgresClient(
 }
 
 /**
- * Executes `work` inside a `BEGIN` / `COMMIT` / `ROLLBACK` transaction on `client`.
+ * Executes `work` inside a serialized `BEGIN` / `COMMIT` / `ROLLBACK` transaction on `client`.
  *
- * Guarantees that any thrown error rolls back uncommitted mutations before rethrowing.
+ * Serializes concurrent transactions per `PostgresQueryClient` via `POSTGRES_TRANSACTION_QUEUES`
+ * and guarantees that any thrown error rolls back uncommitted mutations before rethrowing.
  *
  * @template TResult Return value type of `work`.
  *
@@ -101,17 +110,28 @@ export function resolvePostgresClient(
  *
  * @returns {Promise<TResult>} Result produced by `work` after `COMMIT`.
  */
-export async function runInPostgresTransaction<TResult>(
+export function runInPostgresTransaction<TResult>(
   client: PostgresQueryClient,
   work: () => Promise<TResult>,
 ): Promise<TResult> {
-  await client.query('BEGIN');
-  try {
-    const result = await work();
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  }
+  const prior = POSTGRES_TRANSACTION_QUEUES.get(client) ?? Promise.resolve();
+  const current = prior.then(async (): Promise<TResult> => {
+    await client.query('BEGIN');
+    try {
+      const result = await work();
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    }
+  });
+  POSTGRES_TRANSACTION_QUEUES.set(
+    client,
+    current.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return current;
 }
