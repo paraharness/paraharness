@@ -6,7 +6,10 @@ import type {
   WireFrameRecord,
 } from '@harness-dsl/core';
 import { stripGeminiThoughtPartsAndSignatures } from './gemini-wire-converter.js';
-import { projectCanonicalToGeminiContent } from './gemini-wire-helpers.js';
+import {
+  projectCanonicalToGeminiContent,
+  tryDecodeGeminiWireContent,
+} from './gemini-wire-helpers.js';
 
 /**
  * Slices `ctx.parentChain` up to and including `ctx.forkPointMessageId` when specified.
@@ -64,8 +67,9 @@ export function transformGeminiForkFrame(
     const contentTurn = projectCanonicalToGeminiContent(canonical, toolNameByCallId);
     return Object.freeze<WireFrameRecord>({ ...frame, vendorId: 'google', rawWireFrame: new TextEncoder().encode(JSON.stringify(contentTurn)), canonical });
   }
-  const rawText = new TextDecoder().decode(frame.rawWireFrame).trim();
-  const parsed = rawText.startsWith('{') ? (JSON.parse(rawText) as Readonly<Record<string, unknown>>) : projectCanonicalToGeminiContent(canonical, toolNameByCallId);
+  const parsed =
+    tryDecodeGeminiWireContent(frame.rawWireFrame) ??
+    projectCanonicalToGeminiContent(canonical, toolNameByCallId);
   const stripped = stripGeminiThoughtPartsAndSignatures(parsed);
   return Object.freeze<WireFrameRecord>({ ...frame, vendorId: 'google', rawWireFrame: new TextEncoder().encode(JSON.stringify(stripped)), canonical });
 }
@@ -90,7 +94,13 @@ export function buildGeminiPairedForkToolFrame(
     precedingByCallId.set(item.callId, item);
   }
   const toolNameByCallId = new Map<string, string>();
-  const parts = [ctx.childRoleContextFrameText, ctx.childTaskPromptText].filter((s): s is string => Boolean(s && s.length > 0));
+  const parts: string[] = [];
+  if (ctx.childRoleContextFrameText !== undefined && ctx.childRoleContextFrameText.length > 0) {
+    parts.push(ctx.childRoleContextFrameText);
+  }
+  if (ctx.childTaskPromptText !== undefined && ctx.childTaskPromptText.length > 0) {
+    parts.push(ctx.childTaskPromptText);
+  }
   const forkCallText = parts.length > 0 ? parts.join('\n\n') : '[Forked child session]';
   const toolResults: CanonicalToolResult[] = [];
   for (const call of forkPointFrame.canonical.toolCalls ?? []) {

@@ -4,11 +4,40 @@ import {
   type CanonicalToolCall,
   type ModelTurnRequest,
   type ModelTurnResponse,
+  type WireToolSchema,
 } from '@harness-dsl/core';
-import {
-  decodeHistoryToAlternatingGeminiContents,
-  resolveGeminiFunctionDeclarations,
-} from './gemini-wire-helpers.js';
+import { decodeHistoryToAlternatingGeminiContents } from './gemini-wire-helpers.js';
+
+/**
+ * Resolves Gemini `functionDeclarations` tool descriptors from `CompiledWirePrefix` or `req.wireToolSchemas`.
+ *
+ * Preserves identical `functionDeclarations` across `'auto'` and `'none'` tool-choice turns.
+ *
+ * @param {ModelTurnRequest} req - Turn request containing `wirePrefix`, `roleKey`, and `wireToolSchemas`.
+ *
+ * @returns {readonly Readonly<Record<string, unknown>>[]} Gemini function declarations array.
+ */
+function resolveGeminiFunctionDeclarations(
+  req: ModelTurnRequest,
+): readonly Readonly<Record<string, unknown>>[] {
+  const byRole = req.wirePrefix?.wireToolSchemasByRoleKey;
+  const schemas: readonly WireToolSchema[] =
+    (req.roleKey !== undefined ? byRole?.[req.roleKey] : undefined) ??
+    byRole?.['*'] ??
+    req.wireToolSchemas ??
+    [];
+  const declarations: Readonly<Record<string, unknown>>[] = [];
+  for (const schema of schemas) {
+    declarations.push(
+      Object.freeze({
+        name: schema.name,
+        description: schema.description,
+        parametersJsonSchema: schema.inputJsonSchema,
+      }),
+    );
+  }
+  return Object.freeze(declarations);
+}
 
 /**
  * Strips model-specific `thought: true` parts and cryptographic `thoughtSignature` fields from a Gemini content object.
@@ -62,26 +91,33 @@ export function buildGeminiGenerateContentRequest(
   const contents = decodeHistoryToAlternatingGeminiContents(req.history);
   const functionDeclarations = resolveGeminiFunctionDeclarations(req);
   const generationConfig: Record<string, unknown> = {};
+  let hasGenerationConfig = false;
   if (req.outputSchema !== undefined) {
     generationConfig['responseMimeType'] = 'application/json';
     generationConfig['responseJsonSchema'] = zodToJsonSchema(req.outputSchema);
+    hasGenerationConfig = true;
   }
   if (req.effort !== undefined) {
     generationConfig['thinkingConfig'] = Object.freeze({ thinkingLevel: req.effort.toUpperCase(), includeThoughts: true });
+    hasGenerationConfig = true;
   }
+  const body: Record<string, unknown> = { contents };
   const sysText = req.wirePrefix?.systemPromptText ?? '';
-  const systemInstruction = sysText.length > 0 ? Object.freeze({ parts: Object.freeze([Object.freeze({ text: sysText })]) }) : undefined;
-  const toolConfig =
-    req.toolChoice !== undefined
-      ? Object.freeze({ functionCallingConfig: Object.freeze({ mode: req.toolChoice === 'none' ? 'NONE' : 'AUTO' }) })
-      : undefined;
-  return Object.freeze({
-    contents,
-    ...(systemInstruction !== undefined ? { systemInstruction } : {}),
-    ...(functionDeclarations.length > 0 ? { tools: Object.freeze([Object.freeze({ functionDeclarations })]) } : {}),
-    ...(toolConfig !== undefined ? { toolConfig } : {}),
-    ...(Object.keys(generationConfig).length > 0 ? { generationConfig: Object.freeze(generationConfig) } : {}),
-  });
+  if (sysText.length > 0) {
+    body['systemInstruction'] = Object.freeze({ parts: Object.freeze([Object.freeze({ text: sysText })]) });
+  }
+  if (functionDeclarations.length > 0) {
+    body['tools'] = Object.freeze([Object.freeze({ functionDeclarations })]);
+  }
+  if (req.toolChoice !== undefined) {
+    body['toolConfig'] = Object.freeze({
+      functionCallingConfig: Object.freeze({ mode: req.toolChoice === 'none' ? 'NONE' : 'AUTO' }),
+    });
+  }
+  if (hasGenerationConfig) {
+    body['generationConfig'] = Object.freeze(generationConfig);
+  }
+  return Object.freeze(body);
 }
 
 /**

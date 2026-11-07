@@ -4,15 +4,13 @@ import {
   type CanonicalToolCall,
   type ModelTurnRequest,
   type ModelTurnResponse,
+  type WireFrameRecord,
 } from '@harness-dsl/core';
 import {
   CLAUDE_THINKING_BUDGETS,
   DEFAULT_CLAUDE_MAX_TOKENS,
 } from '../default-claude-http-transport.constants.js';
-import {
-  decodeFrameToAnthropicMessage,
-  resolveAnthropicWireTools,
-} from './claude-wire-helpers.js';
+import { resolveAnthropicWireTools } from './claude-wire-helpers.js';
 
 /**
  * Projects a vendor-neutral `CanonicalMessage` into an Anthropic `/v1/messages` wire message object.
@@ -31,12 +29,9 @@ export function projectCanonicalToAnthropicMessage(
     const blocks: Readonly<Record<string, unknown>>[] = [];
     for (const res of canonical.toolResults ?? []) {
       blocks.push(
-        Object.freeze({
-          type: 'tool_result',
-          tool_use_id: res.callId,
-          content: res.content,
-          ...(res.isError ? { is_error: true } : {}),
-        }),
+        res.isError
+          ? Object.freeze({ type: 'tool_result', tool_use_id: res.callId, content: res.content, is_error: true })
+          : Object.freeze({ type: 'tool_result', tool_use_id: res.callId, content: res.content }),
       );
     }
     return Object.freeze({ role: 'user', content: Object.freeze(blocks) });
@@ -60,6 +55,34 @@ export function projectCanonicalToAnthropicMessage(
     role: 'user',
     content: Object.freeze([Object.freeze({ type: 'text', text: canonical.visibleText })]),
   });
+}
+
+/**
+ * Decodes a single `WireFrameRecord` into an Anthropic `/v1/messages` wire message object.
+ *
+ * Uses `rawWireFrame` directly when it already holds a valid Anthropic `{ role, content }` message
+ * (preserving `thinking` blocks, `signature` fields, and `cache_control`), and otherwise projects
+ * from `frame.canonical`.
+ *
+ * @param {WireFrameRecord} frame - Conversation history frame record.
+ *
+ * @returns {Readonly<Record<string, unknown>>} Anthropic wire message object.
+ */
+export function decodeFrameToAnthropicMessage(
+  frame: WireFrameRecord,
+): Readonly<Record<string, unknown>> {
+  const text = new TextDecoder().decode(frame.rawWireFrame).trim();
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text) as Readonly<Record<string, unknown>>;
+      if ((parsed['role'] === 'user' || parsed['role'] === 'assistant') && Array.isArray(parsed['content'])) {
+        return parsed;
+      }
+    } catch {
+      return projectCanonicalToAnthropicMessage(frame.canonical);
+    }
+  }
+  return projectCanonicalToAnthropicMessage(frame.canonical);
 }
 
 /**

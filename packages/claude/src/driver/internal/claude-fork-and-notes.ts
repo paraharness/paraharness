@@ -29,7 +29,13 @@ export function prepareClaudeForkFrames(
   ctx: ForkContext,
   target: PrepareForkTarget,
 ): readonly WireFrameRecord[] {
-  const promptParts = [ctx.childRoleContextFrameText, ctx.childTaskPromptText].filter((s): s is string => Boolean(s && s.length > 0));
+  const promptParts: string[] = [];
+  if (ctx.childRoleContextFrameText !== undefined && ctx.childRoleContextFrameText.length > 0) {
+    promptParts.push(ctx.childRoleContextFrameText);
+  }
+  if (ctx.childTaskPromptText !== undefined && ctx.childTaskPromptText.length > 0) {
+    promptParts.push(ctx.childTaskPromptText);
+  }
   if (ctx.historyMode === 'shared-prefix-only') {
     if (promptParts.length === 0) {
       return Object.freeze([]);
@@ -78,8 +84,15 @@ export function appendClaudeToolResultNotes(
   const suffix = notes.join('\n');
   if (frame.canonical.role === 'tool' && frame.canonical.toolResults !== undefined) {
     const results = frame.canonical.toolResults;
-    const foundIdx = targetCallId !== undefined ? results.findIndex((r) => r.callId === targetCallId) : -1;
-    const targetIdx = foundIdx >= 0 ? foundIdx : results.length - 1;
+    let targetIdx = results.length - 1;
+    if (targetCallId !== undefined) {
+      for (let idx = 0; idx < results.length; idx += 1) {
+        if (results[idx]?.callId === targetCallId) {
+          targetIdx = idx;
+          break;
+        }
+      }
+    }
     const updatedResults: CanonicalToolResult[] = [];
     for (let idx = 0; idx < results.length; idx += 1) {
       const item = results[idx];

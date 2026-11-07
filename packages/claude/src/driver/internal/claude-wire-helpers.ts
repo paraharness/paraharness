@@ -5,14 +5,12 @@ import type {
   ClaudeModelNode,
   EnvRef,
   ModelTurnRequest,
-  WireFrameRecord,
   WireToolSchema,
 } from '@harness-dsl/core';
 import {
   ANTHROPIC_API_VERSION,
   CLAUDE_CREDENTIAL_FILENAMES,
 } from '../default-claude-http-transport.constants.js';
-import { projectCanonicalToAnthropicMessage } from './claude-wire-converter.js';
 
 /**
  * Extracts an OAuth bearer token string from a Claude CLI `configDir` path on disk when present.
@@ -28,9 +26,14 @@ export function extractOAuthTokenFromConfigDir(configDir: string): string | unde
   if (!existsSync(configDir)) {
     return undefined;
   }
-  const candidatePaths = statSync(configDir).isFile()
-    ? [configDir]
-    : CLAUDE_CREDENTIAL_FILENAMES.map((name) => join(configDir, name));
+  const candidatePaths: string[] = [];
+  if (statSync(configDir).isFile()) {
+    candidatePaths.push(configDir);
+  } else {
+    for (const name of CLAUDE_CREDENTIAL_FILENAMES) {
+      candidatePaths.push(join(configDir, name));
+    }
+  }
   for (const filePath of candidatePaths) {
     if (!existsSync(filePath)) {
       continue;
@@ -141,35 +144,4 @@ export function resolveAnthropicWireTools(
     );
   }
   return Object.freeze(tools);
-}
-
-/**
- * Decodes a single `WireFrameRecord` into an Anthropic `/v1/messages` wire message object.
- *
- * Uses `rawWireFrame` directly when it already holds a valid Anthropic `{ role, content }` message
- * (preserving `thinking` blocks, `signature` fields, and `cache_control`), and otherwise projects
- * from `frame.canonical`.
- *
- * @param {WireFrameRecord} frame - Conversation history frame record.
- *
- * @returns {Readonly<Record<string, unknown>>} Anthropic wire message object.
- */
-export function decodeFrameToAnthropicMessage(
-  frame: WireFrameRecord,
-): Readonly<Record<string, unknown>> {
-  const text = new TextDecoder().decode(frame.rawWireFrame).trim();
-  if (text.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(text) as Readonly<Record<string, unknown>>;
-      if (
-        (parsed['role'] === 'user' || parsed['role'] === 'assistant') &&
-        Array.isArray(parsed['content'])
-      ) {
-        return parsed;
-      }
-    } catch {
-      return projectCanonicalToAnthropicMessage(frame.canonical);
-    }
-  }
-  return projectCanonicalToAnthropicMessage(frame.canonical);
 }

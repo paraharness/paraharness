@@ -56,10 +56,15 @@ export function buildOpenAiResponsesRequest(
   req: ModelTurnRequest,
   activeSeatId?: string,
 ): Readonly<Record<string, unknown>> {
-  const envelopes = req.history.map((f) => decodeFrameToOpenAiWire(f));
-  const hasCrossSeatFailover = envelopes.some(
-    (env) => typeof env['seatId'] === 'string' && activeSeatId !== undefined && env['seatId'] !== activeSeatId,
-  );
+  const envelopes: Readonly<Record<string, unknown>>[] = [];
+  let hasCrossSeatFailover = false;
+  for (const frame of req.history) {
+    const env = decodeFrameToOpenAiWire(frame);
+    envelopes.push(env);
+    if (typeof env['seatId'] === 'string' && activeSeatId !== undefined && env['seatId'] !== activeSeatId) {
+      hasCrossSeatFailover = true;
+    }
+  }
   const inputItems: Readonly<Record<string, unknown>>[] = [];
   let previousResponseId: string | undefined;
   for (const env of envelopes) {
@@ -73,20 +78,36 @@ export function buildOpenAiResponsesRequest(
     }
   }
   const tools = resolveOpenAiWireTools(req);
-  const format =
-    req.outputSchema !== undefined
-      ? Object.freeze({ type: 'json_schema', name: 'structured_output', schema: zodToJsonSchema(req.outputSchema), strict: true })
-      : undefined;
-  return Object.freeze({
-    model: req.modelId,
-    input: Object.freeze(inputItems),
-    ...(req.wirePrefix !== undefined && req.wirePrefix.systemPromptText.length > 0 ? { instructions: req.wirePrefix.systemPromptText } : {}),
-    ...(previousResponseId !== undefined ? { previous_response_id: previousResponseId } : {}),
-    ...(tools.length > 0 ? { tools } : {}),
-    ...(req.toolChoice !== undefined ? { tool_choice: req.toolChoice } : {}),
-    ...(req.effort !== undefined ? { reasoning: Object.freeze({ effort: req.effort, summary: 'auto' }) } : {}),
-    ...(format !== undefined ? { text: Object.freeze({ format }) } : {}),
-  });
+  const body: Record<string, unknown> = { model: req.modelId, input: Object.freeze(inputItems) };
+  if (req.wirePrefix !== undefined && req.wirePrefix.systemPromptText.length > 0) body['instructions'] = req.wirePrefix.systemPromptText;
+  if (previousResponseId !== undefined) body['previous_response_id'] = previousResponseId;
+  if (tools.length > 0) body['tools'] = tools;
+  if (req.toolChoice !== undefined) body['tool_choice'] = req.toolChoice;
+  if (req.effort !== undefined) body['reasoning'] = Object.freeze({ effort: req.effort, summary: 'auto' });
+  if (req.outputSchema !== undefined) {
+    const format = Object.freeze({ type: 'json_schema', name: 'structured_output', schema: zodToJsonSchema(req.outputSchema), strict: true });
+    body['text'] = Object.freeze({ format });
+  }
+  return Object.freeze(body);
+}
+
+/**
+ * Appends string `text` segments from an OpenAI message item's `content` array into `textParts`.
+ *
+ * Skips non-text content parts while preserving message part ordering.
+ *
+ * @param {readonly Readonly<Record<string, unknown>>[]} content   - Message `content` part array.
+ * @param {string[]}                                     textParts - Mutable accumulator for visible text strings.
+ */
+function collectOpenAiMessageText(
+  content: readonly Readonly<Record<string, unknown>>[],
+  textParts: string[],
+): void {
+  for (const part of content) {
+    if (typeof part['text'] === 'string') {
+      textParts.push(part['text']);
+    }
+  }
 }
 
 /**
@@ -111,11 +132,7 @@ export function parseOpenAiResponsesOutput(
   const toolCalls: CanonicalToolCall[] = [];
   for (const item of rawOutput) {
     if (item['type'] === 'message' && Array.isArray(item['content'])) {
-      for (const part of item['content'] as readonly Readonly<Record<string, unknown>>[]) {
-        if (typeof part['text'] === 'string') {
-          textParts.push(part['text']);
-        }
-      }
+      collectOpenAiMessageText(item['content'] as readonly Readonly<Record<string, unknown>>[], textParts);
     } else if (item['type'] === 'function_call' && typeof item['name'] === 'string') {
       const callId = typeof item['call_id'] === 'string' ? item['call_id'] : String(item['id'] ?? '');
       const argsJson = typeof item['arguments'] === 'string' ? item['arguments'] : JSON.stringify(item['arguments'] ?? {});

@@ -97,7 +97,9 @@ export function projectCanonicalToOpenAiWire(
   if (canonical.role === 'tool') {
     for (const res of canonical.toolResults ?? []) {
       items.push(
-        Object.freeze({ type: 'function_call_output', call_id: res.callId, output: res.content, ...(res.isError ? { is_error: true } : {}) }),
+        res.isError
+          ? Object.freeze({ type: 'function_call_output', call_id: res.callId, output: res.content, is_error: true })
+          : Object.freeze({ type: 'function_call_output', call_id: res.callId, output: res.content }),
       );
     }
     return Object.freeze({ items: Object.freeze(items) });

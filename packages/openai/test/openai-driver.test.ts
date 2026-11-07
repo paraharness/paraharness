@@ -267,19 +267,23 @@ describe('@harness-dsl/openai invokeTurn, prepareFork, cross-seat failover strip
       prefixDigest: 'sha256:p1',
     };
 
-    const sameModelFork = await driver.prepareFork(
-      {
-        historyMode: 'clone-transcript',
-        parentChain: [skillToolFrame, assistantTurn],
-        forkPointMessageId: 'oai-2',
-        forkCallId: 'call-2',
-        precedingCompletedResults: [{ callId: 'call-1', content: 'x-contents', isError: false }],
-        childRoleContextFrameText: '[ROLE_CONTEXT: api]',
-        childTaskPromptText: 'Implement api endpoints',
-      },
+    const sharedFrames = await driver.prepareFork(
+      { historyMode: 'shared-prefix-only', parentChain: [skillToolFrame, assistantTurn], forkPointMessageId: 'oai-2', childRoleContextFrameText: '[ROLE_CONTEXT: api]', childTaskPromptText: 'Implement api endpoints' },
       { modelId: 'gpt-5', accountConfig: { id: 'seat-a' }, substituteTombstones: false },
     );
+    expect(sharedFrames).toHaveLength(1);
+    expect(sharedFrames[0]?.canonical.visibleText).toBe('[ROLE_CONTEXT: api]\n\nImplement api endpoints');
 
+    const forkCtx = {
+      historyMode: 'clone-transcript' as const,
+      parentChain: [skillToolFrame, assistantTurn],
+      forkPointMessageId: 'oai-2',
+      forkCallId: 'call-2',
+      precedingCompletedResults: [{ callId: 'call-1', content: 'x-contents', isError: false }],
+      childRoleContextFrameText: '[ROLE_CONTEXT: api]',
+      childTaskPromptText: 'Implement api endpoints',
+    };
+    const sameModelFork = await driver.prepareFork(forkCtx, { modelId: 'gpt-5', accountConfig: { id: 'seat-a' }, substituteTombstones: false });
     expect(sameModelFork).toHaveLength(3);
     const sameForkAsst = JSON.parse(new TextDecoder().decode(sameModelFork[1]?.rawWireFrame)) as Readonly<Record<string, unknown>>;
     expect(sameForkAsst['previous_response_id']).toBe('resp_parent_99');
@@ -289,18 +293,18 @@ describe('@harness-dsl/openai invokeTurn, prepareFork, cross-seat failover strip
       { callId: 'call-3', content: '[Dispatched/Deferred in parent turn]', isError: false },
     ]);
 
-    const crossModelFork = await driver.prepareFork(
-      {
-        historyMode: 'clone-transcript',
-        parentChain: [skillToolFrame, assistantTurn],
-        forkPointMessageId: 'oai-2',
-        forkCallId: 'call-2',
-        precedingCompletedResults: [{ callId: 'call-1', content: 'x-contents', isError: false }],
-        childRoleContextFrameText: '[ROLE_CONTEXT: api]',
-        childTaskPromptText: 'Implement api endpoints',
-      },
-      { modelId: 'o3', substituteTombstones: true },
-    );
+    const crossSeatFork = await driver.prepareFork(forkCtx, { modelId: 'gpt-5', accountConfig: { id: 'seat-b' }, substituteTombstones: false });
+    expect(crossSeatFork).toHaveLength(3);
+    expect(crossSeatFork[0]?.canonical.toolResults?.[0]?.content).toBe('Full 40KB skill instructions');
+    const crossSeatAsst = JSON.parse(new TextDecoder().decode(crossSeatFork[1]?.rawWireFrame)) as {
+      readonly previous_response_id?: string;
+      readonly items: readonly Readonly<Record<string, unknown>>[];
+    };
+    expect(crossSeatAsst.previous_response_id).toBeUndefined();
+    expect(crossSeatAsst.items[0]?.['id']).toBeUndefined();
+    expect(crossSeatAsst.items[0]?.['encrypted_content']).toBeUndefined();
+
+    const crossModelFork = await driver.prepareFork(forkCtx, { modelId: 'o3', substituteTombstones: true });
 
     expect(crossModelFork).toHaveLength(3);
     expect(crossModelFork[0]?.canonical.toolResults?.[0]?.content).toBe(
@@ -359,6 +363,22 @@ describe('@harness-dsl/openai invokeTurn, prepareFork, cross-seat failover strip
       call_id: 'c2',
       output: 'res-2\n[PREREQUISITE_SYNC]',
       is_error: true,
+    });
+
+    const userFrame: WireFrameRecord = {
+      messageId: 'oai-user-1',
+      parentMessageId: null,
+      vendorId: 'openai',
+      rawWireFrame: new TextEncoder().encode(
+        JSON.stringify({ items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Initial prompt' }] }] }),
+      ),
+      canonical: { role: 'user', visibleText: 'Initial prompt' },
+      prefixDigest: 'sha256:p1',
+    };
+    const updatedUser = await driver.appendToolResultNotes(userFrame, ['[LIMIT_EXCEEDED_FLUSH]']);
+    expect(updatedUser.canonical.visibleText).toBe('Initial prompt\n[LIMIT_EXCEEDED_FLUSH]');
+    expect(JSON.parse(new TextDecoder().decode(updatedUser.rawWireFrame))).toEqual({
+      items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Initial prompt\n[LIMIT_EXCEEDED_FLUSH]' }] }],
     });
   });
 });

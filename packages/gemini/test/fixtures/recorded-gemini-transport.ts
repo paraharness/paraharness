@@ -29,18 +29,19 @@ export class RecordedGeminiTransport implements GeminiHttpTransport {
   /**
    * Records the outgoing request and pops the next scripted response from the FIFO queue.
    *
-   * Throws an actionable error if `sendGenerateContentRequest` is invoked when no scripted responses remain in the queue.
+   * Rejects with an error if `request.signal` is aborted or if no scripted responses remain in the queue.
    *
    * @param {GeminiHttpRequest} request - Outgoing Gemini GenerateContent HTTP request envelope.
    *
    * @returns {Promise<GeminiHttpResponse>} Next scripted HTTP response envelope.
    */
-  async sendGenerateContentRequest(request: GeminiHttpRequest): Promise<GeminiHttpResponse> {
+  sendGenerateContentRequest(request: GeminiHttpRequest): Promise<GeminiHttpResponse> {
+    request.signal?.throwIfAborted();
     this.requests.push(request);
     const next = this.responses.shift();
     if (next === undefined) {
-      throw new Error('RecordedGeminiTransport has no queued responses remaining.');
+      return Promise.reject(new Error('RecordedGeminiTransport has no queued responses remaining.'));
     }
-    return next;
+    return Promise.resolve(next);
   }
 }

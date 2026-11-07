@@ -5,8 +5,10 @@ import type {
   PrecedingCompletedToolResult,
   WireFrameRecord,
 } from '@harness-dsl/core';
-import { projectCanonicalToAnthropicMessage } from './claude-wire-converter.js';
-import { decodeFrameToAnthropicMessage } from './claude-wire-helpers.js';
+import {
+  decodeFrameToAnthropicMessage,
+  projectCanonicalToAnthropicMessage,
+} from './claude-wire-converter.js';
 
 /**
  * Slices `ctx.parentChain` up to and including `ctx.forkPointMessageId` when specified.
@@ -98,7 +100,9 @@ export function buildClaudePairedForkToolFrame(
   for (const item of ctx.precedingCompletedResults ?? []) {
     precedingByCallId.set(item.callId, item);
   }
-  const parts = [ctx.childRoleContextFrameText, ctx.childTaskPromptText].filter((s): s is string => Boolean(s && s.length > 0));
+  const parts: string[] = [];
+  if (ctx.childRoleContextFrameText !== undefined && ctx.childRoleContextFrameText.length > 0) parts.push(ctx.childRoleContextFrameText);
+  if (ctx.childTaskPromptText !== undefined && ctx.childTaskPromptText.length > 0) parts.push(ctx.childTaskPromptText);
   const forkCallText = parts.length > 0 ? parts.join('\n\n') : '[Forked child session]';
   const toolResults: CanonicalToolResult[] = [];
   for (const call of forkPointFrame.canonical.toolCalls ?? []) {
@@ -110,12 +114,7 @@ export function buildClaudePairedForkToolFrame(
       toolResults.push(Object.freeze({ callId: call.id, content, isError: false }));
     }
   }
-  const canonical = Object.freeze<CanonicalMessage>({
-    role: 'tool',
-    visibleText: '',
-    toolCalls: undefined,
-    toolResults: Object.freeze(toolResults),
-  });
+  const canonical = Object.freeze<CanonicalMessage>({ role: 'tool', visibleText: '', toolCalls: undefined, toolResults: Object.freeze(toolResults) });
   return Object.freeze<WireFrameRecord>({
     messageId: `${forkPointFrame.messageId}:fork-tools:${ctx.forkCallId ?? 'batch'}`,
     parentMessageId: forkPointFrame.messageId,

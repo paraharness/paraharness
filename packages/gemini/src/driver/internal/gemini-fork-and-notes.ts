@@ -12,7 +12,32 @@ import {
   sliceGeminiParentChain,
   transformGeminiForkFrame,
 } from './gemini-fork-helpers.js';
-import { projectCanonicalToGeminiContent } from './gemini-wire-helpers.js';
+import {
+  projectCanonicalToGeminiContent,
+  tryDecodeGeminiWireContent,
+} from './gemini-wire-helpers.js';
+
+/**
+ * Extracts `functionResponse.id -> functionResponse.name` mappings from an existing Gemini `rawWireFrame`.
+ *
+ * Preserves original tool names when `appendGeminiToolResultNotes` re-projects a `role: 'tool'` frame.
+ *
+ * @param {Uint8Array} rawWireFrame - Raw wire frame bytes from an existing `WireFrameRecord`.
+ *
+ * @returns {ReadonlyMap<string, string>} Map from tool `callId` to tool `name`.
+ */
+function extractGeminiToolNamesFromWire(rawWireFrame: Uint8Array): ReadonlyMap<string, string> {
+  const toolNameByCallId = new Map<string, string>();
+  const decoded = tryDecodeGeminiWireContent(rawWireFrame);
+  const rawParts = (decoded?.['parts'] as readonly Readonly<Record<string, unknown>>[]) ?? [];
+  for (const part of rawParts) {
+    const fr = part['functionResponse'] as Readonly<Record<string, unknown>> | undefined;
+    if (fr !== undefined && typeof fr['id'] === 'string' && typeof fr['name'] === 'string') {
+      toolNameByCallId.set(fr['id'], fr['name']);
+    }
+  }
+  return toolNameByCallId;
+}
 
 /**
  * Synthesizes the initial `WireFrameRecord[]` chain for a Google Gemini downward fork or cross-model escalation.
@@ -29,7 +54,13 @@ export function prepareGeminiForkFrames(
   ctx: ForkContext,
   target: PrepareForkTarget,
 ): readonly WireFrameRecord[] {
-  const promptParts = [ctx.childRoleContextFrameText, ctx.childTaskPromptText].filter((s): s is string => Boolean(s && s.length > 0));
+  const promptParts: string[] = [];
+  if (ctx.childRoleContextFrameText !== undefined && ctx.childRoleContextFrameText.length > 0) {
+    promptParts.push(ctx.childRoleContextFrameText);
+  }
+  if (ctx.childTaskPromptText !== undefined && ctx.childTaskPromptText.length > 0) {
+    promptParts.push(ctx.childTaskPromptText);
+  }
   if (ctx.historyMode === 'shared-prefix-only') {
     if (promptParts.length === 0) {
       return Object.freeze([]);
@@ -80,9 +111,17 @@ export function appendGeminiToolResultNotes(
   }
   const suffix = notes.join('\n');
   if (frame.canonical.role === 'tool' && frame.canonical.toolResults !== undefined) {
+    const toolNameByCallId = extractGeminiToolNamesFromWire(frame.rawWireFrame);
     const results = frame.canonical.toolResults;
-    const foundIdx = targetCallId !== undefined ? results.findIndex((r) => r.callId === targetCallId) : -1;
-    const targetIdx = foundIdx >= 0 ? foundIdx : results.length - 1;
+    let targetIdx = results.length - 1;
+    if (targetCallId !== undefined) {
+      for (let idx = 0; idx < results.length; idx += 1) {
+        if (results[idx]?.callId === targetCallId) {
+          targetIdx = idx;
+          break;
+        }
+      }
+    }
     const updatedResults: CanonicalToolResult[] = [];
     for (let idx = 0; idx < results.length; idx += 1) {
       const item = results[idx];
@@ -93,7 +132,7 @@ export function appendGeminiToolResultNotes(
       }
     }
     const canonical = Object.freeze<CanonicalMessage>({ ...frame.canonical, toolResults: Object.freeze(updatedResults) });
-    const rawWireFrame = new TextEncoder().encode(JSON.stringify(projectCanonicalToGeminiContent(canonical)));
+    const rawWireFrame = new TextEncoder().encode(JSON.stringify(projectCanonicalToGeminiContent(canonical, toolNameByCallId)));
     return Object.freeze<WireFrameRecord>({ ...frame, rawWireFrame, canonical });
   }
   const nextText = frame.canonical.visibleText.length > 0 ? `${frame.canonical.visibleText}\n${suffix}` : suffix;

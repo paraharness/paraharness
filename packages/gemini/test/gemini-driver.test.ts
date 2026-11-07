@@ -42,18 +42,8 @@ describe('@harness-dsl/gemini builders and AST invariants', () => {
   it('compiles passive GeminiAccountSeatNode and GeminiModelNode without import or build I/O', () => {
     const apiSeat = gemini.account('g-seat-a').apiKey(H.env('GEMINI_API_KEY_A')).toAST();
     const cliSeat = gemini.cliAccount('g-cli-b').configDir('~/.config/gcloud-b').toAST();
-    expect(apiSeat).toEqual({
-      type: 'gemini:account-seat',
-      id: 'g-seat-a',
-      configDir: undefined,
-      apiKey: { type: 'harness:env-ref', key: 'GEMINI_API_KEY_A' },
-    });
-    expect(cliSeat).toEqual({
-      type: 'gemini:account-seat',
-      id: 'g-cli-b',
-      configDir: '~/.config/gcloud-b',
-      apiKey: undefined,
-    });
+    expect(apiSeat).toEqual({ type: 'gemini:account-seat', id: 'g-seat-a', configDir: undefined, apiKey: { type: 'harness:env-ref', key: 'GEMINI_API_KEY_A' } });
+    expect(cliSeat).toEqual({ type: 'gemini:account-seat', id: 'g-cli-b', configDir: '~/.config/gcloud-b', apiKey: undefined });
 
     const pool = H.pool('gemini-seats').with(apiSeat, cliSeat).strategy('round-robin');
     const pro = gemini.model('geminiPro', { id: 'gemini-3.1-pro', effort: 'high' }).accountPool(pool).toAST();
@@ -92,11 +82,7 @@ describe('@harness-dsl/gemini invokeTurn, role alternation coalescing, functionR
               },
             },
           ],
-          usageMetadata: {
-            promptTokenCount: 150,
-            candidatesTokenCount: 30,
-            cachedContentTokenCount: 90,
-          },
+          usageMetadata: { promptTokenCount: 150, candidatesTokenCount: 30, cachedContentTokenCount: 90 },
         },
       },
     ]);
@@ -130,13 +116,19 @@ describe('@harness-dsl/gemini invokeTurn, role alternation coalescing, functionR
         rawWireFrame: new TextEncoder().encode(
           JSON.stringify({
             role: 'model',
-            parts: [{ functionCall: { id: 'call_0', name: 'search_docs', args: { query: 'missing' } } }],
+            parts: [
+              { functionCall: { id: 'call_0', name: 'search_docs', args: { query: 'missing' } } },
+              { functionCall: { id: 'call_1', name: 'search_docs', args: { query: 'found' } } },
+            ],
           }),
         ),
         canonical: {
           role: 'assistant',
           visibleText: '',
-          toolCalls: [{ id: 'call_0', name: 'search_docs', argsJson: '{"query":"missing"}' }],
+          toolCalls: [
+            { id: 'call_0', name: 'search_docs', argsJson: '{"query":"missing"}' },
+            { id: 'call_1', name: 'search_docs', argsJson: '{"query":"found"}' },
+          ],
         },
         prefixDigest: 'sha256:gemini-pinned',
       },
@@ -148,7 +140,10 @@ describe('@harness-dsl/gemini invokeTurn, role alternation coalescing, functionR
         canonical: {
           role: 'tool',
           visibleText: '',
-          toolResults: [{ callId: 'call_0', content: 'Doc not found', isError: true }],
+          toolResults: [
+            { callId: 'call_0', content: 'Doc not found', isError: true },
+            { callId: 'call_1', content: 'Doc contents ok', isError: false },
+          ],
         },
         prefixDigest: 'sha256:gemini-pinned',
       },
@@ -186,12 +181,16 @@ describe('@harness-dsl/gemini invokeTurn, role alternation coalescing, functionR
         },
         {
           role: 'model',
-          parts: [{ functionCall: { id: 'call_0', name: 'search_docs', args: { query: 'missing' } } }],
+          parts: [
+            { functionCall: { id: 'call_0', name: 'search_docs', args: { query: 'missing' } } },
+            { functionCall: { id: 'call_1', name: 'search_docs', args: { query: 'found' } } },
+          ],
         },
         {
           role: 'user',
           parts: [
             { functionResponse: { id: 'call_0', name: 'search_docs', response: { error: 'Doc not found' } } },
+            { functionResponse: { id: 'call_1', name: 'search_docs', response: { result: 'Doc contents ok' } } },
           ],
         },
       ],
@@ -288,30 +287,22 @@ describe('@harness-dsl/gemini prepareFork and appendToolResultNotes', () => {
     };
 
     const sharedOnly = await driver.prepareFork(
-      {
-        historyMode: 'shared-prefix-only',
-        parentChain: [skillToolFrame, assistantTurn],
-        forkPointMessageId: 'gem-2',
-        childRoleContextFrameText: '[ROLE_CONTEXT: api]',
-        childTaskPromptText: 'Build API',
-      },
+      { historyMode: 'shared-prefix-only', parentChain: [skillToolFrame, assistantTurn], forkPointMessageId: 'gem-2', childRoleContextFrameText: '[ROLE_CONTEXT: api]', childTaskPromptText: 'Build API' },
       { modelId: 'gemini-3.1-pro', substituteTombstones: false },
     );
     expect(sharedOnly).toHaveLength(1);
     expect(sharedOnly[0]?.canonical.visibleText).toBe('[ROLE_CONTEXT: api]\n\nBuild API');
 
-    const sameModelFork = await driver.prepareFork(
-      {
-        historyMode: 'clone-transcript',
-        parentChain: [skillToolFrame, assistantTurn],
-        forkPointMessageId: 'gem-2',
-        forkCallId: 'call-2',
-        precedingCompletedResults: [{ callId: 'call-1', content: 'doc-a', isError: false }],
-        childRoleContextFrameText: '[ROLE_CONTEXT: api]',
-        childTaskPromptText: 'Build API',
-      },
-      { modelId: 'gemini-3.1-pro', substituteTombstones: false },
-    );
+    const forkCtx = {
+      historyMode: 'clone-transcript' as const,
+      parentChain: [skillToolFrame, assistantTurn],
+      forkPointMessageId: 'gem-2',
+      forkCallId: 'call-2',
+      precedingCompletedResults: [{ callId: 'call-1', content: 'doc-a', isError: false }],
+      childRoleContextFrameText: '[ROLE_CONTEXT: api]',
+      childTaskPromptText: 'Build API',
+    };
+    const sameModelFork = await driver.prepareFork(forkCtx, { modelId: 'gemini-3.1-pro', substituteTombstones: false });
     expect(sameModelFork).toHaveLength(3);
     const sameAsst = JSON.parse(new TextDecoder().decode(sameModelFork[1]?.rawWireFrame)) as {
       readonly parts: readonly Readonly<Record<string, unknown>>[];
@@ -324,18 +315,7 @@ describe('@harness-dsl/gemini prepareFork and appendToolResultNotes', () => {
       { callId: 'call-3', content: '[Dispatched/Deferred in parent turn]', isError: false },
     ]);
 
-    const crossModelFork = await driver.prepareFork(
-      {
-        historyMode: 'clone-transcript',
-        parentChain: [skillToolFrame, assistantTurn],
-        forkPointMessageId: 'gem-2',
-        forkCallId: 'call-2',
-        precedingCompletedResults: [{ callId: 'call-1', content: 'doc-a', isError: false }],
-        childRoleContextFrameText: '[ROLE_CONTEXT: api]',
-        childTaskPromptText: 'Build API',
-      },
-      { modelId: 'gemini-3.1-flash', substituteTombstones: true },
-    );
+    const crossModelFork = await driver.prepareFork(forkCtx, { modelId: 'gemini-3.1-flash', substituteTombstones: true });
     expect(crossModelFork).toHaveLength(3);
     expect(crossModelFork[0]?.canonical.toolResults?.[0]?.content).toBe('[Skill load_skill compacted]');
     const crossAsst = JSON.parse(new TextDecoder().decode(crossModelFork[1]?.rawWireFrame)) as {
@@ -344,6 +324,23 @@ describe('@harness-dsl/gemini prepareFork and appendToolResultNotes', () => {
     expect(crossAsst.parts).toHaveLength(3);
     expect(crossAsst.parts[0]?.['thought']).toBeUndefined();
     expect(crossAsst.parts[0]?.['thoughtSignature']).toBeUndefined();
+
+    const anthropicFrame: WireFrameRecord = {
+      messageId: 'ant-1',
+      parentMessageId: null,
+      vendorId: 'anthropic',
+      rawWireFrame: new TextEncoder().encode(JSON.stringify({ role: 'assistant', content: [{ type: 'text', text: 'Claude analysis' }] })),
+      canonical: { role: 'assistant', visibleText: 'Claude analysis' },
+      prefixDigest: 'sha256:g1',
+    };
+    const crossVendorFork = await driver.prepareFork(
+      { historyMode: 'clone-transcript', parentChain: [anthropicFrame], forkPointMessageId: 'ant-1', childRoleContextFrameText: '[ROLE_CONTEXT: api]', childTaskPromptText: 'Escalate' },
+      { modelId: 'gemini-3.1-pro', substituteTombstones: true },
+    );
+    expect(JSON.parse(new TextDecoder().decode(crossVendorFork[0]?.rawWireFrame))).toEqual({
+      role: 'model',
+      parts: [{ text: 'Claude analysis' }],
+    });
   });
 
   it('appends synchronization notes to tool and user frames in both rawWireFrame and canonical', async () => {
@@ -356,8 +353,8 @@ describe('@harness-dsl/gemini prepareFork and appendToolResultNotes', () => {
         JSON.stringify({
           role: 'user',
           parts: [
-            { functionResponse: { id: 'c1', name: 'c1', response: { result: 'res-1' } } },
-            { functionResponse: { id: 'c2', name: 'c2', response: { result: 'res-2' } } },
+            { functionResponse: { id: 'c1', name: 'search_docs', response: { result: 'res-1' } } },
+            { functionResponse: { id: 'c2', name: 'read_file', response: { result: 'res-2' } } },
           ],
         }),
       ),
@@ -373,20 +370,26 @@ describe('@harness-dsl/gemini prepareFork and appendToolResultNotes', () => {
     };
 
     const updatedTool = await driver.appendToolResultNotes(toolFrame, ['[PREREQUISITE_SYNC]'], 'c2', { isError: true });
-    expect(updatedTool.canonical.toolResults?.[1]).toEqual({
-      callId: 'c2',
-      content: 'res-2\n[PREREQUISITE_SYNC]',
-      isError: true,
-    });
+    expect(updatedTool.canonical.toolResults?.[1]).toEqual({ callId: 'c2', content: 'res-2\n[PREREQUISITE_SYNC]', isError: true });
     const parsedWire = JSON.parse(new TextDecoder().decode(updatedTool.rawWireFrame)) as {
       readonly parts: readonly Readonly<Record<string, unknown>>[];
     };
-    expect(parsedWire.parts[1]).toEqual({
-      functionResponse: {
-        id: 'c2',
-        name: 'c2',
-        response: { error: 'res-2\n[PREREQUISITE_SYNC]' },
-      },
+    expect(parsedWire.parts[0]).toEqual({ functionResponse: { id: 'c1', name: 'search_docs', response: { result: 'res-1' } } });
+    expect(parsedWire.parts[1]).toEqual({ functionResponse: { id: 'c2', name: 'read_file', response: { error: 'res-2\n[PREREQUISITE_SYNC]' } } });
+
+    const userFrame: WireFrameRecord = {
+      messageId: 'gem-user-1',
+      parentMessageId: null,
+      vendorId: 'google',
+      rawWireFrame: new TextEncoder().encode(JSON.stringify({ role: 'user', parts: [{ text: 'Initial prompt' }] })),
+      canonical: { role: 'user', visibleText: 'Initial prompt' },
+      prefixDigest: 'sha256:g1',
+    };
+    const updatedUser = await driver.appendToolResultNotes(userFrame, ['[LIMIT_EXCEEDED_FLUSH]']);
+    expect(updatedUser.canonical.visibleText).toBe('Initial prompt\n[LIMIT_EXCEEDED_FLUSH]');
+    expect(JSON.parse(new TextDecoder().decode(updatedUser.rawWireFrame))).toEqual({
+      role: 'user',
+      parts: [{ text: 'Initial prompt\n[LIMIT_EXCEEDED_FLUSH]' }],
     });
   });
 });

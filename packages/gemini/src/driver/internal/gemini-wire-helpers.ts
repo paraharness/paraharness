@@ -3,9 +3,7 @@ import type {
   EnvRef,
   GeminiAccountSeatNode,
   GeminiModelNode,
-  ModelTurnRequest,
   WireFrameRecord,
-  WireToolSchema,
 } from '@harness-dsl/core';
 
 /**
@@ -48,34 +46,31 @@ export function resolveGeminiSeatAuth(
 }
 
 /**
- * Resolves Gemini `functionDeclarations` tool descriptors from `CompiledWirePrefix` or `req.wireToolSchemas`.
+ * Attempts to decode `rawWireFrame` bytes as a native Gemini `{ role: 'user' | 'model', parts }` content object.
  *
- * Preserves identical `functionDeclarations` across `'auto'` and `'none'` tool-choice turns.
+ * Returns `undefined` when `rawWireFrame` is empty, fails JSON parsing, or encodes a non-Gemini wire format
+ * (such as Anthropic `{ role, content }` or OpenAI `{ items }`).
  *
- * @param {ModelTurnRequest} req - Turn request containing `wirePrefix`, `roleKey`, and `wireToolSchemas`.
+ * @param {Uint8Array} rawWireFrame - Raw wire frame bytes from a `WireFrameRecord`.
  *
- * @returns {readonly Readonly<Record<string, unknown>>[]} Gemini function declarations array.
+ * @returns {Readonly<Record<string, unknown>> | undefined} Decoded Gemini content object, or `undefined`.
  */
-export function resolveGeminiFunctionDeclarations(
-  req: ModelTurnRequest,
-): readonly Readonly<Record<string, unknown>>[] {
-  const byRole = req.wirePrefix?.wireToolSchemasByRoleKey;
-  const schemas: readonly WireToolSchema[] =
-    (req.roleKey !== undefined ? byRole?.[req.roleKey] : undefined) ??
-    byRole?.['*'] ??
-    req.wireToolSchemas ??
-    [];
-  const declarations: Readonly<Record<string, unknown>>[] = [];
-  for (const schema of schemas) {
-    declarations.push(
-      Object.freeze({
-        name: schema.name,
-        description: schema.description,
-        parametersJsonSchema: schema.inputJsonSchema,
-      }),
-    );
+export function tryDecodeGeminiWireContent(
+  rawWireFrame: Uint8Array,
+): Readonly<Record<string, unknown>> | undefined {
+  const rawText = new TextDecoder().decode(rawWireFrame).trim();
+  if (!rawText.startsWith('{')) {
+    return undefined;
   }
-  return Object.freeze(declarations);
+  try {
+    const parsed = JSON.parse(rawText) as Readonly<Record<string, unknown>>;
+    if ((parsed['role'] === 'user' || parsed['role'] === 'model') && Array.isArray(parsed['parts'])) {
+      return parsed;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -137,27 +132,27 @@ export function decodeHistoryToAlternatingGeminiContents(
   }
   const contents: Array<{ readonly role: string; readonly parts: Readonly<Record<string, unknown>>[] }> = [];
   for (const frame of frames) {
-    const rawText = new TextDecoder().decode(frame.rawWireFrame).trim();
-    let decoded: Readonly<Record<string, unknown>> | undefined;
-    if (rawText.startsWith('{')) {
-      try {
-        const parsed = JSON.parse(rawText) as Readonly<Record<string, unknown>>;
-        if ((parsed['role'] === 'user' || parsed['role'] === 'model') && Array.isArray(parsed['parts'])) {
-          decoded = parsed;
-        }
-      } catch {
-        decoded = undefined;
-      }
-    }
-    const contentTurn = decoded ?? projectCanonicalToGeminiContent(frame.canonical, toolNameByCallId);
+    const contentTurn =
+      tryDecodeGeminiWireContent(frame.rawWireFrame) ??
+      projectCanonicalToGeminiContent(frame.canonical, toolNameByCallId);
     const role = contentTurn['role'] === 'model' ? 'model' : 'user';
-    const parts = (contentTurn['parts'] as readonly Readonly<Record<string, unknown>>[]) ?? [];
+    const rawParts = (contentTurn['parts'] as readonly Readonly<Record<string, unknown>>[]) ?? [];
+    const parts: Readonly<Record<string, unknown>>[] = [];
+    for (const part of rawParts) {
+      const fr = part['functionResponse'] as Readonly<Record<string, unknown>> | undefined;
+      const hasFallbackName = fr !== undefined && typeof fr['id'] === 'string' && fr['name'] === fr['id'] && toolNameByCallId.has(fr['id']);
+      parts.push(hasFallbackName ? Object.freeze({ ...part, functionResponse: Object.freeze({ ...fr, name: toolNameByCallId.get(fr['id'] as string) }) }) : part);
+    }
     const prev = contents[contents.length - 1];
     if (prev !== undefined && prev.role === role) {
-      contents[contents.length - 1] = { role, parts: [...prev.parts, ...parts] };
+      prev.parts.push(...parts);
     } else {
-      contents.push({ role, parts: [...parts] });
+      contents.push({ role, parts });
     }
   }
-  return Object.freeze(contents.map((c) => Object.freeze({ role: c.role, parts: Object.freeze(c.parts) })));
+  const frozenContents: Readonly<Record<string, unknown>>[] = [];
+  for (const entry of contents) {
+    frozenContents.push(Object.freeze({ role: entry.role, parts: Object.freeze(entry.parts) }));
+  }
+  return Object.freeze(frozenContents);
 }
