@@ -15,9 +15,11 @@ import {
   executeLocalCommandStep,
   local,
   nodeExecutors,
+  resolveWorktreeEnvAndCwd,
+  spawnDetachedSubprocess,
+  terminateProcessGroupWithGrace,
 } from '../src/index.js';
 import { buildEnvAndStdinProbeArgv } from './fixtures/sample-node-daemons.js';
-import type { NodeTestTier1ScopeNode } from './fixtures/test-tier1-scope-node.js';
 
 function createTestStepContext<THandle = unknown>(
   scopeHandle: THandle,
@@ -76,8 +78,42 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
       slots: 8,
       maxDaemons: 2,
     });
-    const tierCheck: NodeTestTier1ScopeNode['capabilityTier'] = 'scope';
-    expect(tierCheck).toBe('scope');
+  });
+
+  it('queues concurrent withSlot callers in FIFO order when slots are full and cancels queued waiters on AbortSignal', async () => {
+    const runnerNode = local.runner({ id: 'fifo-pool', slots: 1, maxDaemons: 1 }).toAST();
+    const driver = new NodeRunnerDriver(runnerNode);
+    const order: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+    const firstEntered = new Promise<void>((resolve) => {
+      void driver.withSlot(async () => {
+        order.push('first-start');
+        resolve();
+        await new Promise<void>((r) => {
+          releaseFirst = r;
+        });
+        order.push('first-end');
+      });
+    });
+    await firstEntered;
+
+    const abortController = new AbortController();
+    const abortedWaiter = driver.withSlot(async () => {
+      order.push('aborted-waiter');
+    }, abortController.signal);
+    const secondWaiter = driver.withSlot(async () => {
+      order.push('second');
+      return 'ok-2';
+    });
+
+    abortController.abort();
+    await expect(abortedWaiter).rejects.toThrow(/Aborted while waiting for slot in runner 'fifo-pool'/);
+    expect(getEventListeners(abortController.signal, 'abort')).toHaveLength(0);
+    expect(order).toEqual(['first-start']);
+
+    releaseFirst?.();
+    await expect(secondWaiter).resolves.toBe('ok-2');
+    expect(order).toEqual(['first-start', 'first-end', 'second']);
   });
 
   it('separates one-shot slots from maxDaemons so active daemons never starve one-shot commands', async () => {
@@ -244,6 +280,72 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
     const executedResult = await executeLocalCommandStep(executedNode, { ref: 'PR-2' }, ctx);
     expect(executedResult).toBe('published:PR-2');
     expect(mainInvocations).toBe(1);
+
+    let preCheckRunsOnEmptyKey = 0;
+    const emptyKeyCmd = local
+      .command('publish-empty-key')
+      .argv(() => [process.execPath, '-e', 'console.log("ok");'])
+      .stdin((val: { readonly ref: string }) => val.ref)
+      .unrepeatable(
+        local
+          .command('precheck-should-not-run')
+          .output(z.boolean())
+          .argv(() => {
+            preCheckRunsOnEmptyKey += 1;
+            return [process.execPath, '-e', 'console.log(true);'];
+          }),
+        { key: ({ ref }: { readonly ref: string }) => ref },
+      )
+      .input(inputSchema)
+      .output(z.string().optional())
+      .toAST();
+
+    expect(emptyKeyCmd.stdinMode).not.toBe('closed');
+    expect(emptyKeyCmd.unrepeatable).toBeDefined();
+    await expect(executeLocalCommandStep(emptyKeyCmd, { ref: '   ' }, ctx)).rejects.toThrow(
+      /empty unrepeatable idempotency key/i,
+    );
+    expect(preCheckRunsOnEmptyKey).toBe(0);
+  });
+
+  it('reaps surviving background descendant processes in terminateProcessGroupWithGrace even after leader exits', async () => {
+    const resolvedEnv = resolveWorktreeEnvAndCwd({}, undefined, (v) =>
+      typeof v === 'string' ? v : undefined,
+    );
+    const leader = spawnDetachedSubprocess({
+      argv: [
+        process.execPath,
+        '-e',
+        'const { spawn } = require("node:child_process"); const bg = spawn(process.execPath, ["-e", "process.on(\\"SIGTERM\\", () => {}); setInterval(() => {}, 1000);"], { stdio: "ignore" }); console.log(String(bg.pid)); process.exit(0);',
+      ],
+      resolvedEnv,
+    });
+    let stdout = '';
+    leader.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8');
+    });
+    await new Promise<void>((resolve) => leader.once('close', () => resolve()));
+    const bgPid = Number(stdout.trim());
+    expect(Number.isInteger(bgPid) && bgPid > 0).toBe(true);
+
+    try {
+      await terminateProcessGroupWithGrace(leader);
+      let bgAlive = true;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        try {
+          process.kill(bgPid, 0);
+          await new Promise<void>((r) => setTimeout(r, 5));
+        } catch {
+          bgAlive = false;
+          break;
+        }
+      }
+      expect(bgAlive).toBe(false);
+    } finally {
+      try {
+        process.kill(bgPid, 'SIGKILL');
+      } catch {}
+    }
   });
 
   it('throws diagnostic error with exitCode, stdout, and stderr on non-zero exit and supports .asCheck() / .asTool()', async () => {

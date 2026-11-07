@@ -61,22 +61,29 @@ export async function allocateDynamicPorts(
   portNames: readonly string[],
 ): Promise<Readonly<Record<string, number>>> {
   const allocated: Record<string, number> = {};
-  for (const name of portNames) {
-    let candidate = 0;
-    for (let attempt = 0; attempt < 25; attempt += 1) {
-      const probed = await probeSingleEphemeralPort();
-      if (!ACTIVE_LEASED_DAEMON_PORTS.has(probed)) {
-        candidate = probed;
-        ACTIVE_LEASED_DAEMON_PORTS.add(probed);
-        break;
+  try {
+    for (const name of portNames) {
+      let candidate = 0;
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        const probed = await probeSingleEphemeralPort();
+        if (!ACTIVE_LEASED_DAEMON_PORTS.has(probed)) {
+          candidate = probed;
+          ACTIVE_LEASED_DAEMON_PORTS.add(probed);
+          break;
+        }
       }
+      if (candidate === 0) {
+        throw new Error(`Failed to allocate conflict-free TCP port for '${name}'.`);
+      }
+      allocated[name] = candidate;
     }
-    if (candidate === 0) {
-      throw new Error(`Failed to allocate conflict-free TCP port for '${name}'.`);
+    return Object.freeze(allocated);
+  } catch (error) {
+    for (const port of Object.values(allocated)) {
+      ACTIVE_LEASED_DAEMON_PORTS.delete(port);
     }
-    allocated[name] = candidate;
+    throw error;
   }
-  return Object.freeze(allocated);
 }
 
 /**

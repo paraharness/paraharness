@@ -39,23 +39,18 @@ export async function executeLocalCommandStep<TIn = unknown, TOut = unknown, THa
 ): Promise<TOut> {
   const validatedInput = node.inputSchema.parse(input);
   if (node.unrepeatable !== undefined) {
-    const alreadyCompleted = await executeLocalCommandStep(
-      node.unrepeatable.preCheckCmd,
-      validatedInput,
-      ctx,
-    );
-    if (alreadyCompleted === true) {
-      return node.outputSchema.parse(undefined);
+    const idempotencyKey = typeof node.unrepeatable.key === 'function' ? node.unrepeatable.key(validatedInput) : node.unrepeatable.key;
+    if (idempotencyKey.trim().length === 0) {
+      throw new Error(`Command '${node.id}' (runId '${ctx.runId}') evaluated an empty unrepeatable idempotency key.`);
     }
+    const alreadyCompleted = await executeLocalCommandStep(node.unrepeatable.preCheckCmd, validatedInput, ctx);
+    if (alreadyCompleted === true) return node.outputSchema.parse(undefined);
   }
   const runner = ctx.getRunner(node.runner);
   return runner.withSlot(async () => {
     const argv = typeof node.argv === 'function' ? node.argv(validatedInput) : node.argv;
-    const stdinPayload =
-      node.stdinMode === 'closed' ? undefined : node.stdinMode(validatedInput);
-    const resolvedEnv = resolveWorktreeEnvAndCwd(ctx.scopeHandle, node.env, (val) =>
-      ctx.resolveEnv(val),
-    );
+    const stdinPayload = node.stdinMode === 'closed' ? undefined : node.stdinMode(validatedInput);
+    const resolvedEnv = resolveWorktreeEnvAndCwd(ctx.scopeHandle, node.env, (val) => ctx.resolveEnv(val));
     const result = await runBufferedSubprocess({
       commandId: node.id,
       argv,
@@ -65,9 +60,7 @@ export async function executeLocalCommandStep<TIn = unknown, TOut = unknown, THa
       signal: ctx.signal,
     });
     if (result.exitCode !== 0) {
-      throw new Error(
-        `Command '${node.id}' exited with code ${String(result.exitCode)}. stdout: ${result.stdout.trim()} stderr: ${result.stderr.trim()}`,
-      );
+      throw new Error(`Command '${node.id}' exited with code ${String(result.exitCode)}. stdout: ${result.stdout.trim()} stderr: ${result.stderr.trim()}`);
     }
     return node.outputSchema.parse(parseCommandStdout(result.stdout));
   }, ctx.signal);

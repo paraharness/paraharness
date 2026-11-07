@@ -1,8 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import {
-  spawnDetachedSubprocess,
-  terminateProcessGroupWithGrace,
-} from './process-group-lifecycle.js';
+import { spawnDetachedSubprocess, terminateProcessGroupWithGrace } from './process-group-lifecycle.js';
 import type { PtyFramedSessionOptions } from './pty-framed-session-options.js';
 
 /**
@@ -40,7 +37,7 @@ export class PtyFramedInteractiveSession {
     this.delimiterRegex =
       typeof options.frameDelimiter === 'string'
         ? undefined
-        : new RegExp(options.frameDelimiter.pattern, options.frameDelimiter.flags);
+        : new RegExp(options.frameDelimiter.pattern, (options.frameDelimiter.flags ?? '').replace(/[gy]/g, ''));
   }
 
   /**
@@ -55,14 +52,9 @@ export class PtyFramedInteractiveSession {
    * @returns {Promise<string>} Settled output frame with the trailing prompt delimiter stripped.
    */
   sendTurn(input: string, signal?: AbortSignal): Promise<string> {
-    const nextTurn = this.turnChain.then(
-      () => this.executeSerializedTurn(input, signal),
-      () => this.executeSerializedTurn(input, signal),
-    );
-    this.turnChain = nextTurn.then(
-      () => undefined,
-      () => undefined,
-    );
+    const runTurn = (): Promise<string> => this.executeSerializedTurn(input, signal);
+    const nextTurn = this.turnChain.then(runTurn, runTurn);
+    this.turnChain = nextTurn.then(() => undefined, () => undefined);
     return nextTurn;
   }
 
@@ -93,7 +85,8 @@ export class PtyFramedInteractiveSession {
    */
   private async executeSerializedTurn(input: string, signal?: AbortSignal): Promise<string> {
     signal?.throwIfAborted();
-    if (!this.bannerDrained || this.child === undefined || this.child.exitCode !== null) {
+    if (!this.bannerDrained || this.child === undefined || this.child.exitCode !== null || this.child.signalCode !== null) {
+      await this.close();
       this.spawnInteractiveProcess();
       await this.waitForFrameSettle(signal);
       this.bannerDrained = true;
@@ -112,26 +105,23 @@ export class PtyFramedInteractiveSession {
    * Pipes `stdout` and `stderr` into `this.currentBuffer` and notifies the active frame waiter.
    */
   private spawnInteractiveProcess(): void {
-    const wrappedArgv = [
-      'sh',
-      '-c',
-      'stty -echo 2>/dev/null || true; exec "$@"',
-      '_',
-      ...this.options.argv,
-    ];
+    if (this.child !== undefined) {
+      void terminateProcessGroupWithGrace(this.child);
+      this.child = undefined;
+    }
+    const wrappedArgv = ['sh', '-c', 'stty -echo 2>/dev/null || true; exec "$@"', '_', ...this.options.argv];
     this.currentBuffer = '';
     const child = spawnDetachedSubprocess({
       argv: wrappedArgv,
-      resolvedEnv: {
-        ...this.options.resolvedEnv,
-        env: { ...this.options.resolvedEnv.env, TERM: 'dumb', NO_COLOR: '1' },
-      },
+      resolvedEnv: { ...this.options.resolvedEnv, env: { ...this.options.resolvedEnv.env, TERM: 'dumb', NO_COLOR: '1' } },
       stdinStdio: 'pipe',
     });
     const appendChunk = (chunk: Buffer): void => {
       this.currentBuffer += chunk.toString('utf8');
       this.onDataCallback?.();
     };
+    child.on('error', () => {});
+    child.stdin?.on('error', () => {});
     child.stdout?.on('data', appendChunk);
     child.stderr?.on('data', appendChunk);
     this.child = child;
@@ -149,6 +139,7 @@ export class PtyFramedInteractiveSession {
   private waitForFrameSettle(signal?: AbortSignal): Promise<string> {
     const timeoutMs = this.options.timeoutSeconds * 1000;
     const settleMs = Math.max(1, this.options.idleSettleMs);
+    const activeChild = this.child;
     return new Promise<string>((resolve, reject) => {
       let settleTimer: ReturnType<typeof setTimeout> | undefined;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -158,6 +149,20 @@ export class PtyFramedInteractiveSession {
         if (settleTimer !== undefined) clearTimeout(settleTimer);
         if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
         if (onAbort !== undefined && signal !== undefined) signal.removeEventListener('abort', onAbort);
+        activeChild?.removeListener('close', onPrematureClose);
+        activeChild?.removeListener('error', onError);
+      };
+      const onPrematureClose = (code: number | null, sig: NodeJS.Signals | null): void => {
+        cleanup();
+        this.child = undefined;
+        this.bannerDrained = false;
+        reject(new Error(`Interactive tool '${this.options.toolName}' exited prematurely (code ${String(code)}, signal ${String(sig)}) before matching frame delimiter.`));
+      };
+      const onError = (err: Error): void => {
+        cleanup();
+        this.child = undefined;
+        this.bannerDrained = false;
+        reject(err);
       };
       const scheduleCheck = (): void => {
         if (settleTimer !== undefined) clearTimeout(settleTimer);
@@ -171,16 +176,22 @@ export class PtyFramedInteractiveSession {
         }, settleMs);
       };
       this.onDataCallback = scheduleCheck;
+      activeChild?.once('close', onPrematureClose);
+      activeChild?.once('error', onError);
+      if (activeChild !== undefined && (activeChild.exitCode !== null || activeChild.signalCode !== null)) {
+        onPrematureClose(activeChild.exitCode, activeChild.signalCode);
+        return;
+      }
       if (signal !== undefined) {
         onAbort = (): void => {
           cleanup();
-          reject(new Error(`Interactive tool '${this.options.toolName}' aborted by AbortSignal.`));
+          void this.close().finally(() => reject(new Error(`Interactive tool '${this.options.toolName}' aborted by AbortSignal.`)));
         };
         signal.addEventListener('abort', onAbort, { once: true });
       }
       timeoutTimer = setTimeout(() => {
         cleanup();
-        reject(new Error(`Interactive tool '${this.options.toolName}' timed out after ${String(this.options.timeoutSeconds)}s waiting for frame delimiter.`));
+        void this.close().finally(() => reject(new Error(`Interactive tool '${this.options.toolName}' timed out after ${String(this.options.timeoutSeconds)}s waiting for frame delimiter.`)));
       }, timeoutMs);
       scheduleCheck();
     });
@@ -199,7 +210,9 @@ export class PtyFramedInteractiveSession {
     if (typeof this.options.frameDelimiter === 'string') {
       return buffer.includes(this.options.frameDelimiter);
     }
-    return this.delimiterRegex !== undefined && this.delimiterRegex.test(buffer);
+    if (this.delimiterRegex === undefined) return false;
+    this.delimiterRegex.lastIndex = 0;
+    return this.delimiterRegex.test(buffer);
   }
 
   /**
@@ -217,6 +230,7 @@ export class PtyFramedInteractiveSession {
       return (idx !== -1 ? buffer.slice(0, idx) : buffer).trim();
     }
     if (this.delimiterRegex !== undefined) {
+      this.delimiterRegex.lastIndex = 0;
       return buffer.replace(this.delimiterRegex, '').trim();
     }
     return buffer.trim();

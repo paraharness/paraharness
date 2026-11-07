@@ -35,9 +35,13 @@ export async function startLocalDaemonService<THandle = unknown>(
   const resolvedEnv = resolveWorktreeEnvAndCwd(input.scopeHandle, undefined, (val) =>
     ctx.resolveEnv(val),
   );
-  return runner.withDaemonSlot(
-    (releaseDaemonSlot) =>
-      bootLocalDaemonSession<THandle>(node, input.scopeKey, resolvedEnv, releaseDaemonSlot),
+  return runner.withDaemonSlot((releaseDaemonSlot) =>
+    bootLocalDaemonSession<THandle>({
+      node,
+      rawScopeKey: input.scopeKey,
+      resolvedEnv,
+      releaseDaemonSlot,
+    }),
   );
 }
 

@@ -72,14 +72,21 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
       return createLocalCommandBuilder(id, { ...state, timeoutMinutes: minutes });
     },
     input<TNewIn>(schema: z.ZodType<TNewIn, z.ZodTypeDef, unknown>): LocalCommandBuilder<TNewIn, TOut, THandle> {
-      const preservedArgv = typeof state.argv === 'function' ? undefined : state.argv;
+      const { inputSchema: prevSchema, argv: prevArgv, stdinMode: prevStdin, unrepeatable: prevUnrep } = state;
+      const prevKey = prevUnrep?.key;
       return createLocalCommandBuilder<TNewIn, TOut, THandle>(id, {
         ...state,
-        argv: preservedArgv,
-        stdinMode: 'closed',
+        argv: typeof prevArgv === 'function' ? (v: TNewIn): readonly string[] => prevArgv(prevSchema.parse(v)) : prevArgv,
+        stdinMode: prevStdin === 'closed' ? 'closed' : (v: TNewIn): string | Uint8Array => prevStdin(prevSchema.parse(v)),
         inputSchema: schema,
         hasExplicitInputSchema: true,
-        unrepeatable: undefined,
+        unrepeatable:
+          prevUnrep === undefined
+            ? undefined
+            : Object.freeze({
+                preCheckCmd: prevUnrep.preCheckCmd,
+                key: typeof prevKey === 'function' ? (v: TNewIn): string => prevKey(prevSchema.parse(v)) : (prevKey ?? ''),
+              }),
       });
     },
     output<TNewOut>(schema: z.ZodType<TNewOut, z.ZodTypeDef, unknown>): LocalCommandBuilder<TIn, TNewOut, THandle> {
@@ -94,14 +101,8 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
         unrepeatable: Object.freeze({ preCheckCmd: normalizeUnrepeatablePreCheckNode(preCheckCmd), key: options.key }),
       });
     },
-    asCheck() {
-      return compileLocalCommandCheckBuilder(compileLocalCommandNode(state));
-    },
-    asTool() {
-      return compileLocalCommandToolBuilder(state);
-    },
-    toAST(): LocalCommandNode<TIn, TOut, THandle> {
-      return compileLocalCommandNode(state);
-    },
+    asCheck: () => compileLocalCommandCheckBuilder(compileLocalCommandNode(state)),
+    asTool: () => compileLocalCommandToolBuilder(state),
+    toAST: (): LocalCommandNode<TIn, TOut, THandle> => compileLocalCommandNode(state),
   });
 }

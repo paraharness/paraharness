@@ -9,6 +9,7 @@ import type {
 } from '@harness-dsl/core';
 import {
   dispatchControlPlanePayload,
+  isPlainRecord,
   startHttpControlPlaneServer,
 } from './internal/mcp-http-request-handler.js';
 
@@ -70,7 +71,7 @@ export function createNodeMcpStdioAdapter(
   _ctx?: RuntimeDriverContext,
 ): ControlPlaneAdapter {
   return Object.freeze<ControlPlaneAdapter>({
-    async start(controller: HarnessRuntimeController): Promise<ControlPlaneHandle> {
+    start(controller: HarnessRuntimeController): Promise<ControlPlaneHandle> {
       let buffer = '';
       const onData = (chunk: Buffer | string): void => {
         buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
@@ -79,22 +80,27 @@ export function createNodeMcpStdioAdapter(
           const line = buffer.slice(0, newlineIdx).trim();
           buffer = buffer.slice(newlineIdx + 1);
           newlineIdx = buffer.indexOf('\n');
-          if (line.length > 0) {
-            const parsed = JSON.parse(line) as Record<string, unknown>;
-            void dispatchControlPlanePayload(parsed, controller, node.serverName).then((resp) => {
-              process.stdout.write(`${JSON.stringify(resp)}\n`);
-            });
+          if (line.length === 0) continue;
+          try {
+            const parsed: unknown = JSON.parse(line);
+            if (!isPlainRecord(parsed)) throw new Error('Invalid JSON-RPC request');
+            void dispatchControlPlanePayload(parsed, controller, node.serverName)
+              .then((resp) => process.stdout.write(`${JSON.stringify(resp)}\n`))
+              .catch((err: unknown) => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: parsed['id'] ?? null, error: { code: -32603, message: err instanceof Error ? err.message : String(err) } })}\n`));
+          } catch {
+            process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })}\n`);
           }
         }
       };
       process.stdin.on('data', onData);
-      process.stdin.pause();
-      return Object.freeze<ControlPlaneHandle>({
-        async close(): Promise<void> {
+      process.stdin.unref?.();
+      return Promise.resolve(Object.freeze<ControlPlaneHandle>({
+        close(): Promise<void> {
           process.stdin.removeListener('data', onData);
           process.stdin.pause();
+          return Promise.resolve();
         },
-      });
+      }));
     },
   });
 }

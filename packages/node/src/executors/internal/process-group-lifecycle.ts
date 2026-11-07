@@ -119,6 +119,7 @@ export function terminateProcessGroupWithGrace(
   graceMs = DEFAULT_SUBPROCESS_GRACE_MS,
 ): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
+    sendProcessGroupSignal(child, 'SIGKILL');
     return Promise.resolve();
   }
   return new Promise<void>((resolve) => {
@@ -130,6 +131,9 @@ export function terminateProcessGroupWithGrace(
       settled = true;
       if (killTimer !== undefined) clearTimeout(killTimer);
       if (fallbackTimer !== undefined) clearTimeout(fallbackTimer);
+      child.removeListener('exit', finish);
+      child.removeListener('close', finish);
+      sendProcessGroupSignal(child, 'SIGKILL');
       resolve();
     };
     child.once('exit', finish);

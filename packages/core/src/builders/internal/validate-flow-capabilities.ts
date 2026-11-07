@@ -28,7 +28,8 @@ function validateReplaceHandlersHaveAbortSupport(
   owner: { readonly id: string; readonly hasPolicyAbort: boolean },
   handlers: readonly InterruptHandlerNode[],
 ): void {
-  const scopeTier = flowNode.scope.capabilityTier as ScopeCapabilityTier;
+  const widenTier = (tier: ScopeCapabilityTier): ScopeCapabilityTier => tier;
+  const scopeTier = widenTier(flowNode.scope.capabilityTier);
   const scopeType = flowNode.scope.type;
   for (const handler of handlers) {
     if (handler.mode === 'replace') {
@@ -61,7 +62,8 @@ function validateReplaceHandlersHaveAbortSupport(
  * @throws {Error} If the agent requires a higher capability tier than `flowNode.scope.capabilityTier`.
  */
 function validateAgentAgainstScopeTier(flowNode: FlowNode, agentNode: AgentNode): void {
-  const scopeTier = flowNode.scope.capabilityTier as ScopeCapabilityTier;
+  const widenTier = (tier: ScopeCapabilityTier): ScopeCapabilityTier => tier;
+  const scopeTier = widenTier(flowNode.scope.capabilityTier);
   const scopeType = flowNode.scope.type;
   validatePrefixGroupCloneTranscriptMode(agentNode);
 

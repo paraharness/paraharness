@@ -111,4 +111,23 @@ describe('local.streamCheck rolling multi-line circuit breaker and post-flight t
     expect(parsed.deficits[0]).toContain('trace-line-5');
     expect(parsed.deficits[0]).not.toContain('trace-line-6');
   });
+
+  it('counts graceLinesAfterMatch accurately when the circuit-breaker regex match itself ends with a newline', async () => {
+    const newlineEndingCheck = local
+      .streamCheck('verify-newline-ending-regex')
+      .argv(buildFailingStreamSuiteArgv())
+      .circuitBreakWhenStdout(/FAIL\s+packages\/.*?\n/, {
+        graceLinesAfterMatch: 2,
+      })
+      .toAST();
+
+    const ctx = createStreamTestContext();
+    const result = await executeLocalStreamCheck(newlineEndingCheck, undefined, ctx);
+    expect(result.ok).toBe(false);
+    const excerpt = result.deficits[0] ?? '';
+    expect(excerpt).toContain('FAIL packages/api/broken.test.ts');
+    expect(excerpt).toContain('● broken test case');
+    expect(excerpt).toContain('trace-line-1');
+    expect(excerpt).not.toContain('trace-line-2');
+  });
 });

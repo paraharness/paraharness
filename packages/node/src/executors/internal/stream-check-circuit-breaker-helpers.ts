@@ -1,27 +1,29 @@
 /**
  * Extracts the matched failure line and up to `graceLinesAfterMatch` trailing lines from `combinedOutput`.
  *
- * Starts at the beginning of the line containing `matchIndex` and includes `graceLinesAfterMatch`
- * complete lines following `matchEndIndex`.
+ * Starts at the beginning of the line containing `matchRange[0]` and includes `graceLinesAfterMatch`
+ * complete lines following the line containing `matchRange[1]`.
  *
- * @param {string} combinedOutput       - Combined rolling `stdout` and `stderr` text buffer.
- * @param {number} matchIndex           - Character offset where the circuit-breaker regex matched.
- * @param {number} matchEndIndex        - Character offset where the circuit-breaker regex match ended.
- * @param {number} graceLinesAfterMatch - Maximum number of trailing lines to include after the match.
+ * @param {string}                    combinedOutput       - Combined rolling `stdout` and `stderr` text buffer.
+ * @param {readonly [number, number]} matchRange           - Inclusive start and exclusive end character offsets of the match.
+ * @param {number}                    graceLinesAfterMatch - Maximum number of trailing lines to include after the match.
  *
  * @returns {string} Trimmed multi-line failure excerpt for `CheckEvaluationResult.deficits`.
  */
 export function extractCircuitBreakerExcerpt(
   combinedOutput: string,
-  matchIndex: number,
-  matchEndIndex: number,
+  matchRange: readonly [number, number],
   graceLinesAfterMatch: number,
 ): string {
+  const [matchIndex, matchEndIndex] = matchRange;
   const lineStart = combinedOutput.lastIndexOf('\n', Math.max(0, matchIndex - 1)) + 1;
-  let cursor = matchEndIndex;
-  const firstLineEnd = combinedOutput.indexOf('\n', cursor);
+  const searchFrom =
+    matchEndIndex > matchIndex && combinedOutput.charCodeAt(matchEndIndex - 1) === 10
+      ? matchEndIndex - 1
+      : matchEndIndex;
+  const firstLineEnd = combinedOutput.indexOf('\n', searchFrom);
   if (firstLineEnd === -1) return combinedOutput.slice(lineStart).trim();
-  cursor = firstLineEnd + 1;
+  let cursor = firstLineEnd + 1;
   for (let i = 0; i < graceLinesAfterMatch; i += 1) {
     const nextNewline = combinedOutput.indexOf('\n', cursor);
     if (nextNewline === -1) {
@@ -34,22 +36,27 @@ export function extractCircuitBreakerExcerpt(
 }
 
 /**
- * Checks whether at least `graceLinesAfterMatch` trailing lines have arrived after `matchEndIndex`.
+ * Checks whether at least `graceLinesAfterMatch` trailing lines have arrived after `matchRange`.
  *
- * Counts newline characters following the line containing `matchEndIndex`.
+ * Counts newline characters following the line where the circuit-breaker regex match ended.
  *
- * @param {string} combinedOutput       - Combined rolling `stdout` and `stderr` text buffer.
- * @param {number} matchEndIndex        - Character offset where the regex match ended.
- * @param {number} graceLinesAfterMatch - Required number of trailing lines after the match line.
+ * @param {string}                    combinedOutput       - Combined rolling `stdout` and `stderr` text buffer.
+ * @param {readonly [number, number]} matchRange           - Inclusive start and exclusive end character offsets of the match.
+ * @param {number}                    graceLinesAfterMatch - Required number of trailing lines after the match line.
  *
  * @returns {boolean} True when the match line and `graceLinesAfterMatch` trailing lines are buffered.
  */
 export function hasCapturedGraceLines(
   combinedOutput: string,
-  matchEndIndex: number,
+  matchRange: readonly [number, number],
   graceLinesAfterMatch: number,
 ): boolean {
-  const matchLineEnd = combinedOutput.indexOf('\n', matchEndIndex);
+  const [matchIndex, matchEndIndex] = matchRange;
+  const searchFrom =
+    matchEndIndex > matchIndex && combinedOutput.charCodeAt(matchEndIndex - 1) === 10
+      ? matchEndIndex - 1
+      : matchEndIndex;
+  const matchLineEnd = combinedOutput.indexOf('\n', searchFrom);
   if (matchLineEnd === -1) return false;
   let newlineCount = 0;
   for (let i = matchLineEnd + 1; i < combinedOutput.length; i += 1) {

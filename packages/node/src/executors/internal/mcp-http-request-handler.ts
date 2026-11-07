@@ -2,35 +2,16 @@ import http from 'node:http';
 import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/core';
 
 /**
- * Reads and JSON-parses the request body from an inbound `http.IncomingMessage`.
+ * Narrowing type guard checking whether `value` is a non-null, non-array plain object record.
  *
- * Resolves to an empty object when the request body is empty.
+ * Used across HTTP and stdio MCP control-plane adapters to narrow parsed JSON payloads without type casts.
  *
- * @param {http.IncomingMessage} req - Inbound HTTP request stream.
+ * @param {unknown} value - Candidate decoded JSON value.
  *
- * @returns {Promise<Record<string, unknown>>} Parsed JSON object payload.
+ * @returns {value is Record<string, unknown>} True when `value` is a plain object record.
  */
-export function readHttpRequestJsonBody(
-  req: http.IncomingMessage,
-): Promise<Record<string, unknown>> {
-  return new Promise<Record<string, unknown>>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.once('error', reject);
-    req.once('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8').trim();
-      if (raw.length === 0) {
-        resolve({});
-        return;
-      }
-      try {
-        const parsed: unknown = JSON.parse(raw);
-        resolve(typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {});
-      } catch (error) {
-        reject(error);
-      }
-    });
-  });
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -58,9 +39,11 @@ export async function dispatchControlPlanePayload(
   if (method === 'tools/list') {
     return { jsonrpc: '2.0', id, result: { tools: [{ name: 'get_active_runs' }, { name: 'emit_signal' }] } };
   }
-  const params = typeof body['params'] === 'object' && body['params'] !== null ? (body['params'] as Record<string, unknown>) : body;
+  const rawParams = body['params'];
+  const params = isPlainRecord(rawParams) ? rawParams : body;
   const toolName = typeof params['name'] === 'string' ? params['name'] : method;
-  const toolArgs = typeof params['arguments'] === 'object' && params['arguments'] !== null ? (params['arguments'] as Record<string, unknown>) : params;
+  const rawArgs = params['arguments'];
+  const toolArgs = isPlainRecord(rawArgs) ? rawArgs : params;
   if (toolName === 'get_active_runs' || toolName === 'runs/list') {
     const runs = await controller.getActiveRuns();
     return method !== undefined ? { jsonrpc: '2.0', id, result: { runs } } : { ok: true, runs };
@@ -78,24 +61,20 @@ export async function dispatchControlPlanePayload(
  *
  * Serves `GET /sse` event streams, `GET /runs` active run snapshots, and `POST` signal/JSON-RPC calls.
  *
- * @param {http.IncomingMessage}      req         - Inbound HTTP request.
- * @param {http.ServerResponse}       res         - Outbound HTTP response.
- * @param {HarnessRuntimeController}  controller  - Active runtime controller.
- * @param {Set<http.ServerResponse>}  sseClients  - Set of open SSE response streams.
+ * @param {http.IncomingMessage}     req        - Inbound HTTP request.
+ * @param {http.ServerResponse}      res        - Outbound HTTP response.
+ * @param {HarnessRuntimeController} controller - Active runtime controller.
  *
- * @returns {Promise<void>} Resolves once the HTTP response is sent or SSE stream is registered.
+ * @returns {Promise<void>} Resolves once the HTTP response is sent or initial SSE event is written.
  */
 export async function handleControlPlaneHttpRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   controller: HarnessRuntimeController,
-  sseClients: Set<http.ServerResponse>,
 ): Promise<void> {
   const url = req.url ?? '/';
   if (req.method === 'GET' && (url.startsWith('/sse') || url.startsWith('/mcp/sse'))) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    sseClients.add(res);
-    req.once('close', () => sseClients.delete(res));
     const runs = await controller.getActiveRuns();
     res.write(`event: runs\ndata: ${JSON.stringify({ runs })}\n\n`);
     return;
@@ -106,7 +85,11 @@ export async function handleControlPlaneHttpRequest(
     res.end(JSON.stringify({ ok: true, runs }));
     return;
   }
-  const body = await readHttpRequestJsonBody(req);
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  const raw = Buffer.concat(chunks).toString('utf8').trim();
+  const parsed: unknown = raw.length > 0 ? JSON.parse(raw) : {};
+  const body = isPlainRecord(parsed) ? parsed : {};
   const responsePayload = await dispatchControlPlanePayload(body, controller, 'metaharness-http');
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(responsePayload));
@@ -128,9 +111,18 @@ export function startHttpControlPlaneServer(
 ): Promise<ControlPlaneHandle> {
   const sseClients = new Set<http.ServerResponse>();
   const server = http.createServer((req, res) => {
-    void handleControlPlaneHttpRequest(req, res, controller, sseClients).catch((err: unknown) => {
-      res.statusCode = 500;
-      res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+    const url = req.url ?? '/';
+    if (req.method === 'GET' && (url.startsWith('/sse') || url.startsWith('/mcp/sse'))) {
+      sseClients.add(res);
+      req.once('close', () => sseClients.delete(res));
+    }
+    void handleControlPlaneHttpRequest(req, res, controller).catch((err: unknown) => {
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+      } else {
+        res.end();
+      }
     });
   });
   return new Promise<ControlPlaneHandle>((resolve, reject) => {

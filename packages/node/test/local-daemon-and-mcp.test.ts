@@ -25,6 +25,7 @@ import {
   sanitizeDaemonScopeKey,
   startLocalDaemonService,
 } from '../src/index.js';
+import { ACTIVE_LEASED_DAEMON_PORTS } from '../src/executors/node-subprocess-env.constants.js';
 import {
   buildSampleInteractiveReplArgv,
   buildSampleTcpDaemonArgv,
@@ -89,93 +90,131 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
 
   it('executes pre-start .stopCommand(), allocates dynamic ports, verifies readyWhenStdout + TCP readiness, and runs serialized PTY turns without echo', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-node-daemon-'));
-    const markerFile = path.join(tmpDir, 'stop-markers.log');
-    const runner = local.runner({ slots: 2, maxDaemons: 2 });
-
-    const daemonBuilder = local
-      .daemon('local-pg')
-      .runner(runner)
-      .lifecycle('skill')
-      .port('pgPort')
-      .port('adminPort')
-      .start(({ ports, scopeKey }) =>
-        buildSampleTcpDaemonArgv(
-          [ports['pgPort'] ?? 0, ports['adminPort'] ?? 0],
-          `listening on IPv4 address "0.0.0.0", scope=${scopeKey}\ndatabase system is ready to accept connections`,
-        ),
-      )
-      .stopCommand(({ scopeKey }) => [
-        process.execPath,
-        '-e',
-        `require("node:fs").appendFileSync(${JSON.stringify(markerFile)}, ${JSON.stringify(`stop:${scopeKey}\n`)});`,
-      ])
-      .readyWhenStdout(
-        /listening on IPv4 address "0\.0\.0\.0"[\s\S]*database system is ready to accept connections/,
-      )
-      .interact('psql', {
-        command: () => buildSampleInteractiveReplArgv('postgres=# '),
-        frameDelimiter: /postgres[=>\-#][#>]\s*$/,
-        idleSettleMs: 10,
-        timeoutSeconds: 2,
-      })
-      .interact('hang-tool', {
-        command: () => buildSampleInteractiveReplArgv('cdp> '),
-        frameDelimiter: /cdp>\s*$/,
-        idleSettleMs: 10,
-        timeoutSeconds: 0.05,
-      });
-
-    const serviceNode = daemonBuilder.toAST();
-    expect(serviceNode.toolSchemas).toHaveLength(2);
-    expect(serviceNode.toolSchemas[0]?.name).toBe('psql');
-    expect(serviceNode.toolSchemas[0]?.description).toBe('Interact with service via psql');
-    expect(
-      serviceNode.toolSchemas[0]?.inputSchema.safeParse({ input: 'SELECT 1;' }).success,
-    ).toBe(true);
-
-    const { driverCtx, createStepCtx } = createDriverAndStepContexts();
-    const session = await startLocalDaemonService<unknown>(
-      serviceNode,
-      { runId: 'run#1', scopeKey: 'run#1:root', scopeHandle: { worktreePath: process.cwd() } },
-      driverCtx,
-    );
-
     try {
-      const preStartLog = fs.readFileSync(markerFile, 'utf8');
-      expect(preStartLog).toContain(`stop:${sanitizeDaemonScopeKey('run#1:root')}`);
+      const markerFile = path.join(tmpDir, 'stop-markers.log');
+      const runner = local.runner({ slots: 2, maxDaemons: 2 });
 
-      const sessionsMap = new Map([[serviceNode.id, session]]);
-      const stepCtx = createStepCtx(sessionsMap);
-      const serviceToolDriver = createLocalServiceToolDriver();
-      expect('describeEffects' in serviceToolDriver).toBe(false);
+      const daemonBuilder = local
+        .daemon('local-pg')
+        .runner(runner)
+        .lifecycle('skill')
+        .port('pgPort')
+        .port('adminPort')
+        .start(({ ports, scopeKey }) =>
+          buildSampleTcpDaemonArgv(
+            [ports['pgPort'] ?? 0, ports['adminPort'] ?? 0],
+            `listening on IPv4 address "0.0.0.0", scope=${scopeKey}\ndatabase system is ready to accept connections`,
+          ),
+        )
+        .stopCommand(({ scopeKey }) => [
+          process.execPath,
+          '-e',
+          `require("node:fs").appendFileSync(${JSON.stringify(markerFile)}, ${JSON.stringify(`stop:${scopeKey}\n`)});`,
+        ])
+        .readyWhenStdout(
+          /listening on IPv4 address "0\.0\.0\.0"[\s\S]*database system is ready to accept connections/g,
+        )
+        .interact('psql', {
+          command: () => buildSampleInteractiveReplArgv('postgres=# '),
+          frameDelimiter: /postgres[=>\-#][#>]\s*$/g,
+          idleSettleMs: 10,
+          timeoutSeconds: 2,
+        })
+        .interact('hang-tool', {
+          command: () => buildSampleInteractiveReplArgv('cdp> '),
+          frameDelimiter: /cdp>\s*$/,
+          idleSettleMs: 10,
+          timeoutSeconds: 0.05,
+        })
+        .interact('crash-tool', {
+          command: () => [process.execPath, '-e', 'process.stdout.write("partial"); process.exit(2);'],
+          frameDelimiter: /never-matches>\s*$/,
+          idleSettleMs: 10,
+          timeoutSeconds: 5,
+        });
 
-      const psqlToolNode = session.tools[0];
-      if (psqlToolNode === undefined || psqlToolNode.type !== 'node:service-tool') {
-        throw new Error('Missing psql tool node');
+      const serviceNode = daemonBuilder.toAST();
+      expect(serviceNode.toolSchemas).toHaveLength(3);
+      expect(serviceNode.toolSchemas[0]?.name).toBe('psql');
+      expect(serviceNode.toolSchemas[0]?.description).toBe('Interact with service via psql');
+      expect(
+        serviceNode.toolSchemas[0]?.inputSchema.safeParse({ input: 'SELECT 1;' }).success,
+      ).toBe(true);
+
+      const { driverCtx, createStepCtx } = createDriverAndStepContexts();
+      const session = await startLocalDaemonService<unknown>(
+        serviceNode,
+        { runId: 'run#1', scopeKey: 'run#1:root', scopeHandle: { worktreePath: process.cwd() } },
+        driverCtx,
+      );
+
+      try {
+        const preStartLog = fs.readFileSync(markerFile, 'utf8');
+        expect(preStartLog).toContain(`stop:${sanitizeDaemonScopeKey('run#1:root')}`);
+
+        const sessionsMap = new Map([[serviceNode.id, session]]);
+        const stepCtx = createStepCtx(sessionsMap);
+        const serviceToolDriver = createLocalServiceToolDriver();
+        expect('describeEffects' in serviceToolDriver).toBe(false);
+
+        const psqlToolNode = session.tools[0];
+        if (psqlToolNode === undefined || psqlToolNode.type !== 'node:service-tool') {
+          throw new Error('Missing psql tool node');
+        }
+        expect(psqlToolNode.type).toBe('node:service-tool');
+        expect(psqlToolNode.effectTracking).toBe('subprocess-post-flight');
+
+        const [turn1, turn2] = await Promise.all([
+          serviceToolDriver.execute(psqlToolNode, { input: 'DELAY:15:first_query' }, stepCtx),
+          serviceToolDriver.execute(psqlToolNode, { input: 'second_query' }, stepCtx),
+        ]);
+
+        expect(turn1.content).toBe('DELAYED:first_query');
+        expect(turn1.content).not.toContain('DELAY:15:first_query');
+        expect(turn2.content).toBe('OUT:SECOND_QUERY');
+        expect(turn2.content).not.toContain('second_query');
+
+        await expect(
+          session.invokeTool('hang-tool', { input: 'HANG' }, stepCtx),
+        ).rejects.toThrow(/timed out after 0\.05s/i);
+
+        const crashStart = Date.now();
+        await expect(
+          session.invokeTool('crash-tool', { input: 'CRASH' }, stepCtx),
+        ).rejects.toThrow(/exited prematurely/i);
+        expect(Date.now() - crashStart).toBeLessThan(1_000);
+      } finally {
+        await session.stop();
       }
-      expect(psqlToolNode.type).toBe('node:service-tool');
-      expect(psqlToolNode.effectTracking).toBe('subprocess-post-flight');
 
-      const [turn1, turn2] = await Promise.all([
-        serviceToolDriver.execute(psqlToolNode, { input: 'DELAY:15:first_query' }, stepCtx),
-        serviceToolDriver.execute(psqlToolNode, { input: 'second_query' }, stepCtx),
-      ]);
+      const postStopLog = fs.readFileSync(markerFile, 'utf8').trim().split('\n');
+      expect(postStopLog).toHaveLength(2);
 
-      expect(turn1.content).toBe('DELAYED:first_query');
-      expect(turn1.content).not.toContain('DELAY:15:first_query');
-      expect(turn2.content).toBe('OUT:SECOND_QUERY');
-      expect(turn2.content).not.toContain('second_query');
+      const failingDaemonMarker = path.join(tmpDir, 'failed-boot-stop.log');
+      const failingDaemon = local
+        .daemon('failing-daemon')
+        .port('failPort')
+        .start(() => [process.execPath, '-e', 'process.stderr.write("boot crash"); process.exit(1);'])
+        .stopCommand(({ scopeKey }) => [
+          process.execPath,
+          '-e',
+          `require("node:fs").appendFileSync(${JSON.stringify(failingDaemonMarker)}, ${JSON.stringify(`cleanup:${scopeKey}\n`)});`,
+        ])
+        .readyWhenStdout(/never-ready/)
+        .toAST();
 
       await expect(
-        session.invokeTool('hang-tool', { input: 'HANG' }, stepCtx),
-      ).rejects.toThrow(/timed out after 0\.05s/i);
+        startLocalDaemonService(
+          failingDaemon,
+          { runId: 'run-fail', scopeKey: 'run-fail:root', scopeHandle: { worktreePath: process.cwd() } },
+          driverCtx,
+        ),
+      ).rejects.toThrow(/exited prematurely/i);
+      const failStopEntries = fs.readFileSync(failingDaemonMarker, 'utf8').trim().split('\n');
+      expect(failStopEntries).toHaveLength(2);
     } finally {
-      await session.stop();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
-
-    const postStopLog = fs.readFileSync(markerFile, 'utf8').trim().split('\n');
-    expect(postStopLog).toHaveLength(2);
-    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it('evaluates local.allowBinaries and local.denyNetwork policy guards accurately', () => {
@@ -277,10 +316,46 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       });
       expect(sigResp.status).toBe(200);
       expect(emittedSignals).toEqual([{ id: 'steer', payload: { note: 'focus on db' } }]);
+
+      const sseResp = await fetch(`http://127.0.0.1:${String(ssePort)}/sse`);
+      expect(sseResp.status).toBe(200);
+      expect(sseResp.headers.get('content-type')).toContain('text/event-stream');
+      const reader = sseResp.body?.getReader();
+      const firstChunk = await reader?.read();
+      const sseText = new TextDecoder().decode(firstChunk?.value);
+      expect(sseText).toContain('event: runs');
+      expect(sseText).toContain('"runId":"run-1"');
+      await reader?.cancel();
+
+      const capturedStdout: string[] = [];
+      const origWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+        capturedStdout.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+        return true;
+      }) as typeof process.stdout.write;
+      try {
+        process.stdin.emit('data', 'not-valid-json\n{"jsonrpc":"2.0","id":7,"method":"initialize"}\n');
+        await new Promise<void>((r) => setImmediate(r));
+      } finally {
+        process.stdout.write = origWrite;
+      }
+      expect(capturedStdout.length).toBeGreaterThanOrEqual(2);
+      expect(JSON.parse(capturedStdout[0] ?? '{}')).toEqual({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32700, message: 'Parse error' },
+      });
+      expect(JSON.parse(capturedStdout[1] ?? '{}')).toEqual({
+        jsonrpc: '2.0',
+        id: 7,
+        result: { serverInfo: { name: 'custom-stdio', version: '0.1.0' } },
+      });
     } finally {
       await httpHandle.close();
       await sseHandle.close();
       await stdioHandle.close();
+      ACTIVE_LEASED_DAEMON_PORTS.delete(httpPort);
+      ACTIVE_LEASED_DAEMON_PORTS.delete(ssePort);
     }
   });
 });

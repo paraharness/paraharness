@@ -14,6 +14,7 @@ import {
   sanitizeDaemonScopeKey,
   waitForTcpPortReady,
 } from './daemon-ports-and-scope-key.js';
+import type { DaemonSessionBootParams } from './daemon-session-boot-params.js';
 import {
   runBestEffortStopCommand,
   waitForDaemonStdoutReady,
@@ -23,7 +24,6 @@ import {
   terminateProcessGroupWithGrace,
 } from './process-group-lifecycle.js';
 import { PtyFramedInteractiveSession } from './pty-framed-session.js';
-import type { ResolvedSubprocessEnvironment } from './spawn-detached-subprocess-params.js';
 
 /**
  * Builds the `LocalServiceToolNode` descriptors and interaction lookup map for a `LocalServiceNode`.
@@ -84,33 +84,37 @@ export function extractInteractiveInputString(validatedArgs: unknown): string {
  *
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {LocalServiceNode}              node              - Passive service AST node.
- * @param {string}                        rawScopeKey       - Raw isolation scope key.
- * @param {ResolvedSubprocessEnvironment} resolvedEnv       - Resolved worktree cwd and environment.
- * @param {() => void}                    releaseDaemonSlot - Callback releasing the runner daemon slot.
+ * @param {DaemonSessionBootParams} params - Daemon node, raw scope key, resolved environment, and slot release callback.
  *
  * @returns {Promise<ServiceSession<THandle>>} Live daemon `ServiceSession`.
  */
 export async function bootLocalDaemonSession<THandle = unknown>(
-  node: LocalServiceNode,
-  rawScopeKey: string,
-  resolvedEnv: ResolvedSubprocessEnvironment,
-  releaseDaemonSlot: () => void,
+  params: DaemonSessionBootParams,
 ): Promise<ServiceSession<THandle>> {
+  const { node, rawScopeKey, resolvedEnv } = params;
   const scopeKey = sanitizeDaemonScopeKey(rawScopeKey);
   const ports = await allocateDynamicPorts(node.ports);
   const cmdCtx: LocalDaemonCommandContext = { ports, scopeKey, worktreePath: resolvedEnv.worktreePath };
-  await runBestEffortStopCommand(node.stopArgv?.(cmdCtx), resolvedEnv);
-  const daemonChild = spawnDetachedSubprocess({ argv: node.startArgv(cmdCtx), resolvedEnv });
+  let daemonChild: ChildProcess | undefined;
   try {
+    await runBestEffortStopCommand(node.stopArgv?.(cmdCtx), resolvedEnv);
+    daemonChild = spawnDetachedSubprocess({ argv: node.startArgv(cmdCtx), resolvedEnv });
+    daemonChild.on('error', () => {});
     await waitForDaemonStdoutReady(daemonChild, node.readyWhenStdoutRegex, node.id);
     for (const port of Object.values(ports)) await waitForTcpPortReady(port);
   } catch (error) {
-    await terminateProcessGroupWithGrace(daemonChild);
-    for (const port of Object.values(ports)) ACTIVE_LEASED_DAEMON_PORTS.delete(port);
+    try {
+      await runBestEffortStopCommand(node.stopArgv?.(cmdCtx), resolvedEnv);
+    } finally {
+      try {
+        if (daemonChild !== undefined) await terminateProcessGroupWithGrace(daemonChild);
+      } finally {
+        for (const port of Object.values(ports)) ACTIVE_LEASED_DAEMON_PORTS.delete(port);
+      }
+    }
     throw error;
   }
-  return createActiveDaemonSessionObject(node, cmdCtx, resolvedEnv, daemonChild, releaseDaemonSlot);
+  return createActiveDaemonSessionObject<THandle>(params, cmdCtx, daemonChild);
 }
 
 /**
@@ -120,21 +124,14 @@ export async function bootLocalDaemonSession<THandle = unknown>(
  *
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {LocalServiceNode}              node              - Passive service AST node.
- * @param {LocalDaemonCommandContext}     cmdCtx            - Allocated ports and sanitized scope key context.
- * @param {ResolvedSubprocessEnvironment} resolvedEnv       - Resolved worktree cwd and environment.
- * @param {ChildProcess}                  daemonChild       - Spawned daemon process.
- * @param {() => void}                    releaseDaemonSlot - Callback releasing the runner daemon slot.
+ * @param {DaemonSessionBootParams}   params      - Daemon node, resolved environment, and slot release callback.
+ * @param {LocalDaemonCommandContext} cmdCtx      - Allocated ports and sanitized scope key context.
+ * @param {ChildProcess}              daemonChild - Spawned daemon process.
  *
  * @returns {ServiceSession<THandle>} Frozen `ServiceSession` implementation.
  */
-export function createActiveDaemonSessionObject<THandle = unknown>(
-  node: LocalServiceNode,
-  cmdCtx: LocalDaemonCommandContext,
-  resolvedEnv: ResolvedSubprocessEnvironment,
-  daemonChild: ChildProcess,
-  releaseDaemonSlot: () => void,
-): ServiceSession<THandle> {
+export function createActiveDaemonSessionObject<THandle = unknown>(params: DaemonSessionBootParams, cmdCtx: LocalDaemonCommandContext, daemonChild: ChildProcess): ServiceSession<THandle> {
+  const { node, resolvedEnv, releaseDaemonSlot } = params;
   const interactionsByName = new Map<string, LocalServiceInteractionConfig>();
   for (const item of node.interactions) interactionsByName.set(item.toolName, item);
   const ptySessions = new Map<string, PtyFramedInteractiveSession>();
@@ -146,23 +143,28 @@ export function createActiveDaemonSessionObject<THandle = unknown>(
       const spec = interactionsByName.get(toolName);
       if (spec === undefined) throw new Error(`Unknown interaction tool '${toolName}' on daemon '${node.id}'.`);
       const validated = spec.inputSchema.parse(args);
-      let session = ptySessions.get(toolName);
-      if (session === undefined) {
-        session = new PtyFramedInteractiveSession({ toolName, argv: spec.command(cmdCtx), resolvedEnv, frameDelimiter: spec.frameDelimiter, idleSettleMs: spec.idleSettleMs, timeoutSeconds: spec.timeoutSeconds });
-        ptySessions.set(toolName, session);
-      }
-      const content = await session.sendTurn(extractInteractiveInputString(validated), ctx.signal);
-      return Object.freeze<ToolExecutionResult>({ content });
+      const session = ptySessions.get(toolName) ?? new PtyFramedInteractiveSession({ toolName, argv: spec.command(cmdCtx), resolvedEnv, frameDelimiter: spec.frameDelimiter, idleSettleMs: spec.idleSettleMs, timeoutSeconds: spec.timeoutSeconds });
+      ptySessions.set(toolName, session);
+      return Object.freeze<ToolExecutionResult>({ content: await session.sendTurn(extractInteractiveInputString(validated), ctx.signal) });
     },
     async stop(): Promise<void> {
       if (stopped) return;
       stopped = true;
-      for (const session of ptySessions.values()) await session.close();
-      ptySessions.clear();
-      await runBestEffortStopCommand(node.stopArgv?.(cmdCtx), resolvedEnv);
-      await terminateProcessGroupWithGrace(daemonChild);
-      for (const port of Object.values(cmdCtx.ports)) ACTIVE_LEASED_DAEMON_PORTS.delete(port);
-      releaseDaemonSlot();
+      try {
+        try {
+          for (const session of ptySessions.values()) await session.close();
+        } finally {
+          ptySessions.clear();
+          await runBestEffortStopCommand(node.stopArgv?.(cmdCtx), resolvedEnv);
+        }
+      } finally {
+        try {
+          await terminateProcessGroupWithGrace(daemonChild);
+        } finally {
+          for (const port of Object.values(cmdCtx.ports)) ACTIVE_LEASED_DAEMON_PORTS.delete(port);
+          releaseDaemonSlot();
+        }
+      }
     },
   });
 }

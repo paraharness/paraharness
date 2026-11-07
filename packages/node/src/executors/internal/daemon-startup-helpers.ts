@@ -1,5 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import type { LocalDaemonRegexDescriptor } from '../../builders/local-daemon-interact-options.js';
+import { DEFAULT_DAEMON_PORT_READY_TIMEOUT_MS } from '../node-subprocess-env.constants.js';
 import {
   spawnDetachedSubprocess,
   terminateProcessGroupWithGrace,
@@ -60,33 +61,36 @@ export function waitForDaemonStdoutReady(
   serviceId: string,
 ): Promise<void> {
   if (readyRegexDesc === undefined) return Promise.resolve();
-  const regex = new RegExp(readyRegexDesc.pattern, readyRegexDesc.flags);
+  const regex = new RegExp(readyRegexDesc.pattern, (readyRegexDesc.flags ?? '').replace(/[gy]/g, ''));
   return new Promise<void>((resolve, reject) => {
     let rollingBuffer = '';
+    const fail = (err: Error): void => {
+      cleanup();
+      reject(err);
+    };
+    const onPrematureClose = (code: number | null): void =>
+      fail(new Error(`Daemon '${serviceId}' exited prematurely (code ${String(code)}) before readyWhenStdout matched. Output: ${rollingBuffer.trim()}`));
+    const onChunk = (chunk: Buffer): void => {
+      rollingBuffer += chunk.toString('utf8');
+      regex.lastIndex = 0;
+      if (!regex.test(rollingBuffer)) return;
+      cleanup();
+      resolve();
+    };
+    const timeoutTimer = setTimeout(
+      () => fail(new Error(`Daemon '${serviceId}' timed out after ${String(DEFAULT_DAEMON_PORT_READY_TIMEOUT_MS)}ms waiting for readyWhenStdout.`)),
+      DEFAULT_DAEMON_PORT_READY_TIMEOUT_MS,
+    );
     const cleanup = (): void => {
+      clearTimeout(timeoutTimer);
       child.stdout?.removeListener('data', onChunk);
       child.stderr?.removeListener('data', onChunk);
       child.removeListener('close', onPrematureClose);
-      child.removeListener('error', onError);
-    };
-    const onChunk = (chunk: Buffer): void => {
-      rollingBuffer += chunk.toString('utf8');
-      if (regex.test(rollingBuffer)) {
-        cleanup();
-        resolve();
-      }
-    };
-    const onPrematureClose = (code: number | null): void => {
-      cleanup();
-      reject(new Error(`Daemon '${serviceId}' exited prematurely (code ${String(code)}) before readyWhenStdout matched. Output: ${rollingBuffer.trim()}`));
-    };
-    const onError = (err: Error): void => {
-      cleanup();
-      reject(err);
+      child.removeListener('error', fail);
     };
     child.stdout?.on('data', onChunk);
     child.stderr?.on('data', onChunk);
     child.once('close', onPrematureClose);
-    child.once('error', onError);
+    child.once('error', fail);
   });
 }

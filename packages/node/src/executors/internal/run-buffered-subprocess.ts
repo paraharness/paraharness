@@ -35,9 +35,7 @@ export function parseCommandStdout(stdout: string): unknown {
  *
  * @returns {Promise<BufferedSubprocessResult>} Captured `exitCode`, `stdout`, and `stderr`.
  */
-export async function runBufferedSubprocess(
-  params: RunBufferedSubprocessParams,
-): Promise<BufferedSubprocessResult> {
+export async function runBufferedSubprocess(params: RunBufferedSubprocessParams): Promise<BufferedSubprocessResult> {
   params.signal?.throwIfAborted();
   const stdinStdio = params.stdinPayload !== undefined ? 'pipe' : 'ignore';
   const child = spawnDetachedSubprocess({ argv: params.argv, resolvedEnv: params.resolvedEnv, stdinStdio });
@@ -45,7 +43,10 @@ export async function runBufferedSubprocess(
   const stderrChunks: Buffer[] = [];
   child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
   child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
-  if (params.stdinPayload !== undefined && child.stdin !== null) child.stdin.end(params.stdinPayload);
+  if (params.stdinPayload !== undefined && child.stdin !== null) {
+    child.stdin.on('error', () => {});
+    child.stdin.end(params.stdinPayload);
+  }
   let onAbort: (() => void) | undefined;
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
   let terminatedBySignalOrTimeout = false;
@@ -61,13 +62,11 @@ export async function runBufferedSubprocess(
         params.signal.addEventListener('abort', onAbort, { once: true });
       }
       if (params.timeoutMinutes !== undefined) {
-        const ms = params.timeoutMinutes * 60_000;
-        timeoutTimer = setTimeout(() => abortRun(`Command '${params.commandId}' timed out after ${String(params.timeoutMinutes)}m.`), ms);
+        timeoutTimer = setTimeout(() => abortRun(`Command '${params.commandId}' timed out after ${String(params.timeoutMinutes)}m.`), params.timeoutMinutes * 60_000);
       }
       child.once('error', reject);
       child.once('close', (code) => {
-        if (terminatedBySignalOrTimeout) return;
-        resolve({ exitCode: code ?? 1, stdout: Buffer.concat(stdoutChunks).toString('utf8'), stderr: Buffer.concat(stderrChunks).toString('utf8') });
+        if (!terminatedBySignalOrTimeout) resolve({ exitCode: code ?? 1, stdout: Buffer.concat(stdoutChunks).toString('utf8'), stderr: Buffer.concat(stderrChunks).toString('utf8') });
       });
     });
   } finally {

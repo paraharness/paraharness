@@ -47,9 +47,9 @@ export async function runStreamingCheckSubprocess(
             matchEndIndex = match.index + match[0].length;
           }
         }
-        if (matchIndex !== -1 && hasCapturedGraceLines(combinedOutput, matchEndIndex, graceLines)) {
+        if (matchIndex !== -1 && hasCapturedGraceLines(combinedOutput, [matchIndex, matchEndIndex], graceLines)) {
           tripped = true;
-          const excerpt = extractCircuitBreakerExcerpt(combinedOutput, matchIndex, matchEndIndex, graceLines);
+          const excerpt = extractCircuitBreakerExcerpt(combinedOutput, [matchIndex, matchEndIndex], graceLines);
           void terminateProcessGroupWithGrace(child).then(() =>
             resolve(Object.freeze<CheckEvaluationResult>({ ok: false, deficits: Object.freeze([excerpt]) })),
           );
@@ -60,25 +60,21 @@ export async function runStreamingCheckSubprocess(
       if (params.signal !== undefined) {
         onAbort = (): void => {
           tripped = true;
-          void terminateProcessGroupWithGrace(child).then(() =>
-            reject(new Error(`Stream check '${params.checkId}' aborted by AbortSignal.`)),
-          );
+          void terminateProcessGroupWithGrace(child).then(() => reject(new Error(`Stream check '${params.checkId}' aborted by AbortSignal.`)));
         };
         params.signal.addEventListener('abort', onAbort, { once: true });
       }
       if (params.timeoutMinutes !== undefined) {
         timeoutTimer = setTimeout(() => {
           tripped = true;
-          void terminateProcessGroupWithGrace(child).then(() =>
-            reject(new Error(`Stream check '${params.checkId}' timed out after ${String(params.timeoutMinutes)}m.`)),
-          );
+          void terminateProcessGroupWithGrace(child).then(() => reject(new Error(`Stream check '${params.checkId}' timed out after ${String(params.timeoutMinutes)}m.`)));
         }, params.timeoutMinutes * 60_000);
       }
       child.once('error', reject);
       child.once('close', (code) => {
         if (tripped) return;
         if (matchIndex !== -1) {
-          const excerpt = extractCircuitBreakerExcerpt(combinedOutput, matchIndex, matchEndIndex, graceLines);
+          const excerpt = extractCircuitBreakerExcerpt(combinedOutput, [matchIndex, matchEndIndex], graceLines);
           resolve(Object.freeze<CheckEvaluationResult>({ ok: false, deficits: Object.freeze([excerpt]) }));
           return;
         }
