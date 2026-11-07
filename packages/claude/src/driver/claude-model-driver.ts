@@ -18,6 +18,7 @@ import {
   appendClaudeToolResultNotes,
   prepareClaudeForkFrames,
 } from './internal/claude-fork-and-notes.js';
+import { parseClaudeRetryAfterResetAtMs } from './internal/claude-http-transport.js';
 import {
   buildAnthropicMessagesRequest,
   parseAnthropicMessagesResponse,
@@ -69,7 +70,8 @@ export class ClaudeModelDriver implements ModelDriver {
   /**
    * Invokes a single Anthropic `/v1/messages` turn over `req.history` and returns the raw wire frame and canonical projection.
    *
-   * Propagates HTTP `429` rate-limit responses with `{ status: 429, resetAtMs }` so `PoolManager` can fail over across seats.
+   * Validates HTTP status codes before parsing `bodyText` so non-JSON error payloads (`502 Bad Gateway`) never crash
+   * with `SyntaxError`, and propagates HTTP `429` rate-limit responses with `{ status: 429, resetAtMs }`.
    *
    * @param {ModelTurnRequest} req - Turn request payload, wire prefix, and structured output schema.
    *
@@ -88,24 +90,37 @@ export class ClaudeModelDriver implements ModelDriver {
       authSource: auth.authSource,
       signal: req.signal,
     });
+    const resetAtMs =
+      response.resetAtMs ??
+      parseClaudeRetryAfterResetAtMs(
+        response.headers?.['retry-after'] ?? response.headers?.['Retry-After'],
+      );
     if (response.status === 429) {
-      const rateLimitErr = Object.assign(
+      throw Object.assign(
         new Error(
           `Anthropic /v1/messages rate limit (429) on model '${req.modelId}' (seat '${auth.seatId ?? 'default'}').`,
         ),
-        { status: 429, resetAtMs: response.resetAtMs ?? Date.now() + 60_000 },
+        { status: 429, resetAtMs: resetAtMs ?? Date.now() + 60_000 },
       );
-      throw rateLimitErr;
     }
     if (response.status < 200 || response.status >= 300) {
+      const detail =
+        response.bodyText !== undefined && response.bodyText.trim().length > 0
+          ? `: ${response.bodyText.trim()}`
+          : '';
       throw Object.assign(
         new Error(
-          `Anthropic /v1/messages failed with HTTP ${String(response.status)} for model '${req.modelId}'.`,
+          `Anthropic /v1/messages failed with HTTP ${String(response.status)} for model '${req.modelId}'${detail}.`,
         ),
         { status: response.status },
       );
     }
-    return parseAnthropicMessagesResponse(response.body, req);
+    const parsedBody =
+      response.body ??
+      (response.bodyText !== undefined && response.bodyText.trim().length > 0
+        ? (JSON.parse(response.bodyText) as Readonly<Record<string, unknown>>)
+        : Object.freeze({}));
+    return parseAnthropicMessagesResponse(parsedBody, req);
   }
 
   /**

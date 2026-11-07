@@ -1,6 +1,7 @@
 import type { ClaudeHttpRequest } from './claude-http-request.js';
 import type { ClaudeHttpResponse } from './claude-http-response.js';
 import type { ClaudeHttpTransport } from './claude-http-transport.js';
+import { sendClaudeMessagesViaSdk } from './internal/claude-http-transport.js';
 
 /** Default Anthropic Messages API HTTPS endpoint URL. */
 export const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages';
@@ -27,30 +28,9 @@ export const CLAUDE_CREDENTIAL_FILENAMES: readonly string[] = Object.freeze([
   'auth.json',
 ]);
 
-/** Default `fetch`-backed HTTP transport implementation for Anthropic `/v1/messages`. */
+/** Default `@anthropic-ai/sdk`-backed HTTP transport implementation for Anthropic `/v1/messages`. */
 export const defaultClaudeHttpTransport: ClaudeHttpTransport = Object.freeze<ClaudeHttpTransport>({
-  async sendMessagesRequest(request: ClaudeHttpRequest): Promise<ClaudeHttpResponse> {
-    request.signal?.throwIfAborted();
-    const response = await fetch(request.url, {
-      method: 'POST',
-      headers: request.headers,
-      body: JSON.stringify(request.body),
-      signal: request.signal,
-    });
-    const rawText = await response.text();
-    const parsedBody =
-      rawText.trim().length > 0
-        ? (JSON.parse(rawText) as Readonly<Record<string, unknown>>)
-        : Object.freeze({});
-    const retryAfterHeader = response.headers.get('retry-after');
-    const resetAtMs =
-      retryAfterHeader !== null && !Number.isNaN(Number(retryAfterHeader))
-        ? Date.now() + Number(retryAfterHeader) * 1_000
-        : undefined;
-    return Object.freeze<ClaudeHttpResponse>({
-      status: response.status,
-      body: parsedBody,
-      resetAtMs,
-    });
+  sendMessagesRequest(request: ClaudeHttpRequest): Promise<ClaudeHttpResponse> {
+    return sendClaudeMessagesViaSdk(request);
   },
 });

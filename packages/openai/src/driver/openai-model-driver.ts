@@ -17,6 +17,7 @@ import {
   appendOpenAiToolResultNotes,
   prepareOpenAiForkFrames,
 } from './internal/openai-fork-and-notes.js';
+import { parseOpenAiRetryAfterResetAtMs } from './internal/openai-http-transport.js';
 import {
   buildOpenAiResponsesRequest,
   parseOpenAiResponsesOutput,
@@ -69,8 +70,8 @@ export class OpenAiModelDriver implements ModelDriver {
   /**
    * Invokes a single OpenAI `/v1/responses` turn over `req.history` and returns the raw wire frame and canonical projection.
    *
-   * Automatically strips `previous_response_id`, server item IDs, and `encrypted_content` when `req.accountConfig`
-   * fails over to a distinct OpenAI account seat, and propagates HTTP `429` responses with `{ status: 429, resetAtMs }`.
+   * Validates HTTP status codes before parsing `bodyText` so non-JSON error payloads never crash with `SyntaxError`,
+   * automatically strips account-bound state on cross-seat failover, and propagates HTTP `429` with `{ status: 429, resetAtMs }`.
    *
    * @param {ModelTurnRequest} req - Turn request payload, wire prefix, and structured output schema.
    *
@@ -89,23 +90,37 @@ export class OpenAiModelDriver implements ModelDriver {
       authSource: auth.authSource,
       signal: req.signal,
     });
+    const resetAtMs =
+      response.resetAtMs ??
+      parseOpenAiRetryAfterResetAtMs(
+        response.headers?.['retry-after'] ?? response.headers?.['Retry-After'],
+      );
     if (response.status === 429) {
       throw Object.assign(
         new Error(
           `OpenAI /v1/responses rate limit (429) on model '${req.modelId}' (seat '${auth.seatId ?? 'default'}').`,
         ),
-        { status: 429, resetAtMs: response.resetAtMs ?? Date.now() + 60_000 },
+        { status: 429, resetAtMs: resetAtMs ?? Date.now() + 60_000 },
       );
     }
     if (response.status < 200 || response.status >= 300) {
+      const detail =
+        response.bodyText !== undefined && response.bodyText.trim().length > 0
+          ? `: ${response.bodyText.trim()}`
+          : '';
       throw Object.assign(
         new Error(
-          `OpenAI /v1/responses failed with HTTP ${String(response.status)} for model '${req.modelId}'.`,
+          `OpenAI /v1/responses failed with HTTP ${String(response.status)} for model '${req.modelId}'${detail}.`,
         ),
         { status: response.status },
       );
     }
-    return parseOpenAiResponsesOutput(response.body, req, auth.seatId);
+    const parsedBody =
+      response.body ??
+      (response.bodyText !== undefined && response.bodyText.trim().length > 0
+        ? (JSON.parse(response.bodyText) as Readonly<Record<string, unknown>>)
+        : Object.freeze({}));
+    return parseOpenAiResponsesOutput(parsedBody, req, auth.seatId);
   }
 
   /**

@@ -17,4 +17,6 @@ export interface GeminiHttpRequest {
   readonly authSource?: 'cli-oauth' | 'api-key' | 'none';
   /** Optional abort signal cancelling the in-flight HTTP request. */
   readonly signal?: AbortSignal;
+  /** Optional custom `fetch` implementation passed to the underlying `@google/genai` client. */
+  readonly fetch?: typeof globalThis.fetch;
 }
