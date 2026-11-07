@@ -10,11 +10,10 @@ import type {
   StepExecutionContext,
   ToolEffect,
 } from '@harness-dsl/core';
-import { collectMutatedPathsSinceBaseRef } from './internal/enumerate-workspace-files.js';
-import {
-  compileGlobOrExactMatcher,
-  resolveJailedWorktreePath,
-} from './internal/jail-and-glob-helpers.js';
+import { addMutatedPathsFromEffects } from './internal/add-mutated-paths-from-effects.js';
+import { collectMutatedPathsSinceBaseRef } from './internal/collect-mutated-paths-since-base-ref.js';
+import { compileGlobOrExactMatcher } from './internal/compile-glob-or-exact-matcher.js';
+import { resolveJailedWorktreePath } from './internal/resolve-jailed-worktree-path.js';
 
 /**
  * Evaluates an `FsRegexCheckNode` (`fs:regex-check`) strictly over mutated files matching `targetGlobs` (`SPEC.md` §4.3).
@@ -42,7 +41,7 @@ export async function executeFsRegexCheck<THandle = unknown>(
   const deficits: string[] = [];
   for (const relPath of mutatedPaths) {
     if (!isTargetMatch(relPath)) continue;
-    const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, relPath, false);
+    const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, relPath, 'read');
     if (!existsSync(absolutePath)) continue;
     const content = await readFile(absolutePath, 'utf8');
     if (forbidRegex.test(content)) {
@@ -53,32 +52,6 @@ export async function executeFsRegexCheck<THandle = unknown>(
     ok: deficits.length === 0,
     deficits: Object.freeze(deficits),
   });
-}
-
-/**
- * Accumulates normalized file paths from write-mode `FsToolEffect` entries into `mutatedPaths`.
- *
- * Avoids intermediate array spreads when scanning multiple effect slices (`Rule 4.1`).
- *
- * @param {readonly ToolEffect[]} effects      - Slice of tool effects to inspect.
- * @param {Set<string>}           mutatedPaths - Target set receiving normalized POSIX file paths.
- */
-function addMutatedPathsFromEffects(
-  effects: readonly ToolEffect[],
-  mutatedPaths: Set<string>,
-): void {
-  for (const eff of effects) {
-    if (eff.kind !== 'fs:effect') continue;
-    const mode = eff.attributes?.['mode'];
-    if (eff.mutatesScope !== true && mode !== 'write') continue;
-    const paths = eff.attributes?.['paths'];
-    if (!Array.isArray(paths)) continue;
-    for (const relPath of paths) {
-      if (typeof relPath === 'string') {
-        mutatedPaths.add(relPath.replace(/\\/g, '/').replace(/^\.\//, ''));
-      }
-    }
-  }
 }
 
 /**

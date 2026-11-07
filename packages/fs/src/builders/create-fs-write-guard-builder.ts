@@ -1,5 +1,19 @@
 import type { FsWriteGuardNode } from '@harness-dsl/core';
-import type { FsWriteGuardOptions } from './fs-write-guard-options.js';
+
+/**
+ * Configuration options for `fs.writeGuard(options)`.
+ *
+ * Defines glob patterns that deny write mutations (`denyGlobs`), optional exemptions
+ * (`allowGlobs`), and optional base-ref existence filtering (`onlyExistingAtBaseRef`).
+ */
+export interface FsWriteGuardOptions {
+  /** Glob patterns denying write mutations. */
+  readonly denyGlobs: readonly string[];
+  /** Optional glob patterns exempted from `denyGlobs`. */
+  readonly allowGlobs?: readonly string[];
+  /** When `true`, blocks only paths that already existed at `handle.baseRef`. */
+  readonly onlyExistingAtBaseRef?: boolean;
+}
 
 /**
  * Compiles a passive `FsWriteGuardNode` (`fs:write-guard`) for `fs.writeGuard(options)`.
@@ -10,6 +24,8 @@ import type { FsWriteGuardOptions } from './fs-write-guard-options.js';
  * @param {FsWriteGuardOptions} options - Write guard deny/allow glob and baseRef options.
  *
  * @returns {FsWriteGuardNode} Deeply frozen `FsWriteGuardNode` AST descriptor.
+ *
+ * @throws {Error} If `options.denyGlobs` is empty.
  */
 export function createFsWriteGuardBuilder(options: FsWriteGuardOptions): FsWriteGuardNode {
   if (!Array.isArray(options.denyGlobs) || options.denyGlobs.length === 0) {

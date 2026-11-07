@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import type {
   FsGlobToolNode,
   FsGrepToolNode,
@@ -8,16 +7,15 @@ import type {
   ToolEffect,
   ToolExecutionResult,
 } from '@harness-dsl/core';
-import { createFsReadEffect } from './internal/create-fs-tool-effects.js';
+import { createFsReadEffect } from './internal/create-fs-read-effect.js';
+import { enumerateWorkspaceFilesSync } from './internal/enumerate-workspace-files-sync.js';
+import { extractWorktreeRootAndBaseRef } from './internal/extract-worktree-root-and-base-ref.js';
+import { readFsToolFile } from './internal/fs-coding-tool-drivers.js';
 import {
-  enumerateWorkspaceFiles,
-  enumerateWorkspaceFilesSync,
-} from './internal/enumerate-workspace-files.js';
-import {
-  extractWorktreeRootAndBaseRef,
-  resolveJailedWorktreePath,
-} from './internal/jail-and-glob-helpers.js';
-import { grepWorkspaceFiles } from './internal/tool-driver-io-helpers.js';
+  globFsToolFiles,
+  grepFsToolFiles,
+} from './internal/fs-search-tool-drivers.js';
+import { resolveJailedWorktreePath } from './internal/resolve-jailed-worktree-path.js';
 
 /**
  * Creates the workspace-jailed `ToolDriver` for `FsReadToolNode` (`fs:read` / `read_file`).
@@ -36,14 +34,11 @@ export function createFsReadToolDriver<THandle = unknown>(): ToolDriver<
   return Object.freeze<ToolDriver<FsReadToolNode<THandle>, THandle>>({
     describeEffects(_node: FsReadToolNode<THandle>, args: unknown, scopeHandle: THandle): readonly ToolEffect[] {
       const rawPath = (args as { readonly path?: string } | null | undefined)?.path ?? '';
-      const { normalizedRelPath } = resolveJailedWorktreePath(scopeHandle, rawPath, false);
+      const { normalizedRelPath } = resolveJailedWorktreePath(scopeHandle, rawPath, 'read');
       return Object.freeze([createFsReadEffect([normalizedRelPath])]);
     },
-    async execute(node: FsReadToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
-      const parsed = node.inputSchema.parse(args) as { readonly path: string };
-      const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, parsed.path, false);
-      const content = await readFile(absolutePath, 'utf8');
-      return Object.freeze<ToolExecutionResult>({ content });
+    execute(node: FsReadToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
+      return readFsToolFile(node, args, ctx);
     },
   });
 }
@@ -68,11 +63,8 @@ export function createFsGlobToolDriver<THandle = unknown>(): ToolDriver<
       const { rootPath } = extractWorktreeRootAndBaseRef(scopeHandle);
       return Object.freeze([createFsReadEffect(enumerateWorkspaceFilesSync(rootPath, pattern))]);
     },
-    async execute(node: FsGlobToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
-      const parsed = node.inputSchema.parse(args) as { readonly pattern: string };
-      const { rootPath } = extractWorktreeRootAndBaseRef(ctx.scopeHandle);
-      const matched = await enumerateWorkspaceFiles(rootPath, parsed.pattern);
-      return Object.freeze<ToolExecutionResult>({ content: matched.join('\n') });
+    execute(node: FsGlobToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
+      return globFsToolFiles(node, args, ctx);
     },
   });
 }
@@ -97,10 +89,8 @@ export function createFsGrepToolDriver<THandle = unknown>(): ToolDriver<
       const { rootPath } = extractWorktreeRootAndBaseRef(scopeHandle);
       return Object.freeze([createFsReadEffect(enumerateWorkspaceFilesSync(rootPath, glob))]);
     },
-    async execute(node: FsGrepToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
-      const parsed = node.inputSchema.parse(args) as { readonly pattern: string; readonly glob?: string; readonly flags?: string };
-      const content = await grepWorkspaceFiles(ctx.scopeHandle, parsed);
-      return Object.freeze<ToolExecutionResult>({ content });
+    execute(node: FsGrepToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
+      return grepFsToolFiles(node, args, ctx);
     },
   });
 }

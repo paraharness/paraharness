@@ -29,24 +29,30 @@ export { createFsCodingTools } from './builders/create-fs-coding-tools.js';
 export { createFsGlobMatcherBuilder } from './builders/create-fs-glob-matcher-builder.js';
 export { createFsGlobSourceBuilder } from './builders/create-fs-glob-source-builder.js';
 export { createFsInPartitionPredicate } from './builders/create-fs-in-partition-predicate.js';
-export { createFsJsonlLessonStoreBuilder } from './builders/create-fs-jsonl-lesson-store-builder.js';
+export {
+  createFsJsonlLessonStoreBuilder,
+  type FsJsonlLessonStoreOptions,
+} from './builders/create-fs-jsonl-lesson-store-builder.js';
 export { createFsMaxFilesMutatedBuilder } from './builders/create-fs-max-files-mutated-builder.js';
 export { createFsPartitionMap } from './builders/create-fs-partition-map.js';
 export { createFsProtectGuardBuilder } from './builders/create-fs-protect-guard-builder.js';
 export { createFsReadOnlyGuardBuilder } from './builders/create-fs-read-only-guard-builder.js';
 export { createFsReadOnlyTools } from './builders/create-fs-read-only-tools.js';
-export { createFsRegexCheckBuilder } from './builders/create-fs-regex-check-builder.js';
+export {
+  createFsRegexCheckBuilder,
+  type FsRegexCheckOptions,
+} from './builders/create-fs-regex-check-builder.js';
 export { createFsRequireReadBeforeWriteGuardBuilder } from './builders/create-fs-require-read-before-write-guard-builder.js';
 export { createFsScopedWriteGuardBuilder } from './builders/create-fs-scoped-write-guard-builder.js';
 export { createFsSecretLiteralsGuardBuilder } from './builders/create-fs-secret-literals-guard-builder.js';
 export { createFsTelemetryBuilder } from './builders/create-fs-telemetry-builder.js';
 export { createFsTextSourceBuilder } from './builders/create-fs-text-source-builder.js';
-export { createFsWriteGuardBuilder } from './builders/create-fs-write-guard-builder.js';
-export type { FsJsonlLessonStoreOptions } from './builders/fs-jsonl-lesson-store-options.js';
+export {
+  createFsWriteGuardBuilder,
+  type FsWriteGuardOptions,
+} from './builders/create-fs-write-guard-builder.js';
 export type { FsNamespace } from './builders/fs-namespace-contract.js';
 export { fs } from './builders/fs-namespace.js';
-export type { FsRegexCheckOptions } from './builders/fs-regex-check-options.js';
-export type { FsWriteGuardOptions } from './builders/fs-write-guard-options.js';
 export { createFsExecutors } from './executors/create-fs-executors.js';
 export {
   collectFsTelemetry,
@@ -84,4 +90,9 @@ export {
   createFsEditToolDriver,
   createFsWriteToolDriver,
 } from './executors/fs-write-tool-drivers.js';
-export { FsJsonlLessonStore } from './stores/fs-jsonl-lesson-store.js';
+export {
+  type FsAdmitLessonParams,
+  FsJsonlLessonStore,
+  type FsQueryCandidatesParams,
+  type FsRecordOutcomeParams,
+} from './stores/fs-jsonl-lesson-store.js';

@@ -8,41 +8,13 @@ import type {
   ResolvedSourceArtifact,
 } from '@harness-dsl/core';
 import picomatch from 'picomatch';
+import { buildMarkdownDomainItem } from '../parser/internal/build-markdown-domain-item.js';
 import {
   extractMarkdownHeadingSection,
   parseMarkdownFrontmatter,
 } from '../parser/internal/parse-markdown-frontmatter.js';
-import {
-  buildMarkdownDomainItem,
-  resolveMarkdownFiles,
-} from '../parser/internal/resolve-markdown-files.js';
-
-/**
- * Infers the effective loader `kind` from `node.kind` or `node.id` prefix.
- *
- * Ensures deterministic dispatch even if a `MarkdownFrontmatterSourceNode` was constructed with only `id`.
- *
- * @param {MarkdownFrontmatterSourceNode<unknown>} node - Frontmatter source AST node.
- *
- * @returns {NonNullable<MarkdownFrontmatterSourceNode<unknown>['kind']>} Resolved loader kind discriminant.
- */
-function resolveFrontmatterLoaderKind(
-  node: MarkdownFrontmatterSourceNode<unknown>,
-): NonNullable<MarkdownFrontmatterSourceNode<unknown>['kind']> {
-  if (node.kind !== undefined) return node.kind;
-  const prefixes: ReadonlyArray<NonNullable<MarkdownFrontmatterSourceNode<unknown>['kind']>> = [
-    'global-rules',
-    'scoped-rules',
-    'scoped-rule',
-    'skills',
-    'skill',
-    'frontmatter',
-  ];
-  for (const candidate of prefixes) {
-    if (node.id.startsWith(`md:${candidate}:`)) return candidate;
-  }
-  return 'frontmatter';
-}
+import { resolveMarkdownFiles } from '../parser/internal/resolve-markdown-files.js';
+import { resolveFrontmatterLoaderKind } from './internal/resolve-frontmatter-loader-kind.js';
 
 /**
  * Executes a `MarkdownFrontmatterSourceNode<T>` against the immutable host repository root (`SPEC.md` §3.4, §4.5).
@@ -80,7 +52,7 @@ export async function executeMarkdownFrontmatterSource<T = unknown>(
     const raw = await readFile(resolve(hostRoot, relPath), 'utf8');
     hash.update(`${relPath}\0${raw}\0`, 'utf8');
     const parsed = parseMarkdownFrontmatter(raw);
-    items.push(buildMarkdownDomainItem(kind, relPath, parsed));
+    items.push(buildMarkdownDomainItem({ kind, relPath, parsed }));
   }
   const content = (isCollectionKind ? Object.freeze(items) : items[0]) as T;
   return Object.freeze<ResolvedSourceArtifact<T>>({

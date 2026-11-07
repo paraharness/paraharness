@@ -7,10 +7,8 @@ import type {
   ResolvedSourceArtifact,
 } from '@harness-dsl/core';
 import { enumerateWorkspaceFiles } from './internal/enumerate-workspace-files.js';
-import {
-  extractWorktreeRootAndBaseRef,
-  resolveJailedWorktreePath,
-} from './internal/jail-and-glob-helpers.js';
+import { extractWorktreeRootAndBaseRef } from './internal/extract-worktree-root-and-base-ref.js';
+import { resolveJailedWorktreePath } from './internal/resolve-jailed-worktree-path.js';
 
 /**
  * Loads UTF-8 text and computes a SHA-256 hex digest for an `FsTextSourceNode` (`fs:text-source`).
@@ -29,7 +27,7 @@ export async function executeFsTextSource(
   _input: void,
   ctx: ResolutionContext,
 ): Promise<ResolvedSourceArtifact<string>> {
-  const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, node.path, false);
+  const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, node.path, 'read');
   const content = await readFile(absolutePath, 'utf8');
   const digest = createHash('sha256').update(content, 'utf8').digest('hex');
   return Object.freeze<ResolvedSourceArtifact<string>>({
@@ -62,7 +60,7 @@ export async function executeFsGlobSource(
   const entries: Array<{ readonly path: string; readonly content: string }> = [];
   const hash = createHash('sha256');
   for (const relPath of matchedRelPaths) {
-    const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, relPath, false);
+    const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, relPath, 'read');
     const content = await readFile(absolutePath, 'utf8');
     entries.push(Object.freeze({ path: relPath, content }));
     hash.update(`${relPath}\0${content}\0`, 'utf8');

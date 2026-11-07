@@ -27,9 +27,9 @@ import type {
   ScopePredicate,
   TopologyNode,
 } from '@harness-dsl/core';
-import type { FsJsonlLessonStoreOptions } from './fs-jsonl-lesson-store-options.js';
-import type { FsRegexCheckOptions } from './fs-regex-check-options.js';
-import type { FsWriteGuardOptions } from './fs-write-guard-options.js';
+import type { FsJsonlLessonStoreOptions } from './create-fs-jsonl-lesson-store-builder.js';
+import type { FsRegexCheckOptions } from './create-fs-regex-check-builder.js';
+import type { FsWriteGuardOptions } from './create-fs-write-guard-builder.js';
 
 /**
  * Declarative builder namespace (`fs.*`) for `@harness-dsl/fs` sources, partition maps, guards, tools, and stores.

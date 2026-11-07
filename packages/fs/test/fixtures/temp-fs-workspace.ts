@@ -1,42 +1,23 @@
-import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
+import { initGitRepositoryWithBaseCommit } from './internal/init-git-repository-with-base-commit.js';
 import type { TempFsWorkspaceHandle } from './temp-fs-workspace-handle.js';
-import type { TempFsWorkspaceOptions } from './temp-fs-workspace-options.js';
 
 /**
- * Initializes a git repository and commits all current files inside `rootDir`.
+ * Options for initializing a temporary filesystem workspace in tests.
  *
- * Configures a local test author identity and disables GPG signing so commits succeed in any environment.
- *
- * @param {string} rootDir - Canonical workspace directory path.
- *
- * @returns {Promise<string>} Resolved `HEAD` commit SHA.
+ * Configures initial relative file contents, optional symlinks, and optional git repository initialization.
  */
-async function initGitRepositoryWithBaseCommit(rootDir: string): Promise<string> {
-  const execFileAsync = promisify(execFile);
-  await execFileAsync('git', ['init', '-q'], { cwd: rootDir });
-  await execFileAsync('git', ['add', '-A'], { cwd: rootDir });
-  await execFileAsync(
-    'git',
-    [
-      '-c',
-      'user.name=HarnessTest',
-      '-c',
-      'user.email=test@harness.local',
-      '-c',
-      'commit.gpgsign=false',
-      'commit',
-      '-qm',
-      'base',
-      '--allow-empty',
-    ],
-    { cwd: rootDir },
-  );
-  const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: rootDir });
-  return stdout.trim();
+export interface TempFsWorkspaceOptions {
+  /** Map of relative POSIX file paths to initial UTF-8 string contents. */
+  readonly files?: Readonly<Record<string, string>>;
+
+  /** Map of relative symlink paths to their target paths. */
+  readonly symlinks?: Readonly<Record<string, string>>;
+
+  /** Whether to initialize a git repository and create an initial baseline commit (`false` default). */
+  readonly initGit?: boolean;
 }
 
 /**
@@ -65,9 +46,11 @@ export async function createTempFsWorkspace(
     await mkdir(dirname(absLink), { recursive: true });
     await symlink(targetPath, absLink);
   }
-  const baseRef = options?.initGit === true ? await initGitRepositoryWithBaseCommit(rootDir) : 'HEAD';
+  const baseRef =
+    options?.initGit === true ? await initGitRepositoryWithBaseCommit(rootDir) : 'HEAD';
   return Object.freeze<TempFsWorkspaceHandle>({
     rootDir,
+    worktreePath: rootDir,
     baseRef,
     async cleanup(): Promise<void> {
       await rm(rootDir, { recursive: true, force: true });

@@ -7,8 +7,12 @@ import type {
   PolicyGuardEvaluationResult,
   StepExecutionContext,
 } from '@harness-dsl/core';
-import { projectViolatedWriteEffects } from './internal/guard-evaluation-helpers.js';
-import { compileGlobOrExactMatcher } from './internal/jail-and-glob-helpers.js';
+import {
+  evaluateFsAllowOnlyPaths,
+  evaluateFsProtectPaths,
+  evaluateFsReadOnlyPaths,
+} from './internal/evaluate-fs-allow-and-protect-guards.js';
+import { evaluateFsBoundaryPaths } from './internal/evaluate-fs-write-and-boundary-guards.js';
 
 /**
  * Evaluates an `FsBoundaryGuardNode` (`fs:boundary-guard`) against proposed tool effects (`SPEC.md` §4.3).
@@ -27,19 +31,7 @@ export function evaluateFsBoundaryGuard(
   input: PolicyGuardEvaluationInput,
   _ctx: StepExecutionContext<unknown>,
 ): PolicyGuardEvaluationResult {
-  const boundaryGlobs: string[] = [];
-  for (const partitionKey of Object.keys(node.partitionMap.mapping)) {
-    const entry = node.partitionMap.mapping[partitionKey];
-    if (entry !== undefined) {
-      for (const glob of entry.boundaryGlobs) boundaryGlobs.push(glob);
-    }
-  }
-  const isBoundaryMatch = compileGlobOrExactMatcher(boundaryGlobs);
-  return projectViolatedWriteEffects(
-    input,
-    (relPath) => isBoundaryMatch(relPath),
-    (paths) => `Protected partition boundary write denied on [${paths.join(', ')}]`,
-  );
+  return evaluateFsBoundaryPaths(node, input);
 }
 
 /**
@@ -58,12 +50,7 @@ export function evaluateFsProtectGuard(
   input: PolicyGuardEvaluationInput,
   _ctx: StepExecutionContext<unknown>,
 ): PolicyGuardEvaluationResult {
-  const isProtectedMatch = compileGlobOrExactMatcher(node.globs);
-  return projectViolatedWriteEffects(
-    input,
-    (relPath) => isProtectedMatch(relPath),
-    (paths) => `Protected file write denied on [${paths.join(', ')}]`,
-  );
+  return evaluateFsProtectPaths(node, input);
 }
 
 /**
@@ -82,11 +69,7 @@ export function evaluateFsReadOnlyGuard(
   input: PolicyGuardEvaluationInput,
   _ctx: StepExecutionContext<unknown>,
 ): PolicyGuardEvaluationResult {
-  return projectViolatedWriteEffects(
-    input,
-    () => true,
-    (paths) => `Read-only policy violation: write denied on [${paths.join(', ')}]`,
-  );
+  return evaluateFsReadOnlyPaths(input);
 }
 
 /**
@@ -105,10 +88,5 @@ export function evaluateFsAllowOnlyGuard(
   input: PolicyGuardEvaluationInput,
   _ctx: StepExecutionContext<unknown>,
 ): PolicyGuardEvaluationResult {
-  const isAllowedMatch = compileGlobOrExactMatcher(node.globs);
-  return projectViolatedWriteEffects(
-    input,
-    (relPath) => !isAllowedMatch(relPath),
-    (paths) => `Write outside allowOnly globs denied on [${paths.join(', ')}]`,
-  );
+  return evaluateFsAllowOnlyPaths(node, input);
 }

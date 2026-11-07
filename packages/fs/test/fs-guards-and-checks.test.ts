@@ -144,17 +144,17 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       'packages/api/src/internal/handler.ts',
       'packages/api/src/index.ts',
     ]);
-    const blockedRes = evaluateFsBoundaryGuard(boundaryGuard, makeGuardInput([mixedEffect]), ctx);
-    expect(blockedRes.allowed).toBe(false);
-    expect(blockedRes.violatedEffects).toEqual([makeWriteEffect(['packages/api/src/index.ts'])]);
+    const blockedVerdict = evaluateFsBoundaryGuard(boundaryGuard, makeGuardInput([mixedEffect]), ctx);
+    expect(blockedVerdict.allowed).toBe(false);
+    expect(blockedVerdict.violatedEffects).toEqual([makeWriteEffect(['packages/api/src/index.ts'])]);
 
     const lease = fs.allowWriteGlobs(['packages/api/src/index.ts']);
-    const allowedRes = evaluateFsBoundaryGuard(
+    const allowedVerdict = evaluateFsBoundaryGuard(
       boundaryGuard,
       makeGuardInput([mixedEffect], [lease]),
       ctx,
     );
-    expect(allowedRes.allowed).toBe(true);
+    expect(allowedVerdict.allowed).toBe(true);
   });
 
   it('enforces fs.writeGuard with onlyExistingAtBaseRef and matches bracketed paths via fs.allowWriteGlobs', () => {
@@ -187,7 +187,6 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
 
     const bracketLease = fs.allowWriteGlobs(['app/users/[id]/page.test.tsx']);
     const firstMatcher = bracketLease.grantedMatchers[0];
-    expect(firstMatcher).toBeDefined();
     if (firstMatcher === undefined) throw new Error('Expected granted matcher');
     expect(firstMatcher.id).toBe('fs:match-globs:write:app/users/[id]/page.test.tsx');
     expect(
@@ -220,21 +219,21 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
     });
     const ctx = createStepContext('/tmp/ws');
 
-    const protectRes = evaluateFsProtectGuard(
+    const protectVerdict = evaluateFsProtectGuard(
       fs.protect(['.env', '.harness/**']),
       makeGuardInput([makeWriteEffect(['.harness/config.json'])]),
       ctx,
     );
-    expect(protectRes.allowed).toBe(false);
+    expect(protectVerdict.allowed).toBe(false);
 
-    const readOnlyRes = evaluateFsReadOnlyGuard(
+    const readOnlyVerdict = evaluateFsReadOnlyGuard(
       fs.readOnly(),
       makeGuardInput([makeWriteEffect(['packages/api/a.ts'])]),
       ctx,
     );
-    expect(readOnlyRes.allowed).toBe(false);
+    expect(readOnlyVerdict.allowed).toBe(false);
 
-    const allowOnlyRes = evaluateFsAllowOnlyGuard(
+    const allowOnlyVerdict = evaluateFsAllowOnlyGuard(
       fs.allowOnly(['packages/{api,web}/**', '!packages/api/internal/**']),
       makeGuardInput([
         makeWriteEffect([
@@ -245,8 +244,8 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       ]),
       ctx,
     );
-    expect(allowOnlyRes.allowed).toBe(false);
-    expect(allowOnlyRes.violatedEffects).toEqual([
+    expect(allowOnlyVerdict.allowed).toBe(false);
+    expect(allowOnlyVerdict.violatedEffects).toEqual([
       makeWriteEffect(['packages/db/schema.ts', 'packages/api/internal/secret.ts']),
     ]);
 
@@ -282,12 +281,12 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
     const secretEffect = makeWriteEffect(['packages/api/config.ts'], [], {
       'packages/api/config.ts': `export const token = "${fakeSecretToken}";`,
     });
-    const secretRes = evaluateFsSecretLiteralsGuard(
+    const secretVerdict = evaluateFsSecretLiteralsGuard(
       secretGuard,
       makeGuardInput([secretEffect]),
       ctx,
     );
-    expect(secretRes.allowed).toBe(false);
+    expect(secretVerdict.allowed).toBe(false);
   });
 
   it('evaluates fs.maxFilesMutated, fs.telemetry, and fs.regexCheck strictly over mutated files', async () => {
@@ -304,7 +303,7 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       makeReadEffect(['packages/api/untouched.ts']),
       makeWriteEffect(['packages/api/mutated-clean.ts']),
     ];
-    const cleanCheckCtx = createStepContext(ws.rootDir, effects);
+    const cleanCheckCtx = createStepContext(ws.worktreePath, effects);
 
     const tripwire = fs.maxFilesMutated(1);
     const notTripped = evaluateFsQuotaTripwire(
@@ -321,7 +320,7 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       ...effects,
       makeWriteEffect(['packages/api/mutated-dirty.ts']),
     ];
-    const dirtyCheckCtx = createStepContext(ws.rootDir, twoMutatedEffects);
+    const dirtyCheckCtx = createStepContext(ws.worktreePath, twoMutatedEffects);
     const tripped = evaluateFsQuotaTripwire(
       tripwire,
       Object.freeze<QuotaTripwireEvaluationInput>({
@@ -367,7 +366,12 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
       'utf8',
     );
 
-    const gitEmptyEffectsCtx = createStepContext(gitWs.rootDir, [], ['api'], gitWs.baseRef);
+    const gitEmptyEffectsCtx = createStepContext(
+      gitWs.worktreePath,
+      [],
+      ['api'],
+      gitWs.baseRef,
+    );
     const gitDiffOnlyResult = await executeFsRegexCheck(checkNode, undefined, gitEmptyEffectsCtx);
     expect(gitDiffOnlyResult.ok).toBe(false);
     expect(gitDiffOnlyResult.deficits).toEqual([
@@ -375,7 +379,7 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
     ]);
 
     const gitCombinedCtx = createStepContext(
-      gitWs.rootDir,
+      gitWs.worktreePath,
       [makeWriteEffect(['packages/api/mutated-clean.ts'])],
       ['api'],
       gitWs.baseRef,

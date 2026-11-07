@@ -1,4 +1,5 @@
-import { z, type FsTelemetryCollectorNode } from '@harness-dsl/core';
+import type { FsTelemetryCollectorNode } from '@harness-dsl/core';
+import { FsTelemetryMetricsSchema } from './internal/fs-tool-input.schema.js';
 
 /**
  * Compiles a passive `FsTelemetryCollectorNode` (`fs:telemetry`) for `fs.telemetry()`.
@@ -12,9 +13,6 @@ export function createFsTelemetryBuilder(): FsTelemetryCollectorNode {
   return Object.freeze<FsTelemetryCollectorNode>({
     type: 'fs:telemetry',
     id: 'fs:telemetry',
-    schema: z.object({
-      filesRead: z.array(z.string()).readonly(),
-      filesMutated: z.array(z.string()).readonly(),
-    }),
+    schema: FsTelemetryMetricsSchema,
   });
 }

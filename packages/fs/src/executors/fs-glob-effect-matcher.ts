@@ -3,7 +3,7 @@ import type {
   StepExecutionContext,
   ToolEffect,
 } from '@harness-dsl/core';
-import { compileGlobOrExactMatcher } from './internal/jail-and-glob-helpers.js';
+import { compileGlobOrExactMatcher } from './internal/compile-glob-or-exact-matcher.js';
 
 /**
  * Evaluates an `FsGlobMatcherNode` (`fs:match-globs`) against a `ToolEffect` (`SPEC.md` §3.5 & §4.3).

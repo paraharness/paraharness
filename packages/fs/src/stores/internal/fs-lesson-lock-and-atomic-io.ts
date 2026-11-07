@@ -20,7 +20,7 @@ import type { FsLessonStatsEntry } from './fs-lesson-stats-entry.js';
  *
  * @returns {Promise<TResult>} Result resolved by `work`.
  */
-export function withNonBlockingAdvisoryFileLock<TResult>(
+export function withLessonFileLock<TResult>(
   lockFilePath: string,
   work: () => Promise<TResult>,
   options?: FileLockOptions,

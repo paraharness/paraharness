@@ -1,11 +1,16 @@
-import type {
-  FsGlobToolNode,
-  FsGrepToolNode,
-  FsReadToolNode,
-  MaybeBuilder,
-  NodeRunnerNode,
+import {
+  extractAST,
+  type FsGlobToolNode,
+  type FsGrepToolNode,
+  type FsReadToolNode,
+  type MaybeBuilder,
+  type NodeRunnerNode,
 } from '@harness-dsl/core';
-import { createFsCodingTools } from './create-fs-coding-tools.js';
+import {
+  buildFsGlobToolNode,
+  buildFsGrepToolNode,
+  buildFsReadToolNode,
+} from './internal/build-fs-tool-nodes.js';
 
 /**
  * Compiles the 3-tool workspace-jailed read-only bundle (`fs.readOnlyTools(runner)`).
@@ -22,6 +27,10 @@ import { createFsCodingTools } from './create-fs-coding-tools.js';
 export function createFsReadOnlyTools<THandle = unknown>(
   runner: MaybeBuilder<NodeRunnerNode>,
 ): readonly [FsReadToolNode<THandle>, FsGlobToolNode<THandle>, FsGrepToolNode<THandle>] {
-  const [readTool, , , globTool, grepTool] = createFsCodingTools<THandle>(runner);
-  return Object.freeze([readTool, globTool, grepTool]);
+  const runnerNode = extractAST(runner);
+  return Object.freeze([
+    buildFsReadToolNode<THandle>(runnerNode),
+    buildFsGlobToolNode<THandle>(runnerNode),
+    buildFsGrepToolNode<THandle>(runnerNode),
+  ]);
 }

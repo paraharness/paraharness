@@ -87,7 +87,7 @@ describe('@harness-dsl/fs tools and sources', () => {
     ]);
     for (const tool of coding) {
       expect(tool.effectTracking).toBe('declared');
-      expect(fsExecutors.tools?.[tool.type]).toBeDefined();
+      expect(typeof fsExecutors.tools?.[tool.type]?.execute).toBe('function');
     }
 
     const readOnly = fs.readOnlyTools(dummyRunner);
@@ -103,8 +103,9 @@ describe('@harness-dsl/fs tools and sources', () => {
       },
     });
     workspaces.push(ws);
+    expect(ws.worktreePath).toBe(ws.rootDir);
     const [readNode, , , globNode, grepNode] = fs.codingTools(dummyRunner);
-    const ctx = createStepContext(ws.rootDir);
+    const ctx = createStepContext(ws.worktreePath);
 
     const readDriver = createFsReadToolDriver();
     const readEffects = (readDriver.describeEffects?.(
@@ -124,22 +125,22 @@ describe('@harness-dsl/fs tools and sources', () => {
         },
       },
     ]);
-    const readRes = await readDriver.execute(readNode, { path: 'src/alpha.ts' }, ctx);
-    expect(readRes.content).toBe('export const ALPHA = 1;\nexport const BETA = 2;\n');
+    const readOut = await readDriver.execute(readNode, { path: 'src/alpha.ts' }, ctx);
+    expect(readOut.content).toBe('export const ALPHA = 1;\nexport const BETA = 2;\n');
 
     const globDriver = createFsGlobToolDriver();
-    const globRes = await globDriver.execute(
+    const globOut = await globDriver.execute(
       globNode,
       { pattern: 'src/{nested,other}/*.ts' },
       ctx,
     );
-    expect(globRes.content).toBe('src/nested/gamma.ts');
-    const allSrcGlobRes = await globDriver.execute(globNode, { pattern: 'src/**/*.ts' }, ctx);
-    expect(allSrcGlobRes.content).toBe('src/alpha.ts\nsrc/nested/gamma.ts');
+    expect(globOut.content).toBe('src/nested/gamma.ts');
+    const allSrcGlobOut = await globDriver.execute(globNode, { pattern: 'src/**/*.ts' }, ctx);
+    expect(allSrcGlobOut.content).toBe('src/alpha.ts\nsrc/nested/gamma.ts');
 
     const grepDriver = createFsGrepToolDriver();
-    const grepRes = await grepDriver.execute(grepNode, { pattern: 'needle' }, ctx);
-    expect(grepRes.content).toBe('src/nested/gamma.ts:1:export const GAMMA = "needle";');
+    const grepOut = await grepDriver.execute(grepNode, { pattern: 'needle' }, ctx);
+    expect(grepOut.content).toBe('src/nested/gamma.ts:1:export const GAMMA = "needle";');
   });
 
   it('executes write_file and edit_file and populates existingPathsAtBaseRef and proposedContent', async () => {
@@ -151,7 +152,7 @@ describe('@harness-dsl/fs tools and sources', () => {
     });
     workspaces.push(ws);
     const [, editNode, writeNode] = fs.codingTools(dummyRunner);
-    const ctx = createStepContext(ws.rootDir, ws.baseRef);
+    const ctx = createStepContext(ws.worktreePath, ws.baseRef);
 
     const editDriver = createFsEditToolDriver();
     const editEffects = (editDriver.describeEffects?.(
@@ -178,7 +179,7 @@ describe('@harness-dsl/fs tools and sources', () => {
       },
     ]);
 
-    const editRes = await editDriver.execute(
+    const editOut = await editDriver.execute(
       editNode,
       {
         path: 'src/existing.ts',
@@ -187,7 +188,7 @@ describe('@harness-dsl/fs tools and sources', () => {
       },
       ctx,
     );
-    expect(editRes.content).toContain('Edited src/existing.ts');
+    expect(editOut.content).toContain('Edited src/existing.ts');
     expect(await readFile(join(ws.rootDir, 'src/existing.ts'), 'utf8')).toBe(
       'export const count = 42;\n',
     );
@@ -276,7 +277,7 @@ describe('@harness-dsl/fs tools and sources', () => {
     workspaces.push(ws);
     await symlink(ws.rootDir, join(ws.rootDir, 'linked-target/cycle-root'));
     const [readNode, editNode, writeNode, globNode, grepNode] = fs.codingTools(dummyRunner);
-    const ctx = createStepContext(ws.rootDir);
+    const ctx = createStepContext(ws.worktreePath);
 
     const readDriver = createFsReadToolDriver();
     await expect(readDriver.execute(readNode, { path: '../outside.txt' }, ctx)).rejects.toThrow(
@@ -304,20 +305,20 @@ describe('@harness-dsl/fs tools and sources', () => {
     expect(dotDotRead.content).toBe('VALID_DOTDOT_NAME=1\n');
 
     const globDriver = createFsGlobToolDriver();
-    const linkedGlobRes = await globDriver.execute(
+    const linkedGlobOut = await globDriver.execute(
       globNode,
       { pattern: 'src/linked-dir/**/*.ts' },
       ctx,
     );
-    expect(linkedGlobRes.content).toBe('src/linked-dir/inside.ts');
+    expect(linkedGlobOut.content).toBe('src/linked-dir/inside.ts');
 
     const grepDriver = createFsGrepToolDriver();
-    const linkedGrepRes = await grepDriver.execute(
+    const linkedGrepOut = await grepDriver.execute(
       grepNode,
       { pattern: 'linked-needle', glob: 'src/linked-dir/**/*.ts' },
       ctx,
     );
-    expect(linkedGrepRes.content).toBe(
+    expect(linkedGrepOut.content).toBe(
       'src/linked-dir/inside.ts:1:export const LINKED = "linked-needle";',
     );
 
@@ -365,7 +366,7 @@ describe('@harness-dsl/fs tools and sources', () => {
 
     const worktreeCtx: ResolutionContext = Object.freeze({
       ...hostCtx,
-      scopeHandle: Object.freeze({ worktreePath: ws.rootDir }),
+      scopeHandle: Object.freeze({ worktreePath: ws.worktreePath }),
     });
     const worktreeSpec = await executeFsTextSource(fs.text('SPEC_DOC.md'), undefined, worktreeCtx);
     expect(worktreeSpec.content).toBe('Worktree version of spec');

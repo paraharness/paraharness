@@ -6,16 +6,12 @@ import type {
   ToolEffect,
   ToolExecutionResult,
 } from '@harness-dsl/core';
-import { createFsWriteEffect } from './internal/create-fs-tool-effects.js';
+import { describeFsEditEffects } from './internal/describe-fs-edit-effects.js';
+import { describeFsWriteEffects } from './internal/describe-fs-write-effects.js';
 import {
-  checkPathsExistAtBaseRef,
-  resolveJailedWorktreePath,
-} from './internal/jail-and-glob-helpers.js';
-import {
-  describeFsEditEffects,
-  executeFsEditOperation,
-  executeFsWriteOperation,
-} from './internal/tool-driver-io-helpers.js';
+  editFsToolFile,
+  writeFsToolFile,
+} from './internal/fs-coding-tool-drivers.js';
 
 /**
  * Creates the workspace-jailed `ToolDriver` for `FsEditToolNode` (`fs:edit` / `edit_file`).
@@ -35,9 +31,8 @@ export function createFsEditToolDriver<THandle = unknown>(): ToolDriver<
     describeEffects(_node: FsEditToolNode<THandle>, args: unknown, scopeHandle: THandle): readonly ToolEffect[] {
       return describeFsEditEffects(scopeHandle, args);
     },
-    async execute(node: FsEditToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
-      const parsed = node.inputSchema.parse(args) as { readonly path: string; readonly oldString: string; readonly newString: string };
-      return executeFsEditOperation(ctx.scopeHandle, parsed);
+    execute(node: FsEditToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
+      return editFsToolFile(node, args, ctx);
     },
   });
 }
@@ -58,18 +53,10 @@ export function createFsWriteToolDriver<THandle = unknown>(): ToolDriver<
 > {
   return Object.freeze<ToolDriver<FsWriteToolNode<THandle>, THandle>>({
     describeEffects(_node: FsWriteToolNode<THandle>, args: unknown, scopeHandle: THandle): readonly ToolEffect[] {
-      const rec = (args as { readonly path?: string; readonly content?: string } | null | undefined) ?? {};
-      const { normalizedRelPath } = resolveJailedWorktreePath(scopeHandle, rec.path ?? '', true);
-      const existingAtBase = checkPathsExistAtBaseRef(scopeHandle, [normalizedRelPath]);
-      return Object.freeze([
-        createFsWriteEffect([normalizedRelPath], existingAtBase, {
-          [normalizedRelPath]: rec.content ?? '',
-        }),
-      ]);
+      return describeFsWriteEffects(scopeHandle, args);
     },
-    async execute(node: FsWriteToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
-      const parsed = node.inputSchema.parse(args) as { readonly path: string; readonly content: string };
-      return executeFsWriteOperation(ctx.scopeHandle, parsed);
+    execute(node: FsWriteToolNode<THandle>, args: unknown, ctx: StepExecutionContext<THandle>): Promise<ToolExecutionResult> {
+      return writeFsToolFile(node, args, ctx);
     },
   });
 }

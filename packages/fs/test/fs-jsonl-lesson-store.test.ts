@@ -109,8 +109,8 @@ describe('@harness-dsl/fs FsJsonlLessonStore', () => {
     });
     const recordA = candidates.find((c) => c.id === lessonAId);
     const recordB = candidates.find((c) => c.id === lessonBId);
-    expect(recordA).toBeDefined();
-    expect(recordB).toBeDefined();
+    expect(recordA?.id).toBe(lessonAId);
+    expect(recordB?.id).toBe(lessonBId);
     expect(recordA?.totalCleanPasses).toBe(1);
     expect(recordA?.totalViolated).toBe(1);
     expect(recordA?.recentOutcomes).toHaveLength(3);

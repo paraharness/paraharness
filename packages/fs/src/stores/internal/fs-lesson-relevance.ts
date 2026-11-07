@@ -46,7 +46,11 @@ export function scoreLessonsWithMiniSearch(
     for (const def of definitions) scoresById.set(def.id, 1);
     return scoresById;
   }
-  const miniSearch = new MiniSearch<{ readonly id: string; readonly directive: string; readonly partition: string }>({
+  const miniSearch = new MiniSearch<{
+    readonly id: string;
+    readonly directive: string;
+    readonly partition: string;
+  }>({
     fields: ['directive', 'partition'],
     storeFields: ['id'],
     searchOptions: { prefix: true, fuzzy: 0.2 },
@@ -103,4 +107,24 @@ export function mergeDefinitionAndStats(
         ? Object.freeze({ ...stats.signalLastEmittedAt })
         : undefined,
   });
+}
+
+/**
+ * Compares two `LessonRecord` entries by descending `relevanceScore` with lexicographical `id` tie-breaking.
+ *
+ * @param {LessonRecord} left  - First lesson record.
+ * @param {LessonRecord} right - Second lesson record.
+ *
+ * @returns {number} Negative when `left` ranks ahead of `right`, positive when behind, or `0`.
+ */
+export function compareLessonRecordsByRelevance(
+  left: LessonRecord,
+  right: LessonRecord,
+): number {
+  const leftScore = left.relevanceScore ?? 0;
+  const rightScore = right.relevanceScore ?? 0;
+  if (rightScore !== leftScore) {
+    return rightScore - leftScore;
+  }
+  return left.id.localeCompare(right.id);
 }
