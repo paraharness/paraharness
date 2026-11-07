@@ -73,25 +73,6 @@ export function scoreLessonsWithMiniSearch(
 }
 
 /**
- * Computes normalized text similarity $R(L, Q) \in [0, 1]$ for a single lesson definition via `MiniSearch`.
- *
- * Delegates to `scoreLessonsWithMiniSearch` over a single-element definition array (`SPEC.md` §2.7).
- *
- * @param {string}                                   queryText  - Search query extracted from actor input.
- * @param {FsLessonDefinitionRecord}                 definition - Immutable lesson definition record.
- * @param {ReadonlySet<string> | readonly string[]}  partitions - Active task partitions.
- *
- * @returns {number} Normalized relevance score in `[0, 1]`.
- */
-export function computeQueryRelevanceScore(
-  queryText: string,
-  definition: FsLessonDefinitionRecord,
-  partitions: ReadonlySet<string> | readonly string[],
-): number {
-  return scoreLessonsWithMiniSearch(queryText, [definition], partitions).get(definition.id) ?? 0;
-}
-
-/**
  * Merges an immutable `FsLessonDefinitionRecord` with its mutable `FsLessonStatsEntry` into a `LessonRecord`.
  *
  * Applies any `epochAtCreation` override from `stats` while preserving monomorphic `LessonRecord` property order (`Rule 4.3`).

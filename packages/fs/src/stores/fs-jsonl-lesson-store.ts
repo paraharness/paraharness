@@ -68,7 +68,7 @@ export class FsJsonlLessonStore implements LessonStore {
    * Queries non-retired candidate lessons and populates `relevanceScore` in `[0, 1]` via `MiniSearch`.
    *
    * Orders returned candidate lessons deterministically by descending `relevanceScore` and `id`.
-   * @param {Record<string, unknown>} req - Query text and active partitions.
+   * @param {{ readonly queryText: string; readonly partitions: readonly string[] }} req - Query text and active partitions.
    * @returns {Promise<readonly LessonRecord[]>} Frozen array of candidate lesson records.
    */
   queryCandidates(req: { readonly queryText: string; readonly partitions: readonly string[] }): Promise<readonly LessonRecord[]> {
@@ -93,7 +93,7 @@ export class FsJsonlLessonStore implements LessonStore {
    * Admits a distilled lesson by writing an immutable `<definitionsDir>/<lessonId>.json` file.
    *
    * Deduplicates identical `(partition, directive)` pairs and initializes telemetry counters in `statsPath`.
-   * @param {Record<string, unknown>} lesson - Lesson definition to admit.
+   * @param {{ readonly partition?: string; readonly directive: string; readonly epochAtCreation: number; readonly createdByRunId?: string }} lesson - Lesson definition to admit.
    * @returns {Promise<string>} Assigned content-addressed `lessonId`.
    */
   admit(lesson: { readonly partition?: string; readonly directive: string; readonly epochAtCreation: number; readonly createdByRunId?: string }): Promise<string> {
@@ -117,7 +117,7 @@ export class FsJsonlLessonStore implements LessonStore {
    * Appends deduplicated step execution outcomes to `statsPath` and returns the updated lesson records.
    *
    * Increments `totalCleanPasses` and `totalViolated` counters without touching `<definitionsDir>/<lessonId>.json`.
-   * @param {ReadonlyArray<Record<string, unknown>>} outcomes - Batch of lesson outcomes.
+   * @param {ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>} outcomes - Batch of lesson outcomes.
    * @returns {Promise<readonly LessonRecord[]>} Updated lesson records for the affected lessons.
    */
   recordOutcomes(outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>): Promise<readonly LessonRecord[]> {

@@ -15,8 +15,8 @@ import {
  *
  * Enforces `resolveJailedWorktreePath` on every candidate file before reading.
  *
- * @param {unknown}                 scopeHandle - Active isolation scope handle.
- * @param {Record<string, unknown>} parsed      - Validated grep arguments (`pattern`, optional `glob` and `flags`).
+ * @param {unknown}                                                                       scopeHandle - Active isolation scope handle.
+ * @param {{ readonly pattern: string; readonly glob?: string; readonly flags?: string }} parsed      - Validated grep arguments (`pattern`, optional `glob` and `flags`).
  *
  * @returns {Promise<string>} Newline-joined `path:lineNumber:lineText` match strings.
  */
@@ -83,8 +83,8 @@ export function describeFsEditEffects(
  *
  * Verifies that `parsed.oldString` exists in the target file before writing the updated UTF-8 text.
  *
- * @param {unknown}                 scopeHandle - Active isolation scope handle.
- * @param {Record<string, string>}  parsed      - Validated edit arguments (`path`, `oldString`, `newString`).
+ * @param {unknown}                                                                           scopeHandle - Active isolation scope handle.
+ * @param {{ readonly path: string; readonly oldString: string; readonly newString: string }} parsed      - Validated edit arguments (`path`, `oldString`, `newString`).
  *
  * @returns {Promise<ToolExecutionResult>} Frozen tool execution result.
  */
@@ -113,8 +113,8 @@ export async function executeFsEditOperation(
  *
  * Creates parent directories if needed, re-verifies symlink jailing, and writes UTF-8 text.
  *
- * @param {unknown}                 scopeHandle - Active isolation scope handle.
- * @param {Record<string, string>}  parsed      - Validated write arguments (`path`, `content`).
+ * @param {unknown}                                             scopeHandle - Active isolation scope handle.
+ * @param {{ readonly path: string; readonly content: string }} parsed      - Validated write arguments (`path`, `content`).
  *
  * @returns {Promise<ToolExecutionResult>} Frozen tool execution result.
  */
