@@ -5,10 +5,9 @@ import {
   type ModelTurnResponse,
 } from '@harness-dsl/core';
 import { computeOpenAiTurnUsage } from './compute-openai-turn-usage.js';
-import { decodeFrameToOpenAiWire } from './decode-frame-to-openai-wire.js';
+import { decodeHistoryToOpenAiResponsesInput } from './decode-history-to-openai-responses-input.js';
 import { extractOpenAiOutputItems } from './extract-openai-output-items.js';
 import { resolveOpenAiWireTools } from './resolve-openai-wire-tools.js';
-import { stripOpenAiServerItemIdsAndEncryptedContent } from './strip-openai-server-item-ids-and-encrypted-content.js';
 
 /**
  * Assembles an OpenAI `/v1/responses` request payload from `req` and `activeSeatId`.
@@ -25,42 +24,14 @@ export function buildOpenAiResponsesRequest(
   req: ModelTurnRequest,
   activeSeatId?: string,
 ): Readonly<Record<string, unknown>> {
-  const envelopes: Readonly<Record<string, unknown>>[] = [];
-  let hasCrossSeatFailover = false;
-  for (const frame of req.history) {
-    const env = decodeFrameToOpenAiWire(frame);
-    envelopes.push(env);
-    if (
-      typeof env['seatId'] === 'string' &&
-      activeSeatId !== undefined &&
-      env['seatId'] !== activeSeatId
-    ) {
-      hasCrossSeatFailover = true;
-    }
-  }
-  const inputItems: Readonly<Record<string, unknown>>[] = [];
-  let previousResponseId: string | undefined;
-  for (const env of envelopes) {
-    const effective = hasCrossSeatFailover
-      ? stripOpenAiServerItemIdsAndEncryptedContent(env)
-      : env;
-    const candidatePrev = !hasCrossSeatFailover
-      ? (effective['previous_response_id'] ?? effective['responseId'])
-      : undefined;
-    if (typeof candidatePrev === 'string') {
-      previousResponseId = candidatePrev;
-    }
-    const items = (
-      Array.isArray(effective['items']) ? effective['items'] : []
-    ) as readonly Readonly<Record<string, unknown>>[];
-    for (const wireItem of items) {
-      inputItems.push(wireItem);
-    }
-  }
+  const { inputItems, previousResponseId } = decodeHistoryToOpenAiResponsesInput(
+    req.history,
+    activeSeatId,
+  );
   const tools = resolveOpenAiWireTools(req);
   const body: Record<string, unknown> = {
     model: req.modelId,
-    input: Object.freeze(inputItems),
+    input: inputItems,
   };
   if (req.wirePrefix !== undefined && req.wirePrefix.systemPromptText.length > 0) {
     body['instructions'] = req.wirePrefix.systemPromptText;

@@ -101,6 +101,76 @@ function appendSuffixToGeminiToolResult(
 }
 
 /**
+ * Rebuilds a `CanonicalToolResult[]` array with `suffix` appended to the entry matching `params.targetCallId` (or the last entry).
+ *
+ * Returns a frozen `CanonicalToolResult[]` array preserving all non-targeted tool results unchanged.
+ *
+ * @param {readonly CanonicalToolResult[]}    results - Existing tool result array on the frame.
+ * @param {string}                            suffix  - Joined synchronization note string to append.
+ * @param {GeminiAppendToolResultNotesParams} params  - Frame, notes, optional target `callId`, and options.
+ *
+ * @returns {readonly CanonicalToolResult[]} Frozen updated tool result array.
+ */
+function rebuildGeminiToolResultsWithSuffix(
+  results: readonly CanonicalToolResult[],
+  suffix: string,
+  params: GeminiAppendToolResultNotesParams,
+): readonly CanonicalToolResult[] {
+  const targetIdx = findGeminiTargetToolResultIndex(results, params.targetCallId);
+  const updatedResults: CanonicalToolResult[] = [];
+  for (let idx = 0; idx < results.length; idx += 1) {
+    const toolResult = results[idx];
+    if (toolResult !== undefined) {
+      updatedResults.push(
+        idx === targetIdx
+          ? appendSuffixToGeminiToolResult(toolResult, suffix, params.opts)
+          : toolResult,
+      );
+    }
+  }
+  return Object.freeze(updatedResults);
+}
+
+/**
+ * Projects an updated `CanonicalMessage` with `suffix` appended to either the targeted `tool` result or the `user` visible text.
+ *
+ * Preserves all non-targeted `CanonicalMessage` fields in a fixed monomorphic property order.
+ *
+ * @param {GeminiAppendToolResultNotesParams} params - Frame, notes, optional target `callId`, and options.
+ * @param {string}                            suffix - Joined synchronization note string to append.
+ *
+ * @returns {CanonicalMessage} Frozen updated canonical message.
+ */
+function appendNotesToGeminiCanonicalMessage(
+  params: GeminiAppendToolResultNotesParams,
+  suffix: string,
+): CanonicalMessage {
+  const { frame } = params;
+  if (frame.canonical.role === 'tool' && frame.canonical.toolResults !== undefined) {
+    return Object.freeze<CanonicalMessage>({
+      role: frame.canonical.role,
+      visibleText: frame.canonical.visibleText,
+      toolCalls: frame.canonical.toolCalls,
+      toolResults: rebuildGeminiToolResultsWithSuffix(
+        frame.canonical.toolResults,
+        suffix,
+        params,
+      ),
+    });
+  }
+  const nextText =
+    frame.canonical.visibleText.length > 0
+      ? `${frame.canonical.visibleText}\n${suffix}`
+      : suffix;
+  return Object.freeze<CanonicalMessage>({
+    role: 'user',
+    visibleText: nextText,
+    toolCalls: frame.canonical.toolCalls,
+    toolResults: frame.canonical.toolResults,
+  });
+}
+
+/**
  * Appends synchronization or recovery notes in-place to a Google Gemini `tool` or `user` `WireFrameRecord`.
  *
  * Updates both `frame.canonical` and `frame.rawWireFrame`, targeting `targetCallId` (or the last
@@ -113,57 +183,17 @@ function appendSuffixToGeminiToolResult(
 export function geminiAppendToolResultNotes(
   params: GeminiAppendToolResultNotesParams,
 ): WireFrameRecord {
-  const { frame, notes, targetCallId, opts } = params;
+  const { frame, notes } = params;
   if (notes.length === 0) {
     return frame;
   }
-  const suffix = notes.join('\n');
-  if (frame.canonical.role === 'tool' && frame.canonical.toolResults !== undefined) {
-    const toolNameByCallId = extractGeminiToolNamesFromWire(frame.rawWireFrame);
-    const results = frame.canonical.toolResults;
-    const targetIdx = findGeminiTargetToolResultIndex(results, targetCallId);
-    const updatedResults: CanonicalToolResult[] = [];
-    for (let idx = 0; idx < results.length; idx += 1) {
-      const toolResult = results[idx];
-      if (toolResult !== undefined) {
-        updatedResults.push(
-          idx === targetIdx
-            ? appendSuffixToGeminiToolResult(toolResult, suffix, opts)
-            : toolResult,
-        );
-      }
-    }
-    const canonical = Object.freeze<CanonicalMessage>({
-      role: frame.canonical.role,
-      visibleText: frame.canonical.visibleText,
-      toolCalls: frame.canonical.toolCalls,
-      toolResults: Object.freeze(updatedResults),
-    });
-    const rawWireFrame = new TextEncoder().encode(
-      JSON.stringify(projectCanonicalToGeminiContent(canonical, toolNameByCallId)),
-    );
-    return Object.freeze<WireFrameRecord>({
-      messageId: frame.messageId,
-      parentMessageId: frame.parentMessageId,
-      vendorId: frame.vendorId,
-      rawWireFrame,
-      canonical,
-      prefixDigest: frame.prefixDigest,
-      compactedTombstones: frame.compactedTombstones,
-    });
-  }
-  const nextText =
-    frame.canonical.visibleText.length > 0
-      ? `${frame.canonical.visibleText}\n${suffix}`
-      : suffix;
-  const canonical = Object.freeze<CanonicalMessage>({
-    role: 'user',
-    visibleText: nextText,
-    toolCalls: frame.canonical.toolCalls,
-    toolResults: frame.canonical.toolResults,
-  });
+  const canonical = appendNotesToGeminiCanonicalMessage(params, notes.join('\n'));
+  const toolNameByCallId =
+    canonical.role === 'tool'
+      ? extractGeminiToolNamesFromWire(frame.rawWireFrame)
+      : undefined;
   const rawWireFrame = new TextEncoder().encode(
-    JSON.stringify(projectCanonicalToGeminiContent(canonical)),
+    JSON.stringify(projectCanonicalToGeminiContent(canonical, toolNameByCallId)),
   );
   return Object.freeze<WireFrameRecord>({
     messageId: frame.messageId,

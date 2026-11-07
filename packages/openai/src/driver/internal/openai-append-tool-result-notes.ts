@@ -74,6 +74,76 @@ function appendSuffixToOpenAiToolResult(
 }
 
 /**
+ * Rebuilds a `CanonicalToolResult[]` array with `suffix` appended to the entry matching `params.targetCallId` (or the last entry).
+ *
+ * Returns a frozen `CanonicalToolResult[]` array preserving all non-targeted tool results unchanged.
+ *
+ * @param {readonly CanonicalToolResult[]}    results - Existing tool result array on the frame.
+ * @param {string}                            suffix  - Joined synchronization note string to append.
+ * @param {OpenAiAppendToolResultNotesParams} params  - Frame, notes, optional target `callId`, and options.
+ *
+ * @returns {readonly CanonicalToolResult[]} Frozen updated tool result array.
+ */
+function rebuildOpenAiToolResultsWithSuffix(
+  results: readonly CanonicalToolResult[],
+  suffix: string,
+  params: OpenAiAppendToolResultNotesParams,
+): readonly CanonicalToolResult[] {
+  const targetIdx = findOpenAiTargetToolResultIndex(results, params.targetCallId);
+  const updatedResults: CanonicalToolResult[] = [];
+  for (let idx = 0; idx < results.length; idx += 1) {
+    const toolResult = results[idx];
+    if (toolResult !== undefined) {
+      updatedResults.push(
+        idx === targetIdx
+          ? appendSuffixToOpenAiToolResult(toolResult, suffix, params.opts)
+          : toolResult,
+      );
+    }
+  }
+  return Object.freeze(updatedResults);
+}
+
+/**
+ * Projects an updated `CanonicalMessage` with `suffix` appended to either the targeted `tool` result or the `user` visible text.
+ *
+ * Preserves all non-targeted `CanonicalMessage` fields in a fixed monomorphic property order.
+ *
+ * @param {OpenAiAppendToolResultNotesParams} params - Frame, notes, optional target `callId`, and options.
+ * @param {string}                            suffix - Joined synchronization note string to append.
+ *
+ * @returns {CanonicalMessage} Frozen updated canonical message.
+ */
+function appendNotesToOpenAiCanonicalMessage(
+  params: OpenAiAppendToolResultNotesParams,
+  suffix: string,
+): CanonicalMessage {
+  const { frame } = params;
+  if (frame.canonical.role === 'tool' && frame.canonical.toolResults !== undefined) {
+    return Object.freeze<CanonicalMessage>({
+      role: frame.canonical.role,
+      visibleText: frame.canonical.visibleText,
+      toolCalls: frame.canonical.toolCalls,
+      toolResults: rebuildOpenAiToolResultsWithSuffix(
+        frame.canonical.toolResults,
+        suffix,
+        params,
+      ),
+    });
+  }
+  const nextText =
+    frame.canonical.visibleText.length > 0
+      ? `${frame.canonical.visibleText}\n${suffix}`
+      : suffix;
+  return Object.freeze<CanonicalMessage>({
+    role: 'user',
+    visibleText: nextText,
+    toolCalls: frame.canonical.toolCalls,
+    toolResults: frame.canonical.toolResults,
+  });
+}
+
+/**
  * Appends synchronization or recovery notes in-place to an OpenAI `tool` or `user` `WireFrameRecord`.
  *
  * Updates both `frame.canonical` and `frame.rawWireFrame`, targeting `targetCallId` (or the last
@@ -86,54 +156,11 @@ function appendSuffixToOpenAiToolResult(
 export function openaiAppendToolResultNotes(
   params: OpenAiAppendToolResultNotesParams,
 ): WireFrameRecord {
-  const { frame, notes, targetCallId, opts } = params;
+  const { frame, notes } = params;
   if (notes.length === 0) {
     return frame;
   }
-  const suffix = notes.join('\n');
-  if (frame.canonical.role === 'tool' && frame.canonical.toolResults !== undefined) {
-    const results = frame.canonical.toolResults;
-    const targetIdx = findOpenAiTargetToolResultIndex(results, targetCallId);
-    const updatedResults: CanonicalToolResult[] = [];
-    for (let idx = 0; idx < results.length; idx += 1) {
-      const toolResult = results[idx];
-      if (toolResult !== undefined) {
-        updatedResults.push(
-          idx === targetIdx
-            ? appendSuffixToOpenAiToolResult(toolResult, suffix, opts)
-            : toolResult,
-        );
-      }
-    }
-    const canonical = Object.freeze<CanonicalMessage>({
-      role: frame.canonical.role,
-      visibleText: frame.canonical.visibleText,
-      toolCalls: frame.canonical.toolCalls,
-      toolResults: Object.freeze(updatedResults),
-    });
-    const rawWireFrame = new TextEncoder().encode(
-      JSON.stringify(projectCanonicalToOpenAiWire(canonical)),
-    );
-    return Object.freeze<WireFrameRecord>({
-      messageId: frame.messageId,
-      parentMessageId: frame.parentMessageId,
-      vendorId: frame.vendorId,
-      rawWireFrame,
-      canonical,
-      prefixDigest: frame.prefixDigest,
-      compactedTombstones: frame.compactedTombstones,
-    });
-  }
-  const nextText =
-    frame.canonical.visibleText.length > 0
-      ? `${frame.canonical.visibleText}\n${suffix}`
-      : suffix;
-  const canonical = Object.freeze<CanonicalMessage>({
-    role: 'user',
-    visibleText: nextText,
-    toolCalls: frame.canonical.toolCalls,
-    toolResults: frame.canonical.toolResults,
-  });
+  const canonical = appendNotesToOpenAiCanonicalMessage(params, notes.join('\n'));
   const rawWireFrame = new TextEncoder().encode(
     JSON.stringify(projectCanonicalToOpenAiWire(canonical)),
   );
