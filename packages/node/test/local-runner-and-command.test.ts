@@ -84,6 +84,7 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
     const runnerNode = local.runner({ id: 'fifo-pool', slots: 1, maxDaemons: 1 }).toAST();
     const driver = new NodeRunnerDriver(runnerNode);
     const order: string[] = [];
+    const firstAbortController = new AbortController();
     let releaseFirst: (() => void) | undefined;
     const firstEntered = new Promise<void>((resolve) => {
       void driver.withSlot(async () => {
@@ -93,7 +94,7 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
           releaseFirst = r;
         });
         order.push('first-end');
-      });
+      }, firstAbortController.signal);
     });
     await firstEntered;
 
@@ -109,6 +110,8 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
     abortController.abort();
     await expect(abortedWaiter).rejects.toThrow(/Aborted while waiting for slot in runner 'fifo-pool'/);
     expect(getEventListeners(abortController.signal, 'abort')).toHaveLength(0);
+    firstAbortController.abort();
+    await Promise.resolve();
     expect(order).toEqual(['first-start']);
 
     releaseFirst?.();
@@ -308,7 +311,7 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
     expect(preCheckRunsOnEmptyKey).toBe(0);
   });
 
-  it('reaps surviving background descendant processes in terminateProcessGroupWithGrace even after leader exits', async () => {
+  it('reaps surviving background descendant processes across process groups in terminateProcessGroupWithGrace', async () => {
     const resolvedEnv = resolveWorktreeEnvAndCwd({}, undefined, (v) =>
       typeof v === 'string' ? v : undefined,
     );
@@ -316,16 +319,16 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
       argv: [
         process.execPath,
         '-e',
-        'const { spawn } = require("node:child_process"); const bg = spawn(process.execPath, ["-e", "process.on(\\"SIGTERM\\", () => {}); setInterval(() => {}, 1000);"], { stdio: "ignore" }); console.log(String(bg.pid)); process.exit(0);',
+        'const { spawn } = require("node:child_process"); const bg = spawn(process.execPath, ["-e", "process.on(\\"SIGTERM\\", () => {}); setInterval(() => {}, 1000);"], { detached: true, stdio: "ignore" }); console.log(String(bg.pid)); setInterval(() => {}, 1000);',
       ],
       resolvedEnv,
     });
-    let stdout = '';
-    leader.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
+    const bgPid = await new Promise<number>((resolve) => {
+      leader.stdout?.on('data', (chunk: Buffer) => {
+        const parsed = Number(chunk.toString('utf8').trim());
+        if (Number.isInteger(parsed) && parsed > 0) resolve(parsed);
+      });
     });
-    await new Promise<void>((resolve) => leader.once('close', () => resolve()));
-    const bgPid = Number(stdout.trim());
     expect(Number.isInteger(bgPid) && bgPid > 0).toBe(true);
 
     try {

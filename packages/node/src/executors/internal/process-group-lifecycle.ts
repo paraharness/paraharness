@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import type { EnvRef } from '@harness-dsl/core';
+import fkill from 'fkill';
+import pidtree from 'pidtree';
 import {
   DEFAULT_SUBPROCESS_GRACE_MS,
   ISOLATED_GIT_ENV_OVERRIDES,
@@ -16,9 +18,9 @@ import type {
  * Injects `cwd: worktreePath` and all 9 isolated `GIT_*` environment variables when `scopeHandle` exposes
  * a non-empty `worktreePath`, and resolves symbolic `EnvRef` entries via `resolveEnv`.
  *
- * @param {unknown}                                           scopeHandle - Active isolation scope handle.
- * @param {Readonly<Record<string, string | EnvRef>>}         [envConfig] - Optional command or check environment bindings.
- * @param {(value: string | EnvRef) => string | undefined}    resolveEnv  - Runtime `EnvRef` resolver callback.
+ * @param {unknown}                                        scopeHandle - Active isolation scope handle.
+ * @param {Readonly<Record<string, string | EnvRef>>}      [envConfig] - Optional command or check environment bindings.
+ * @param {(value: string | EnvRef) => string | undefined} resolveEnv  - Runtime `EnvRef` resolver callback.
  *
  * @returns {ResolvedSubprocessEnvironment} Resolved `cwd`, `env`, and optional `worktreePath`.
  *
@@ -82,66 +84,61 @@ export function spawnDetachedSubprocess(params: SpawnDetachedSubprocessParams): 
 }
 
 /**
- * Sends a POSIX signal to the detached process group (`-child.pid`) with a single-process fallback.
+ * Enumerates the descendant PID tree of `pid` via `pidtree` and terminates all processes via `fkill`.
  *
- * Swallows `ESRCH` when the process group has already exited cleanly.
+ * Sends `SIGTERM` across the descendant PID tree and process group (`-pid`), waits up to `graceMs`
+ * if any descendant remains alive, and escalates to `fkill(..., { force: true, silent: true })`.
  *
- * @param {ChildProcess}   child  - Target detached child process.
- * @param {NodeJS.Signals} signal - Signal to deliver (`'SIGTERM'` or `'SIGKILL'`).
+ * @param {number} pid           - Root process ID to terminate along with all descendants.
+ * @param {number} [graceMs=200] - Grace window in milliseconds before escalating to `SIGKILL`.
+ *
+ * @returns {Promise<void>} Resolves once the process tree and process group have exited.
  */
-export function sendProcessGroupSignal(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch {
+export async function terminatePidTreeWithGrace(
+  pid: number,
+  graceMs = DEFAULT_SUBPROCESS_GRACE_MS,
+): Promise<void> {
+  const initialTree = await pidtree(pid, { root: true }).catch(() => [pid]);
+  const trackedPids = new Set<number>([pid, ...initialTree]);
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {}
+  await fkill([...trackedPids], { force: false, silent: true }).catch(() => undefined);
+  const deadline = Date.now() + graceMs;
+  while (Date.now() < deadline) {
+    let anyAlive = false;
+    for (const candidatePid of trackedPids) {
       try {
-        child.kill(signal);
-      } catch {
-        return;
-      }
+        process.kill(candidatePid, 0);
+        anyAlive = true;
+        break;
+      } catch {}
     }
+    if (!anyAlive) break;
+    await new Promise<void>((resolve) => setTimeout(resolve, 15));
   }
+  const remainingTree = await pidtree(pid, { root: true }).catch(() => []);
+  for (const childPid of remainingTree) trackedPids.add(childPid);
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {}
+  await fkill([...trackedPids], { force: true, silent: true }).catch(() => undefined);
 }
 
 /**
- * Terminates a detached child process group gracefully (`SIGTERM` followed by `SIGKILL` after `graceMs`).
+ * Terminates a detached child process group and descendant PID tree gracefully (`pidtree` + `fkill`).
  *
- * Resolves as soon as the child process exits or after `SIGKILL` has been delivered.
+ * Delegates to `terminatePidTreeWithGrace` when `child.pid` is defined and ensures `child` has exited.
  *
- * @param {ChildProcess} child                 - Detached child process to terminate.
- * @param {number}       [graceMs=200]         - Milliseconds to wait after `SIGTERM` before `SIGKILL`.
+ * @param {ChildProcess} child         - Detached child process to terminate.
+ * @param {number}       [graceMs=200] - Milliseconds to wait after `SIGTERM` before `SIGKILL`.
  *
- * @returns {Promise<void>} Resolves once the process group has been terminated.
+ * @returns {Promise<void>} Resolves once the process group and descendant tree have been terminated.
  */
-export function terminateProcessGroupWithGrace(
+export async function terminateProcessGroupWithGrace(
   child: ChildProcess,
   graceMs = DEFAULT_SUBPROCESS_GRACE_MS,
 ): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    sendProcessGroupSignal(child, 'SIGKILL');
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => {
-    let settled = false;
-    let killTimer: ReturnType<typeof setTimeout> | undefined;
-    let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (): void => {
-      if (settled) return;
-      settled = true;
-      if (killTimer !== undefined) clearTimeout(killTimer);
-      if (fallbackTimer !== undefined) clearTimeout(fallbackTimer);
-      child.removeListener('exit', finish);
-      child.removeListener('close', finish);
-      sendProcessGroupSignal(child, 'SIGKILL');
-      resolve();
-    };
-    child.once('exit', finish);
-    child.once('close', finish);
-    sendProcessGroupSignal(child, 'SIGTERM');
-    killTimer = setTimeout(() => {
-      sendProcessGroupSignal(child, 'SIGKILL');
-      fallbackTimer = setTimeout(finish, 50);
-    }, graceMs);
-  });
+  if (child.pid === undefined) return;
+  await terminatePidTreeWithGrace(child.pid, graceMs);
 }

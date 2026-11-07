@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import net from 'node:net';
+import getPort from 'get-port';
+import waitOn from 'wait-on';
 import {
   ACTIVE_LEASED_DAEMON_PORTS,
   DEFAULT_DAEMON_PORT_READY_TIMEOUT_MS,
@@ -22,36 +23,10 @@ export function sanitizeDaemonScopeKey(rawScopeKey: string): string {
 }
 
 /**
- * Probes the OS kernel for a single available ephemeral TCP port on `127.0.0.1`.
- *
- * Binds an ephemeral `net.Server` to port `0`, reads the assigned port, and closes the probe socket.
- *
- * @returns {Promise<number>} Ephemeral TCP port number.
- */
-export function probeSingleEphemeralPort(): Promise<number> {
-  return new Promise<number>((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
-      server.close((err) => {
-        if (err !== undefined && err !== null) {
-          reject(err);
-          return;
-        }
-        resolve(port);
-      });
-    });
-  });
-}
-
-/**
  * Allocates distinct, conflict-free dynamic TCP ports for all named `.port(name)` entries on a daemon.
  *
- * Tracks allocated ports in `ACTIVE_LEASED_DAEMON_PORTS` until the daemon stops so concurrent
- * daemon startups never collide on the same ephemeral port.
+ * Uses `getPort` combined with the in-process `ACTIVE_LEASED_DAEMON_PORTS` reservation set so concurrent
+ * daemon startups before socket bind never collide on the same ephemeral port.
  *
  * @param {readonly string[]} portNames - Declared port names on `LocalServiceNode`.
  *
@@ -65,7 +40,7 @@ export async function allocateDynamicPorts(
     for (const name of portNames) {
       let candidate = 0;
       for (let attempt = 0; attempt < 25; attempt += 1) {
-        const probed = await probeSingleEphemeralPort();
+        const probed = await getPort({ host: '127.0.0.1', exclude: ACTIVE_LEASED_DAEMON_PORTS });
         if (!ACTIVE_LEASED_DAEMON_PORTS.has(probed)) {
           candidate = probed;
           ACTIVE_LEASED_DAEMON_PORTS.add(probed);
@@ -87,13 +62,13 @@ export async function allocateDynamicPorts(
 }
 
 /**
- * Polls `127.0.0.1:port` until a TCP listener accepts connections or `timeoutMs` expires.
+ * Waits for `127.0.0.1:port` to accept TCP connections via `wait-on` or rejects on timeout/abort.
  *
  * Verifies that a daemon's declared `.port()` socket is actively listening before resolving service startup.
  *
- * @param {number}      port                     - Target TCP port number on `127.0.0.1`.
- * @param {number}      [timeoutMs=10000]        - Maximum wait duration in milliseconds.
- * @param {AbortSignal} [signal]                 - Optional abort signal cancelling readiness polling.
+ * @param {number}      port              - Target TCP port number on `127.0.0.1`.
+ * @param {number}      [timeoutMs=10000] - Maximum wait duration in milliseconds.
+ * @param {AbortSignal} [signal]          - Optional abort signal cancelling readiness polling.
  *
  * @returns {Promise<void>} Resolves once a TCP connection to `port` succeeds.
  *
@@ -104,22 +79,26 @@ export async function waitForTcpPortReady(
   timeoutMs = DEFAULT_DAEMON_PORT_READY_TIMEOUT_MS,
   signal?: AbortSignal,
 ): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() <= deadline) {
-    signal?.throwIfAborted();
-    const connected = await new Promise<boolean>((resolve) => {
-      const socket = net.createConnection({ host: '127.0.0.1', port });
-      socket.once('connect', () => {
-        socket.destroy();
-        resolve(true);
-      });
-      socket.once('error', () => {
-        socket.destroy();
-        resolve(false);
-      });
-    });
-    if (connected) return;
-    await new Promise<void>((resolve) => setTimeout(resolve, 15));
+  signal?.throwIfAborted();
+  const waitPromise = waitOn({
+    resources: [`tcp:127.0.0.1:${String(port)}`],
+    timeout: timeoutMs,
+    interval: 25,
+  }).catch(() => {
+    throw new Error(`Timed out after ${String(timeoutMs)}ms waiting for TCP listener on port ${String(port)}.`);
+  });
+  if (signal === undefined) {
+    await waitPromise;
+    return;
   }
-  throw new Error(`Timed out after ${String(timeoutMs)}ms waiting for TCP listener on port ${String(port)}.`);
+  let onAbort: (() => void) | undefined;
+  try {
+    const abortPromise = new Promise<never>((_, reject) => {
+      onAbort = (): void => reject(new Error(`Aborted while waiting for TCP listener on port ${String(port)}.`));
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    await Promise.race([waitPromise, abortPromise]);
+  } finally {
+    if (onAbort !== undefined) signal.removeEventListener('abort', onAbort);
+  }
 }

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import {
   createExecutorRegistry,
   type ActiveRunSummary,
@@ -164,6 +166,9 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
         expect(psqlToolNode.type).toBe('node:service-tool');
         expect(psqlToolNode.effectTracking).toBe('subprocess-post-flight');
 
+        const ttyTurn = await serviceToolDriver.execute(psqlToolNode, { input: 'IS_TTY' }, stepCtx);
+        expect(ttyTurn.content).toBe('STDIN_TTY=true:STDOUT_TTY=true');
+
         const [turn1, turn2] = await Promise.all([
           serviceToolDriver.execute(psqlToolNode, { input: 'DELAY:15:first_query' }, stepCtx),
           serviceToolDriver.execute(psqlToolNode, { input: 'second_query' }, stepCtx),
@@ -317,15 +322,31 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       expect(sigResp.status).toBe(200);
       expect(emittedSignals).toEqual([{ id: 'steer', payload: { note: 'focus on db' } }]);
 
-      const sseResp = await fetch(`http://127.0.0.1:${String(ssePort)}/sse`);
-      expect(sseResp.status).toBe(200);
-      expect(sseResp.headers.get('content-type')).toContain('text/event-stream');
-      const reader = sseResp.body?.getReader();
-      const firstChunk = await reader?.read();
-      const sseText = new TextDecoder().decode(firstChunk?.value);
-      expect(sseText).toContain('event: runs');
-      expect(sseText).toContain('"runId":"run-1"');
-      await reader?.cancel();
+      const sseClient = new Client({ name: 'test-sse-client', version: '0.1.0' });
+      const sseTransport = new SSEClientTransport(new URL(`http://127.0.0.1:${String(ssePort)}/sse`));
+      await sseClient.connect(sseTransport);
+      try {
+        const listedTools = await sseClient.listTools();
+        const toolNames = listedTools.tools.map((t) => t.name);
+        expect(toolNames).toContain('getActiveRuns');
+        expect(toolNames).toContain('emitSignal');
+
+        const activeRunsToolResult = await sseClient.callTool({ name: 'getActiveRuns', arguments: {} });
+        expect(activeRunsToolResult.content).toEqual([
+          { type: 'text', text: JSON.stringify({ runs: activeRuns }) },
+        ]);
+
+        await sseClient.callTool({
+          name: 'emitSignal',
+          arguments: { signalId: 'sse-signal', payload: { priority: 'high' } },
+        });
+        expect(emittedSignals).toEqual([
+          { id: 'steer', payload: { note: 'focus on db' } },
+          { id: 'sse-signal', payload: { priority: 'high' } },
+        ]);
+      } finally {
+        await sseClient.close();
+      }
 
       const capturedStdout: string[] = [];
       const origWrite = process.stdout.write.bind(process.stdout);
@@ -335,7 +356,7 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       }) as typeof process.stdout.write;
       try {
         process.stdin.emit('data', 'not-valid-json\n{"jsonrpc":"2.0","id":7,"method":"initialize"}\n');
-        await new Promise<void>((r) => setImmediate(r));
+        await new Promise<void>((r) => setTimeout(r, 20));
       } finally {
         process.stdout.write = origWrite;
       }
@@ -345,11 +366,14 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
         id: null,
         error: { code: -32700, message: 'Parse error' },
       });
-      expect(JSON.parse(capturedStdout[1] ?? '{}')).toEqual({
-        jsonrpc: '2.0',
-        id: 7,
-        result: { serverInfo: { name: 'custom-stdio', version: '0.1.0' } },
-      });
+      const initReply = JSON.parse(capturedStdout[1] ?? '{}') as {
+        readonly jsonrpc: string;
+        readonly id: number;
+        readonly result: { readonly serverInfo: { readonly name: string; readonly version: string } };
+      };
+      expect(initReply.jsonrpc).toBe('2.0');
+      expect(initReply.id).toBe(7);
+      expect(initReply.result.serverInfo).toEqual({ name: 'custom-stdio', version: '0.1.0' });
     } finally {
       await httpHandle.close();
       await sseHandle.close();

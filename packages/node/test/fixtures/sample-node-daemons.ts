@@ -92,6 +92,7 @@ export function buildSampleInteractiveReplArgv(promptStr: string): readonly stri
     'process.stdout.write("Welcome to sample interactive REPL v1.0\\n" + promptStr);',
     'const rl = readline.createInterface({ input: process.stdin, terminal: false });',
     'rl.on("line", (line) => {',
+    '  if (line === "IS_TTY") { process.stdout.write("STDIN_TTY=" + String(Boolean(process.stdin.isTTY)) + ":STDOUT_TTY=" + String(Boolean(process.stdout.isTTY)) + "\\n" + promptStr); return; }',
     '  if (line === "HANG") { process.stdout.write("hanging..."); return; }',
     '  if (line.startsWith("DELAY:")) {',
     '    const parts = line.split(":");',

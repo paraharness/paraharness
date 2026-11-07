@@ -1,12 +1,12 @@
 import type { NodeRunnerNode, RunnerDriver } from '@harness-dsl/core';
-import type { RunnerSlotWaiter } from './internal/runner-slot-waiter.js';
+import PQueue from 'p-queue';
 
 /**
  * Runtime concurrency limiter implementing `RunnerDriver` for `NodeRunnerNode` (`local.runner`).
  *
- * Maintains independent FIFO semaphores for one-shot subprocess slots (`withSlot`, bounded by `slots`)
- * and long-lived background daemon sessions (`withDaemonSlot`, bounded by `maxDaemons`) so active
- * daemons never starve one-shot build or test commands.
+ * Maintains independent `PQueue` concurrency pools for one-shot subprocess slots (`withSlot`, bounded
+ * by `slots`) and long-lived background daemon sessions (`withDaemonSlot`, bounded by `maxDaemons`) so
+ * active daemons never starve one-shot build or test commands.
  */
 export class NodeRunnerDriver implements RunnerDriver {
   /** Logical identifier of the runner pool. */
@@ -15,19 +15,15 @@ export class NodeRunnerDriver implements RunnerDriver {
   readonly slots: number;
   /** Maximum concurrent background daemon sessions. */
   readonly maxDaemons: number;
-  /** Currently occupied one-shot command slots. */
-  private activeSlots = 0;
-  /** Currently occupied background daemon slots. */
-  private activeDaemons = 0;
-  /** FIFO wait queue for one-shot command slots. */
-  private readonly slotQueue: RunnerSlotWaiter[] = [];
-  /** FIFO wait queue for background daemon slots. */
-  private readonly daemonQueue: RunnerSlotWaiter[] = [];
+  /** FIFO `PQueue` governing one-shot command slots. */
+  private readonly slotQueue: PQueue;
+  /** FIFO `PQueue` governing background daemon slots. */
+  private readonly daemonQueue: PQueue;
 
   /**
    * Initializes a `NodeRunnerDriver` from a compiled `NodeRunnerNode`.
    *
-   * Sets the pool identifier, one-shot slot ceiling, and daemon slot ceiling.
+   * Sets the pool identifier and initializes independent `PQueue` instances for `slots` and `maxDaemons`.
    *
    * @param {NodeRunnerNode} node - Passive runner pool AST node.
    */
@@ -35,13 +31,16 @@ export class NodeRunnerDriver implements RunnerDriver {
     this.id = node.id;
     this.slots = node.slots;
     this.maxDaemons = node.maxDaemons;
+    this.slotQueue = new PQueue({ concurrency: node.slots });
+    this.daemonQueue = new PQueue({ concurrency: node.maxDaemons });
   }
 
   /**
    * Acquires a one-shot command execution slot for the duration of `fn()`.
    *
-   * Queues the caller when all `slots` are occupied, cancels wait-queue registration immediately
-   * if `signal` aborts, and releases the slot in `finally`.
+   * Queues the caller in `this.slotQueue` when all `slots` are occupied, cancels queued waits
+   * immediately if `signal` aborts, detaches the wait-abort listener once dequeued so in-flight
+   * cleanup holds the slot until `fn()` settles, and releases the slot in `finally`.
    *
    * @template T Return value type of `fn`.
    *
@@ -51,20 +50,42 @@ export class NodeRunnerDriver implements RunnerDriver {
    * @returns {Promise<T>} Result produced by `fn()`.
    */
   async withSlot<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    await this.acquireFromPool('slot', signal);
+    signal?.throwIfAborted();
+    const waitController = new AbortController();
+    let onWaitAbort: (() => void) | undefined;
+    if (signal !== undefined) {
+      onWaitAbort = (): void => waitController.abort();
+      signal.addEventListener('abort', onWaitAbort, { once: true });
+    }
     try {
-      signal?.throwIfAborted();
-      return await fn();
+      return await this.slotQueue.add<T>(
+        async () => {
+          if (onWaitAbort !== undefined && signal !== undefined) {
+            signal.removeEventListener('abort', onWaitAbort);
+            onWaitAbort = undefined;
+          }
+          signal?.throwIfAborted();
+          return fn();
+        },
+        { signal: waitController.signal },
+      );
+    } catch (error) {
+      if (waitController.signal.aborted) {
+        throw new Error(`Aborted while waiting for slot in runner '${this.id}'.`);
+      }
+      throw error;
     } finally {
-      this.releaseToPool('slot');
+      if (onWaitAbort !== undefined && signal !== undefined) {
+        signal.removeEventListener('abort', onWaitAbort);
+      }
     }
   }
 
   /**
    * Acquires a long-lived background daemon slot until `releaseDaemonSlot()` is invoked.
    *
-   * Holds the daemon slot across the lifetime of the `ServiceSession` and automatically releases
-   * the slot if the startup callback `fn` throws before returning.
+   * Holds a concurrency slot in `this.daemonQueue` across the lifetime of the `ServiceSession` and
+   * automatically releases the slot if the startup callback `fn` throws before returning.
    *
    * @template T Return value type of `fn`.
    *
@@ -77,12 +98,12 @@ export class NodeRunnerDriver implements RunnerDriver {
     fn: (releaseDaemonSlot: () => void) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    await this.acquireFromPool('daemon', signal);
+    await this.acquireDaemonQueueLease(signal);
     let released = false;
     const releaseDaemonSlot = (): void => {
       if (released) return;
       released = true;
-      this.releaseToPool('daemon');
+      this.releaseNextDaemonHold();
     };
     try {
       signal?.throwIfAborted();
@@ -93,68 +114,61 @@ export class NodeRunnerDriver implements RunnerDriver {
     }
   }
 
+  /** Active daemon slot release callbacks holding occupancy in `this.daemonQueue`. */
+  private readonly activeDaemonReleases: Array<() => void> = [];
+
   /**
-   * Acquires a slot from either the one-shot `'slot'` pool or the `'daemon'` pool.
+   * Enqueues a long-lived lease task in `this.daemonQueue` and resolves once the slot is granted.
    *
-   * Enqueues a `RunnerSlotWaiter` when at capacity and removes the waiter immediately if `signal` fires.
+   * Detaches the caller's `AbortSignal` listener as soon as the slot is granted so only queued waits abort.
    *
-   * @param {'slot' | 'daemon'} kind     - Semaphore pool kind to acquire.
-   * @param {AbortSignal}       [signal] - Optional abort signal.
+   * @param {AbortSignal} [signal] - Optional abort signal cancelling queued wait.
    *
-   * @returns {Promise<void>} Resolves when the slot is granted.
+   * @returns {Promise<void>} Resolves once the daemon slot is granted.
    */
-  private acquireFromPool(kind: 'slot' | 'daemon', signal?: AbortSignal): Promise<void> {
+  private acquireDaemonQueueLease(signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted();
-    const isSlot = kind === 'slot';
-    const current = isSlot ? this.activeSlots : this.activeDaemons;
-    const limit = isSlot ? this.slots : this.maxDaemons;
-    if (current < limit) {
-      if (isSlot) this.activeSlots += 1;
-      else this.activeDaemons += 1;
-      return Promise.resolve();
+    const waitController = new AbortController();
+    let onWaitAbort: (() => void) | undefined;
+    if (signal !== undefined) {
+      onWaitAbort = (): void => waitController.abort();
+      signal.addEventListener('abort', onWaitAbort, { once: true });
     }
-    const queue = isSlot ? this.slotQueue : this.daemonQueue;
     return new Promise<void>((resolve, reject) => {
-      let onAbort: (() => void) | undefined;
-      const cleanup = (): void => {
-        if (onAbort !== undefined && signal !== undefined) {
-          signal.removeEventListener('abort', onAbort);
-        }
-      };
-      const waiter: RunnerSlotWaiter = { grant: resolve, cleanup };
-      if (signal !== undefined) {
-        onAbort = (): void => {
-          const idx = queue.indexOf(waiter);
-          if (idx !== -1) queue.splice(idx, 1);
-          cleanup();
-          reject(new Error(`Aborted while waiting for ${kind} in runner '${this.id}'.`));
-        };
-        signal.addEventListener('abort', onAbort, { once: true });
-      }
-      queue.push(waiter);
+      void this.daemonQueue
+        .add(
+          () =>
+            new Promise<void>((releaseSlotHold) => {
+              if (onWaitAbort !== undefined && signal !== undefined) {
+                signal.removeEventListener('abort', onWaitAbort);
+                onWaitAbort = undefined;
+              }
+              this.activeDaemonReleases.push(releaseSlotHold);
+              resolve();
+            }),
+          { signal: waitController.signal },
+        )
+        .catch((error: unknown) => {
+          if (onWaitAbort !== undefined && signal !== undefined) {
+            signal.removeEventListener('abort', onWaitAbort);
+            onWaitAbort = undefined;
+          }
+          if (waitController.signal.aborted) {
+            reject(new Error(`Aborted while waiting for daemon in runner '${this.id}'.`));
+            return;
+          }
+          reject(error instanceof Error ? error : new Error(String(error)));
+        });
     });
   }
 
   /**
-   * Releases a slot back to either the `'slot'` pool or the `'daemon'` pool and wakes the next waiter.
+   * Releases one held daemon slot in `this.daemonQueue`.
    *
-   * Transfers ownership directly to the head of the wait queue when non-empty.
-   *
-   * @param {'slot' | 'daemon'} kind - Semaphore pool kind to release.
+   * Invokes the earliest active daemon slot release callback so the next queued daemon can start.
    */
-  private releaseToPool(kind: 'slot' | 'daemon'): void {
-    const isSlot = kind === 'slot';
-    const queue = isSlot ? this.slotQueue : this.daemonQueue;
-    const next = queue.shift();
-    if (next !== undefined) {
-      next.cleanup();
-      next.grant();
-      return;
-    }
-    if (isSlot) {
-      this.activeSlots = Math.max(0, this.activeSlots - 1);
-    } else {
-      this.activeDaemons = Math.max(0, this.activeDaemons - 1);
-    }
+  private releaseNextDaemonHold(): void {
+    const release = this.activeDaemonReleases.shift();
+    release?.();
   }
 }
