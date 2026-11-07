@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createTwoFilesPatch } from 'diff';
 import type {
   CompiledWirePrefix,
   GroundingSnapshotRecord,
@@ -94,7 +95,14 @@ export async function computeInRunGroundingDiffs(
           sourceId: snap.sourceId,
           previousDigest: snap.digest,
           currentDigest: current.digest,
-          updatedText: current.text,
+          updatedText: createTwoFilesPatch(
+            snap.sourceId,
+            snap.sourceId,
+            snap.text,
+            current.text,
+            'run-start-snapshot',
+            'working-copy',
+          ),
         }),
       );
     }

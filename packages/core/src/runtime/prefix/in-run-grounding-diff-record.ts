@@ -11,6 +11,6 @@ export interface InRunGroundingDiffRecord {
   readonly previousDigest: string;
   /** Updated SHA-256 digest observed in the active isolation scope. */
   readonly currentDigest: string;
-  /** Updated full text content loaded from the active isolation scope. */
+  /** Unified diff patch (`createTwoFilesPatch`) between the run-start snapshot and working copy. */
   readonly updatedText: string;
 }

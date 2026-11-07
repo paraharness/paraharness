@@ -1,3 +1,4 @@
+import { createTwoFilesPatch } from 'diff';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -45,15 +46,9 @@ function makeOutTurn<T>(output: T) {
 }
 
 describe('ScopeLockManager & StepContinuationQueue', () => {
-  it('allows concurrent shared readers while serializing exclusive writers in FIFO order without starvation', async () => {
-    const locks = new ScopeLockManager();
-    const events: string[] = [];
-    const r1Started = createDeferred();
-    const r2Started = createDeferred();
-    const releaseReaders = createDeferred();
-    const w1Started = createDeferred();
-    const releaseW1 = createDeferred();
-
+  it('enforces concurrent shared reads, writer-preference fairness, AbortSignal cancellation while queued, and idle entry eviction', async () => {
+    const locks = new ScopeLockManager(), events: string[] = [];
+    const r1Started = createDeferred(), r2Started = createDeferred(), releaseReaders = createDeferred(), w1Started = createDeferred(), releaseW1 = createDeferred();
     const r1 = locks.withReadLock('scope-1', async () => {
       events.push('r1:enter');
       r1Started.resolve();
@@ -68,36 +63,41 @@ describe('ScopeLockManager & StepContinuationQueue', () => {
     });
     await Promise.all([r1Started.promise, r2Started.promise]);
     expect(events).toEqual(['r1:enter', 'r2:enter']);
+    expect(locks.hasLockEntry('scope-1')).toBe(true);
 
+    const wAbort = new AbortController(), rAbort = new AbortController();
+    const abortedWriter = locks.withWriteLock('scope-1', async () => events.push('w-aborted:enter'), wAbort.signal);
     const w1 = locks.withWriteLock('scope-1', async () => {
       events.push('w1:enter');
       w1Started.resolve();
       await releaseW1.promise;
       events.push('w1:exit');
     });
-    const r3 = locks.withReadLock('scope-1', async () => {
-      events.push('r3:enter');
-    });
+    const abortedReader = locks.withReadLock('scope-1', async () => events.push('r-aborted:enter'), rAbort.signal);
+    const r3 = locks.withReadLock('scope-1', async () => events.push('r3:enter'));
+
+    wAbort.abort(new Error('writer-cancelled'));
+    rAbort.abort(new Error('reader-cancelled'));
+    await expect(abortedWriter).rejects.toThrow('writer-cancelled');
+    await expect(abortedReader).rejects.toThrow('reader-cancelled');
 
     releaseReaders.resolve();
     await w1Started.promise;
     expect(events).toEqual(['r1:enter', 'r2:enter', 'r1:exit', 'r2:exit', 'w1:enter']);
-
     releaseW1.resolve();
     await Promise.all([r1, r2, w1, r3]);
     expect(events).toEqual(['r1:enter', 'r2:enter', 'r1:exit', 'r2:exit', 'w1:enter', 'w1:exit', 'r3:enter']);
+    expect(locks.hasLockEntry('scope-1')).toBe(false);
   });
 
-  it('serializes StepContinuationQueue updates per stepExecId and continues after a task rejection', async () => {
-    const queue = new StepContinuationQueue();
-    const order: string[] = [];
-    const gate = createDeferred();
-
+  it('serializes StepContinuationQueue updates per stepExecId via p-queue, honours AbortSignal, and evicts idle queues', async () => {
+    const queue = new StepContinuationQueue(), order: string[] = [], gate = createDeferred(), abortCtrl = new AbortController();
     const p1 = queue.enqueueUpdate('step-1', async () => {
       await gate.promise;
       order.push('first');
       return 1;
     });
+    const pAborted = queue.enqueueUpdate('step-1', async () => order.push('aborted'), abortCtrl.signal);
     const p2 = queue.enqueueUpdate('step-1', async () => {
       order.push('second-throws');
       throw new Error('simulated stack failure');
@@ -107,30 +107,29 @@ describe('ScopeLockManager & StepContinuationQueue', () => {
       return 3;
     });
 
+    expect(queue.hasStepQueue('step-1')).toBe(true);
+    abortCtrl.abort(new Error('step-update-aborted'));
+    await expect(pAborted).rejects.toThrow('step-update-aborted');
     expect(order).toEqual([]);
     gate.resolve();
     await expect(p1).resolves.toBe(1);
     await expect(p2).rejects.toThrow('simulated stack failure');
     await expect(p3).resolves.toBe(3);
     expect(order).toEqual(['first', 'second-throws', 'third']);
-    queue.clearStep('step-1');
+    expect(queue.hasStepQueue('step-1')).toBe(false);
   });
 });
 
 describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation', () => {
   it('maintains run-sticky seat affinity and fails over on HTTP 429 rate-limit until resetAtMs', () => {
     const poolManager = new PoolManager();
-    const seatA = makeSeat('seat-a');
-    const seatB = makeSeat('seat-b');
-    const fallbackSeat = makeSeat('seat-fallback');
+    const seatA = makeSeat('seat-a'), seatB = makeSeat('seat-b'), fallbackSeat = makeSeat('seat-fallback');
     const seatPool = H.pool<ClaudeAccountSeatNode>('seats').with(seatA, seatB).strategy('round-robin').fallback(fallbackSeat).toAST();
 
     expect(poolManager.selectSeat(seatPool, 'run-1', 1_000).id).toBe('seat-a');
     expect(poolManager.selectSeat(seatPool, 'run-1', 1_100).id).toBe('seat-a');
-
     poolManager.recordRateLimit429(seatPool.id, 'seat-a', 5_000);
     expect(poolManager.selectSeat(seatPool, 'run-1', 2_000).id).toBe('seat-b');
-
     poolManager.recordRateLimit429(seatPool.id, 'seat-b', 5_000);
     expect(poolManager.selectSeat(seatPool, 'run-1', 2_500).id).toBe('seat-fallback');
     expect(poolManager.selectSeat(seatPool, 'run-2', 6_000).id).toBe('seat-a');
@@ -139,9 +138,7 @@ describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation'
 
   it('escalates model tiers on retry attempts and when empirical completion rate drops below minSuccessRate', () => {
     const poolManager = new PoolManager();
-    const haiku = makeModel('claude-haiku', 'haiku');
-    const sonnet = makeModel('claude-sonnet', 'sonnet');
-    const opus = makeModel('claude-opus', 'opus');
+    const haiku = makeModel('claude-haiku', 'haiku'), sonnet = makeModel('claude-sonnet', 'sonnet'), opus = makeModel('claude-opus', 'opus');
     const modelPool = H.pool<ClaudeModelNode>('models')
       .with(haiku, sonnet, opus)
       .strategy(($s: PoolStrategyConfigurator<ClaudeModelNode>) => $s.escalateOnRetry().minSuccessRate(0.75).minSamples(4))
@@ -150,7 +147,6 @@ describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation'
     expect(poolManager.selectModel(modelPool, 'run-1', 0).modelId).toBe('claude-haiku');
     expect(poolManager.selectModel(modelPool, 'run-1', 1).modelId).toBe('claude-sonnet');
     expect(poolManager.selectModel(modelPool, 'run-1', 2).modelId).toBe('claude-opus');
-
     poolManager.recordModelOutcome(modelPool.id, 'claude-haiku', true);
     poolManager.recordModelOutcome(modelPool.id, 'claude-haiku', false);
     poolManager.recordModelOutcome(modelPool.id, 'claude-haiku', false);
@@ -160,24 +156,22 @@ describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation'
 });
 
 describe('H.prefixGroup compilation, in-run grounding diffs, and toolsMode', () => {
-  it('pins systemPromptText at byte 0, computes in-run grounding diffs on scope mutation, and honours role-scoped vs union toolsMode', async () => {
+  it('pins systemPromptText at byte 0, computes unified in-run grounding diffs via diff, and honours role-scoped vs union toolsMode', async () => {
     const registry = createExecutorRegistry({
       sources: {
         'fs:text-source': async (node, _input, ctx) => {
-          const text = ctx.scopeHandle === 'mutated-worktree' && node.id === 'src:arch' ? 'ARCH_V2_MUTATED' : node.path;
+          const text = ctx.scopeHandle === 'mutated-worktree' && node.id === 'src:arch' ? 'ARCH_V2_MUTATED\nSHARED_LINE' : node.path;
           return { content: text, digest: `sha:${text}` };
         },
       },
     });
-
     const roleScopedGroup = H.prefixGroup('pg-role')
-      .sharedGrounding(makeSource('src:arch', 'ARCH_V1'))
+      .sharedGrounding(makeSource('src:arch', 'ARCH_V1\nSHARED_LINE'), makeSource('src:stable', 'STABLE_DOC'))
       .sharedInstructions(makeSource('src:inst', 'SHARED_INSTRUCTIONS'))
       .sharedRules(H.rules('r-global').global({ id: 'rule-1', directive: 'Never force push' }))
       .toolsMode('role-scoped')
       .toAST();
-    const unionGroup = H.prefixGroup('pg-union').sharedGrounding(makeSource('src:arch', 'ARCH_V1')).toolsMode('union').toAST();
-
+    const unionGroup = H.prefixGroup('pg-union').sharedGrounding(makeSource('src:arch', 'ARCH_V1\nSHARED_LINE')).toolsMode('union').toAST();
     const readerAgent = H.agent('reader').model(makeModel('sonnet')).prefixGroup(roleScopedGroup).tools(SAMPLE_DECLARED_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
     const writerAgent = H.agent('writer').model(makeModel('sonnet')).prefixGroup(roleScopedGroup).tools(SAMPLE_EXTRA_COMPARE_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
     const unionReader = H.agent('u-reader').model(makeModel('sonnet')).prefixGroup(unionGroup).tools(SAMPLE_DECLARED_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
@@ -190,37 +184,30 @@ describe('H.prefixGroup compilation, in-run grounding diffs, and toolsMode', () 
       registry,
       resolutionContext,
     });
-
-    const roleCompiled = compiled.get('pg-role');
-    const unionCompiled = compiled.get('pg-union');
-    if (roleCompiled === undefined || unionCompiled === undefined) {
-      throw new Error('Expected compiled prefixes');
-    }
-    expect(roleCompiled.systemPromptText).toBe('ARCH_V1\n\nSHARED_INSTRUCTIONS\n\n[Rule: rule-1] Never force push');
+    const roleCompiled = compiled.get('pg-role'), unionCompiled = compiled.get('pg-union');
+    if (roleCompiled === undefined || unionCompiled === undefined) throw new Error('Expected compiled prefixes');
+    expect(roleCompiled.systemPromptText).toBe('ARCH_V1\nSHARED_LINE\n\nSTABLE_DOC\n\nSHARED_INSTRUCTIONS\n\n[Rule: rule-1] Never force push');
     expect(roleCompiled.wireToolSchemasByRoleKey[readerAgent.roleKey]?.map((t) => t.name)).toEqual(['fs_read']);
     expect(roleCompiled.wireToolSchemasByRoleKey[writerAgent.roleKey]?.map((t) => t.name)).toEqual(['git_compare']);
     expect(unionCompiled.wireToolSchemasByRoleKey['*']?.map((t) => t.name)).toEqual(['fs_read', 'git_compare']);
 
+    const expectedPatch = createTwoFilesPatch('src:arch', 'src:arch', 'ARCH_V1\nSHARED_LINE', 'ARCH_V2_MUTATED\nSHARED_LINE', 'run-start-snapshot', 'working-copy');
     const diffs = await computeInRunGroundingDiffs({
-      prefixGroup: roleScopedGroup,
-      compiledPrefix: roleCompiled,
-      scopeHandle: 'mutated-worktree',
-      registry,
-      resolutionContext,
+      prefixGroup: roleScopedGroup, compiledPrefix: roleCompiled, scopeHandle: 'mutated-worktree', registry, resolutionContext,
     });
     expect(diffs).toEqual([
-      { sourceId: 'src:arch', previousDigest: 'sha:ARCH_V1', currentDigest: 'sha:ARCH_V2_MUTATED', updatedText: 'ARCH_V2_MUTATED' },
+      { sourceId: 'src:arch', previousDigest: 'sha:ARCH_V1\nSHARED_LINE', currentDigest: 'sha:ARCH_V2_MUTATED\nSHARED_LINE', updatedText: expectedPatch },
     ]);
+    expect(diffs[0]?.updatedText).toContain('--- src:arch\trun-start-snapshot');
+    expect(diffs[0]?.updatedText).toContain('+++ src:arch\tworking-copy');
+    expect(diffs[0]?.updatedText).toContain('@@ -1,2 +1,2 @@');
     expect(roleCompiled.systemPromptText.startsWith('ARCH_V1')).toBe(true);
 
     const contextFrame = buildRoleAndScopeContextFrame({
-      agentId: 'reader',
-      roleKey: readerAgent.roleKey,
-      activePartitions: ['core'],
-      updatedGroundingDiffs: diffs,
+      agentId: 'reader', roleKey: readerAgent.roleKey, activePartitions: ['core'], updatedGroundingDiffs: diffs,
     });
     expect(contextFrame).toContain('Updated Grounding Diffs:');
-    expect(contextFrame).toContain('ARCH_V2_MUTATED');
+    expect(contextFrame).toContain('@@ -1,2 +1,2 @@');
   });
 });
 
