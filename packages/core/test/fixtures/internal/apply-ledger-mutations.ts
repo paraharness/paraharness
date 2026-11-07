@@ -134,17 +134,18 @@ export function applyStepTransition(store: InMemoryLedgerStore, transition: Reco
  *
  * Updates `compactedTombstones` on the stored `WireFrameRecord` if present.
  *
- * @param {InMemoryLedgerStore} store              - Target in-memory ledger store.
- * @param {string}              messageId          - Target `WireFrameRecord.messageId`.
- * @param {string}              callId             - Tool call ID of the `activateSkill` invocation.
- * @param {string}              compactedTombstone - Tombstone replacement string.
+ * @param {InMemoryLedgerStore} store     - Target in-memory ledger store.
+ * @param {object}              tombstone - Target message ID, tool call ID, and tombstone replacement string.
  */
 export function applyFrameTombstone(
   store: InMemoryLedgerStore,
-  messageId: string,
-  callId: string,
-  compactedTombstone: string,
+  tombstone: {
+    readonly messageId: string;
+    readonly callId: string;
+    readonly compactedTombstone: string;
+  },
 ): void {
+  const { messageId, callId, compactedTombstone } = tombstone;
   store.tombstones.set(`${messageId}:${callId}`, compactedTombstone);
   const frame = store.frames.get(messageId);
   if (frame !== undefined) {
@@ -152,7 +153,10 @@ export function applyFrameTombstone(
       messageId,
       Object.freeze<WireFrameRecord>({
         ...frame,
-        compactedTombstones: Object.freeze({ ...(frame.compactedTombstones ?? {}), [callId]: compactedTombstone }),
+        compactedTombstones: Object.freeze({
+          ...(frame.compactedTombstones ?? {}),
+          [callId]: compactedTombstone,
+        }),
       }),
     );
   }

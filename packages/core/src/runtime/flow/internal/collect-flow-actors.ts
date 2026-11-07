@@ -26,18 +26,30 @@ export function collectExecutableActors<THandle = unknown>(
   const stepType = (step as { readonly type?: string }).type;
   if (stepType === 'harness:agent') {
     const agent = step as AgentNode<unknown, unknown, THandle>;
-    if (visited.has(agent.id)) return;
+    if (visited.has(agent.id)) {
+      return;
+    }
     visited.set(agent.id, agent);
-    for (const fCap of agent.capabilities?.forks ?? []) collectExecutableActors(fCap.childExecutable, visited);
+    for (const fCap of agent.capabilities?.forks ?? []) {
+      collectExecutableActors(fCap.childExecutable, visited);
+    }
     for (const sCap of agent.capabilities?.speculations ?? []) {
       collectExecutableActors(sCap.workerExecutable, visited);
       collectExecutableActors(sCap.arbiter.actor, visited);
-      if (sCap.verifyWinnerWith !== undefined) collectExecutableActors(sCap.verifyWinnerWith.evaluator, visited);
-      if (sCap.refineWinnerWhen !== undefined) collectExecutableActors(sCap.refineWinnerWhen.refinementExecutable, visited);
+      if (sCap.verifyWinnerWith !== undefined) {
+        collectExecutableActors(sCap.verifyWinnerWith.evaluator, visited);
+      }
+      if (sCap.refineWinnerWhen !== undefined) {
+        collectExecutableActors(sCap.refineWinnerWhen.refinementExecutable, visited);
+      }
     }
-    for (const h of agent.onInterruptHandlers) {
-      if (h.mode === 'adjudicate') collectExecutableActors(h.adjudicator, visited);
-      if (h.mode === 'replace') collectExecutableActors(h.replacementExecutable, visited);
+    for (const handler of agent.onInterruptHandlers) {
+      if (handler.mode === 'adjudicate') {
+        collectExecutableActors(handler.adjudicator, visited);
+      }
+      if (handler.mode === 'replace') {
+        collectExecutableActors(handler.replacementExecutable, visited);
+      }
     }
   } else if (stepType === 'harness:loop') {
     const loop = step as LoopNode<unknown, unknown, THandle>;
@@ -59,20 +71,31 @@ export function collectExecutableActors<THandle = unknown>(
  * @returns {readonly AgentNode<unknown, unknown, THandle>[]} Deduplicated list of flow actors.
  */
 export function collectFlowActors<TIn = unknown, THandle = unknown>(
-  nodes: ReadonlyArray<FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<TIn, unknown, THandle>>,
+  nodes: ReadonlyArray<
+    FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<TIn, unknown, THandle>
+  >,
 ): readonly AgentNode<unknown, unknown, THandle>[] {
   const visited = new Map<string, AgentNode<unknown, unknown, THandle>>();
-  const visitList = (items: ReadonlyArray<FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<TIn, unknown, THandle>>): void => {
+  const visitList = (
+    items: ReadonlyArray<
+      FlowStepNode<unknown, unknown, THandle> | FlowBranchNode<TIn, unknown, THandle>
+    >,
+  ): void => {
     for (const node of items) {
-      if (node.type === 'harness:flow-step') {
-        collectExecutableActors(node.step, visited);
-        for (const h of node.onInterruptHandlers) {
-          if (h.mode === 'adjudicate') collectExecutableActors(h.adjudicator, visited);
-          if (h.mode === 'replace') collectExecutableActors(h.replacementExecutable, visited);
+      if (node.type !== 'harness:flow-step') {
+        for (const branchCase of node.cases) {
+          visitList(branchCase.steps);
         }
-      } else {
-        for (const c of node.cases) visitList(c.steps);
         visitList(node.otherwiseSteps);
+        continue;
+      }
+      collectExecutableActors(node.step, visited);
+      for (const handler of node.onInterruptHandlers) {
+        if (handler.mode === 'adjudicate') {
+          collectExecutableActors(handler.adjudicator, visited);
+        } else if (handler.mode === 'replace') {
+          collectExecutableActors(handler.replacementExecutable, visited);
+        }
       }
     }
   };
@@ -97,9 +120,13 @@ export function collectFlowPrefixGroups<THandle = unknown>(
   explicitGroups: readonly PrefixGroupNode[] | undefined,
 ): readonly PrefixGroupNode[] {
   const groupsById = new Map<string, PrefixGroupNode>();
-  for (const g of explicitGroups ?? []) groupsById.set(g.id, g);
+  for (const group of explicitGroups ?? []) {
+    groupsById.set(group.id, group);
+  }
   for (const actor of actors) {
-    if (actor.prefixGroup !== undefined) groupsById.set(actor.prefixGroup.id, actor.prefixGroup);
+    if (actor.prefixGroup !== undefined) {
+      groupsById.set(actor.prefixGroup.id, actor.prefixGroup);
+    }
   }
   return Object.freeze(Array.from(groupsById.values()));
 }
@@ -121,25 +148,63 @@ export function collectFlowPrefixGroups<THandle = unknown>(
 export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
   flowCtx: FlowExecutionContext<TIn, THandle>,
   executable: StepASTNode<unknown, unknown, THandle>,
-  stepParams: { readonly stepExecId: string; readonly activePartitions: readonly string[]; readonly baseScopeCheckpoint: string | undefined; readonly stepInterruptHandlers: readonly InterruptHandlerNode<unknown, unknown, THandle>[] },
-): { readonly executable: StepASTNode<unknown, unknown, THandle>; readonly stepCtx: StepExecutionContext<THandle> } {
+  stepParams: {
+    readonly stepExecId: string;
+    readonly activePartitions: readonly string[];
+    readonly baseScopeCheckpoint: string | undefined;
+    readonly stepInterruptHandlers: readonly InterruptHandlerNode<unknown, unknown, THandle>[];
+  },
+): {
+  readonly executable: StepASTNode<unknown, unknown, THandle>;
+  readonly stepCtx: StepExecutionContext<THandle>;
+} {
   const execType = (executable as { readonly type?: string } | undefined)?.type;
   let mergedExec = executable;
   if (stepParams.stepInterruptHandlers.length > 0 && execType === 'harness:agent') {
     const ag = executable as AgentNode<unknown, unknown, THandle>;
-    mergedExec = Object.freeze({ ...ag, onInterruptHandlers: Object.freeze([...ag.onInterruptHandlers, ...stepParams.stepInterruptHandlers]) });
+    mergedExec = Object.freeze({
+      ...ag,
+      onInterruptHandlers: Object.freeze([
+        ...ag.onInterruptHandlers,
+        ...stepParams.stepInterruptHandlers,
+      ]),
+    });
   } else if (stepParams.stepInterruptHandlers.length > 0 && execType === 'harness:loop') {
     const lp = executable as LoopNode<unknown, unknown, THandle>;
-    mergedExec = Object.freeze({ ...lp, actStep: Object.freeze({ ...lp.actStep, actor: Object.freeze({ ...lp.actStep.actor, onInterruptHandlers: Object.freeze([...lp.actStep.actor.onInterruptHandlers, ...stepParams.stepInterruptHandlers]) }) }) });
+    mergedExec = Object.freeze({
+      ...lp,
+      actStep: Object.freeze({
+        ...lp.actStep,
+        actor: Object.freeze({
+          ...lp.actStep.actor,
+          onInterruptHandlers: Object.freeze([
+            ...lp.actStep.actor.onInterruptHandlers,
+            ...stepParams.stepInterruptHandlers,
+          ]),
+        }),
+      }),
+    });
   }
   const baseCtx: StepExecutionContext<THandle> = {
-    runId: flowCtx.runId, stepExecId: stepParams.stepExecId, scopeHandle: flowCtx.scopeHandle, scopeNode: flowCtx.flow.scope, scope: flowCtx.scopeDriver, activePartitions: stepParams.activePartitions,
-    activeLeases: Object.freeze([]), observedEffects: flowCtx.observedRunEffects, signal: flowCtx.activeStepAbortController.signal, registry: flowCtx.registry,
+    runId: flowCtx.runId,
+    stepExecId: stepParams.stepExecId,
+    scopeHandle: flowCtx.scopeHandle,
+    scopeNode: flowCtx.flow.scope,
+    scope: flowCtx.scopeDriver,
+    activePartitions: stepParams.activePartitions,
+    activeLeases: Object.freeze([]),
+    observedEffects: flowCtx.observedRunEffects,
+    signal: flowCtx.activeStepAbortController.signal,
+    registry: flowCtx.registry,
     resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]),
     getRunner: (rNode: RunnerPoolASTNode) => {
-      const f = flowCtx.registry.runners[rNode.type];
-      if (f === undefined) throw new Error(`No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', lane '${flowCtx.laneId}').`);
-      return f(rNode as never);
+      const factory = flowCtx.registry.runners[rNode.type];
+      if (factory === undefined) {
+        throw new Error(
+          `No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', lane '${flowCtx.laneId}').`,
+        );
+      }
+      return factory(rNode as never);
     },
     recordEffects: (effs: readonly ToolEffect[]) => {
       flowCtx.observedRunEffects.push(...effs);
@@ -147,9 +212,18 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
   };
   const stepCtx = Object.assign({}, baseCtx, {
     _runtime: {
-      ledgerStore: flowCtx.ledgerStore, topologyStore: flowCtx.topologyStore, lessonStore: flowCtx.lessonStore, lockManager: flowCtx.lockManager, continuationQueue: flowCtx.continuationQueue,
-      poolManager: flowCtx.poolManager, serviceRegistry: flowCtx.serviceRegistry, humanAdaptersById: flowCtx.humanAdaptersById, wirePrefixesByGroupId: flowCtx.wirePrefixesByGroupId,
-      laneId: flowCtx.laneId, itemKey: flowCtx.itemKey, baseScopeCheckpoint: stepParams.baseScopeCheckpoint,
+      ledgerStore: flowCtx.ledgerStore,
+      topologyStore: flowCtx.topologyStore,
+      lessonStore: flowCtx.lessonStore,
+      lockManager: flowCtx.lockManager,
+      continuationQueue: flowCtx.continuationQueue,
+      poolManager: flowCtx.poolManager,
+      serviceRegistry: flowCtx.serviceRegistry,
+      humanAdaptersById: flowCtx.humanAdaptersById,
+      wirePrefixesByGroupId: flowCtx.wirePrefixesByGroupId,
+      laneId: flowCtx.laneId,
+      itemKey: flowCtx.itemKey,
+      baseScopeCheckpoint: stepParams.baseScopeCheckpoint,
     },
   });
   return { executable: mergedExec, stepCtx: Object.freeze(stepCtx) };

@@ -38,11 +38,22 @@ export async function resolveSourceStringValue(
     return Object.freeze<GroundingSnapshotRecord>({ sourceId: 'inline', text: source, digest });
   }
   const sourceExec = registry.sources[source.type];
-  if (sourceExec === undefined) throw new Error(`No SourceExecutor registered for '${source.type}' in run '${ctx.runId}'.`);
+  if (sourceExec === undefined) {
+    throw new Error(`No SourceExecutor registered for '${source.type}' in run '${ctx.runId}'.`);
+  }
   const artifact = await sourceExec(source as never, undefined, ctx);
   const obj: object = source;
-  const sourceId = 'id' in obj && typeof obj.id === 'string' ? obj.id : ('path' in obj && typeof obj.path === 'string' ? obj.path : source.type);
-  return Object.freeze<GroundingSnapshotRecord>({ sourceId, text: String(artifact.content), digest: artifact.digest });
+  const sourceId =
+    'id' in obj && typeof obj.id === 'string'
+      ? obj.id
+      : 'path' in obj && typeof obj.path === 'string'
+        ? obj.path
+        : source.type;
+  return Object.freeze<GroundingSnapshotRecord>({
+    sourceId,
+    text: String(artifact.content),
+    digest: artifact.digest,
+  });
 }
 
 /**
@@ -61,21 +72,117 @@ export async function resolveGlobalRuleDirectives(
   registry: RuntimeExecutorRegistry,
   ctx: ResolutionContext,
 ): Promise<readonly string[]> {
-  if (rulesNode === undefined) return Object.freeze([]);
+  if (rulesNode === undefined) {
+    return Object.freeze([]);
+  }
   const lines: string[] = [];
   for (const entry of rulesNode.globalRules) {
     let loaded: GlobalRule | readonly GlobalRule[];
     if (typeof entry === 'object' && entry !== null && 'type' in entry && typeof entry.type === 'string') {
       const sourceNode = entry as SourceASTNode<GlobalRule | readonly GlobalRule[]>;
       const sourceExec = registry.sources[sourceNode.type];
-      if (sourceExec === undefined) throw new Error(`No SourceExecutor registered for global rule source '${sourceNode.type}'.`);
+      if (sourceExec === undefined) {
+        throw new Error(`No SourceExecutor registered for global rule source '${sourceNode.type}'.`);
+      }
       const artifact = await sourceExec(sourceNode as never, undefined, ctx);
       loaded = artifact.content as GlobalRule | readonly GlobalRule[];
-    } else loaded = entry as GlobalRule | readonly GlobalRule[];
+    } else {
+      loaded = entry as GlobalRule | readonly GlobalRule[];
+    }
     const ruleList = Array.isArray(loaded) ? loaded : [loaded];
-    for (const rule of ruleList as readonly GlobalRule[]) lines.push(`[Rule: ${rule.id}] ${rule.directive}`);
+    for (const rule of ruleList as readonly GlobalRule[]) {
+      lines.push(`[Rule: ${rule.id}] ${rule.directive}`);
+    }
   }
   return Object.freeze(lines);
+}
+
+/**
+ * Appends capability and voluntary interrupt tool schemas for `actor` via `push`.
+ *
+ * Covers `.canRaise()`, `.fork()`, `.speculate()`, `.mutatePlan()`, `.escalate()`, and `resumeFork`.
+ *
+ * @param {AgentNode<unknown, unknown, unknown>}               actor - Target agent AST node.
+ * @param {(name: string, desc: string, schema: z.ZodTypeAny) => void} push  - Deduplicating schema collector.
+ */
+function appendCapabilityAndInterruptToolSchemas(
+  actor: AgentNode<unknown, unknown, unknown>,
+  push: (name: string, desc: string, schema: z.ZodTypeAny) => void,
+): void {
+  for (const intr of actor.canRaiseInterrupts) {
+    push(intr.id, `Raise voluntary interrupt ${intr.id}`, intr.schema);
+  }
+  const caps = actor.capabilities;
+  if (caps !== undefined) {
+    for (const f of caps.forks) {
+      push(f.toolName, `Dispatch downward child fork ${f.toolName}`, f.requestSchema);
+    }
+    for (const sp of caps.speculations) {
+      push(sp.toolName, `Launch speculative tournament ${sp.toolName}`, sp.requestSchema);
+    }
+    if (caps.mutatePlan?.spawnTasks !== undefined) {
+      push(
+        'spawnTasks',
+        'Enqueue prerequisite tasks into the lane.',
+        z.object({ tasks: z.array(caps.mutatePlan.spawnTasks.itemSchema).min(1) }),
+      );
+    }
+    if (caps.mutatePlan?.canAddDependencies) {
+      push(
+        'addDependencies',
+        'Add prerequisite item dependencies to the active run.',
+        z.object({ dependsOn: z.array(z.string()).min(1) }),
+      );
+    }
+    if (caps.mutatePlan?.topologyToUpdate !== undefined) {
+      push(
+        'updatePartitionContract',
+        'Update partition contract in the run CoW overlay.',
+        z.object({ partitionId: z.string(), newContractText: z.string() }),
+      );
+    }
+    for (const esc of caps.escalations) {
+      push(esc.interrupt.id, `Escalate ${esc.interrupt.id} to human ${esc.human.id}`, esc.interrupt.schema);
+    }
+  }
+  if (actor.onChildInterruptHandlers.length > 0) {
+    push('resumeFork', 'Resume or abort suspended child forks.', ResumeForkInputSchema);
+  }
+}
+
+/**
+ * Appends `activateSkill`, `completeSkill`, and skill-unlocked tool and service schemas via `push` (`SPEC.md` §3.4.2).
+ *
+ * Tags each skill-unlocked tool description with `[Requires active skill: <skillId>]`.
+ *
+ * @param {readonly SkillNode<unknown>[]}                              inlineSkills - Resolved inline skill nodes.
+ * @param {(name: string, desc: string, schema: z.ZodTypeAny) => void} push         - Schema accumulator callback.
+ */
+function appendSkillUnlockedToolSchemas(
+  inlineSkills: readonly SkillNode<unknown>[],
+  push: (name: string, desc: string, schema: z.ZodTypeAny) => void,
+): void {
+  const skillSchema = z.object({ skillId: z.string() });
+  push(
+    'activateSkill',
+    'Activate a mounted procedural skill and unlock its tools and services.',
+    skillSchema,
+  );
+  push(
+    'completeSkill',
+    'Complete and unmount an active skill, stopping its services.',
+    skillSchema,
+  );
+  for (const skill of inlineSkills) {
+    for (const tool of skill.unlockedTools) {
+      push(tool.name, `${tool.description} [Requires active skill: ${skill.id}]`, tool.inputSchema);
+    }
+    for (const svc of skill.unlockedServices) {
+      for (const t of svc.toolSchemas) {
+        push(t.name, `${t.description} [Requires active skill: ${skill.id}]`, t.inputSchema);
+      }
+    }
+  }
 }
 
 /**
@@ -97,33 +204,31 @@ export function collectRoleScopedWireTools(
   const schemas: WireToolSchema[] = [];
   const seen = new Set<string>();
   const push = (name: string, desc: string, schema: z.ZodTypeAny): void => {
-    if (seen.has(name)) return;
+    if (seen.has(name)) {
+      return;
+    }
     seen.add(name);
-    schemas.push(Object.freeze<WireToolSchema>({ name, description: desc, inputJsonSchema: zodToJsonSchema(schema) }));
+    schemas.push(
+      Object.freeze<WireToolSchema>({
+        name,
+        description: desc,
+        inputJsonSchema: zodToJsonSchema(schema),
+      }),
+    );
   };
-  for (const tool of actor.tools) push(tool.name, tool.description, tool.inputSchema);
+  for (const tool of actor.tools) {
+    push(tool.name, tool.description, tool.inputSchema);
+  }
   const inlineSkills: SkillNode<unknown>[] = [...extraSkills];
-  for (const s of actor.skills) if (s.type === 'harness:skill') inlineSkills.push(s);
-  if (inlineSkills.length > 0 || actor.skills.length > 0) {
-    const skillSchema = z.object({ skillId: z.string() });
-    push('activateSkill', 'Activate a mounted procedural skill and unlock its tools and services.', skillSchema);
-    push('completeSkill', 'Complete and unmount an active skill, stopping its services.', skillSchema);
-    for (const skill of inlineSkills) {
-      for (const tool of skill.unlockedTools) push(tool.name, `${tool.description} [Requires active skill: ${skill.id}]`, tool.inputSchema);
-      for (const svc of skill.unlockedServices) for (const t of svc.toolSchemas) push(t.name, `${t.description} [Requires active skill: ${skill.id}]`, t.inputSchema);
+  for (const s of actor.skills) {
+    if (s.type === 'harness:skill') {
+      inlineSkills.push(s);
     }
   }
-  for (const intr of actor.canRaiseInterrupts) push(intr.id, `Raise voluntary interrupt ${intr.id}`, intr.schema);
-  const caps = actor.capabilities;
-  if (caps !== undefined) {
-    for (const f of caps.forks) push(f.toolName, `Dispatch downward child fork ${f.toolName}`, f.requestSchema);
-    for (const sp of caps.speculations) push(sp.toolName, `Launch speculative tournament ${sp.toolName}`, sp.requestSchema);
-    if (caps.mutatePlan?.spawnTasks !== undefined) push('spawnTasks', 'Enqueue prerequisite tasks into the lane.', z.object({ tasks: z.array(caps.mutatePlan.spawnTasks.itemSchema).min(1) }));
-    if (caps.mutatePlan?.canAddDependencies) push('addDependencies', 'Add prerequisite item dependencies to the active run.', z.object({ dependsOn: z.array(z.string()).min(1) }));
-    if (caps.mutatePlan?.topologyToUpdate !== undefined) push('updatePartitionContract', 'Update partition contract in the run CoW overlay.', z.object({ partitionId: z.string(), newContractText: z.string() }));
-    for (const esc of caps.escalations) push(esc.interrupt.id, `Escalate ${esc.interrupt.id} to human ${esc.human.id}`, esc.interrupt.schema);
+  if (inlineSkills.length > 0 || actor.skills.length > 0) {
+    appendSkillUnlockedToolSchemas(inlineSkills, push);
   }
-  if (actor.onChildInterruptHandlers.length > 0) push('resumeFork', 'Resume or abort suspended child forks.', ResumeForkInputSchema);
+  appendCapabilityAndInterruptToolSchemas(actor, push);
   return Object.freeze(schemas);
 }
 
@@ -142,13 +247,21 @@ export function collectUnionWireTools(
   actors: readonly AgentNode<unknown, unknown, unknown>[],
   skillsByRoleKey?: ReadonlyMap<string, readonly InlineSkillNode<unknown>[]>,
 ): readonly WireToolSchema[] {
-  const byName = new Map<string, { readonly schema: WireToolSchema; readonly owners: Set<string>; readonly ownerList: string[] }>();
+  const byName = new Map<
+    string,
+    { readonly schema: WireToolSchema; readonly owners: Set<string>; readonly ownerList: string[] }
+  >();
   for (const actor of actors) {
     const tools = collectRoleScopedWireTools(actor, skillsByRoleKey?.get(actor.roleKey));
     for (const tool of tools) {
       const existing = byName.get(tool.name);
-      if (existing === undefined) byName.set(tool.name, { schema: tool, owners: new Set([actor.id]), ownerList: [actor.id] });
-      else if (!existing.owners.has(actor.id)) {
+      if (existing === undefined) {
+        byName.set(tool.name, {
+          schema: tool,
+          owners: new Set([actor.id]),
+          ownerList: [actor.id],
+        });
+      } else if (!existing.owners.has(actor.id)) {
         existing.owners.add(actor.id);
         existing.ownerList.push(actor.id);
       }
@@ -157,8 +270,16 @@ export function collectUnionWireTools(
   const unionSchemas: WireToolSchema[] = [];
   for (const entry of byName.values()) {
     const roleTag = `[Role: ${entry.ownerList.join(', ')}]`;
-    const description = entry.schema.description.includes('[Role:') ? entry.schema.description : `${entry.schema.description} ${roleTag}`;
-    unionSchemas.push(Object.freeze<WireToolSchema>({ name: entry.schema.name, description, inputJsonSchema: entry.schema.inputJsonSchema }));
+    const description = entry.schema.description.includes('[Role:')
+      ? entry.schema.description
+      : `${entry.schema.description} ${roleTag}`;
+    unionSchemas.push(
+      Object.freeze<WireToolSchema>({
+        name: entry.schema.name,
+        description,
+        inputJsonSchema: entry.schema.inputJsonSchema,
+      }),
+    );
   }
   return Object.freeze(unionSchemas);
 }

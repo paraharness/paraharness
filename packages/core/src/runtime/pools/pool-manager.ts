@@ -2,10 +2,16 @@ import type { AccountSeatASTNode, ModelASTNode } from '../../ast/domain-ast.type
 import type { PoolNode } from '../../ast/pool-node.js';
 import type { PoolSelectionContext } from '../../ast/pool-selection-context.js';
 import {
+  buildPoolCandidateStates,
   extractPoolCandidateId,
   getOrCreateCandidateMetrics,
-  selectCandidateByStrategy,
+  recordPoolCandidateUsage,
 } from './internal/evaluate-pool-strategy.js';
+import {
+  findAvailableStickyCandidate,
+  resolveFallbackSeatOrThrow,
+  selectCandidateByPoolStrategy,
+} from './internal/select-pool-candidate.js';
 import type { PoolModelSelectionOptions } from './pool-model-selection-options.js';
 import type { PoolRuntimeState } from './pool-runtime-state.js';
 
@@ -41,19 +47,13 @@ export class PoolManager {
   ): TSeat {
     const poolState = this.getOrCreatePoolState(pool.id);
     const stickySeatId = poolState.stickySeatByRunId.get(runId);
+    const candidates = buildPoolCandidateStates(pool, poolState);
+    const activeSticky = findAvailableStickyCandidate(candidates, stickySeatId, nowMs);
+    if (activeSticky !== undefined) {
+      recordPoolCandidateUsage(poolState, activeSticky.id, nowMs);
+      return activeSticky.item;
+    }
     if (stickySeatId !== undefined) {
-      for (let i = 0; i < pool.items.length; i += 1) {
-        const seat = pool.items[i];
-        if (seat !== undefined && seat.id === stickySeatId) {
-          const metrics = getOrCreateCandidateMetrics(poolState, stickySeatId);
-          if (metrics.rateLimitedUntilMs === undefined || metrics.rateLimitedUntilMs <= nowMs) {
-            metrics.usageCount += 1;
-            metrics.lastUsedAtMs = nowMs;
-            return seat;
-          }
-          break;
-        }
-      }
       poolState.stickySeatByRunId.delete(runId);
     }
 
@@ -64,18 +64,11 @@ export class PoolManager {
       nowMs,
       stickyCandidateId: stickySeatId,
     });
-    const selected = selectCandidateByStrategy(pool, poolState, selectionCtx);
-    const selectedMetrics = getOrCreateCandidateMetrics(poolState, selected.id);
-    selectedMetrics.usageCount += 1;
-    selectedMetrics.lastUsedAtMs = nowMs;
-    let isPrimary = false;
-    for (const item of pool.items) {
-      if (item.id === selected.id) {
-        isPrimary = true;
-        break;
-      }
-    }
-    if (isPrimary) {
+    const selected =
+      selectCandidateByPoolStrategy(pool, poolState, selectionCtx) ??
+      resolveFallbackSeatOrThrow(pool, candidates, runId);
+    recordPoolCandidateUsage(poolState, selected.id, nowMs);
+    if (this.isPrimarySeat(pool, selected.id)) {
       poolState.stickySeatByRunId.set(runId, selected.id);
     }
     return selected;
@@ -106,6 +99,7 @@ export class PoolManager {
     const retryAttempt = typeof options === 'number' ? options : (options.retryAttempt ?? 0);
     const nowMs = typeof options === 'number' ? Date.now() : (options.nowMs ?? Date.now());
     const poolState = this.getOrCreatePoolState(modelOrPool.id);
+    const candidates = buildPoolCandidateStates(modelOrPool, poolState);
     const selectionCtx: PoolSelectionContext = Object.freeze<PoolSelectionContext>({
       poolId: modelOrPool.id,
       runId,
@@ -113,11 +107,11 @@ export class PoolManager {
       nowMs,
       stickyCandidateId: undefined,
     });
-    const selected = selectCandidateByStrategy(modelOrPool, poolState, selectionCtx);
+    const selected =
+      selectCandidateByPoolStrategy(modelOrPool, poolState, selectionCtx) ??
+      resolveFallbackSeatOrThrow(modelOrPool, candidates, runId);
     const candidateId = extractPoolCandidateId(selected, 0);
-    const metrics = getOrCreateCandidateMetrics(poolState, candidateId);
-    metrics.usageCount += 1;
-    metrics.lastUsedAtMs = nowMs;
+    recordPoolCandidateUsage(poolState, candidateId, nowMs);
     return selected;
   }
 
@@ -171,6 +165,30 @@ export class PoolManager {
     for (const poolState of this.pools.values()) {
       poolState.stickySeatByRunId.delete(runId);
     }
+  }
+
+  /**
+   * Checks whether `seatId` belongs to `pool.items` (as opposed to `pool.fallbackItem`).
+   *
+   * Only primary pool seats are pinned in `stickySeatByRunId`.
+   *
+   * @template TSeat Account seat AST node type.
+   *
+   * @param {PoolNode<TSeat>} pool   - Account seat pool AST node.
+   * @param {string}          seatId - Candidate seat identifier.
+   *
+   * @returns {boolean} True when `seatId` matches a seat in `pool.items`.
+   */
+  private isPrimarySeat<TSeat extends AccountSeatASTNode>(
+    pool: PoolNode<TSeat>,
+    seatId: string,
+  ): boolean {
+    for (const item of pool.items) {
+      if (item.id === seatId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

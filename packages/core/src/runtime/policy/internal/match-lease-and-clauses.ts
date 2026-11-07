@@ -31,17 +31,23 @@ export async function isEffectCoveredByLeases<THandle = unknown>(
   activeLeases: readonly LeaseDelta[],
   ctx: StepExecutionContext<THandle>,
 ): Promise<boolean> {
-  if (activeLeases.length === 0) return false;
+  if (activeLeases.length === 0) {
+    return false;
+  }
   for (const lease of activeLeases) {
     for (const matcher of lease.grantedMatchers) {
       const matcherExec = ctx.registry.effectMatchers[matcher.type];
-      if (matcherExec === undefined) continue;
+      if (matcherExec === undefined) {
+        continue;
+      }
       const covered = await matcherExec(
         matcher as never,
         effect,
         ctx as StepExecutionContext<unknown>,
       );
-      if (covered) return true;
+      if (covered) {
+        return true;
+      }
     }
   }
   return false;
@@ -69,14 +75,22 @@ export async function evaluateSingleGuardClause<THandle = unknown>(
   for (const guardNode of clause.guards) {
     const guardExec = params.ctx.registry.policyGuards[guardNode.type];
     if (guardExec === undefined) {
-      throw new Error(`No PolicyGuard executor registered for '${guardNode.type}' in clause '${clause.id}'.`);
+      throw new Error(
+        `No PolicyGuard executor registered for '${guardNode.type}' in clause '${clause.id}'.`,
+      );
     }
     const res = await guardExec(
       guardNode as never,
-      { toolName: params.toolName, proposedEffects: params.proposedEffects, activeLeases: params.activeLeases },
+      {
+        toolName: params.toolName,
+        proposedEffects: params.proposedEffects,
+        activeLeases: params.activeLeases,
+      },
       params.ctx as StepExecutionContext<unknown>,
     );
-    if (res.allowed) continue;
+    if (res.allowed) {
+      continue;
+    }
     let guardHadUncovered = false;
     for (const eff of res.violatedEffects) {
       if (!(await isEffectCoveredByLeases(eff, params.activeLeases, params.ctx))) {
@@ -84,12 +98,71 @@ export async function evaluateSingleGuardClause<THandle = unknown>(
         guardHadUncovered = true;
       }
     }
-    if (guardHadUncovered && res.violationSummary.length > 0) summaries.push(res.violationSummary);
+    if (guardHadUncovered && res.violationSummary.length > 0) {
+      summaries.push(res.violationSummary);
+    }
   }
   return Object.freeze<PolicyGuardEvaluationResult>({
     allowed: uncoveredViolations.length === 0,
     violatedEffects: Object.freeze(uncoveredViolations),
     violationSummary: summaries.join('; '),
+  });
+}
+
+/**
+ * Evaluates whether a trailing call in `remainingCalls` passes all `'deny-with-error'` clauses and fails `clause`.
+ *
+ * Only `'declared'` tools not yet adjudicated for `clause.id` are inspected.
+ *
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {BatchSameClauseInterruptParams<THandle>} params - Batching parameters and violated clause $C$.
+ * @param {RemainingToolCallRecord}                 call   - Trailing tool call record to inspect.
+ *
+ * @returns {Promise<PolicyGuardEvaluationResult | undefined>} Evaluation result for `clause` when not denied by an earlier clause.
+ */
+async function evaluateTrailingCallAgainstInterruptClause<THandle = unknown>(
+  params: BatchSameClauseInterruptParams<THandle>,
+  call: RemainingToolCallRecord,
+): Promise<PolicyGuardEvaluationResult | undefined> {
+  const { batchParams, clause } = params;
+  const node = batchParams.toolsByName.get(call.toolName);
+  const driver = node !== undefined ? batchParams.ctx.registry.tools[node.type] : undefined;
+  const isDeclared =
+    node !== undefined &&
+    (node as { readonly effectTracking?: string }).effectTracking === 'declared';
+  if (
+    !isDeclared ||
+    driver?.describeEffects === undefined ||
+    call.adjudicatedClauseIds?.includes(clause.id) === true ||
+    batchParams.policy === undefined
+  ) {
+    return undefined;
+  }
+  const effects = await driver.describeEffects(
+    node as never,
+    JSON.parse(call.argsJson || '{}'),
+    batchParams.ctx.scopeHandle,
+  );
+  for (const c of batchParams.policy.clauses) {
+    if (c.mode !== 'deny-with-error') {
+      continue;
+    }
+    const denyRes = await evaluateSingleGuardClause(c, {
+      toolName: call.toolName,
+      proposedEffects: effects,
+      activeLeases: batchParams.activeLeases,
+      ctx: batchParams.ctx,
+    });
+    if (!denyRes.allowed) {
+      return undefined;
+    }
+  }
+  return evaluateSingleGuardClause(clause, {
+    toolName: call.toolName,
+    proposedEffects: effects,
+    activeLeases: batchParams.activeLeases,
+    ctx: batchParams.ctx,
   });
 }
 
@@ -114,34 +187,56 @@ export async function batchSameClauseInterrupt<THandle = unknown>(
   const updatedRemaining: RemainingToolCallRecord[] = [];
   for (let idx = 0; idx < batchParams.remainingCalls.length; idx += 1) {
     const call = batchParams.remainingCalls[idx];
-    if (call === undefined) continue;
-    const node = batchParams.toolsByName.get(call.toolName);
-    const driver = node !== undefined ? batchParams.ctx.registry.tools[node.type] : undefined;
-    let evalRes: PolicyGuardEvaluationResult | undefined = idx === 0 ? primaryEval : undefined;
-    if (idx > 0 && node !== undefined && (node as { readonly effectTracking?: string }).effectTracking === 'declared' && driver?.describeEffects !== undefined && call.adjudicatedClauseIds?.includes(clause.id) !== true && batchParams.policy !== undefined) {
-      const effects = await driver.describeEffects(node as never, JSON.parse(call.argsJson || '{}'), batchParams.ctx.scopeHandle);
-      let denied = false;
-      for (const c of batchParams.policy.clauses) {
-        if (c.mode === 'deny-with-error' && !(await evaluateSingleGuardClause(c, { toolName: call.toolName, proposedEffects: effects, activeLeases: batchParams.activeLeases, ctx: batchParams.ctx })).allowed) {
-          denied = true;
-          break;
-        }
-      }
-      if (!denied) evalRes = await evaluateSingleGuardClause(clause, { toolName: call.toolName, proposedEffects: effects, activeLeases: batchParams.activeLeases, ctx: batchParams.ctx });
+    if (call === undefined) {
+      continue;
     }
+    const evalRes =
+      idx === 0
+        ? primaryEval
+        : await evaluateTrailingCallAgainstInterruptClause(params, call);
     if (evalRes !== undefined && !evalRes.allowed) {
-      blockedCalls.push(Object.freeze({ callId: call.callId, toolName: call.toolName, argsJson: call.argsJson, violatedEffects: evalRes.violatedEffects, violationSummary: evalRes.violationSummary }));
-      for (const eff of evalRes.violatedEffects) allViolated.push(eff);
-      if (evalRes.violationSummary.length > 0) summaries.push(evalRes.violationSummary);
-      updatedRemaining.push(Object.freeze({ ...call, blockedPreFlight: true, adjudicatedClauseIds: Object.freeze([...(call.adjudicatedClauseIds ?? []), clause.id]) }));
+      blockedCalls.push(
+        Object.freeze({
+          callId: call.callId,
+          toolName: call.toolName,
+          argsJson: call.argsJson,
+          violatedEffects: evalRes.violatedEffects,
+          violationSummary: evalRes.violationSummary,
+        }),
+      );
+      for (const eff of evalRes.violatedEffects) {
+        allViolated.push(eff);
+      }
+      if (evalRes.violationSummary.length > 0) {
+        summaries.push(evalRes.violationSummary);
+      }
+      updatedRemaining.push(
+        Object.freeze({
+          ...call,
+          blockedPreFlight: true,
+          adjudicatedClauseIds: Object.freeze([...(call.adjudicatedClauseIds ?? []), clause.id]),
+        }),
+      );
     } else {
       updatedRemaining.push(call);
     }
   }
   const violationSummary = summaries.join('; ');
-  const rawPayload = clause.mapViolation({ blockedCalls: Object.freeze(blockedCalls), violatedEffects: Object.freeze(allViolated), violationSummary });
+  const rawPayload = clause.mapViolation({
+    blockedCalls: Object.freeze(blockedCalls),
+    violatedEffects: Object.freeze(allViolated),
+    violationSummary,
+  });
   const interruptPayload = clause.interrupt.schema.parse(rawPayload);
-  return Object.freeze<PolicyEvaluationResult>({ status: 'raise-interrupt', primaryEffects, violatedClauseId: clause.id, raisedInterrupt: clause.interrupt, interruptPayload, blockedCalls: Object.freeze(blockedCalls), updatedRemainingCalls: Object.freeze(updatedRemaining) });
+  return Object.freeze<PolicyEvaluationResult>({
+    status: 'raise-interrupt',
+    primaryEffects,
+    violatedClauseId: clause.id,
+    raisedInterrupt: clause.interrupt,
+    interruptPayload,
+    blockedCalls: Object.freeze(blockedCalls),
+    updatedRemainingCalls: Object.freeze(updatedRemaining),
+  });
 }
 
 /**
@@ -161,14 +256,19 @@ export function checkQuantitativeLimits<THandle = unknown>(
   policy: PolicyNode<THandle> | undefined,
   usage: QuantitativeUsageSnapshot,
 ): string | undefined {
-  if (policy === undefined) return undefined;
+  if (policy === undefined) {
+    return undefined;
+  }
   if (policy.maxTurns !== undefined && usage.turnsTaken >= policy.maxTurns) {
     return `Policy '${policy.id}' maxTurns (${String(policy.maxTurns)}) exceeded (${String(usage.turnsTaken)}).`;
   }
   if (policy.maxCostUsd !== undefined && usage.costUsd > policy.maxCostUsd) {
     return `Policy '${policy.id}' maxCostUsd ($${String(policy.maxCostUsd)}) exceeded ($${String(usage.costUsd)}).`;
   }
-  if (policy.maxDurationSeconds !== undefined && usage.elapsedDurationMs > policy.maxDurationSeconds * 1_000) {
+  if (
+    policy.maxDurationSeconds !== undefined &&
+    usage.elapsedDurationMs > policy.maxDurationSeconds * 1_000
+  ) {
     return `Policy '${policy.id}' maxDurationSeconds (${String(policy.maxDurationSeconds)}s) exceeded.`;
   }
   return undefined;

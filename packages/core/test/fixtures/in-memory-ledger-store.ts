@@ -130,7 +130,7 @@ export class InMemoryLedgerStore implements LedgerStore {
    * @returns {Promise<void>} Resolves once recorded.
    */
   async markFrameTombstone(_runId: string, messageId: string, callId: string, compactedTombstone: string): Promise<void> {
-    applyFrameTombstone(this, messageId, callId, compactedTombstone);
+    applyFrameTombstone(this, { messageId, callId, compactedTombstone });
   }
   /**
    * Reconstructs the root-to-leaf `WireFrameRecord[]` chain ending at `leafMessageId`.

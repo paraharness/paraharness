@@ -85,7 +85,9 @@ export { executeAgent } from './agent/execute-agent.js';
 export type { InterruptEdgeResolution } from './agent/interrupt-edge-resolution.js';
 export { createRuntime } from './engine/create-runtime.js';
 export { defaultExecutionEngine } from './engine/default-execution-engine.constants.js';
-export { executeFlow, executeFlowBranch, executeFlowStep } from './flow/execute-flow.js';
+export { executeFlow } from './flow/execute-flow.js';
+export { executeFlowBranch } from './flow/internal/execute-flow-branch.js';
+export { executeFlowStep } from './flow/internal/execute-flow-step.js';
 export type { FlowExecutionContext } from './flow/flow-execution-context.js';
 export type { FlowRunResult } from './flow/flow-run-result.js';
 export type { HierarchicalRewindDrainParams } from './flow/hierarchical-rewind-drain-params.js';
@@ -105,7 +107,12 @@ export type { EvaluateLessonSignalTriggersParams } from './lessons/evaluate-less
 export type { FlushStepLessonOutcomesParams } from './lessons/flush-step-lesson-outcomes-params.js';
 export type { LessonCreationEpochMetadata } from './lessons/lesson-creation-epoch-metadata.js';
 export type { ContrastiveDistillationTrajectoryPair, LessonDistillationParams } from './lessons/lesson-distillation-params.js';
-export { evaluateLessonSignalTriggers, evaluateLessonSignalTriggers as evaluateLessonRetirementAndSignals, flushStepLessonOutcomes, runContrastiveLessonDistillation } from './lessons/lesson-distiller-runner.js';
+export {
+  evaluateLessonSignalTriggers,
+  evaluateLessonSignalTriggers as evaluateLessonRetirementAndSignals,
+} from './lessons/internal/evaluate-lesson-signal-triggers.js';
+export { flushStepLessonOutcomes } from './lessons/internal/flush-step-lesson-outcomes.js';
+export { runContrastiveLessonDistillation } from './lessons/lesson-distiller-runner.js';
 export type { LessonScoreContextParams } from './lessons/lesson-score-context-params.js';
 export { DEFAULT_LESSON_SCORING_WEIGHTS, LESSON_OUTCOME_PRECEDENCE_RANK } from './lessons/lesson-scoring.constants.js';
 export { computeLessonScore, mergeLessonOutcomePrecedence, selectRecalledLessons, selectRecalledLessons as scoreAndRecallLessons, shouldRetireLesson } from './lessons/lesson-scoring.js';
@@ -127,7 +134,8 @@ export type { SyncPrerequisitesParams } from './plan/sync-prerequisites-params.j
 export { PoolManager } from './pools/pool-manager.js';
 export type { PoolModelSelectionOptions } from './pools/pool-model-selection-options.js';
 export type { PoolCandidateRuntimeMetrics, PoolRuntimeState } from './pools/pool-runtime-state.js';
-export { evaluatePreFlightToolBatch, evaluateQuotaTripwires, executePostFlightSandboxedTool } from './policy/evaluate-policy-guards.js';
+export { evaluatePreFlightToolBatch, evaluateQuotaTripwires } from './policy/evaluate-policy-guards.js';
+export { executePostFlightSandboxedTool } from './policy/internal/execute-post-flight-sandboxed-tool.js';
 export { executeLimitExceededSequence } from './policy/execute-limit-exceeded-flush.js';
 export type { LimitExceededFlushParams } from './policy/limit-exceeded-flush-params.js';
 export type { LimitExceededFlushResult } from './policy/limit-exceeded-flush-result.js';
@@ -135,7 +143,15 @@ export type { PolicyEvaluationResult } from './policy/policy-evaluation-result.j
 export type { PostFlightSandboxParams } from './policy/post-flight-sandbox-params.js';
 export type { PostFlightSandboxResult } from './policy/post-flight-sandbox-result.js';
 export type { PreFlightBatchEvalParams } from './policy/pre-flight-batch-eval-params.js';
-export { buildRoleAndScopeContextFrame, compileRunWirePrefixes, compileRunWirePrefixes as compilePrefixGroups, computeInRunGroundingDiffs, computeInRunGroundingDiffs as computeUpdatedGroundingDiffs } from './prefix/compile-wire-prefix.js';
+export {
+  compileRunWirePrefixes,
+  compileRunWirePrefixes as compilePrefixGroups,
+} from './prefix/compile-wire-prefix.js';
+export { buildRoleAndScopeContextFrame } from './prefix/internal/build-role-and-scope-context-frame.js';
+export {
+  computeInRunGroundingDiffs,
+  computeInRunGroundingDiffs as computeUpdatedGroundingDiffs,
+} from './prefix/internal/compute-in-run-grounding-diffs.js';
 export type { CompileWirePrefixParams } from './prefix/compile-wire-prefix-params.js';
 export type { InRunGroundingDiffParams } from './prefix/in-run-grounding-diff-params.js';
 export type { RoleAndScopeContextFrameParams } from './prefix/role-and-scope-context-frame-params.js';

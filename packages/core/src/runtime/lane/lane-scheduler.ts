@@ -6,8 +6,17 @@ import { StepContinuationQueue } from '../locks/step-continuation-queue.js';
 import { PoolManager } from '../pools/pool-manager.js';
 import { ServiceSessionRegistry } from '../services/service-session-registry.js';
 import type { EnqueueLaneItemOptions } from './enqueue-lane-item-options.js';
-import { assertAcyclicLaneDependencies, evaluateLaneItemBudget, prepareLaneItemFlowExecution, resolveLaneTrackerAdapter } from './internal/lane-run-helpers.js';
-import { DEFAULT_PRIORITY_AGING_INTERVAL_MS, LANE_PRIORITY_WEIGHTS, PRIORITY_AGING_STEP_WEIGHT } from './lane-priority.constants.js';
+import {
+  assertAcyclicLaneDependencies,
+  evaluateLaneItemBudget,
+  prepareLaneItemFlowExecution,
+  resolveLaneTrackerAdapter,
+} from './internal/lane-run-helpers.js';
+import {
+  DEFAULT_PRIORITY_AGING_INTERVAL_MS,
+  LANE_PRIORITY_WEIGHTS,
+  PRIORITY_AGING_STEP_WEIGHT,
+} from './lane-priority.constants.js';
 import type { LaneQueuedItemState } from './lane-queued-item-state.js';
 import type { LaneSchedulerConfig } from './lane-scheduler-config.js';
 
@@ -48,6 +57,7 @@ export class LaneScheduler<TIn = unknown> {
     this.poolManager = config.poolManager ?? new PoolManager();
     this.serviceRegistry = config.serviceRegistry ?? new ServiceSessionRegistry();
   }
+
   /**
    * Computes the effective numeric scheduling priority for `item` at `nowMs` (`SPEC.md` §3.10).
    *
@@ -59,11 +69,17 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {number} Effective priority weight.
    */
   computeEffectivePriority(item: LaneQueuedItemState<TIn>, nowMs: number = Date.now()): number {
-    const baseWeight = LANE_PRIORITY_WEIGHTS[this.cfg.lane.priority] ?? LANE_PRIORITY_WEIGHTS.normal;
+    const baseWeight =
+      LANE_PRIORITY_WEIGHTS[this.cfg.lane.priority] ?? LANE_PRIORITY_WEIGHTS.normal;
     const agingMinutes = this.cfg.lane.agingMinutes ?? 0;
-    if (agingMinutes <= 0) return baseWeight + item.priorityBoost;
-    return baseWeight + item.priorityBoost + Math.floor(Math.max(0, nowMs - item.enqueuedAtMs) / (agingMinutes * DEFAULT_PRIORITY_AGING_INTERVAL_MS)) * PRIORITY_AGING_STEP_WEIGHT;
+    if (agingMinutes <= 0) {
+      return baseWeight + item.priorityBoost;
+    }
+    const elapsedMs = Math.max(0, nowMs - item.enqueuedAtMs);
+    const agingSteps = Math.floor(elapsedMs / (agingMinutes * DEFAULT_PRIORITY_AGING_INTERVAL_MS));
+    return baseWeight + item.priorityBoost + agingSteps * PRIORITY_AGING_STEP_WEIGHT;
   }
+
   /**
    * Mirrors an internal lifecycle state key (`'queued'`, `'running'`, `'waiting'`, `'errored'`, `'cancelled'`, or `'exit:<state>'`) to `TrackerAdapter` (`SPEC.md` §2.8 & §3.10).
    *
@@ -75,12 +91,21 @@ export class LaneScheduler<TIn = unknown> {
    *
    * @returns {Promise<void>} Resolves once the external tracker state is updated.
    */
-  async syncTrackerState(itemKey: string, canonicalKey: string, rawExit?: string): Promise<void> {
+  async syncTrackerState(
+    itemKey: string,
+    canonicalKey: string,
+    rawExit?: string,
+  ): Promise<void> {
     const trackerCfg = this.cfg.lane.tracker;
-    const mappedState = trackerCfg?.stateMappings[canonicalKey] ?? (rawExit !== undefined ? trackerCfg?.stateMappings[rawExit] : undefined);
+    const mappedState =
+      trackerCfg?.stateMappings[canonicalKey] ??
+      (rawExit !== undefined ? trackerCfg?.stateMappings[rawExit] : undefined);
     const adapter = mappedState !== undefined ? resolveLaneTrackerAdapter(this.cfg) : undefined;
-    if (adapter !== undefined && mappedState !== undefined) await adapter.setExternalState(itemKey, mappedState);
+    if (adapter !== undefined && mappedState !== undefined) {
+      await adapter.setExternalState(itemKey, mappedState);
+    }
   }
+
   /**
    * Polls `lane.tracker` once, filters raw issues through `fromIssue`, and enqueues non-`undefined` work items (`SPEC.md` §3.10).
    *
@@ -91,15 +116,20 @@ export class LaneScheduler<TIn = unknown> {
   async pollTrackerOnce(): Promise<readonly LaneQueuedItemState<TIn>[]> {
     const trackerCfg = this.cfg.lane.tracker;
     const adapter = resolveLaneTrackerAdapter(this.cfg);
-    if (trackerCfg === undefined || adapter === undefined) return Object.freeze([]);
+    if (trackerCfg === undefined || adapter === undefined) {
+      return Object.freeze([]);
+    }
     const rawIssues = await adapter.poll();
     const added: LaneQueuedItemState<TIn>[] = [];
     for (const raw of rawIssues) {
       const mapped = trackerCfg.fromIssue(raw);
-      if (mapped !== undefined) added.push(await this.enqueueItem({ input: mapped }));
+      if (mapped !== undefined) {
+        added.push(await this.enqueueItem({ input: mapped }));
+      }
     }
     return Object.freeze(added);
   }
+
   /**
    * Enqueues or deduplicates a work item by `lane.keyMapper(input)` and persists its run record in `LedgerStore` (`SPEC.md` §3.10).
    *
@@ -113,19 +143,46 @@ export class LaneScheduler<TIn = unknown> {
     const validatedInput = this.cfg.lane.inputSchema.parse(options.input);
     const itemKey = this.cfg.lane.keyMapper(validatedInput);
     const existing = this.itemsByKey.get(itemKey);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      return existing;
+    }
     const runId = options.runId ?? `run:${this.cfg.lane.id}:${itemKey}`;
-    const mappedDeps = this.cfg.lane.waitFor !== undefined ? this.cfg.lane.waitFor.depsMapper(validatedInput) : [];
-    const dependsOn = Object.freeze([...new Set([...mappedDeps, ...(options.additionalDeps ?? [])])]);
-    assertAcyclicLaneDependencies(this.cfg.lane.id, this.itemsByKey, itemKey, dependsOn);
-    const initialStatus = dependsOn.some((depKey) => this.itemsByKey.get(depKey)?.status !== 'COMPLETED') ? 'WAITING' : 'QUEUED';
-    const itemState: LaneQueuedItemState<TIn> = { runId, itemKey, laneId: this.cfg.lane.id, input: validatedInput, status: initialStatus, enqueuedAtMs: options.enqueuedAtMs ?? Date.now(), priorityBoost: options.priorityBoost ?? 0, dependsOn, costUsd: 0, approvedMaxCostUsd: this.cfg.lane.maxCostUsd?.limitUsd };
+    const mappedDeps =
+      this.cfg.lane.waitFor !== undefined ? this.cfg.lane.waitFor.depsMapper(validatedInput) : [];
+    const dependsOn = Object.freeze([
+      ...new Set([...mappedDeps, ...(options.additionalDeps ?? [])]),
+    ]);
+    assertAcyclicLaneDependencies(this.cfg.lane.id, this.itemsByKey, { itemKey, dependsOn });
+    const initialStatus = dependsOn.some(
+      (depKey) => this.itemsByKey.get(depKey)?.status !== 'COMPLETED',
+    )
+      ? 'WAITING'
+      : 'QUEUED';
+    const itemState: LaneQueuedItemState<TIn> = {
+      runId,
+      itemKey,
+      laneId: this.cfg.lane.id,
+      input: validatedInput,
+      status: initialStatus,
+      enqueuedAtMs: options.enqueuedAtMs ?? Date.now(),
+      priorityBoost: options.priorityBoost ?? 0,
+      dependsOn,
+      costUsd: 0,
+      approvedMaxCostUsd: this.cfg.lane.maxCostUsd?.limitUsd,
+    };
     this.itemsByKey.set(itemKey, itemState);
     this.itemsByRunId.set(runId, itemState);
-    await this.cfg.ledgerStore.createOrResumeRun({ runId, laneId: this.cfg.lane.id, itemKey, inputJson: JSON.stringify(validatedInput), approvedMaxCostUsd: itemState.approvedMaxCostUsd });
+    await this.cfg.ledgerStore.createOrResumeRun({
+      runId,
+      laneId: this.cfg.lane.id,
+      itemKey,
+      inputJson: JSON.stringify(validatedInput),
+      approvedMaxCostUsd: itemState.approvedMaxCostUsd,
+    });
     await this.syncTrackerState(itemKey, initialStatus === 'WAITING' ? 'waiting' : 'queued');
     return itemState;
   }
+
   /**
    * Evaluates `.waitFor()` prerequisite barriers and schedules ready `'QUEUED'` / `'SUSPENDED'` items up to `lane.concurrency` (`SPEC.md` §3.10).
    *
@@ -136,28 +193,57 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {Promise<readonly FlowRunResult[]>} Flow run results for runs completed in this scheduling pass.
    */
   async scheduleNextReadyRuns(nowMs: number = Date.now()): Promise<readonly FlowRunResult[]> {
-    const isDepDone = (item: LaneQueuedItemState<TIn>, d: string): boolean => {
-      const st = this.itemsByKey.get(d)?.status;
-      return st === 'COMPLETED' || (item.status === 'SUSPENDED' && (st === 'FAILED' || st === 'CANCELLED'));
+    const isDepDone = (item: LaneQueuedItemState<TIn>, depKey: string): boolean => {
+      const st = this.itemsByKey.get(depKey)?.status;
+      return (
+        st === 'COMPLETED' ||
+        (item.status === 'SUSPENDED' && (st === 'FAILED' || st === 'CANCELLED'))
+      );
     };
     for (const item of this.itemsByKey.values()) {
-      if (item.status !== 'WAITING' && item.status !== 'QUEUED' && item.status !== 'SUSPENDED') continue;
-      const abandonedDep = item.dependsOn.find((d) => ['FAILED', 'CANCELLED', 'ABANDONED'].includes(this.itemsByKey.get(d)?.status ?? ''));
+      if (
+        item.status !== 'WAITING' &&
+        item.status !== 'QUEUED' &&
+        item.status !== 'SUSPENDED'
+      ) {
+        continue;
+      }
+      const abandonedDep = item.dependsOn.find((depKey) =>
+        ['FAILED', 'CANCELLED', 'ABANDONED'].includes(this.itemsByKey.get(depKey)?.status ?? ''),
+      );
       if (abandonedDep !== undefined && item.status !== 'SUSPENDED') {
         item.status = 'ABANDONED';
         item.terminalExitState = this.cfg.lane.waitFor?.onAbandonedState ?? 'abandoned';
-        await this.syncTrackerState(item.itemKey, `exit:${item.terminalExitState}`, item.terminalExitState);
+        await this.syncTrackerState(
+          item.itemKey,
+          `exit:${item.terminalExitState}`,
+          item.terminalExitState,
+        );
         continue;
       }
-      if (item.dependsOn.every((d) => isDepDone(item, d)) && item.status === 'WAITING') item.status = 'QUEUED';
+      if (item.dependsOn.every((depKey) => isDepDone(item, depKey)) && item.status === 'WAITING') {
+        item.status = 'QUEUED';
+      }
     }
-    const availableSlots = Math.max(0, this.cfg.lane.concurrency - [...this.itemsByKey.values()].filter((i) => i.status === 'RUNNING').length);
-    const readyCandidates = [...this.itemsByKey.values()].filter((i) => (i.status === 'QUEUED' || i.status === 'SUSPENDED') && i.dependsOn.every((d) => isDepDone(i, d)));
-    readyCandidates.sort((a, b) => this.computeEffectivePriority(b, nowMs) - this.computeEffectivePriority(a, nowMs));
+    const runningCount = [...this.itemsByKey.values()].filter(
+      (i) => i.status === 'RUNNING',
+    ).length;
+    const availableSlots = Math.max(0, this.cfg.lane.concurrency - runningCount);
+    const readyCandidates = [...this.itemsByKey.values()].filter(
+      (i) =>
+        (i.status === 'QUEUED' || i.status === 'SUSPENDED') &&
+        i.dependsOn.every((depKey) => isDepDone(i, depKey)),
+    );
+    readyCandidates.sort(
+      (a, b) => this.computeEffectivePriority(b, nowMs) - this.computeEffectivePriority(a, nowMs),
+    );
     const results: FlowRunResult[] = [];
-    for (const item of readyCandidates.slice(0, availableSlots)) results.push(await this.executeQueuedItemRun(item));
+    for (const item of readyCandidates.slice(0, availableSlots)) {
+      results.push(await this.executeQueuedItemRun(item));
+    }
     return Object.freeze(results);
   }
+
   /**
    * Executes a single scheduled `LaneQueuedItemState` through `executeFlow()`, performing initial `syncRoot` on `QUEUED -> RUNNING` (`SPEC.md` §3.7.2 & §3.10).
    *
@@ -170,7 +256,17 @@ export class LaneScheduler<TIn = unknown> {
   private async executeQueuedItemRun(item: LaneQueuedItemState<TIn>): Promise<FlowRunResult> {
     item.status = 'RUNNING';
     await this.syncTrackerState(item.itemKey, 'running');
-    const { scopeDriver, scopeHandle, flowCtx } = await prepareLaneItemFlowExecution(this.cfg, item, { itemsByKey: this.itemsByKey, lockManager: this.lockManager, continuationQueue: this.continuationQueue, poolManager: this.poolManager, serviceRegistry: this.serviceRegistry });
+    const { scopeDriver, scopeHandle, flowCtx } = await prepareLaneItemFlowExecution(
+      this.cfg,
+      item,
+      {
+        itemsByKey: this.itemsByKey,
+        lockManager: this.lockManager,
+        continuationQueue: this.continuationQueue,
+        poolManager: this.poolManager,
+        serviceRegistry: this.serviceRegistry,
+      },
+    );
     item.activeFlowCtx = flowCtx;
     try {
       const res = await executeFlow(flowCtx);
@@ -182,17 +278,35 @@ export class LaneScheduler<TIn = unknown> {
       }
       item.status = 'COMPLETED';
       item.terminalExitState = res.exitState;
-      await this.cfg.ledgerStore.recordRunTerminalReceipt(item.runId, item.itemKey, res.exitState, JSON.stringify(res.scopeReceipt));
+      await this.cfg.ledgerStore.recordRunTerminalReceipt(
+        item.runId,
+        item.itemKey,
+        res.exitState,
+        JSON.stringify(res.scopeReceipt),
+      );
       await this.syncTrackerState(item.itemKey, `exit:${res.exitState}`, res.exitState);
       return res;
     } catch (err) {
       item.status = 'FAILED';
       if (this.cfg.lane.retry !== undefined) {
         item.terminalExitState = this.cfg.lane.retry.orFailState;
-        await this.cfg.ledgerStore.recordRunTerminalReceipt(item.runId, item.itemKey, item.terminalExitState);
+        await this.cfg.ledgerStore.recordRunTerminalReceipt(
+          item.runId,
+          item.itemKey,
+          item.terminalExitState,
+        );
         await this.syncTrackerState(item.itemKey, 'errored');
-        await this.syncTrackerState(item.itemKey, `exit:${item.terminalExitState}`, item.terminalExitState);
-        return Object.freeze<FlowRunResult>({ runId: item.runId, exitState: item.terminalExitState, scopeReceipt: {}, stepOutputs: Object.freeze({}) });
+        await this.syncTrackerState(
+          item.itemKey,
+          `exit:${item.terminalExitState}`,
+          item.terminalExitState,
+        );
+        return Object.freeze<FlowRunResult>({
+          runId: item.runId,
+          exitState: item.terminalExitState,
+          scopeReceipt: {},
+          stepOutputs: Object.freeze({}),
+        });
       }
       await this.cfg.ledgerStore.recordRunTerminalReceipt(item.runId, item.itemKey, 'errored');
       await this.syncTrackerState(item.itemKey, 'errored');
@@ -202,6 +316,7 @@ export class LaneScheduler<TIn = unknown> {
       item.activeFlowCtx = undefined;
     }
   }
+
   /**
    * Enforces the lane's `.maxCostUsd(limitUsd, approver)` ceiling on an active run (`SPEC.md` §3.10).
    *
@@ -212,12 +327,18 @@ export class LaneScheduler<TIn = unknown> {
    *
    * @returns {Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }>} Budget enforcement outcome.
    */
-  async enforceRunBudget(runId: string, addedCostUsd: number): Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }> {
+  async enforceRunBudget(
+    runId: string,
+    addedCostUsd: number,
+  ): Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }> {
     const item = this.itemsByRunId.get(runId);
-    if (item === undefined) throw new Error(`Unknown run '${runId}' in lane '${this.cfg.lane.id}'.`);
+    if (item === undefined) {
+      throw new Error(`Unknown run '${runId}' in lane '${this.cfg.lane.id}'.`);
+    }
     item.costUsd += addedCostUsd;
     return evaluateLaneItemBudget(this.cfg, item, (k, s) => this.syncTrackerState(k, s));
   }
+
   /**
    * Handles a live `.onSignal(signal, ...)` event correlated to an item in this lane (`SPEC.md` §3.10).
    *
@@ -231,17 +352,40 @@ export class LaneScheduler<TIn = unknown> {
    *
    * @returns {Promise<boolean>} True if a matching handler was triggered.
    */
-  async handleSignalRewind<TPayload>(signalId: string, payload: TPayload, itemKey?: string): Promise<boolean> {
+  async handleSignalRewind<TPayload>(
+    signalId: string,
+    payload: TPayload,
+    itemKey?: string,
+  ): Promise<boolean> {
     const handler = this.cfg.lane.onSignalHandlers.find((h) => h.signal.id === signalId);
-    if (handler === undefined) return false;
-    const targets = itemKey !== undefined ? [this.itemsByKey.get(itemKey)].filter((x): x is LaneQueuedItemState<TIn> => x !== undefined) : [...this.itemsByKey.values()];
+    if (handler === undefined) {
+      return false;
+    }
+    const targets =
+      itemKey !== undefined
+        ? [this.itemsByKey.get(itemKey)].filter(
+            (x): x is LaneQueuedItemState<TIn> => x !== undefined,
+          )
+        : [...this.itemsByKey.values()];
     for (const item of targets) {
       item.input = handler.updateMapper(item.input, payload);
-      if (item.activeFlowCtx !== undefined) await executeHierarchicalRewindDrain({ flowCtx: item.activeFlowCtx, rewindToStepId: handler.rewindToStepId, updatedInput: item.input, onRewindHook: handler.onRewind });
-      else await this.cfg.ledgerStore.updateRunInput(item.runId, { inputJson: JSON.stringify(item.input), rewindPendingToStepId: handler.rewindToStepId });
+      if (item.activeFlowCtx !== undefined) {
+        await executeHierarchicalRewindDrain({
+          flowCtx: item.activeFlowCtx,
+          rewindToStepId: handler.rewindToStepId,
+          updatedInput: item.input,
+          onRewindHook: handler.onRewind,
+        });
+      } else {
+        await this.cfg.ledgerStore.updateRunInput(item.runId, {
+          inputJson: JSON.stringify(item.input),
+          rewindPendingToStepId: handler.rewindToStepId,
+        });
+      }
     }
     return targets.length > 0;
   }
+
   /**
    * Returns a snapshot of all tracked items in this lane.
    *

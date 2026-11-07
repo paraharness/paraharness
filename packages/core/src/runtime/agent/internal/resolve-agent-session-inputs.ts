@@ -31,7 +31,11 @@ import { executeAgent } from '../execute-agent.js';
 export function registerResolvedInlineSkill<THandle>(
   skill: InlineSkillNode<THandle>,
   skillsById: Map<string, InlineSkillNode<THandle>>,
-  toolMaps: { readonly toolsByName: Map<string, ToolASTNode<THandle>>; readonly skillOwnerByToolName: Map<string, string>; readonly serviceByToolName: Map<string, string> },
+  toolMaps: {
+    readonly toolsByName: Map<string, ToolASTNode<THandle>>;
+    readonly skillOwnerByToolName: Map<string, string>;
+    readonly serviceByToolName: Map<string, string>;
+  },
 ): void {
   skillsById.set(skill.id, skill);
   for (const st of skill.unlockedTools) {
@@ -63,31 +67,72 @@ export function registerResolvedInlineSkill<THandle>(
 export async function resolveAgentSkillsAndTools<TIn, TOut, THandle>(
   node: AgentNode<TIn, TOut, THandle>,
   ctx: StepExecutionContext<THandle>,
-): Promise<{ readonly toolsByName: ReadonlyMap<string, ToolASTNode<THandle>>; readonly skillsById: ReadonlyMap<string, InlineSkillNode<THandle>>; readonly skillOwnerByToolName: ReadonlyMap<string, string>; readonly serviceByToolName: ReadonlyMap<string, string> }> {
+): Promise<{
+  readonly toolsByName: ReadonlyMap<string, ToolASTNode<THandle>>;
+  readonly skillsById: ReadonlyMap<string, InlineSkillNode<THandle>>;
+  readonly skillOwnerByToolName: ReadonlyMap<string, string>;
+  readonly serviceByToolName: ReadonlyMap<string, string>;
+}> {
   const toolsByName = new Map<string, ToolASTNode<THandle>>();
   const skillsById = new Map<string, InlineSkillNode<THandle>>();
   const skillOwnerByToolName = new Map<string, string>();
   const serviceByToolName = new Map<string, string>();
   const toolMaps = { toolsByName, skillOwnerByToolName, serviceByToolName };
-  for (const t of node.tools) toolsByName.set(t.name, t);
+  for (const tool of node.tools) {
+    toolsByName.set(tool.name, tool);
+  }
   for (const sEntry of node.skills) {
     const entryType = (sEntry as { readonly type?: string }).type;
-    if ((entryType === 'harness:skill' || entryType === 'harness:sourced-skill') && (sEntry as { readonly source?: unknown }).source !== undefined) {
+    if (
+      (entryType === 'harness:skill' || entryType === 'harness:sourced-skill') &&
+      (sEntry as { readonly source?: unknown }).source !== undefined
+    ) {
       const sourced = sEntry as SourcedSkillNode<THandle>;
       const srcExec = ctx.registry.sources[sourced.source.type];
-      if (srcExec === undefined) throw new Error(`No SourceExecutor registered for skill source '${sourced.source.type}' on agent '${node.id}'.`);
+      if (srcExec === undefined) {
+        throw new Error(
+          `No SourceExecutor registered for skill source '${sourced.source.type}' on agent '${node.id}'.`,
+        );
+      }
       const art = await srcExec(sourced.source as never, undefined, ctx);
-      const loaded = typeof art.content === 'object' && art.content !== null ? (art.content as Partial<InlineSkillNode<THandle>>) : undefined;
-      const instrText = sourced.instructions !== undefined ? (await resolveSourceStringValue(sourced.instructions, ctx.registry, ctx)).text : (typeof loaded?.instructions === 'string' ? loaded.instructions : String(art.content));
-      registerResolvedInlineSkill(Object.freeze<InlineSkillNode<THandle>>({ type: 'harness:skill', id: sourced.id, description: sourced.description ?? loaded?.description ?? sourced.id, when: sourced.when ?? loaded?.when, instructions: instrText, unlockedTools: sourced.unlockedTools, unlockedServices: sourced.unlockedServices, leaseMode: sourced.leaseMode }), skillsById, toolMaps);
+      const loaded =
+        typeof art.content === 'object' && art.content !== null
+          ? (art.content as Partial<InlineSkillNode<THandle>>)
+          : undefined;
+      const instrText =
+        sourced.instructions !== undefined
+          ? (await resolveSourceStringValue(sourced.instructions, ctx.registry, ctx)).text
+          : typeof loaded?.instructions === 'string'
+            ? loaded.instructions
+            : String(art.content);
+      registerResolvedInlineSkill(
+        Object.freeze<InlineSkillNode<THandle>>({
+          type: 'harness:skill',
+          id: sourced.id,
+          description: sourced.description ?? loaded?.description ?? sourced.id,
+          when: sourced.when ?? loaded?.when,
+          instructions: instrText,
+          unlockedTools: sourced.unlockedTools,
+          unlockedServices: sourced.unlockedServices,
+          leaseMode: sourced.leaseMode,
+        }),
+        skillsById,
+        toolMaps,
+      );
     } else if (entryType === 'harness:skill') {
       registerResolvedInlineSkill(sEntry as InlineSkillNode<THandle>, skillsById, toolMaps);
     } else {
       const sourceNode = sEntry as SourceASTNode<readonly InlineSkillNode<THandle>[]>;
       const sourceExec = ctx.registry.sources[sourceNode.type];
-      if (sourceExec === undefined) throw new Error(`No SourceExecutor registered for skill source '${sourceNode.type}' on agent '${node.id}'.`);
+      if (sourceExec === undefined) {
+        throw new Error(
+          `No SourceExecutor registered for skill source '${sourceNode.type}' on agent '${node.id}'.`,
+        );
+      }
       const artifact = await sourceExec(sourceNode as never, undefined, ctx);
-      for (const loadedSkill of artifact.content as readonly InlineSkillNode<THandle>[]) registerResolvedInlineSkill(loadedSkill, skillsById, toolMaps);
+      for (const loadedSkill of artifact.content as readonly InlineSkillNode<THandle>[]) {
+        registerResolvedInlineSkill(loadedSkill, skillsById, toolMaps);
+      }
     }
   }
   return { toolsByName, skillsById, skillOwnerByToolName, serviceByToolName };
@@ -111,36 +156,93 @@ export async function resolveAgentSkillsAndTools<TIn, TOut, THandle>(
 export async function resolveAgentScopedRulesAndDirectives<TIn, TOut, THandle>(
   node: AgentNode<TIn, TOut, THandle>,
   ctx: StepExecutionContext<THandle>,
-): Promise<{ readonly scopedRules: readonly InlineScopedRuleNode[]; readonly actorGroundingTexts: readonly string[]; readonly actorInstructionTexts: readonly string[] }> {
+): Promise<{
+  readonly scopedRules: readonly InlineScopedRuleNode[];
+  readonly actorGroundingTexts: readonly string[];
+  readonly actorInstructionTexts: readonly string[];
+}> {
   const scopedRules: InlineScopedRuleNode[] = [];
   for (const rEntry of node.rules?.scopedRules ?? []) {
     const entryObj = rEntry as { readonly type?: string };
-    if ((entryObj.type === 'harness:scoped-rule' || entryObj.type === 'harness:sourced-scoped-rule') && (rEntry as { readonly source?: unknown }).source !== undefined) {
+    if (
+      (entryObj.type === 'harness:scoped-rule' ||
+        entryObj.type === 'harness:sourced-scoped-rule') &&
+      (rEntry as { readonly source?: unknown }).source !== undefined
+    ) {
       const sourced = rEntry as SourcedScopedRuleNode;
       const srcExec = ctx.registry.sources[sourced.source.type];
-      if (srcExec === undefined) throw new Error(`No SourceExecutor registered for scoped rule source '${sourced.source.type}' on agent '${node.id}'.`);
+      if (srcExec === undefined) {
+        throw new Error(
+          `No SourceExecutor registered for scoped rule source '${sourced.source.type}' on agent '${node.id}'.`,
+        );
+      }
       const art = await srcExec(sourced.source as never, undefined, ctx);
-      const loaded = typeof art.content === 'object' && art.content !== null ? (art.content as Partial<ScopedRule>) : undefined;
-      const dirText = sourced.directive !== undefined ? (await resolveSourceStringValue(sourced.directive, ctx.registry, ctx)).text : (loaded?.directive ?? String(art.content));
-      scopedRules.push(Object.freeze<InlineScopedRuleNode>({ type: 'harness:scoped-rule', id: sourced.id, when: sourced.when ?? loaded?.when ?? Object.freeze({ partitions: [] }), directive: dirText, enforceBeforeStopChecks: sourced.enforceBeforeStopChecks }));
+      const loaded =
+        typeof art.content === 'object' && art.content !== null
+          ? (art.content as Partial<ScopedRule>)
+          : undefined;
+      const dirText =
+        sourced.directive !== undefined
+          ? (await resolveSourceStringValue(sourced.directive, ctx.registry, ctx)).text
+          : (loaded?.directive ?? String(art.content));
+      scopedRules.push(
+        Object.freeze<InlineScopedRuleNode>({
+          type: 'harness:scoped-rule',
+          id: sourced.id,
+          when: sourced.when ?? loaded?.when ?? Object.freeze({ partitions: [] }),
+          directive: dirText,
+          enforceBeforeStopChecks: sourced.enforceBeforeStopChecks,
+        }),
+      );
     } else if (entryObj.type === 'harness:scoped-rule') {
       scopedRules.push(rEntry as InlineScopedRuleNode);
-    } else if (typeof rEntry === 'object' && rEntry !== null && 'type' in rEntry && typeof entryObj.type === 'string') {
+    } else if (
+      typeof rEntry === 'object' &&
+      rEntry !== null &&
+      'type' in rEntry &&
+      typeof entryObj.type === 'string'
+    ) {
       const srcNode = rEntry as SourceASTNode<ScopedRule | readonly ScopedRule[]>;
       const srcExec = ctx.registry.sources[srcNode.type];
-      if (srcExec === undefined) throw new Error(`No SourceExecutor registered for scoped rule source '${srcNode.type}' on agent '${node.id}'.`);
+      if (srcExec === undefined) {
+        throw new Error(
+          `No SourceExecutor registered for scoped rule source '${srcNode.type}' on agent '${node.id}'.`,
+        );
+      }
       const artifact = await srcExec(srcNode as never, undefined, ctx);
       const list = Array.isArray(artifact.content) ? artifact.content : [artifact.content];
-      for (const item of list as ReadonlyArray<ScopedRule & { readonly partitions?: readonly string[] }>) {
-        scopedRules.push(Object.freeze<InlineScopedRuleNode>({ type: 'harness:scoped-rule', id: item.id, when: item.when ?? Object.freeze({ partitions: [...(item.partitions ?? [])] }), directive: item.directive, enforceBeforeStopChecks: item.checks ?? Object.freeze([]) }));
+      for (const item of list as ReadonlyArray<
+        ScopedRule & { readonly partitions?: readonly string[] }
+      >) {
+        scopedRules.push(
+          Object.freeze<InlineScopedRuleNode>({
+            type: 'harness:scoped-rule',
+            id: item.id,
+            when:
+              item.when ??
+              Object.freeze({ partitions: [...(item.partitions ?? [])] }),
+            directive: item.directive,
+            enforceBeforeStopChecks: item.checks ?? Object.freeze([]),
+          }),
+        );
       }
     }
   }
   const actorGroundingTexts: string[] = [];
-  for (const gSource of node.grounding) actorGroundingTexts.push((await resolveSourceStringValue(gSource, ctx.registry, ctx)).text);
+  for (const gSource of node.grounding) {
+    const resolved = await resolveSourceStringValue(gSource, ctx.registry, ctx);
+    actorGroundingTexts.push(resolved.text);
+  }
   const actorInstructionTexts: string[] = [];
-  for (const iSource of node.instructions) actorInstructionTexts.push((await resolveSourceStringValue(iSource, ctx.registry, ctx)).text);
-  return { scopedRules: Object.freeze(scopedRules), actorGroundingTexts: Object.freeze(actorGroundingTexts), actorInstructionTexts: Object.freeze(actorInstructionTexts) };
+  for (const iSource of node.instructions) {
+    const resolved = await resolveSourceStringValue(iSource, ctx.registry, ctx);
+    actorInstructionTexts.push(resolved.text);
+  }
+  return {
+    scopedRules: Object.freeze(scopedRules),
+    actorGroundingTexts: Object.freeze(actorGroundingTexts),
+    actorInstructionTexts: Object.freeze(actorInstructionTexts),
+  };
 }
 
 /**
@@ -152,30 +254,88 @@ export async function resolveAgentScopedRulesAndDirectives<TIn, TOut, THandle>(
  * @template TOut    Parent agent output payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {StepASTNode<unknown, unknown, THandle>}    childNode - Child step AST node to execute.
- * @param {unknown}                                   childIn   - Child step input payload.
- * @param {StepExecutionContext<THandle>}             childCtx  - Child step execution context.
- * @param {AgentTurnSessionState<TIn, TOut, THandle>} parent    - Enclosing parent agent session state.
+ * @param {StepASTNode<unknown, unknown, THandle>} childNode - Child step AST node to execute.
+ * @param {unknown}                                childIn   - Child step input payload.
+ * @param {object}                                 runCtx    - Child step execution context and enclosing parent agent session state.
  *
  * @returns {Promise<ChildForkExecutionOutcome<unknown>>} Completed child output or upward interrupt outcome.
  */
 export async function executeDefaultChildStep<TIn, TOut, THandle>(
   childNode: StepASTNode<unknown, unknown, THandle>,
   childIn: unknown,
-  childCtx: StepExecutionContext<THandle>,
-  parent: AgentTurnSessionState<TIn, TOut, THandle>,
+  runCtx: {
+    readonly childCtx: StepExecutionContext<THandle>;
+    readonly parent: AgentTurnSessionState<TIn, TOut, THandle>;
+  },
 ): Promise<ChildForkExecutionOutcome<unknown>> {
-  const existingRuntime = (childCtx as StepExecutionContext<THandle> & { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
-  const childOutcomeSink: { continuationStack?: readonly ContinuationFrame[]; leafMessageId?: string | null; accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>; raisedByPhase?: 'act' | 'evaluate'; suspendedAtCallId?: string } = {};
-  const enrichedCtx = Object.freeze({ ...childCtx, _runtime: { ledgerStore: parent.ledgerStore, topologyStore: parent.topologyStore, lessonStore: parent.lessonStore, lockManager: parent.lockManager, continuationQueue: parent.continuationQueue, poolManager: parent.poolManager, serviceRegistry: parent.serviceRegistry, humanAdaptersById: parent.humanAdaptersById, ...existingRuntime, childOutcomeSink } });
+  const { childCtx, parent } = runCtx;
+  const existingRuntime =
+    (childCtx as StepExecutionContext<THandle> & { readonly _runtime?: Record<string, unknown> })
+      ._runtime ?? {};
+  const childOutcomeSink: {
+    continuationStack?: readonly ContinuationFrame[];
+    leafMessageId?: string | null;
+    accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>;
+    raisedByPhase?: 'act' | 'evaluate';
+    suspendedAtCallId?: string;
+  } = {};
+  const enrichedCtx = Object.freeze({
+    ...childCtx,
+    _runtime: {
+      ledgerStore: parent.ledgerStore,
+      topologyStore: parent.topologyStore,
+      lessonStore: parent.lessonStore,
+      lockManager: parent.lockManager,
+      continuationQueue: parent.continuationQueue,
+      poolManager: parent.poolManager,
+      serviceRegistry: parent.serviceRegistry,
+      humanAdaptersById: parent.humanAdaptersById,
+      ...existingRuntime,
+      childOutcomeSink,
+    },
+  });
   try {
     const nodeType = (childNode as { readonly type: string }).type;
-    const output = nodeType === 'harness:agent' ? await executeAgent(childNode as AgentNode<unknown, unknown, THandle>, childIn, enrichedCtx) : nodeType === 'harness:loop' ? await executeLoop(childNode as LoopNode<unknown, unknown, THandle>, childIn, enrichedCtx) : await executeStepNode(childNode, childIn, enrichedCtx);
-    return Object.freeze<ChildForkExecutionOutcome<unknown>>({ status: 'completed', output, leafMessageId: childOutcomeSink.leafMessageId, accumulatedLessonOutcomes: childOutcomeSink.accumulatedLessonOutcomes, continuationStack: childOutcomeSink.continuationStack ?? Object.freeze([]) });
+    let output: unknown;
+    if (nodeType === 'harness:agent') {
+      output = await executeAgent(
+        childNode as AgentNode<unknown, unknown, THandle>,
+        childIn,
+        enrichedCtx,
+      );
+    } else if (nodeType === 'harness:loop') {
+      output = await executeLoop(
+        childNode as LoopNode<unknown, unknown, THandle>,
+        childIn,
+        enrichedCtx,
+      );
+    } else {
+      output = await executeStepNode(childNode, childIn, enrichedCtx);
+    }
+    return Object.freeze<ChildForkExecutionOutcome<unknown>>({
+      status: 'completed',
+      output,
+      leafMessageId: childOutcomeSink.leafMessageId,
+      accumulatedLessonOutcomes: childOutcomeSink.accumulatedLessonOutcomes,
+      continuationStack: childOutcomeSink.continuationStack ?? Object.freeze([]),
+    });
   } catch (err) {
-    const intrErr = err as { readonly interruptResolution?: { readonly interruptId: string; readonly payload: unknown }; readonly raisedByPhase?: 'act' | 'evaluate'; readonly suspendedAtCallId?: string };
+    const intrErr = err as {
+      readonly interruptResolution?: { readonly interruptId: string; readonly payload: unknown };
+      readonly raisedByPhase?: 'act' | 'evaluate';
+      readonly suspendedAtCallId?: string;
+    };
     if (intrErr.interruptResolution !== undefined) {
-      return Object.freeze<ChildForkExecutionOutcome<unknown>>({ status: 'interrupt-raised', interruptId: intrErr.interruptResolution.interruptId, interruptPayload: intrErr.interruptResolution.payload, raisedByPhase: intrErr.raisedByPhase ?? childOutcomeSink.raisedByPhase ?? 'act', suspendedAtCallId: intrErr.suspendedAtCallId ?? childOutcomeSink.suspendedAtCallId, leafMessageId: childOutcomeSink.leafMessageId, accumulatedLessonOutcomes: childOutcomeSink.accumulatedLessonOutcomes, continuationStack: childOutcomeSink.continuationStack ?? Object.freeze([]) });
+      return Object.freeze<ChildForkExecutionOutcome<unknown>>({
+        status: 'interrupt-raised',
+        interruptId: intrErr.interruptResolution.interruptId,
+        interruptPayload: intrErr.interruptResolution.payload,
+        raisedByPhase: intrErr.raisedByPhase ?? childOutcomeSink.raisedByPhase ?? 'act',
+        suspendedAtCallId: intrErr.suspendedAtCallId ?? childOutcomeSink.suspendedAtCallId,
+        leafMessageId: childOutcomeSink.leafMessageId,
+        accumulatedLessonOutcomes: childOutcomeSink.accumulatedLessonOutcomes,
+        continuationStack: childOutcomeSink.continuationStack ?? Object.freeze([]),
+      });
     }
     throw err;
   }

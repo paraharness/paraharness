@@ -57,6 +57,10 @@ export interface LoopExecutionState<TIn = unknown, TOut = unknown, THandle = unk
   readonly wirePrefixesByGroupId: ReadonlyMap<string, CompiledWirePrefix>;
   /** Currently selected `ModelASTNode` for the `.act()` actor. */
   currentActModelNode: ModelASTNode;
+  /** Most recent inner `.act()` `ContinuationFrame` captured on exit or interruption. */
+  lastInnerAgentFrame?: ContinuationFrame;
+  /** Tool call ID at which the inner `.act()` agent suspended, if any. */
+  lastSuspendedAtCallId?: string;
   /** Optional phantom reference to `TOut` so the generic parameter is structurally used. */
   readonly outputTypeMarker?: TOut;
 }

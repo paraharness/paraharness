@@ -1,108 +1,101 @@
-import type { FlowBranchNode } from '../../ast/flow-branch-node.js';
-import type { FlowStepNode } from '../../ast/flow-step-node.js';
 import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
-import type { InterruptEdgeResolution } from '../agent/interrupt-edge-resolution.js';
 import { compileRunWirePrefixes } from '../prefix/compile-wire-prefix.js';
-import { executeStepNode } from '../step/execute-step-node.js';
 import type { FlowExecutionContext } from './flow-execution-context.js';
 import type { FlowRunResult } from './flow-run-result.js';
-import {
-  buildFlowStepExecutionContext,
-  collectFlowActors,
-  collectFlowPrefixGroups,
-} from './internal/collect-flow-actors.js';
-import { executeReplaceWithPromotion, foldFlowCustomTelemetry } from './internal/flow-replace-and-rewind.js';
+import { collectFlowActors, collectFlowPrefixGroups } from './internal/collect-flow-actors.js';
+import { executeFlowBranch } from './internal/execute-flow-branch.js';
+import { executeFlowStep } from './internal/execute-flow-step.js';
+import { foldFlowCustomTelemetry } from './internal/flow-replace-and-rewind.js';
 
 /**
- * Executes a single `FlowStepNode`, handling `.inputFrom()` projection, step-level `.replaceWith()` promotion, and `.retry()` backoff (`SPEC.md` §3.9).
+ * Compiles run wire prefixes (if not already compiled) and initializes or resumes the run record in `LedgerStore` (`SPEC.md` §3.9).
  *
- * Persists `completedStepOutputs` and `recordStepTransition` in `LedgerStore` when the step completes,
- * and quiesces `'scope'`-scoped services and restores `baseScopeCheckpoint` if the step faults or aborts.
+ * Restores persisted `completedStepOutputsJson` into `flowCtx.completedStepOutputs` when resuming.
  *
  * @template TIn     Validated flow input payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {FlowExecutionContext<TIn, THandle>}      flowCtx         - Active flow execution context.
- * @param {FlowStepNode<unknown, unknown, THandle>} stepNode        - Passive `FlowStepNode` to execute.
- * @param {string}                                  [outerBranchId] - Optional enclosing `FlowBranchNode.id` for output attribution.
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx - Active flow execution context.
  *
- * @returns {Promise<{ readonly status: 'completed' | 'suspended' | 'rewound'; readonly output?: unknown }>} Step execution outcome.
+ * @returns {Promise<void>} Resolves once prefixes and run state are initialized in `LedgerStore`.
  */
-export async function executeFlowStep<TIn = unknown, THandle = unknown>(flowCtx: FlowExecutionContext<TIn, THandle>, stepNode: FlowStepNode<unknown, unknown, THandle>, outerBranchId?: string): Promise<{ readonly status: 'completed' | 'suspended' | 'rewound'; readonly output?: unknown }> {
-  const maxTries = flowCtx.retryConfig?.tries ?? 1;
-  for (let attempt = 1; attempt <= maxTries; attempt += 1) {
-    const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle));
-    const isReplaced = flowCtx.activeReplacementExecutable !== undefined;
-    const targetExecutable = flowCtx.activeReplacementExecutable ?? stepNode.step;
-    const stepInput = !isReplaced && stepNode.inputFrom !== undefined ? stepNode.inputFrom(flowCtx.currentInput, Object.fromEntries(flowCtx.completedStepOutputs.entries()), scopeReceipt) : flowCtx.currentInput;
-    const extractPartsFn = (targetExecutable as { readonly extractPartitions?: (i: unknown) => readonly string[] }).extractPartitions;
-    const stepExecId = flowCtx.activeStepExecId ?? `${flowCtx.runId}:${stepNode.id}:${String(attempt)}`;
-    const baseCkpt = flowCtx.scopeDriver.serializeCheckpoint !== undefined ? await flowCtx.scopeDriver.serializeCheckpoint(flowCtx.scopeHandle) : undefined;
-    if (baseCkpt !== undefined && flowCtx.stepBaseCheckpointsByStepId !== undefined && !flowCtx.stepBaseCheckpointsByStepId.has(stepNode.id)) flowCtx.stepBaseCheckpointsByStepId.set(stepNode.id, baseCkpt);
-    if (flowCtx.activeStepExecId === null) await flowCtx.ledgerStore.recordStepStart({ runId: flowCtx.runId, stepExecId, stepId: stepNode.id, executableId: targetExecutable.id, inputMsgId: null, baseScopeCheckpoint: baseCkpt, continuationStack: Object.freeze([]) });
-    Object.assign(flowCtx, { activeStepId: stepNode.id, activeStepExecId: stepExecId });
-    const built = buildFlowStepExecutionContext(flowCtx, targetExecutable, { stepExecId, activePartitions: extractPartsFn !== undefined ? extractPartsFn(stepInput) : [], baseScopeCheckpoint: baseCkpt, stepInterruptHandlers: isReplaced ? [] : stepNode.onInterruptHandlers });
-    const resumeHolder = flowCtx as FlowExecutionContext<TIn, THandle> & { resumeContinuationStack?: typeof built.stepCtx.resumeContinuationStack };
-    const stepCtx = resumeHolder.resumeContinuationStack !== undefined ? Object.freeze({ ...built.stepCtx, resumeContinuationStack: resumeHolder.resumeContinuationStack }) : built.stepCtx;
-    resumeHolder.resumeContinuationStack = undefined;
-    try {
-      const output = await executeStepNode(built.executable, stepInput, stepCtx);
-      Object.assign(flowCtx, { activeReplacementExecutable: undefined, activeStepExecId: null });
-      flowCtx.completedStepOutputs.set(stepNode.id, output);
-      if (outerBranchId !== undefined) flowCtx.completedStepOutputs.set(outerBranchId, output);
-      await flowCtx.ledgerStore.recordStepTransition({ stepExecId, status: 'COMPLETED', outputJson: JSON.stringify(output), telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 1, elapsedDurationMs: 0 }) });
-      return Object.freeze({ status: 'completed', output });
-    } catch (err) {
-      const typedErr = err as Error & { readonly code?: string; readonly interruptResolution?: InterruptEdgeResolution<THandle> };
-      if (typedErr.code === 'HARNESS_STEP_SUSPENDED' || flowCtx.pendingRewindToStepId !== undefined) return Object.freeze({ status: typedErr.code === 'HARNESS_STEP_SUSPENDED' ? 'suspended' : 'rewound' });
-      const effHandler = typedErr.interruptResolution?.replaceHandler ?? (typedErr.interruptResolution !== undefined ? stepNode.onInterruptHandlers.find((h) => h.interrupt.id === typedErr.interruptResolution?.interruptId) : undefined);
-      if (effHandler?.mode === 'replace') {
-        const abortExec = effHandler.abortHook !== undefined ? flowCtx.registry.abortHooks[effHandler.abortHook.type as keyof typeof flowCtx.registry.abortHooks] : undefined;
-        const abortMeta = (abortExec !== undefined && effHandler.abortHook !== undefined ? await abortExec(effHandler.abortHook as never, { handle: flowCtx.scopeHandle, runId: flowCtx.runId, stepExecId } as never, stepCtx as never) : {}) as Record<string, unknown>;
-        const replacementInput = effHandler.mapReplacementInput(flowCtx.currentInput, typedErr.interruptResolution?.payload, { costUsd: 0, turnsTaken: 0, durationMs: 0, custom: (await foldFlowCustomTelemetry(flowCtx)) ?? scopeReceipt, abortMeta }) as TIn;
-        await executeReplaceWithPromotion({ flowCtx, stepExecId, stepId: stepNode.id, baseScopeCheckpoint: effHandler.abortHook !== undefined ? undefined : baseCkpt, replacementExecutable: effHandler.replacementExecutable, replacementInput, abortHook: undefined });
-        if ((attempt -= 1) >= 0) continue;
-      }
-      await flowCtx.serviceRegistry.quiesceScopeServices(((flowCtx.activeStepExecId = null), stepExecId));
-      if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'step', stepExecId });
-      if (baseCkpt !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, baseCkpt);
-      await flowCtx.ledgerStore.recordStepTransition({ stepExecId, status: 'FAILED', telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }) });
-      if (attempt >= maxTries) throw err;
+async function initializeOrResumeFlowRun<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+): Promise<void> {
+  flowCtx.currentInput = flowCtx.flow.inputSchema.parse(flowCtx.currentInput);
+  const flowActors = collectFlowActors(flowCtx.flow.nodes);
+  const prefixGroups = collectFlowPrefixGroups(flowActors, flowCtx.prefixGroups);
+  if (flowCtx.wirePrefixesByGroupId.size === 0 && prefixGroups.length > 0) {
+    const compiled = await compileRunWirePrefixes({
+      prefixGroups,
+      actors: flowActors,
+      registry: flowCtx.registry,
+      resolutionContext: {
+        runId: flowCtx.runId,
+        scopeHandle: flowCtx.scopeHandle,
+        activePartitions: [],
+        observedEffects: [],
+        resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]),
+      },
+    });
+    const byId = new Map<string, CompiledWirePrefix>();
+    const jsonMap: Record<string, string> = {};
+    for (const [pgId, prefix] of compiled.entries()) {
+      byId.set(pgId, prefix);
+      jsonMap[pgId] = JSON.stringify(prefix);
+    }
+    flowCtx.wirePrefixesByGroupId = byId;
+    await flowCtx.ledgerStore.createOrResumeRun({
+      runId: flowCtx.runId,
+      laneId: flowCtx.laneId,
+      itemKey: flowCtx.itemKey,
+      inputJson: JSON.stringify(flowCtx.currentInput),
+      compiledPrefixesJson: jsonMap,
+    });
+    return;
+  }
+  const resumed = await flowCtx.ledgerStore.createOrResumeRun({
+    runId: flowCtx.runId,
+    laneId: flowCtx.laneId,
+    itemKey: flowCtx.itemKey,
+    inputJson: JSON.stringify(flowCtx.currentInput),
+  });
+  for (const [stepId, outJson] of resumed.completedStepOutputsJson.entries()) {
+    if (!flowCtx.completedStepOutputs.has(stepId)) {
+      flowCtx.completedStepOutputs.set(stepId, JSON.parse(outJson));
     }
   }
-  throw new Error(`Exhausted retries for step '${stepNode.id}' in run '${flowCtx.runId}'.`);
 }
 
 /**
- * Evaluates a `FlowBranchNode` against `flowCtx.currentInput`, executes the first matching `when` case (or `otherwiseSteps`), and records output under `branchNode.id` (`SPEC.md` §3.9).
+ * Applies a pending `.rewindTo()` jump on `flowCtx`, invalidating downstream `completedStepOutputs` (`SPEC.md` §3.9 & §3.10).
  *
- * Validates the final step output of the selected branch against `branchNode.outputSchema`.
+ * Returns the updated node cursor index.
  *
  * @template TIn     Validated flow input payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {FlowExecutionContext<TIn, THandle>}    flowCtx    - Active flow execution context.
- * @param {FlowBranchNode<TIn, unknown, THandle>} branchNode - Passive `FlowBranchNode` to evaluate.
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx    - Active flow execution context.
+ * @param {number}                             currentIdx - Current flow node cursor index.
  *
- * @returns {Promise<{ readonly status: 'completed' | 'suspended' | 'rewound'; readonly output?: unknown }>} Branch execution outcome.
+ * @returns {number} Updated flow node cursor index.
  */
-export async function executeFlowBranch<TIn = unknown, THandle = unknown>(
+function applyPendingFlowRewindJump<TIn = unknown, THandle = unknown>(
   flowCtx: FlowExecutionContext<TIn, THandle>,
-  branchNode: FlowBranchNode<TIn, unknown, THandle>,
-): Promise<{ readonly status: 'completed' | 'suspended' | 'rewound'; readonly output?: unknown }> {
-  const matchedCase = branchNode.cases.find((c) => c.predicate(flowCtx.currentInput));
-  const selectedSteps = matchedCase !== undefined ? matchedCase.steps : branchNode.otherwiseSteps;
-  let lastOutput: unknown;
-  for (const childNode of selectedSteps) {
-    const childRes = childNode.type === 'harness:flow-step'
-      ? await executeFlowStep(flowCtx, childNode, branchNode.id)
-      : await executeFlowBranch(flowCtx, childNode as FlowBranchNode<TIn, unknown, THandle>);
-    if (childRes.status !== 'completed') return childRes;
-    lastOutput = childRes.output;
+  currentIdx: number,
+): number {
+  if (flowCtx.pendingRewindToStepId === undefined) {
+    return currentIdx;
   }
-  const validatedBranchOut = branchNode.outputSchema.parse(lastOutput);
-  flowCtx.completedStepOutputs.set(branchNode.id, validatedBranchOut);
-  return Object.freeze({ status: 'completed', output: validatedBranchOut });
+  const jumpIdx = flowCtx.flow.nodes.findIndex((n) => n.id === flowCtx.pendingRewindToStepId);
+  flowCtx.pendingRewindToStepId = undefined;
+  if (jumpIdx < 0) {
+    return currentIdx;
+  }
+  for (let i = jumpIdx; i < flowCtx.flow.nodes.length; i += 1) {
+    flowCtx.completedStepOutputs.delete(flowCtx.flow.nodes[i]?.id ?? '');
+  }
+  return jumpIdx;
 }
 
 /**
@@ -118,44 +111,56 @@ export async function executeFlowBranch<TIn = unknown, THandle = unknown>(
  *
  * @returns {Promise<FlowRunResult>} Terminal flow run receipt and outputs.
  */
-export async function executeFlow<TIn = unknown, THandle = unknown>(flowCtx: FlowExecutionContext<TIn, THandle>): Promise<FlowRunResult> {
-  flowCtx.currentInput = flowCtx.flow.inputSchema.parse(flowCtx.currentInput);
-  const flowActors = collectFlowActors(flowCtx.flow.nodes);
-  const prefixGroups = collectFlowPrefixGroups(flowActors, flowCtx.prefixGroups);
-  if (flowCtx.wirePrefixesByGroupId.size === 0 && prefixGroups.length > 0) {
-    const compiled = await compileRunWirePrefixes({ prefixGroups, actors: flowActors, registry: flowCtx.registry, resolutionContext: { runId: flowCtx.runId, scopeHandle: flowCtx.scopeHandle, activePartitions: [], observedEffects: [], resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]) } });
-    const byId = new Map<string, CompiledWirePrefix>();
-    const jsonMap: Record<string, string> = {};
-    for (const [pgId, p] of compiled.entries()) jsonMap[(byId.set(pgId, p), pgId)] = JSON.stringify(p);
-    flowCtx.wirePrefixesByGroupId = byId;
-    await flowCtx.ledgerStore.createOrResumeRun({ runId: flowCtx.runId, laneId: flowCtx.laneId, itemKey: flowCtx.itemKey, inputJson: JSON.stringify(flowCtx.currentInput), compiledPrefixesJson: jsonMap });
-  } else {
-    const resumed = await flowCtx.ledgerStore.createOrResumeRun({ runId: flowCtx.runId, laneId: flowCtx.laneId, itemKey: flowCtx.itemKey, inputJson: JSON.stringify(flowCtx.currentInput) });
-    for (const [stepId, outJson] of resumed.completedStepOutputsJson.entries()) if (!flowCtx.completedStepOutputs.has(stepId)) flowCtx.completedStepOutputs.set(stepId, JSON.parse(outJson));
-  }
+export async function executeFlow<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+): Promise<FlowRunResult> {
+  await initializeOrResumeFlowRun(flowCtx);
   try {
-    let idx = flowCtx.activeStepId !== null ? Math.max(0, flowCtx.flow.nodes.findIndex((n) => n.id === flowCtx.activeStepId)) : 0;
+    let idx =
+      flowCtx.activeStepId !== null
+        ? Math.max(
+            0,
+            flowCtx.flow.nodes.findIndex((n) => n.id === flowCtx.activeStepId),
+          )
+        : 0;
     for (; idx < flowCtx.flow.nodes.length; ) {
-      if (flowCtx.pendingRewindToStepId !== undefined) {
-        const jumpIdx = flowCtx.flow.nodes.findIndex((n) => n.id === flowCtx.pendingRewindToStepId);
-        flowCtx.pendingRewindToStepId = undefined;
-        if (jumpIdx >= 0) {
-          for (let i = jumpIdx; i < flowCtx.flow.nodes.length; i += 1) flowCtx.completedStepOutputs.delete(flowCtx.flow.nodes[i]?.id ?? '');
-          idx = jumpIdx;
-        }
-      }
+      idx = applyPendingFlowRewindJump(flowCtx, idx);
       const node = flowCtx.flow.nodes[idx];
-      if (node === undefined) break;
-      const stepRes = node.type === 'harness:flow-step' ? await executeFlowStep(flowCtx, node) : await executeFlowBranch(flowCtx, node);
-      if (stepRes.status === 'suspended') {
-        const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle));
-        return Object.freeze<FlowRunResult>({ runId: flowCtx.runId, exitState: 'SUSPENDED', scopeReceipt, stepOutputs: Object.freeze(Object.fromEntries(flowCtx.completedStepOutputs.entries())) });
+      if (node === undefined) {
+        break;
       }
-      if (stepRes.status !== 'rewound' && flowCtx.pendingRewindToStepId === undefined) idx += 1;
+      const stepRes =
+        node.type === 'harness:flow-step'
+          ? await executeFlowStep(flowCtx, node)
+          : await executeFlowBranch(flowCtx, node);
+      if (stepRes.status === 'suspended') {
+        const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () =>
+          flowCtx.scopeDriver.inspect(flowCtx.scopeHandle),
+        );
+        return Object.freeze<FlowRunResult>({
+          runId: flowCtx.runId,
+          exitState: 'SUSPENDED',
+          scopeReceipt,
+          stepOutputs: Object.freeze(Object.fromEntries(flowCtx.completedStepOutputs.entries())),
+        });
+      }
+      if (stepRes.status !== 'rewound' && flowCtx.pendingRewindToStepId === undefined) {
+        idx += 1;
+      }
     }
-    const finalReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle));
-    if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.sealRunOverlay(flowCtx.runId);
-    return Object.freeze<FlowRunResult>({ runId: flowCtx.runId, exitState: flowCtx.flow.exitState, scopeReceipt: finalReceipt, stepOutputs: Object.freeze(Object.fromEntries(flowCtx.completedStepOutputs.entries())), customTelemetry: await foldFlowCustomTelemetry(flowCtx) });
+    const finalReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () =>
+      flowCtx.scopeDriver.inspect(flowCtx.scopeHandle),
+    );
+    if (flowCtx.topologyStore !== undefined) {
+      await flowCtx.topologyStore.sealRunOverlay(flowCtx.runId);
+    }
+    return Object.freeze<FlowRunResult>({
+      runId: flowCtx.runId,
+      exitState: flowCtx.flow.exitState,
+      scopeReceipt: finalReceipt,
+      stepOutputs: Object.freeze(Object.fromEntries(flowCtx.completedStepOutputs.entries())),
+      customTelemetry: await foldFlowCustomTelemetry(flowCtx),
+    });
   } finally {
     await flowCtx.serviceRegistry.quiesceScopeServices(flowCtx.runId);
   }
