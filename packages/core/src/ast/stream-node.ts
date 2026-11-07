@@ -1,3 +1,4 @@
+import type { BivariantCallback } from './ast-foundation.types.js';
 import type { StreamSourceASTNode } from './domain-ast.types.js';
 import type { SignalNode } from './signal-node.js';
 
@@ -18,9 +19,9 @@ export interface StreamNode<TEvent = unknown, TPayload = unknown> {
   /** Passive stream source AST node providing inbound events. */
   readonly source: StreamSourceASTNode<TEvent>;
   /** Optional synchronous predicate filtering raw events before signal emission. */
-  readonly filterFn?: (event: TEvent) => boolean;
+  readonly filterFn?: BivariantCallback<[event: TEvent], boolean>;
   /** Target `SignalNode<TPayload>` emitted when an event matches. */
   readonly signal: SignalNode<TPayload>;
   /** Synchronous mapper projecting a matched `TEvent` into `TPayload`. */
-  readonly mapPayload: (event: TEvent) => TPayload;
+  readonly mapPayload: BivariantCallback<[event: TEvent], TPayload>;
 }

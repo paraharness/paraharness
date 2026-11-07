@@ -138,7 +138,10 @@ export async function recoverInterruptedRunOnBoot<TIn = unknown, THandle = unkno
     if (topAgent !== undefined) {
       const terminalReceipts = await flowCtx.ledgerStore.getRunTerminalReceipts(bootRecord.dependsOn);
       if (terminalReceipts.size < bootRecord.dependsOn.length) return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume: false });
-      await syncSuspendedRunPrerequisites({ runId: bootRecord.runId, stepExecId: bootRecord.stepExecId, headScopeCheckpoint: bootRecord.headScopeCheckpoint, prerequisiteItemKeys: bootRecord.dependsOn, prerequisiteRunIds: bootRecord.dependsOn.map((depKey: string) => terminalReceipts.get(depKey)?.runId ?? depKey), agentFrame: topAgent, outerFrames: bootRecord.continuationStack.filter((f: ContinuationFrame) => f !== topAgent), ledgerStore: flowCtx.ledgerStore, continuationQueue: flowCtx.continuationQueue, topologyStore: flowCtx.topologyStore, branchableScope: branchScope as never, serviceRegistry: flowCtx.serviceRegistry, scopeHandle: flowCtx.scopeHandle });
+      const outerFrames = bootRecord.continuationStack.filter((f: ContinuationFrame) => f !== topAgent);
+      const syncRes = await syncSuspendedRunPrerequisites({ runId: bootRecord.runId, stepExecId: bootRecord.stepExecId, headScopeCheckpoint: bootRecord.headScopeCheckpoint, prerequisiteItemKeys: bootRecord.dependsOn, prerequisiteRunIds: bootRecord.dependsOn.map((depKey: string) => terminalReceipts.get(depKey)?.runId ?? depKey), agentFrame: topAgent, outerFrames, ledgerStore: flowCtx.ledgerStore, continuationQueue: flowCtx.continuationQueue, topologyStore: flowCtx.topologyStore, branchableScope: branchScope as never, serviceRegistry: flowCtx.serviceRegistry, scopeHandle: flowCtx.scopeHandle });
+      const resumedStack = Object.freeze<readonly ContinuationFrame[]>([...outerFrames, syncRes.updatedAgentFrame ?? topAgent]);
+      Object.assign(flowCtx, { activeStepId: bootRecord.stepId, activeStepExecId: bootRecord.stepExecId, resumeContinuationStack: resumedStack });
     }
   }
   return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume: true });

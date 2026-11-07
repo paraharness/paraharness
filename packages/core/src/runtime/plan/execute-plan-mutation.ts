@@ -129,9 +129,7 @@ export async function executeUpdatePartitionContract<THandle = unknown>(
  *
  * @returns {Promise<SyncPrerequisitesResult>} Synchronization notes, conflict lease, and updated agent frame.
  */
-export async function syncSuspendedRunPrerequisites<THandle = unknown>(
-  params: SyncPrerequisitesParams<THandle>,
-): Promise<SyncPrerequisitesResult> {
+export async function syncSuspendedRunPrerequisites<THandle = unknown>(params: SyncPrerequisitesParams<THandle>): Promise<SyncPrerequisitesResult> {
   const receiptsMap = await params.ledgerStore.getRunTerminalReceipts(params.prerequisiteItemKeys);
   const syncNotes: string[] = [], prereqReceipts: Record<string, unknown>[] = [], prereqRunIds: string[] = [...(params.prerequisiteRunIds ?? [])];
   let allSucceeded = true;
@@ -148,7 +146,7 @@ export async function syncSuspendedRunPrerequisites<THandle = unknown>(
     await params.topologyStore.syncRunOverlays(params.runId, prereqRunIds);
     syncNotes.push(`[TOPOLOGY_SYNC] Merged topology overlays from prerequisite runs: ${prereqRunIds.join(', ')}.`);
   }
-  let conflictLease, conflictCheckArmed = params.agentFrame?.conflictCheckArmed === true, updatedFrame = params.agentFrame;
+  let conflictLease, conflictCheckArmed = params.agentFrame?.conflictCheckArmed === true, updatedFrame = params.agentFrame, postCkpt = params.agentFrame?.syncedToPrerequisiteCheckpoint;
   if (params.branchableScope !== undefined && params.agentFrame?.syncedToPrerequisiteCheckpoint === undefined && prereqReceipts.length > 0) {
     if (params.headScopeCheckpoint !== undefined) await params.branchableScope.restoreCheckpoint(params.scopeHandle, params.headScopeCheckpoint);
     const syncRes = await params.branchableScope.syncRoot(params.scopeHandle, prereqReceipts);
@@ -157,12 +155,17 @@ export async function syncSuspendedRunPrerequisites<THandle = unknown>(
       conflictCheckArmed = true;
       syncNotes.push(`[PREREQUISITE_SYNC] Conflict detected while syncing prerequisite receipts (${syncRes.conflictedSummary}); conflict lease attached.`);
     } else syncNotes.push(`[PREREQUISITE_SYNC] Cleanly synchronized ${String(prereqReceipts.length)} prerequisite receipt(s).`);
-    const postCkpt = await params.branchableScope.serializeCheckpoint(params.scopeHandle);
-    if (updatedFrame !== undefined) {
-      const nextLeases = conflictLease !== undefined ? Object.freeze([...updatedFrame.activeLeases, conflictLease]) : updatedFrame.activeLeases;
-      updatedFrame = Object.freeze({ ...updatedFrame, activeLeases: nextLeases, conflictCheckArmed, syncedToPrerequisiteCheckpoint: postCkpt });
-      await params.ledgerStore.updateContinuationStack(params.runId, params.stepExecId, Object.freeze([...(params.outerFrames ?? []), updatedFrame]));
-    }
+    postCkpt = await params.branchableScope.serializeCheckpoint(params.scopeHandle);
+  }
+  if (updatedFrame !== undefined) {
+    const nextLeases = conflictLease !== undefined ? Object.freeze([...updatedFrame.activeLeases, conflictLease]) : updatedFrame.activeLeases;
+    const prevBatch = updatedFrame.pauseState.kind === 'prerequisite-wait' || updatedFrame.pauseState.kind === 'tool-batch' ? updatedFrame.pauseState.pendingToolBatch : undefined, headCall = prevBatch?.remainingCalls[0];
+    const settledCompleted = prevBatch !== undefined ? (headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies' ? [...prevBatch.completedResults, Object.freeze({ callId: headCall.callId, content: syncNotes.join('\n') || '{"status":"RESUMED"}', isError: !allSucceeded })] : prevBatch.completedResults.map((r, i) => i === prevBatch.completedResults.length - 1 && syncNotes.length > 0 ? Object.freeze({ ...r, content: `${r.content}\n${syncNotes.join('\n')}` }) : r)) : [];
+    const nextPauseState = prevBatch !== undefined
+      ? Object.freeze({ kind: 'tool-batch' as const, pendingToolBatch: Object.freeze({ ...prevBatch, completedResults: Object.freeze(settledCompleted), remainingCalls: headCall?.toolName === 'spawnTasks' || headCall?.toolName === 'addDependencies' ? Object.freeze(prevBatch.remainingCalls.slice(1)) : prevBatch.remainingCalls }) })
+      : updatedFrame.pauseState;
+    updatedFrame = Object.freeze({ ...updatedFrame, activeLeases: nextLeases, conflictCheckArmed, syncedToPrerequisiteCheckpoint: postCkpt, pauseState: nextPauseState });
+    await params.ledgerStore.updateContinuationStack(params.runId, params.stepExecId, Object.freeze([...(params.outerFrames ?? []), updatedFrame]));
   }
   return Object.freeze<SyncPrerequisitesResult>({ allPrerequisitesSucceeded: allSucceeded, syncNotes: Object.freeze(syncNotes), conflictLease, conflictCheckArmed, updatedAgentFrame: updatedFrame });
 }

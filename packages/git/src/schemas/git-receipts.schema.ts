@@ -9,7 +9,7 @@ export const GitScopeReceiptSchema = z.object({
   branchName: z.string().optional(),
   baseBranch: z.string().default('main'),
   diffStat: z.string(),
-  mutatedFiles: z.array(z.string()),
+  mutatedFiles: z.array(z.string()).readonly(),
 });
 
 /**
@@ -18,7 +18,7 @@ export const GitScopeReceiptSchema = z.object({
 export const GitSyncReceiptSchema = z.object({
   rebasedOntoRef: z.string(),
   baseBranch: z.string().default('main'),
-  updatedFiles: z.array(z.string()),
+  updatedFiles: z.array(z.string()).readonly(),
 });
 
 /**

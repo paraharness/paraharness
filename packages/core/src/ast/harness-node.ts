@@ -22,7 +22,7 @@ export interface HarnessSignalNotification<TPayload = unknown> {
   /** Target `SignalNode` triggering the outbound human notification. */
   readonly signal: SignalNode<TPayload>;
   /** Human authority or notification channel receiving the formatted message. */
-  readonly human: HumanNode;
+  readonly human: HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode;
   /** Synchronous formatter projecting `TPayload` into a notification message string. */
   readonly messageMapper: BivariantCallback<[payload: TPayload], string>;
 }

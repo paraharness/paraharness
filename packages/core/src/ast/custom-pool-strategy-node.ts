@@ -1,3 +1,4 @@
+import type { BivariantCallback } from './ast-foundation.types.js';
 import type { ASTNode } from './ast-node.js';
 import type { PoolCandidateState } from './pool-candidate-state.js';
 import type { PoolSelectionContext } from './pool-selection-context.js';
@@ -17,8 +18,8 @@ export interface CustomPoolStrategyNode<TItem = unknown> extends ASTNode {
   /** Custom selector strategy kind. */
   readonly strategyKind: 'custom';
   /** Synchronous selector callback invoked to pick a candidate from the pool. */
-  readonly selectFn: (
-    candidates: readonly PoolCandidateState<TItem>[],
-    ctx: PoolSelectionContext,
-  ) => TItem | undefined;
+  readonly selectFn: BivariantCallback<
+    [candidates: readonly PoolCandidateState<TItem>[], ctx: PoolSelectionContext],
+    TItem | undefined
+  >;
 }

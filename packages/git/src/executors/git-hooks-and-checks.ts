@@ -71,7 +71,8 @@ export async function executeGitSnapshotAndResetHook(
   const handle = input.handle;
   const cwd = handle.worktreePath;
   const scopeNode = ctx.scopeNode?.type === 'git:cow-worktree' ? ctx.scopeNode : undefined;
-  const abortedSnapshotRef = `refs/harness/aborted/${input.runId}/${input.stepExecId}`;
+  const sanitizedStepExecId = input.stepExecId.replace(/[:~^?*[\\\s]+/g, '-');
+  const abortedSnapshotRef = `refs/harness/aborted/${input.runId}/${sanitizedStepExecId}`;
   const synth = await synthesizeWorkingTreeCommitOverBase(handle, handle.baseRef, scopeNode?.checkpointPolicy?.excludeGlobs);
   const baseTreeSha = (await runGitCommand({ cwd, args: ['rev-parse', `${handle.baseRef}^{tree}`] })).stdout.trim();
   const existingRef = await runGitCommand({ cwd, args: ['rev-parse', '--verify', abortedSnapshotRef], allowNonZeroExit: true });

@@ -74,12 +74,28 @@ export async function runLoopActPhase<TIn, TOut, THandle>(
 ): Promise<TOut> {
   if (state.loopFrame.iteration > 0) await escalateLoopActorModelIfNeeded(state);
   const actor = state.node.actStep.actor;
-  const resumedInnerAgent = state.ctx.resumeContinuationStack?.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame' && f.agentId === actor.id);
-  const resumeLeaf = state.node.preserveActorSession ? (state.loopFrame.preservedActLeafMessageId ?? resumedInnerAgent?.leafMessageId ?? null) : null;
-  const existingAgentFrame: AgentContinuationFrame | undefined = resumeLeaf !== null ? Object.freeze<AgentContinuationFrame>({ kind: 'agent-frame', agentId: actor.id, roleKey: actor.roleKey, modelId: state.currentActModelNode.modelId, stepExecId: state.ctx.stepExecId, inputJson: state.loopFrame.loopInputJson, leafMessageId: resumeLeaf, turnsTaken: state.loopFrame.actTurnsTaken, costUsd: state.loopFrame.actCostUsd, elapsedDurationMs: state.loopFrame.actElapsedDurationMs, activeLeases: state.loopFrame.grantedLoopLeases, activeSkillIds: state.loopFrame.activeSkillIds, activeSkillActivations: state.loopFrame.activeSkillActivations, observedEffects: state.loopFrame.observedEffects, injectedScopedRuleIds: state.loopFrame.injectedScopedRuleIds, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }), conflictCheckArmed: state.loopFrame.conflictCheckArmed, accumulatedLessonOutcomes: state.accumulatedLessonOutcomes }) : undefined;
+  const resumedInnerAgent = state.loopFrame.iteration === 0
+    ? state.ctx.resumeContinuationStack?.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame' && f.agentId === actor.id)
+    : undefined;
+  const resumeLeaf = state.node.preserveActorSession ? (state.loopFrame.preservedActLeafMessageId ?? resumedInnerAgent?.leafMessageId ?? null) : (resumedInnerAgent?.leafMessageId ?? null);
+  const existingAgentFrame: AgentContinuationFrame | undefined = resumedInnerAgent !== undefined
+    ? Object.freeze<AgentContinuationFrame>({ ...resumedInnerAgent, activeLeases: Object.freeze([...state.loopFrame.grantedLoopLeases, ...resumedInnerAgent.activeLeases]) })
+    : resumeLeaf !== null
+      ? Object.freeze<AgentContinuationFrame>({ kind: 'agent-frame', agentId: actor.id, roleKey: actor.roleKey, modelId: state.currentActModelNode.modelId, stepExecId: state.ctx.stepExecId, inputJson: state.loopFrame.loopInputJson, leafMessageId: resumeLeaf, turnsTaken: state.loopFrame.actTurnsTaken, costUsd: state.loopFrame.actCostUsd, elapsedDurationMs: state.loopFrame.actElapsedDurationMs, activeLeases: state.loopFrame.grantedLoopLeases, activeSkillIds: state.loopFrame.activeSkillIds, activeSkillActivations: state.loopFrame.activeSkillActivations, observedEffects: state.loopFrame.observedEffects, injectedScopedRuleIds: state.loopFrame.injectedScopedRuleIds, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }), conflictCheckArmed: state.loopFrame.conflictCheckArmed, accumulatedLessonOutcomes: state.accumulatedLessonOutcomes })
+      : undefined;
   const outerForAct: ContinuationFrame[] = [...state.outerFrames, state.loopFrame];
-  const actCtx = Object.freeze({ ...state.ctx, _runtime: { ledgerStore: state.ledgerStore, topologyStore: state.topologyStore, lessonStore: state.lessonStore, lockManager: state.lockManager, continuationQueue: state.continuationQueue, poolManager: state.poolManager, serviceRegistry: state.serviceRegistry, humanAdaptersById: state.humanAdaptersById, wirePrefixesByGroupId: state.wirePrefixesByGroupId, outerFrames: outerForAct, existingAgentFrame, overrideModelNode: state.currentActModelNode } }) as StepExecutionContext<THandle>;
-  const actOutput = await executeAgent(actor, state.validatedInput, actCtx);
+  const actOutcomeSink: { continuationStack?: readonly ContinuationFrame[]; suspendedAtCallId?: string } = {};
+  const parentRt = (state.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+  const actCtx = Object.freeze({ ...state.ctx, resumeContinuationStack: undefined, _runtime: { ...parentRt, ledgerStore: state.ledgerStore, topologyStore: state.topologyStore, lessonStore: state.lessonStore, lockManager: state.lockManager, continuationQueue: state.continuationQueue, poolManager: state.poolManager, serviceRegistry: state.serviceRegistry, humanAdaptersById: state.humanAdaptersById, wirePrefixesByGroupId: state.wirePrefixesByGroupId, outerFrames: outerForAct, existingAgentFrame, overrideModelNode: state.currentActModelNode, childOutcomeSink: actOutcomeSink } }) as StepExecutionContext<THandle>;
+  let actOutput: TOut;
+  try {
+    actOutput = await executeAgent(actor, state.validatedInput, actCtx);
+  } finally {
+    const innerFrame = actOutcomeSink.continuationStack?.[0];
+    Object.assign(state, { lastInnerAgentFrame: innerFrame, lastSuspendedAtCallId: actOutcomeSink.suspendedAtCallId });
+    const latestLoop = outerForAct[outerForAct.length - 1];
+    if (latestLoop?.kind === 'loop-frame') state.loopFrame = latestLoop;
+  }
   const updatedLoop = outerForAct[outerForAct.length - 1] as LoopContinuationFrame;
   for (const [lid, lo] of Object.entries(updatedLoop.accumulatedLessonOutcomes)) state.accumulatedLessonOutcomes[lid] = mergeLessonOutcomePrecedence(state.accumulatedLessonOutcomes[lid], lo);
   await state.serviceRegistry.quiesceScopeServices(state.ctx.stepExecId);
@@ -107,7 +123,8 @@ export async function runLoopActPhase<TIn, TOut, THandle>(
  */
 export async function runLoopEvaluatePhase<TIn, TOut, THandle>(state: LoopExecutionState<TIn, TOut, THandle>): Promise<LoopEvaluatePhaseResult<TOut>> {
   const actOutput = JSON.parse(state.loopFrame.lastActOutputJson ?? 'null') as TOut, scopeReceipt = JSON.parse(state.loopFrame.lastActScopeReceiptJson ?? '{}') as Record<string, unknown>, outerForEval: ContinuationFrame[] = [...state.outerFrames, state.loopFrame];
-  const evalCtx = Object.freeze({ ...state.ctx, _runtime: { ledgerStore: state.ledgerStore, topologyStore: state.topologyStore, lessonStore: state.lessonStore, lockManager: state.lockManager, continuationQueue: state.continuationQueue, poolManager: state.poolManager, serviceRegistry: state.serviceRegistry, humanAdaptersById: state.humanAdaptersById, wirePrefixesByGroupId: state.wirePrefixesByGroupId, outerFrames: outerForEval } }) as StepExecutionContext<THandle>;
+  const evalStepExecId = `${state.ctx.stepExecId}:eval:${String(state.loopFrame.iteration)}${state.ctx.resumeContinuationStack !== undefined ? `:r${String(state.loopFrame.turnsTaken)}` : ''}`;
+  const evalCtx = Object.freeze({ ...state.ctx, stepExecId: evalStepExecId, resumeContinuationStack: undefined, _runtime: { ledgerStore: state.ledgerStore, topologyStore: state.topologyStore, lessonStore: state.lessonStore, lockManager: state.lockManager, continuationQueue: state.continuationQueue, poolManager: state.poolManager, serviceRegistry: state.serviceRegistry, humanAdaptersById: state.humanAdaptersById, wirePrefixesByGroupId: state.wirePrefixesByGroupId, outerFrames: outerForEval } }) as StepExecutionContext<THandle>;
   const baseEval = state.node.evaluateStep.evaluator, metaSchema = z.object({ violatedLessonIds: z.array(z.string()).default([]) }).optional();
   const evalActor = (state.node.distillLessons !== undefined || state.loopFrame.recalledLessons.length > 0) && baseEval.outputSchema instanceof z.ZodObject ? Object.freeze({ ...baseEval, outputSchema: (baseEval.outputSchema as z.ZodObject<z.ZodRawShape>).extend({ _harnessMeta: metaSchema }) as never }) : baseEval;
   const rawEvalOut = await executeAgent(evalActor, state.node.evaluateStep.mapInput(state.validatedInput, actOutput, scopeReceipt), evalCtx), updatedLoop = outerForEval[outerForEval.length - 1] as LoopContinuationFrame;
@@ -116,10 +133,7 @@ export async function runLoopEvaluatePhase<TIn, TOut, THandle>(state: LoopExecut
   let evalOutput: unknown = rawEvalOut;
   if (typeof rawEvalOut === 'object' && rawEvalOut !== null && '_harnessMeta' in rawEvalOut) {
     const { _harnessMeta, ...cleanRest } = rawEvalOut as Record<string, unknown> & { readonly _harnessMeta?: { readonly violatedLessonIds?: readonly string[] } };
-    for (const vid of _harnessMeta?.violatedLessonIds ?? []) {
-      violatedIds.push(vid);
-      state.accumulatedLessonOutcomes[vid] = mergeLessonOutcomePrecedence(state.accumulatedLessonOutcomes[vid], 'violated');
-    }
+    for (const vid of _harnessMeta?.violatedLessonIds ?? []) violatedIds.push((state.accumulatedLessonOutcomes[vid] = mergeLessonOutcomePrecedence(state.accumulatedLessonOutcomes[vid], 'violated'), vid));
     evalOutput = cleanRest;
   }
   if (!state.node.evaluateStep.acceptWhen(evalOutput) || violatedIds.length > 0) {

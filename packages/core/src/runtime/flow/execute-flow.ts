@@ -31,35 +31,34 @@ import { executeReplaceWithPromotion, foldFlowCustomTelemetry } from './internal
 export async function executeFlowStep<TIn = unknown, THandle = unknown>(flowCtx: FlowExecutionContext<TIn, THandle>, stepNode: FlowStepNode<unknown, unknown, THandle>, outerBranchId?: string): Promise<{ readonly status: 'completed' | 'suspended' | 'rewound'; readonly output?: unknown }> {
   const maxTries = flowCtx.retryConfig?.tries ?? 1;
   for (let attempt = 1; attempt <= maxTries; attempt += 1) {
-    const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle));
-    const isReplaced = flowCtx.activeReplacementExecutable !== undefined, targetExecutable = flowCtx.activeReplacementExecutable ?? stepNode.step;
+    const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle)), isReplaced = flowCtx.activeReplacementExecutable !== undefined, targetExecutable = flowCtx.activeReplacementExecutable ?? stepNode.step;
     const stepInput = !isReplaced && stepNode.inputFrom !== undefined ? stepNode.inputFrom(flowCtx.currentInput, Object.fromEntries(flowCtx.completedStepOutputs.entries()), scopeReceipt) : flowCtx.currentInput;
-    const extractPartsFn = (targetExecutable as { readonly extractPartitions?: (i: unknown) => readonly string[] }).extractPartitions, stepExecId = flowCtx.activeStepExecId ?? `${flowCtx.runId}:${stepNode.id}:${String(attempt)}`;
-    const baseCkpt = flowCtx.scopeDriver.serializeCheckpoint !== undefined ? await flowCtx.scopeDriver.serializeCheckpoint(flowCtx.scopeHandle) : undefined;
+    const extractPartsFn = (targetExecutable as { readonly extractPartitions?: (i: unknown) => readonly string[] }).extractPartitions, stepExecId = flowCtx.activeStepExecId ?? `${flowCtx.runId}:${stepNode.id}:${String(attempt)}`, baseCkpt = flowCtx.scopeDriver.serializeCheckpoint !== undefined ? await flowCtx.scopeDriver.serializeCheckpoint(flowCtx.scopeHandle) : undefined;
     if (baseCkpt !== undefined && flowCtx.stepBaseCheckpointsByStepId !== undefined && !flowCtx.stepBaseCheckpointsByStepId.has(stepNode.id)) flowCtx.stepBaseCheckpointsByStepId.set(stepNode.id, baseCkpt);
     if (flowCtx.activeStepExecId === null) await flowCtx.ledgerStore.recordStepStart({ runId: flowCtx.runId, stepExecId, stepId: stepNode.id, executableId: targetExecutable.id, inputMsgId: null, baseScopeCheckpoint: baseCkpt, continuationStack: Object.freeze([]) });
     Object.assign(flowCtx, { activeStepId: stepNode.id, activeStepExecId: stepExecId });
-    const { executable, stepCtx } = buildFlowStepExecutionContext(flowCtx, targetExecutable, { stepExecId, activePartitions: extractPartsFn !== undefined ? extractPartsFn(stepInput) : [], baseScopeCheckpoint: baseCkpt, stepInterruptHandlers: isReplaced ? [] : stepNode.onInterruptHandlers });
+    const built = buildFlowStepExecutionContext(flowCtx, targetExecutable, { stepExecId, activePartitions: extractPartsFn !== undefined ? extractPartsFn(stepInput) : [], baseScopeCheckpoint: baseCkpt, stepInterruptHandlers: isReplaced ? [] : stepNode.onInterruptHandlers });
+    const resumeHolder = flowCtx as FlowExecutionContext<TIn, THandle> & { resumeContinuationStack?: typeof built.stepCtx.resumeContinuationStack }, stepCtx = resumeHolder.resumeContinuationStack !== undefined ? Object.freeze({ ...built.stepCtx, resumeContinuationStack: resumeHolder.resumeContinuationStack }) : built.stepCtx;
+    resumeHolder.resumeContinuationStack = undefined;
     try {
-      const output = await executeStepNode(executable, stepInput, stepCtx);
-      flowCtx.activeReplacementExecutable = undefined;
-      flowCtx.activeStepExecId = null;
+      const output = await executeStepNode(built.executable, stepInput, stepCtx);
+      Object.assign(flowCtx, { activeReplacementExecutable: undefined, activeStepExecId: null });
       flowCtx.completedStepOutputs.set(stepNode.id, output);
       if (outerBranchId !== undefined) flowCtx.completedStepOutputs.set(outerBranchId, output);
       await flowCtx.ledgerStore.recordStepTransition({ stepExecId, status: 'COMPLETED', outputJson: JSON.stringify(output), telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 1, elapsedDurationMs: 0 }) });
       return Object.freeze({ status: 'completed', output });
     } catch (err) {
       const typedErr = err as Error & { readonly code?: string; readonly interruptResolution?: InterruptEdgeResolution<THandle> };
-      if (typedErr.code === 'HARNESS_STEP_SUSPENDED') return Object.freeze({ status: 'suspended' });
-      if (flowCtx.pendingRewindToStepId !== undefined) return Object.freeze({ status: 'rewound' });
+      if (typedErr.code === 'HARNESS_STEP_SUSPENDED' || flowCtx.pendingRewindToStepId !== undefined) return Object.freeze({ status: typedErr.code === 'HARNESS_STEP_SUSPENDED' ? 'suspended' : 'rewound' });
       const effHandler = typedErr.interruptResolution?.replaceHandler ?? (typedErr.interruptResolution !== undefined ? stepNode.onInterruptHandlers.find((h) => h.interrupt.id === typedErr.interruptResolution?.interruptId) : undefined);
       if (effHandler?.mode === 'replace') {
-        await executeReplaceWithPromotion({ flowCtx, stepExecId, stepId: stepNode.id, baseScopeCheckpoint: baseCkpt, replacementExecutable: effHandler.replacementExecutable, replacementInput: effHandler.mapReplacementInput(flowCtx.currentInput, typedErr.interruptResolution?.payload, { costUsd: 0, turnsTaken: 0, durationMs: 0, custom: scopeReceipt, abortMeta: {} }) as TIn, abortHook: effHandler.abortHook });
-        attempt -= 1;
-        continue;
+        const abortExec = effHandler.abortHook !== undefined ? flowCtx.registry.abortHooks[effHandler.abortHook.type as keyof typeof flowCtx.registry.abortHooks] : undefined;
+        const abortMeta = (abortExec !== undefined && effHandler.abortHook !== undefined ? await abortExec(effHandler.abortHook as never, { handle: flowCtx.scopeHandle, runId: flowCtx.runId, stepExecId } as never, stepCtx as never) : {}) as Record<string, unknown>;
+        const replacementInput = effHandler.mapReplacementInput(flowCtx.currentInput, typedErr.interruptResolution?.payload, { costUsd: 0, turnsTaken: 0, durationMs: 0, custom: (await foldFlowCustomTelemetry(flowCtx)) ?? scopeReceipt, abortMeta }) as TIn;
+        await executeReplaceWithPromotion({ flowCtx, stepExecId, stepId: stepNode.id, baseScopeCheckpoint: effHandler.abortHook !== undefined ? undefined : baseCkpt, replacementExecutable: effHandler.replacementExecutable, replacementInput, abortHook: undefined });
+        if ((attempt -= 1) >= 0) continue;
       }
-      flowCtx.activeStepExecId = null;
-      await flowCtx.serviceRegistry.quiesceScopeServices(stepExecId);
+      await flowCtx.serviceRegistry.quiesceScopeServices(((flowCtx.activeStepExecId = null), stepExecId));
       if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'step', stepExecId });
       if (baseCkpt !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, baseCkpt);
       await flowCtx.ledgerStore.recordStepTransition({ stepExecId, status: 'FAILED', telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }) });

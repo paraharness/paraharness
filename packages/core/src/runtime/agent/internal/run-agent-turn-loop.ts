@@ -169,7 +169,7 @@ export async function prepareAndDrainTurnToolBatch<TIn, TOut, THandle>(
  */
 export async function runAgentTurnLoop<TIn, TOut, THandle>(session: AgentTurnSessionState<TIn, TOut, THandle>): Promise<TOut> {
   await initializeAgentContinuationFrame(session);
-  if (session.agentFrame.pauseState.kind === 'tool-batch' && session.agentFrame.pauseState.pendingToolBatch.remainingCalls.length > 0) {
+  if (session.agentFrame.pauseState.kind === 'tool-batch' && (session.agentFrame.pauseState.pendingToolBatch.remainingCalls.length > 0 || session.agentFrame.pauseState.pendingToolBatch.completedResults.length > 0)) {
     const resumedOut = await drainPendingToolBatch(session, session.agentFrame.pauseState.pendingToolBatch);
     if (resumedOut.status === 'suspended') throw Object.assign(new Error('Suspended'), { code: 'HARNESS_STEP_SUSPENDED' });
   }
@@ -177,8 +177,10 @@ export async function runAgentTurnLoop<TIn, TOut, THandle>(session: AgentTurnSes
     const loopFrame = session.outerFrames.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame');
     const tripwireMetrics = loopFrame?.phase === 'act' ? { turnsTaken: loopFrame.actTurnsTaken, costUsd: loopFrame.actCostUsd, elapsedDurationMs: loopFrame.actElapsedDurationMs } : { turnsTaken: session.agentFrame.turnsTaken, costUsd: session.agentFrame.costUsd, elapsedDurationMs: session.agentFrame.elapsedDurationMs };
     const limitReason = checkQuantitativeLimits(session.node.policy, tripwireMetrics);
-    if (limitReason !== undefined && session.node.policy?.onLimitExceeded !== undefined) {
-      const limCfg = session.node.policy.onLimitExceeded, flushPayload = session.ledgerStore !== undefined ? (await executeLimitExceededSequence({ agentFrame: session.agentFrame, outerFrames: session.outerFrames, limitConfig: limCfg, modelNode: session.modelNode, modelDriver: session.modelDriver, wirePrefix: session.wirePrefix, ledgerStore: session.ledgerStore, continuationQueue: session.continuationQueue, topologyStore: session.topologyStore, serviceRegistry: session.serviceRegistry, baseScopeCheckpoint: session.baseScopeCheckpoint, tripReason: limitReason, ctx: session.ctx })).flushedPayload : Object.freeze({ reason: limitReason, ...tripwireMetrics, observedEffects: session.agentFrame.observedEffects });
+    if (limitReason !== undefined) {
+      if (session.node.policy?.onLimitExceeded === undefined) throw new Error(`Quantitative policy limit exceeded on agent '${session.node.id}' in run '${session.ctx.runId}' (step '${session.ctx.stepExecId}'): ${limitReason}.`);
+      const limCfg = session.node.policy.onLimitExceeded, hasReplaceAbortHook = session.node.onInterruptHandlers.some((h) => h.interrupt.id === limCfg.flushInterrupt.id && h.mode === 'replace' && h.abortHook !== undefined);
+      const flushPayload = session.ledgerStore !== undefined ? (await executeLimitExceededSequence({ agentFrame: session.agentFrame, outerFrames: session.outerFrames, limitConfig: limCfg, modelNode: session.modelNode, modelDriver: session.modelDriver, wirePrefix: session.wirePrefix, ledgerStore: session.ledgerStore, continuationQueue: session.continuationQueue, topologyStore: session.topologyStore, serviceRegistry: session.serviceRegistry, baseScopeCheckpoint: hasReplaceAbortHook ? undefined : session.baseScopeCheckpoint, tripReason: limitReason, ctx: session.ctx })).flushedPayload : Object.freeze({ reason: limitReason, ...tripwireMetrics, observedEffects: session.agentFrame.observedEffects });
       const intrRes = await resolveInterruptEdge(session, limCfg.flushInterrupt.id, flushPayload);
       if (session.laneId === undefined && intrRes.status === 'replace' && intrRes.replaceHandler?.mode === 'replace') {
         const repOut = await session.executeChildStep(intrRes.replaceHandler.replacementExecutable, intrRes.replaceHandler.mapReplacementInput(session.validatedInput, intrRes.payload, { costUsd: 0, turnsTaken: session.agentFrame.turnsTaken, durationMs: session.agentFrame.elapsedDurationMs, custom: {}, abortMeta: {} }), session.ctx);

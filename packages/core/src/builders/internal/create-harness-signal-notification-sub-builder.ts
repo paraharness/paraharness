@@ -1,5 +1,4 @@
 import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
-import { extractAST } from '../../ast/extract-ast.js';
 import type { HarnessSignalNotification } from '../../ast/harness-node.js';
 import type { HumanNode } from '../../ast/human-node.js';
 import type { SignalNode } from '../../ast/signal-node.js';
@@ -14,23 +13,28 @@ import { deepFreeze } from './deep-freeze.js';
  *
  * @template TPayload Signal payload type.
  *
- * @param {SignalNode<TPayload>}          signalNode      - Target signal AST node.
- * @param {HumanNode}                     [humanNode]     - Configured human notification channel.
- * @param {(payload: TPayload) => string} [messageMapper] - Notification message formatter.
+ * @param {SignalNode<TPayload>}                                                   signalNode      - Target signal AST node.
+ * @param {HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode}      [humanNode]     - Configured human notification channel.
+ * @param {(payload: TPayload) => string}                                          [messageMapper] - Notification message formatter.
  *
  * @returns {HarnessSignalNotificationBuilder<TPayload>} Frozen signal notification sub-builder.
  */
 export function createHarnessSignalNotificationSubBuilder<TPayload = unknown>(
   signalNode: SignalNode<TPayload>,
-  humanNode?: HumanNode,
+  humanNode?: HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode,
   messageMapper?: (payload: TPayload) => string,
 ): HarnessSignalNotificationBuilder<TPayload> {
   return Object.freeze<HarnessSignalNotificationBuilder<TPayload>>({
     notify(
-      human: MaybeBuilder<HumanNode>,
+      human:
+        | MaybeBuilder<HumanNode<'bidirectional'>>
+        | MaybeBuilder<HumanNode<'notify-only'>>
+        | MaybeBuilder<HumanNode>,
       mapper: (payload: TPayload) => string,
     ): HarnessSignalNotificationBuilder<TPayload> {
-      return createHarnessSignalNotificationSubBuilder(signalNode, extractAST(human), mapper);
+      const extractedHuman: HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode =
+        'toAST' in human ? human.toAST() : human;
+      return createHarnessSignalNotificationSubBuilder(signalNode, extractedHuman, mapper);
     },
     toAST(): HarnessSignalNotification<TPayload> {
       if (humanNode === undefined || messageMapper === undefined) {

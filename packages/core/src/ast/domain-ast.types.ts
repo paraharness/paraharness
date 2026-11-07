@@ -227,7 +227,9 @@ export type StreamSourceASTNode<TEvent = unknown> = GithubWebhookStreamNode<TEve
  * @template TMode Interaction mode filter (`'bidirectional' | 'notify-only'`).
  */
 export type HumanChannelASTNode<TMode extends 'bidirectional' | 'notify-only' = 'bidirectional' | 'notify-only'> =
-  Extract<SlackApproverNode | SlackNotifierNode | CustomDomainAST<'humanChannel'>, { readonly interactionMode: TMode }>;
+  TMode extends unknown
+    ? Extract<SlackApproverNode | SlackNotifierNode | CustomDomainAST<'humanChannel'>, { readonly interactionMode: TMode }>
+    : never;
 /** Workspace-wide discriminated union of inbound control-plane AST nodes. */
 export type ControlPlaneASTNode =
   | NodeMcpStdioNode | NodeMcpSseNode | NodeHttpControlPlaneNode | SlackApproverNode | CustomDomainAST<'controlPlane'>;

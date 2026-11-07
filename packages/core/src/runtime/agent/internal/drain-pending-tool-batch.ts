@@ -144,9 +144,10 @@ export async function evaluatePostToolTripwireAndFlush<TIn, TOut, THandle>(
   const twRes = await evaluateQuotaTripwires(session.node.policy, { accumulatedEffects: prevEffects, newEffects: batchCtx.newEffects }, session.ctx);
   if (!twRes.tripped || session.node.policy?.onLimitExceeded === undefined) return undefined;
   const limCfg = session.node.policy.onLimitExceeded;
+  const hasReplaceAbortHook = session.node.onInterruptHandlers.some((h) => h.interrupt.id === limCfg.flushInterrupt.id && h.mode === 'replace' && h.abortHook !== undefined);
   const pendingToolBatch: PendingToolBatch = Object.freeze({ completedResults: Object.freeze([...batchCtx.completedResults]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([...batchCtx.remainingCalls]) });
   const flushPayload = session.ledgerStore !== undefined
-    ? (await executeLimitExceededSequence({ agentFrame: session.agentFrame, outerFrames: session.outerFrames, pendingToolBatch, limitConfig: limCfg, modelNode: session.modelNode, modelDriver: session.modelDriver, wirePrefix: session.wirePrefix, ledgerStore: session.ledgerStore, continuationQueue: session.continuationQueue, topologyStore: session.topologyStore, serviceRegistry: session.serviceRegistry, baseScopeCheckpoint: session.baseScopeCheckpoint, tripReason: twRes.reason ?? 'Quota tripwire exceeded', ctx: session.ctx })).flushedPayload
+    ? (await executeLimitExceededSequence({ agentFrame: session.agentFrame, outerFrames: session.outerFrames, pendingToolBatch, limitConfig: limCfg, modelNode: session.modelNode, modelDriver: session.modelDriver, wirePrefix: session.wirePrefix, ledgerStore: session.ledgerStore, continuationQueue: session.continuationQueue, topologyStore: session.topologyStore, serviceRegistry: session.serviceRegistry, baseScopeCheckpoint: hasReplaceAbortHook ? undefined : session.baseScopeCheckpoint, tripReason: twRes.reason ?? 'Quota tripwire exceeded', ctx: session.ctx })).flushedPayload
     : Object.freeze({ reason: twRes.reason ?? 'Quota tripwire exceeded' });
   const intrRes = await resolveInterruptEdge(session, limCfg.flushInterrupt.id, flushPayload);
   return intrRes.status === 'resumed' ? undefined : intrRes;
@@ -174,26 +175,25 @@ export async function drainPendingToolBatch<TIn, TOut, THandle>(session: AgentTu
   while (remainingCalls.length > 0) {
     const call = remainingCalls[0] as RemainingToolCallRecord;
     if (precedingReplayCallDenied) {
-      remainingCalls.shift();
-      completedResults.push(Object.freeze<CompletedToolBatchResultRecord>({ callId: call.callId, content: '[Skipped: Preceding tool call in turn batch was denied]', isError: true }));
+      completedResults.push(Object.freeze<CompletedToolBatchResultRecord>({ callId: (remainingCalls.shift() as RemainingToolCallRecord).callId, content: '[Skipped: Preceding tool call in turn batch was denied]', isError: true }));
       continue;
     }
     if (await drainContiguousForkSlice(session, remainingCalls, completedResults)) continue;
     const preOut = await evaluateAndAdjudicatePreFlightCall(session, remainingCalls, batchState);
-    if (preOut.status === 're-evaluate' || preOut.status === 'denied-in-band') continue;
-    if (preOut.status === 'lease-denied') {
-      precedingReplayCallDenied = true;
-      continue;
-    }
+    if (preOut.status === 're-evaluate' || preOut.status === 'denied-in-band' || (preOut.status === 'lease-denied' && (precedingReplayCallDenied = true))) continue;
     const curBatch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([...completedResults]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([...remainingCalls]), adjudicationFeedback: batchState.adjudicationFeedback });
     if (preOut.status === 'interrupted') return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'interrupted', batch: curBatch, interruptResolution: preOut.interruptResolution });
     const prevEffects = session.agentFrame.observedEffects, stepOut = await executeSingleToolInPipeline(session, call, curBatch);
-    if (stepOut.status === 'interrupted') return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'interrupted', batch: curBatch, interruptResolution: stepOut.interruptResolution });
+    if (stepOut.status === 'interrupted') {
+      const intrBatch = Object.freeze<PendingToolBatch>({ ...curBatch, activeInterruptCallId: call.callId });
+      return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'interrupted', batch: (session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pauseState: Object.freeze({ kind: 'tool-batch', pendingToolBatch: intrBatch }) }), intrBatch), interruptResolution: stepOut.interruptResolution });
+    }
     remainingCalls.shift();
+    if (stepOut.newEffects !== undefined && stepOut.newEffects.length > 0) (session.ctx as { readonly recordEffects?: (effs: readonly ToolEffect[]) => void }).recordEffects?.(stepOut.newEffects);
     const prefix = call.blockedPreFlight === true && batchState.adjudicationFeedback !== undefined ? `[Lease Elevated: ${batchState.adjudicationFeedback}]\n\n` : '', svcPrefix = completedResults.length === 0 && reacquiredNotes.length > 0 ? `${reacquiredNotes.join('\n')}\n` : '';
     completedResults.push(Object.freeze<CompletedToolBatchResultRecord>({ callId: call.callId, content: `${svcPrefix}${prefix}${stepOut.content}`, isError: stepOut.isError }));
     const settledBatch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([...completedResults]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([...remainingCalls]), adjudicationFeedback: batchState.adjudicationFeedback });
-    if (stepOut.status === 'suspended') return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'suspended', batch: settledBatch });
+    if (stepOut.status === 'suspended') return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'suspended', batch: (session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'prerequisite-wait', pendingToolBatch: curBatch }) }), settledBatch) });
     const twIntr = await evaluatePostToolTripwireAndFlush(session, prevEffects, { newEffects: stepOut.newEffects ?? [], completedResults, remainingCalls });
     if (twIntr !== undefined) return Object.freeze<DrainToolBatchOutcome<THandle>>({ status: 'interrupted', batch: settledBatch, interruptResolution: twIntr });
     session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pauseState: Object.freeze({ kind: 'tool-batch', pendingToolBatch: settledBatch }) });

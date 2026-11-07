@@ -35,6 +35,32 @@ export interface PoolBuilder<TItem extends ASTNode = ASTNode>
   ): PoolBuilder<TNextItem>;
 
   /**
+   * Configures the pool's selection strategy via a fluent `PoolStrategyBuilder` configurator callback.
+   *
+   * Enables fluent configuration of `.escalateOnRetry()`, `.minSuccessRate()`, `.minSamples()`,
+   * or `.soonestReset()` / `.roundRobin()` / `.leastUsed()` on `$`.
+   *
+   * @param {($: PoolStrategyBuilder<TItem>) => MaybeBuilder<PoolStrategyNode<TItem>>} configure - Fluent strategy configurator callback.
+   *
+   * @returns {PoolBuilder<TItem>} New immutable pool builder.
+   */
+  strategy(
+    configure: ($: PoolStrategyBuilder<TItem>) => MaybeBuilder<PoolStrategyNode<TItem>>,
+  ): PoolBuilder<TItem>;
+
+  /**
+   * Configures the pool's selection strategy via a custom synchronous candidate selector function.
+   *
+   * Receives candidate states (`readonly PoolCandidateState<TItem>[]`) and `PoolSelectionContext`
+   * (containing `attempt`, `runId`, and `stepExecId`) to pick a candidate item.
+   *
+   * @param {PoolSelectorFn<TItem>} selectFn - Custom synchronous selector function.
+   *
+   * @returns {PoolBuilder<TItem>} New immutable pool builder.
+   */
+  strategy(selectFn: PoolSelectorFn<TItem>): PoolBuilder<TItem>;
+
+  /**
    * Configures the pool's selection strategy via a built-in strategy name, custom selector function, strategy node, or fluent configurator callback.
    *
    * Defaults to `'round-robin'` when `.strategy(...)` is not explicitly called.

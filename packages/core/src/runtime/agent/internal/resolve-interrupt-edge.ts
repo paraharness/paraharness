@@ -59,6 +59,16 @@ export async function runHumanAskEdge<TIn, TOut, THandle>(
   handler: AskInterruptHandlerNode,
   validatedPayload: unknown,
 ): Promise<InterruptEdgeResolution<THandle>> {
+  const isInitialSpeculateRace = session.outerFrames.some((f) => f.kind === 'speculate-frame' && f.phase === 'RACING')
+    || (session.ctx.stepExecId.includes(':branch:') && !session.outerFrames.some((f) => f.kind === 'speculate-frame'));
+  if (isInitialSpeculateRace) {
+    return Object.freeze<InterruptEdgeResolution<THandle>>({
+      status: 'unhandled',
+      grantedLeases: Object.freeze([]),
+      interruptId: handler.interrupt.id,
+      payload: validatedPayload,
+    });
+  }
   const humanAdapter = session.humanAdaptersById.get(handler.human.id);
   if (humanAdapter === undefined) {
     throw new Error(`No HumanAdapter registered for '${handler.human.id}' in agent '${session.node.id}'.`);
@@ -107,15 +117,20 @@ export async function runAdjudicatorEdge<TIn, TOut, THandle>(
   const existingBatch = session.agentFrame.pauseState.kind === 'tool-batch' ? session.agentFrame.pauseState.pendingToolBatch : undefined;
   const adjudicatorInput = handler.mapInput(session.validatedInput, validatedPayload);
   const grantedLeases: LeaseDelta[] = [];
-  let adjOutcome = await session.executeChildStep(handler.adjudicator, adjudicatorInput, session.ctx);
+  const adjStepExecId = `${session.ctx.stepExecId}:adj:${handler.adjudicator.id}:${String(session.agentFrame.turnsTaken)}:L${String(session.agentFrame.activeLeases.length)}`;
+  const parentRt = (session.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+  const adjCtx = Object.freeze({ ...session.ctx, stepExecId: adjStepExecId, resumeContinuationStack: undefined, _runtime: { ...parentRt, existingAgentFrame: undefined, overrideModelNode: undefined, outerFrames: [...session.outerFrames, session.agentFrame] } });
+  let adjOutcome = await session.executeChildStep(handler.adjudicator, adjudicatorInput, adjCtx);
   if (adjOutcome.status === 'interrupt-raised' && adjOutcome.interruptId !== undefined) {
     const nested = handler.onInterruptHandlers.find((h) => h.interrupt.id === adjOutcome.interruptId);
     if (nested === undefined) return Object.freeze<InterruptEdgeResolution<THandle>>({ status: 'unhandled', grantedLeases: Object.freeze([]), interruptId: adjOutcome.interruptId, payload: adjOutcome.interruptPayload });
     const nestedPayload = nested.interrupt.schema.parse(adjOutcome.interruptPayload);
     if (nested.mode === 'ask') {
       const askRes = await runHumanAskEdge(session, nested, nestedPayload);
+      if (askRes.status !== 'resumed') return askRes;
       for (const l of askRes.grantedLeases) grantedLeases.push(l);
-      adjOutcome = await session.executeChildStep(handler.adjudicator, Object.freeze({ ...(typeof adjudicatorInput === 'object' && adjudicatorInput !== null ? adjudicatorInput : { input: adjudicatorInput }), _resumeFeedback: askRes.feedback }), session.ctx);
+      const resumedAdjCtx = Object.freeze({ ...adjCtx, stepExecId: `${adjStepExecId}:resumed` });
+      adjOutcome = await session.executeChildStep(handler.adjudicator, Object.freeze({ ...(typeof adjudicatorInput === 'object' && adjudicatorInput !== null ? adjudicatorInput : { input: adjudicatorInput }), _resumeFeedback: askRes.feedback }), resumedAdjCtx);
     }
   }
   if (adjOutcome.status !== 'completed') {

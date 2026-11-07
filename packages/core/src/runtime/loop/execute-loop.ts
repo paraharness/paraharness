@@ -47,7 +47,7 @@ export async function executeLoop<TIn = unknown, TOut = unknown, THandle = unkno
       readonly serviceRegistry?: ServiceSessionRegistry; readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
       readonly wirePrefixesByGroupId?: ReadonlyMap<string, CompiledWirePrefix>; readonly outerFrames?: ContinuationFrame[];
       readonly existingLoopFrame?: LoopContinuationFrame;
-      readonly childOutcomeSink?: { continuationStack?: readonly ContinuationFrame[]; leafMessageId?: string | null; accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>; raisedByPhase?: 'act' | 'evaluate' };
+      readonly childOutcomeSink?: { continuationStack?: readonly ContinuationFrame[]; leafMessageId?: string | null; accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>; raisedByPhase?: 'act' | 'evaluate'; suspendedAtCallId?: string };
     };
   })._runtime;
   const poolManager = rtEnv?.poolManager ?? new PoolManager(), actor = node.actStep.actor;
@@ -94,10 +94,17 @@ export async function executeLoop<TIn = unknown, TOut = unknown, THandle = unkno
     throw new Error(`LoopNode '${node.id}' exhausted maxIterations (${String(node.maxIterations)}) in run '${ctx.runId}'.`);
   } finally {
     if (rtEnv?.childOutcomeSink !== undefined) {
-      rtEnv.childOutcomeSink.continuationStack = Object.freeze([state.loopFrame]);
-      rtEnv.childOutcomeSink.leafMessageId = state.loopFrame.preservedActLeafMessageId;
+      const tracked = state as LoopExecutionState<TIn, TOut, THandle> & {
+        readonly lastInnerAgentFrame?: ContinuationFrame;
+        readonly lastSuspendedAtCallId?: string;
+      };
+      rtEnv.childOutcomeSink.continuationStack = tracked.lastInnerAgentFrame !== undefined
+        ? Object.freeze([state.loopFrame, tracked.lastInnerAgentFrame])
+        : Object.freeze([state.loopFrame]);
+      rtEnv.childOutcomeSink.leafMessageId = state.loopFrame.preservedActLeafMessageId ?? (tracked.lastInnerAgentFrame?.kind === 'agent-frame' ? tracked.lastInnerAgentFrame.leafMessageId : null);
       rtEnv.childOutcomeSink.accumulatedLessonOutcomes = Object.freeze({ ...state.accumulatedLessonOutcomes });
       rtEnv.childOutcomeSink.raisedByPhase = state.loopFrame.phase;
+      rtEnv.childOutcomeSink.suspendedAtCallId = tracked.lastSuspendedAtCallId;
     }
   }
 }

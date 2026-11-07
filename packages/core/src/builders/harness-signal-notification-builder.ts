@@ -16,13 +16,16 @@ export interface HarnessSignalNotificationBuilder<TPayload = unknown> {
    *
    * Accepts both `'bidirectional'` and `'notify-only'` human channels for outbound notifications.
    *
-   * @param {MaybeBuilder<HumanNode>}        human         - Target human authority or notification channel.
-   * @param {(payload: TPayload) => string}  messageMapper - Synchronous notification message formatter.
+   * @param {MaybeBuilder<HumanNode<'bidirectional'>> | MaybeBuilder<HumanNode<'notify-only'>> | MaybeBuilder<HumanNode>} human         - Target human authority or notification channel.
+   * @param {(payload: TPayload) => string}                                                                               messageMapper - Synchronous notification message formatter.
    *
    * @returns {HarnessSignalNotificationBuilder<TPayload>} New immutable signal notification builder.
    */
   notify(
-    human: MaybeBuilder<HumanNode>,
+    human:
+      | MaybeBuilder<HumanNode<'bidirectional'>>
+      | MaybeBuilder<HumanNode<'notify-only'>>
+      | MaybeBuilder<HumanNode>,
     messageMapper: (payload: TPayload) => string,
   ): HarnessSignalNotificationBuilder<TPayload>;
 
