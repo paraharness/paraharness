@@ -50,6 +50,40 @@ export interface HandleEmittedRuntimeSignalParams<TPayload = unknown>
 }
 
 /**
+ * Extracts `prerequisiteRunId` when the terminal scope receipt or signal payload targets a non-trunk `baseBranch`.
+ *
+ * Parses `scopeReceiptJson` when present (falling back to `payload` otherwise) and returns `prerequisiteRunId`
+ * only when `baseBranch` is a non-trunk branch name (`baseBranch !== 'main' && baseBranch !== 'master'`).
+ *
+ * @param {string | undefined} scopeReceiptJson - Serialized terminal scope receipt JSON, if available.
+ * @param {unknown} payload - Emitted signal payload fallback when `scopeReceiptJson` is absent.
+ *
+ * @returns {string | undefined} Non-trunk prerequisite run identifier, or `undefined` when committing to trunk.
+ */
+function resolveNonTrunkPrerequisiteRunId(
+  scopeReceiptJson: string | undefined,
+  payload: unknown,
+): string | undefined {
+  const source: unknown = scopeReceiptJson !== undefined ? JSON.parse(scopeReceiptJson) : payload;
+  if (typeof source !== 'object' || source === null) {
+    return undefined;
+  }
+  if (!('baseBranch' in source) || !('prerequisiteRunId' in source)) {
+    return undefined;
+  }
+  const { baseBranch, prerequisiteRunId } = source;
+  if (
+    typeof baseBranch === 'string' &&
+    baseBranch !== 'main' &&
+    baseBranch !== 'master' &&
+    typeof prerequisiteRunId === 'string'
+  ) {
+    return prerequisiteRunId;
+  }
+  return undefined;
+}
+
+/**
  * Handles `topology.commitOverlayWhen` on-signal promotion or child-branch absorption (`SPEC.md` §3.3 & §3.10).
  *
  * Absorbs child branch overlays into `prerequisiteRunId` when `baseBranch` is non-trunk, or commits to canonical trunk
@@ -76,31 +110,18 @@ async function handleTopologyOverlayCommitSignal<TPayload>(
   const correlatedId = commitCfg.onSignal.correlateBy(payload);
   const rec = (await params.ledgerStore.getRunTerminalReceipts([correlatedId])).get(correlatedId);
   const targetRunId = rec?.runId ?? correlatedId;
-  const parsed =
-    rec?.scopeReceiptJson !== undefined
-      ? (JSON.parse(rec.scopeReceiptJson) as {
-          readonly baseBranch?: string;
-          readonly prerequisiteRunId?: string;
-        })
-      : typeof payload === 'object' && payload !== null
-        ? (payload as { readonly baseBranch?: string; readonly prerequisiteRunId?: string })
-        : {};
-  if (
-    parsed.baseBranch !== undefined &&
-    parsed.baseBranch !== 'main' &&
-    parsed.baseBranch !== 'master' &&
-    parsed.prerequisiteRunId !== undefined
-  ) {
-    await params.topologyStore.syncRunOverlays(parsed.prerequisiteRunId, [targetRunId]);
+  const prerequisiteRunId = resolveNonTrunkPrerequisiteRunId(rec?.scopeReceiptJson, payload);
+  if (prerequisiteRunId !== undefined) {
+    await params.topologyStore.syncRunOverlays(prerequisiteRunId, [targetRunId]);
     await params.topologyStore.discardRunOverlay(targetRunId);
-  } else {
-    const commitRes = await params.topologyStore.commitRunOverlay(targetRunId);
-    if (params.lessonStore !== undefined && commitRes.committedRunIds.length > 0) {
-      await params.lessonStore.syncCreationEpochsForRuns(
-        commitRes.committedRunIds,
-        commitRes.updatedEpochs,
-      );
-    }
+    return;
+  }
+  const commitRes = await params.topologyStore.commitRunOverlay(targetRunId);
+  if (params.lessonStore !== undefined && commitRes.committedRunIds.length > 0) {
+    await params.lessonStore.syncCreationEpochsForRuns(
+      commitRes.committedRunIds,
+      commitRes.updatedEpochs,
+    );
   }
 }
 
