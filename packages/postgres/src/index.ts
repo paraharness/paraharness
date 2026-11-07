@@ -17,6 +17,7 @@ export type { PostgresLessonsBuilder } from './builders/postgres-lessons-builder
 export type { PostgresNamespace } from './builders/postgres-namespace-contract.js';
 export { postgres } from './builders/postgres-namespace.js';
 export type { PostgresTopologyBuilder } from './builders/postgres-topology-builder.js';
+export type { PostgresPinnedClient } from './ddl/postgres-pinned-client.js';
 export type { PostgresPoolFactory } from './ddl/postgres-pool-factory.js';
 export type { PostgresQueryClient } from './ddl/postgres-query-client.js';
 export type { PostgresQueryResult } from './ddl/postgres-query-result.js';
@@ -27,6 +28,10 @@ export {
 export { createPostgresExecutors } from './executors/create-postgres-executors.js';
 export { postgresExecutors } from './executors/postgres-executors.constants.js';
 export { executePostgresGlobalRulesSource } from './executors/postgres-rules-source-executor.js';
+export {
+  computeNormalizedRelevance,
+  computeNormalizedRelevanceScores,
+} from './stores/internal/compute-normalized-relevance.js';
 export { PostgresLedgerStore } from './stores/postgres-ledger-store.js';
 export { PostgresLessonStore } from './stores/postgres-lesson-store.js';
 export { PostgresTopologyStore } from './stores/postgres-topology-store.js';

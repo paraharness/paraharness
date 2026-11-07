@@ -1,4 +1,6 @@
 import type { EnvRef } from '@harness-dsl/core';
+import PQueue from 'p-queue';
+import { Pool } from 'pg';
 import type { PostgresPoolFactory } from '../postgres-pool-factory.js';
 import type { PostgresQueryClient } from '../postgres-query-client.js';
 import type { PostgresQueryResult } from '../postgres-query-result.js';
@@ -7,6 +9,10 @@ import {
   POSTGRES_IDENTIFIER_REGEX,
   POSTGRES_TRANSACTION_QUEUES,
 } from '../postgres-schema.constants.js';
+import {
+  adaptPgPoolToQueryClient,
+  normalizePostgresClient,
+} from './normalize-postgres-client.js';
 
 /**
  * Validates that `identifier` matches `^[A-Za-z_][A-Za-z0-9_]*$`.
@@ -46,34 +52,33 @@ export async function ensurePostgresSchemaInitialized(
 
 /**
  * Resolves a literal connection URI or symbolic `EnvRef` via `resolveEnv` and returns a `PostgresQueryClient`
- * bound to `poolOrClient`.
+ * bound to `poolOrClient` or a `pg.Pool` (`new Pool({ connectionString })`).
  *
- * Validates that `poolOrClient` is defined and the resolved URI is non-empty, delegating asynchronous pool acquisition lazily inside `query()`.
+ * Validates that the resolved URI is non-empty and supports `PostgresPoolFactory`, `PostgresQueryClient`, or `pg.Pool`.
  *
- * @param {string | EnvRef}                                uri            - Literal PostgreSQL URI or symbolic `EnvRef`.
- * @param {(value: string | EnvRef) => string | undefined} resolveEnv     - Late-bound environment resolver from runtime context.
- * @param {PostgresPoolFactory | PostgresQueryClient}      [poolOrClient] - Pool factory or pre-bound query client.
- * @param {string}                                         [nodeType]     - Optional AST node type label for diagnostic error messages.
+ * @param {string | EnvRef}                                     uri            - Literal PostgreSQL URI or symbolic `EnvRef`.
+ * @param {(value: string | EnvRef) => string | undefined}      resolveEnv     - Late-bound environment resolver from runtime context.
+ * @param {PostgresPoolFactory | PostgresQueryClient | Pool}    [poolOrClient] - Optional pool factory, query client, or `pg.Pool`.
  *
  * @returns {PostgresQueryClient} Bound PostgreSQL query client.
  */
 export function resolvePostgresClient(
   uri: string | EnvRef,
   resolveEnv: (value: string | EnvRef) => string | undefined,
-  poolOrClient?: PostgresPoolFactory | PostgresQueryClient,
-  nodeType = 'postgres',
+  poolOrClient?: PostgresPoolFactory | PostgresQueryClient | Pool,
 ): PostgresQueryClient {
-  if (poolOrClient === undefined) {
-    throw new Error(
-      `Cannot instantiate '${nodeType}': pass a PostgresPoolFactory or PostgresQueryClient to createPostgresExecutors(poolFactory).`,
-    );
-  }
   const resolvedUri = resolveEnv(uri) ?? (typeof uri === 'string' ? uri : undefined);
   if (resolvedUri === undefined || resolvedUri.trim().length === 0) {
     const label = typeof uri === 'string' ? uri : `H.env('${uri.key}')`;
     throw new Error(
       `Cannot resolve PostgreSQL connection URI for '${label}': environment variable or URI is empty.`,
     );
+  }
+  if (poolOrClient === undefined) {
+    return normalizePostgresClient(resolvedUri);
+  }
+  if (poolOrClient instanceof Pool) {
+    return adaptPgPoolToQueryClient(poolOrClient);
   }
   if (!('getClient' in poolOrClient)) {
     return poolOrClient;
@@ -100,38 +105,40 @@ export function resolvePostgresClient(
 /**
  * Executes `work` inside a serialized `BEGIN` / `COMMIT` / `ROLLBACK` transaction on `client`.
  *
- * Serializes concurrent transactions per `PostgresQueryClient` via `POSTGRES_TRANSACTION_QUEUES`
- * and guarantees that any thrown error rolls back uncommitted mutations before rethrowing.
+ * Serializes concurrent transactions per `PostgresQueryClient` via `PQueue({ concurrency: 1 })` and pins a dedicated
+ * connection via `client.connect()` (releasing it in `finally`) when backed by a connection pool (`pg.Pool`).
  *
  * @template TResult Return value type of `work`.
  *
- * @param {PostgresQueryClient}    client - Active PostgreSQL query client.
- * @param {() => Promise<TResult>} work   - Transactional callback to execute.
+ * @param {PostgresQueryClient}                                 client - Active PostgreSQL query client or pool adapter.
+ * @param {(txClient: PostgresQueryClient) => Promise<TResult>} work   - Transactional callback receiving the pinned transaction client.
  *
  * @returns {Promise<TResult>} Result produced by `work` after `COMMIT`.
  */
 export function runInPostgresTransaction<TResult>(
   client: PostgresQueryClient,
-  work: () => Promise<TResult>,
+  work: (txClient: PostgresQueryClient) => Promise<TResult>,
 ): Promise<TResult> {
-  const prior = POSTGRES_TRANSACTION_QUEUES.get(client) ?? Promise.resolve();
-  const current = prior.then(async (): Promise<TResult> => {
-    await client.query('BEGIN');
+  let queue = POSTGRES_TRANSACTION_QUEUES.get(client);
+  if (queue === undefined) {
+    queue = new PQueue({ concurrency: 1 });
+    POSTGRES_TRANSACTION_QUEUES.set(client, queue);
+  }
+  return queue.add(async (): Promise<TResult> => {
+    const pinned = client.connect !== undefined ? await client.connect() : undefined;
+    const txClient: PostgresQueryClient = pinned ?? client;
     try {
-      const result = await work();
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
+      await txClient.query('BEGIN');
+      try {
+        const result = await work(txClient);
+        await txClient.query('COMMIT');
+        return result;
+      } catch (error) {
+        await txClient.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      }
+    } finally {
+      pinned?.release();
     }
   });
-  POSTGRES_TRANSACTION_QUEUES.set(
-    client,
-    current.then(
-      () => undefined,
-      () => undefined,
-    ),
-  );
-  return current;
 }

@@ -1,10 +1,11 @@
+import type { PostgresPinnedClient } from './postgres-pinned-client.js';
 import type { PostgresQueryResult } from './postgres-query-result.js';
 
 /**
  * Minimal asynchronous PostgreSQL query client contract used by `@harness-dsl/postgres` stores and executors.
  *
- * Compatible with `pg.Pool`, `pg.Client`, `Postgres.js` wrappers, and `SqliteBackedPgClient` test fixtures
- * without requiring an external `pg` npm runtime dependency.
+ * Compatible with `pg.Pool` (`node-postgres`), `pg.Client`, and `@electric-sql/pglite` test fixtures,
+ * supporting optional `connect()` transaction pinning when backed by a connection pool.
  */
 export interface PostgresQueryClient {
   /**
@@ -23,6 +24,15 @@ export interface PostgresQueryClient {
     sql: string,
     params?: readonly unknown[],
   ): Promise<PostgresQueryResult<TRow>>;
+
+  /**
+   * Optionally checks out a dedicated connection from a backing pool (`pg.Pool.connect()`) for transaction pinning.
+   *
+   * When present, `runInPostgresTransaction` acquires a pinned client before `BEGIN` and calls `release()` in `finally`.
+   *
+   * @returns {Promise<PostgresPinnedClient>} Dedicated pinned client connection.
+   */
+  connect?(): Promise<PostgresPinnedClient>;
 
   /**
    * Optionally releases or closes the underlying connection pool or client handle.

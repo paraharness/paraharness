@@ -12,6 +12,7 @@ import type {
   RuntimeExecutorRegistrySlice,
   TopologyStore,
 } from '@harness-dsl/core';
+import type { Pool } from 'pg';
 import { resolvePostgresClient } from '../ddl/internal/resolve-postgres-client.js';
 import type { PostgresPoolFactory } from '../ddl/postgres-pool-factory.js';
 import type { PostgresQueryClient } from '../ddl/postgres-query-client.js';
@@ -24,14 +25,14 @@ import { executePostgresGlobalRulesSource } from './postgres-rules-source-execut
  * Creates a `RuntimeExecutorRegistrySlice` registering all `@harness-dsl/postgres` storage and source executors.
  *
  * Binds `'postgres:ledger'`, `'postgres:topology'`, `'postgres:lessons'`, and `'postgres:global-rules'`
- * with late-bound `ctx.resolveEnv(node.uri)` resolution against the supplied `PostgresPoolFactory` or `PostgresQueryClient`.
+ * with late-bound `ctx.resolveEnv(node.uri)` resolution against `poolOrClient` or `pg.Pool`.
  *
- * @param {PostgresPoolFactory | PostgresQueryClient} [poolOrClient] - Pool factory or query client used to open PostgreSQL connections.
+ * @param {PostgresPoolFactory | PostgresQueryClient | Pool} [poolOrClient] - Optional pool factory, query client, or `pg.Pool`.
  *
  * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@harness-dsl/postgres`.
  */
 export function createPostgresExecutors(
-  poolOrClient?: PostgresPoolFactory | PostgresQueryClient,
+  poolOrClient?: PostgresPoolFactory | PostgresQueryClient | Pool,
 ): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({
     sources: Object.freeze({
@@ -48,7 +49,6 @@ export function createPostgresExecutors(
           node.uri,
           (value) => ctx.resolveEnv(value),
           poolOrClient,
-          node.type,
         );
         return new PostgresLedgerStore(client);
       },
@@ -62,7 +62,6 @@ export function createPostgresExecutors(
           node.uri,
           (value) => ctx.resolveEnv(value),
           poolOrClient,
-          node.type,
         );
         return new PostgresTopologyStore(client);
       },
@@ -73,7 +72,6 @@ export function createPostgresExecutors(
           node.uri,
           (value) => ctx.resolveEnv(value),
           poolOrClient,
-          node.type,
         );
         return new PostgresLessonStore(client);
       },

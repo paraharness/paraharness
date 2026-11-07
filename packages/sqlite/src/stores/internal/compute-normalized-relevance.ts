@@ -1,57 +1,76 @@
+import MiniSearch from 'minisearch';
+
 /**
- * Extracts normalized lowercase alphanumeric word tokens and character 3-grams from `text`.
+ * Computes normalized BM25 + fuzzy/prefix relevance scores $R(L, Q) \in [0, 1]$ across `candidates` using `MiniSearch`.
  *
- * Produces a deduplicated `Set<string>` used to compute Jaccard and query-coverage similarity in `[0, 1]`.
+ * Indexes `directive` and `partition` with `{ prefix: true, fuzzy: 0.2 }`, returning `1.0` for all candidates when
+ * `queryText` is empty, `score / maxScore` when `maxScore > 0`, and `0` when a candidate does not match (`SPEC.md` §3.4.3).
  *
- * @param {string} text - Input directive or search query string.
+ * @param {ReadonlyArray<{ readonly id: string; readonly directive: string; readonly partition?: string | null }>} candidates - Candidate lessons to score.
+ * @param {string}                                                                                                 queryText  - Search query text $Q$.
  *
- * @returns {Set<string>} Set of normalized word tokens and character trigrams.
+ * @returns {ReadonlyMap<string, number>} Map of candidate `id` to normalized relevance score $R(L, Q) \in [0, 1]$.
  */
-function extractTokensAndTrigrams(text: string): Set<string> {
-  const normalized = text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const features = new Set<string>();
-  if (normalized.length === 0) return features;
-  const words = normalized.split(/\s+/);
-  for (const word of words) {
-    if (word.length > 0) {
-      features.add(`w:${word}`);
-    }
-    if (word.length >= 3) {
-      for (let idx = 0; idx <= word.length - 3; idx += 1) {
-        features.add(`g:${word.slice(idx, idx + 3)}`);
-      }
-    }
+export function computeNormalizedRelevanceScores(
+  candidates: ReadonlyArray<{
+    readonly id: string;
+    readonly directive: string;
+    readonly partition?: string | null;
+  }>,
+  queryText: string,
+): ReadonlyMap<string, number> {
+  const scores = new Map<string, number>();
+  if (candidates.length === 0) return scores;
+  const trimmedQuery = queryText.trim();
+  if (trimmedQuery.length === 0) {
+    for (const candidate of candidates) scores.set(candidate.id, 1);
+    return scores;
   }
-  return features;
+  const miniSearch = new MiniSearch<{
+    readonly id: string;
+    readonly directive: string;
+    readonly partition: string;
+  }>({
+    fields: ['directive', 'partition'],
+    searchOptions: { prefix: true, fuzzy: 0.2 },
+  });
+  for (const candidate of candidates) {
+    miniSearch.add({
+      id: candidate.id,
+      directive: candidate.directive,
+      partition: candidate.partition ?? '',
+    });
+    scores.set(candidate.id, 0);
+  }
+  const results = miniSearch.search(trimmedQuery);
+  const maxScore = results[0]?.score ?? 0;
+  if (maxScore <= 0) return scores;
+  for (const result of results) {
+    const normalized = Math.max(0, Math.min(1, Number((result.score / maxScore).toFixed(6))));
+    scores.set(String(result.id), normalized);
+  }
+  return scores;
 }
 
 /**
- * Computes normalized text relevance $R(L, Q) \in [0, 1]$ between a lesson `directive` and `queryText`.
+ * Computes normalized text relevance $R(L, Q) \in [0, 1]$ between a single lesson `directive` and `queryText` via `MiniSearch`.
  *
- * Returns `1` when `queryText` is empty or identical to `directive`, and otherwise computes the
- * normalized token and character-trigram overlap coefficient in `[0, 1]` (`SPEC.md` §3.4.3).
+ * Returns `1` when `queryText` is empty or matches `directive` under BM25 + prefix/fuzzy search, and `0` when no terms match.
  *
- * @param {string} directive - Lesson directive text $L$.
- * @param {string} queryText - Search query text $Q$.
+ * @param {string} directive   - Lesson directive text $L$.
+ * @param {string} queryText   - Search query text $Q$.
+ * @param {string} [partition] - Optional partition identifier associated with the lesson.
  *
  * @returns {number} Normalized similarity score $R(L, Q) \in [0, 1]$.
  */
-export function computeNormalizedRelevance(directive: string, queryText: string): number {
-  const trimmedQuery = queryText.trim();
-  if (trimmedQuery.length === 0) return 1;
-  const directiveFeatures = extractTokensAndTrigrams(directive);
-  const queryFeatures = extractTokensAndTrigrams(trimmedQuery);
-  if (directiveFeatures.size === 0 || queryFeatures.size === 0) return 0;
-
-  let intersectionCount = 0;
-  for (const feature of queryFeatures) {
-    if (directiveFeatures.has(feature)) {
-      intersectionCount += 1;
-    }
-  }
-  const unionCount = directiveFeatures.size + queryFeatures.size - intersectionCount;
-  const jaccard = unionCount > 0 ? intersectionCount / unionCount : 0;
-  const queryCoverage = intersectionCount / queryFeatures.size;
-  const blended = 0.5 * jaccard + 0.5 * queryCoverage;
-  return Math.max(0, Math.min(1, Number(blended.toFixed(6))));
+export function computeNormalizedRelevance(
+  directive: string,
+  queryText: string,
+  partition?: string,
+): number {
+  const scores = computeNormalizedRelevanceScores(
+    [{ id: '0', directive, partition }],
+    queryText,
+  );
+  return scores.get('0') ?? 0;
 }

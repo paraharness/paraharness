@@ -3,6 +3,9 @@ import type {
   TopologyPartitionState,
   TopologyStore,
 } from '@harness-dsl/core';
+import PQueue from 'p-queue';
+import type { Pool } from 'pg';
+import { normalizePostgresClient } from '../ddl/internal/normalize-postgres-client.js';
 import {
   ensurePostgresSchemaInitialized,
   runInPostgresTransaction,
@@ -30,18 +33,20 @@ import {
 export class PostgresTopologyStore implements TopologyStore {
   /** Underlying PostgreSQL query client. */
   private readonly client: PostgresQueryClient;
+  /** Single-concurrency FIFO queue serializing asynchronous store operations. */
+  private readonly queue = new PQueue({ concurrency: 1 });
   /** Lazily memoized schema initialization promise. */
   private initPromise: Promise<PostgresQueryClient> | undefined;
 
   /**
-   * Initializes a `PostgresTopologyStore` backed by `client`.
+   * Initializes a `PostgresTopologyStore` backed by a `PostgresQueryClient`, `pg.Pool`, or connection URI string.
    *
    * Defers DDL execution until the first store operation so constructing the store performs zero I/O.
    *
-   * @param {PostgresQueryClient} client - PostgreSQL query client instance.
+   * @param {PostgresQueryClient | Pool | string} client - PostgreSQL query client, `pg.Pool`, or connection URI.
    */
-  constructor(client: PostgresQueryClient) {
-    this.client = client;
+  constructor(client: PostgresQueryClient | Pool | string) {
+    this.client = normalizePostgresClient(client);
   }
 
   /**
@@ -70,9 +75,10 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * @returns {Promise<ReadonlyMap<string, TopologyPartitionState>>} Map of `partitionId` to partition state.
    */
-  async getPartitions(runId?: string): Promise<ReadonlyMap<string, TopologyPartitionState>> {
-    const client = await this.ensureReady();
-    return runInPostgresTransaction(client, () => getPartitionsWithPgOverlay(client, runId));
+  getPartitions(runId?: string): Promise<ReadonlyMap<string, TopologyPartitionState>> {
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) => getPartitionsWithPgOverlay(tx, runId)),
+    );
   }
 
   /**
@@ -88,20 +94,21 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * @returns {Promise<{ readonly newEpoch: number }>} Updated overlay epoch for `partitionId`.
    */
-  async updateContract(
+  updateContract(
     runId: string,
     partitionId: string,
     newContractText: string,
     stepExecId?: string,
   ): Promise<{ readonly newEpoch: number }> {
-    const client = await this.ensureReady();
-    return runInPostgresTransaction(client, () =>
-      updateContractInPgOverlay(client, {
-        runId,
-        partitionId,
-        newContractText,
-        stepExecId,
-      }),
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        updateContractInPgOverlay(tx, {
+          runId,
+          partitionId,
+          newContractText,
+          stepExecId,
+        }),
+      ),
     );
   }
 
@@ -115,13 +122,14 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * @returns {Promise<void>} Resolves once prerequisite overlays are merged.
    */
-  async syncRunOverlays(
+  syncRunOverlays(
     targetRunId: string,
     prerequisiteRunIds: readonly string[],
   ): Promise<void> {
-    const client = await this.ensureReady();
-    await runInPostgresTransaction(client, () =>
-      syncPrerequisitePgOverlays(client, targetRunId, prerequisiteRunIds),
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        syncPrerequisitePgOverlays(tx, targetRunId, prerequisiteRunIds),
+      ),
     );
   }
 
@@ -135,12 +143,13 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * @returns {Promise<void>} Resolves once matching uncommitted overlay mutations are rolled back.
    */
-  async resetRunOverlay(
+  resetRunOverlay(
     runId: string,
     opts?: { readonly scope?: 'step' | 'run'; readonly stepExecId?: string },
   ): Promise<void> {
-    const client = await this.ensureReady();
-    await runInPostgresTransaction(client, () => resetPgOverlayByScope(client, runId, opts));
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) => resetPgOverlayByScope(tx, runId, opts)),
+    );
   }
 
   /**
@@ -152,9 +161,8 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * @returns {Promise<void>} Resolves once the overlay is sealed.
    */
-  async sealRunOverlay(runId: string): Promise<void> {
-    const client = await this.ensureReady();
-    await sealPgOverlayForRun(client, runId);
+  sealRunOverlay(runId: string): Promise<void> {
+    return this.queue.add(async () => sealPgOverlayForRun(await this.ensureReady(), runId));
   }
 
   /**
@@ -167,9 +175,10 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * @returns {Promise<CommitRunOverlayResult>} Committed run IDs and newly allocated base epoch numbers.
    */
-  async commitRunOverlay(runId: string): Promise<CommitRunOverlayResult> {
-    const client = await this.ensureReady();
-    return runInPostgresTransaction(client, () => commitPgOverlayThreeWayMerge(client, runId));
+  commitRunOverlay(runId: string): Promise<CommitRunOverlayResult> {
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) => commitPgOverlayThreeWayMerge(tx, runId)),
+    );
   }
 
   /**
@@ -181,8 +190,7 @@ export class PostgresTopologyStore implements TopologyStore {
    *
    * @returns {Promise<void>} Resolves once the overlay is removed.
    */
-  async discardRunOverlay(runId: string): Promise<void> {
-    const client = await this.ensureReady();
-    await discardPgOverlayForRun(client, runId);
+  discardRunOverlay(runId: string): Promise<void> {
+    return this.queue.add(async () => discardPgOverlayForRun(await this.ensureReady(), runId));
   }
 }

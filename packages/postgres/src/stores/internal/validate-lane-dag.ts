@@ -1,40 +1,35 @@
+import { Graph, alg } from '@dagrejs/graphlib';
 import type { MutateLanePlanRequest } from '@harness-dsl/core';
 
 /**
- * Computes the prerequisite chain depth from `nodeKey` while detecting directed cycles in `depsByItem`.
+ * Builds a `@dagrejs/graphlib` directed `Graph` from `depsByItem` where each edge points `itemKey -> depKey`.
  *
- * Uses 3-color DFS (`0` unvisited, `1` visiting, `2` visited) with memoized depth lookup.
+ * Registers every item and prerequisite node and rejects direct self-loops (`itemKey === depKey`) immediately.
  *
- * @param {string}                                                                           nodeKey    - Starting work item key.
- * @param {ReadonlyMap<string, readonly string[]>}                                           depsByItem - Adjacency map of `itemKey -> dependsOn[]`.
- * @param {{ readonly state: Map<string, number>; readonly depthMemo: Map<string, number> }} traversal  - DFS state and memo tables.
+ * @param {ReadonlyMap<string, readonly string[]>} depsByItem - Adjacency map of `itemKey -> dependsOn[]`.
  *
- * @returns {number} Maximum prerequisite chain depth starting from `nodeKey`.
+ * @returns {Graph} Populated `@dagrejs/graphlib` directed graph.
  */
-export function computeNodePrerequisiteDepth(
-  nodeKey: string,
-  depsByItem: ReadonlyMap<string, readonly string[]>,
-  traversal: { readonly state: Map<string, number>; readonly depthMemo: Map<string, number> },
-): number {
-  const visitState = traversal.state.get(nodeKey) ?? 0;
-  if (visitState === 1) throw new Error(`Cycle detected in lane prerequisite DAG involving item '${nodeKey}'.`);
-  if (visitState === 2) return traversal.depthMemo.get(nodeKey) ?? 0;
-  traversal.state.set(nodeKey, 1);
-  const directDeps = depsByItem.get(nodeKey) ?? [];
-  let maxChildDepth = 0;
-  for (const depKey of directDeps) {
-    const edgeDepth = 1 + computeNodePrerequisiteDepth(depKey, depsByItem, traversal);
-    if (edgeDepth > maxChildDepth) maxChildDepth = edgeDepth;
+function buildPrerequisiteGraph(depsByItem: ReadonlyMap<string, readonly string[]>): Graph {
+  const graph = new Graph({ directed: true });
+  for (const [nodeKey, directDeps] of depsByItem.entries()) {
+    graph.setNode(nodeKey);
+    for (const depKey of directDeps) {
+      if (nodeKey === depKey) {
+        throw new Error(`Cycle detected in lane prerequisite DAG involving item '${nodeKey}'.`);
+      }
+      graph.setNode(depKey);
+      graph.setEdge(nodeKey, depKey);
+    }
   }
-  traversal.state.set(nodeKey, 2);
-  traversal.depthMemo.set(nodeKey, maxChildDepth);
-  return maxChildDepth;
+  return graph;
 }
 
 /**
  * Validates that the lane prerequisite graph `depsByItem` is acyclic and within `maxPrerequisiteDepth`.
  *
- * Rejects any self-loop, cycle, or prerequisite chain exceeding `maxPrerequisiteDepth` before commit.
+ * Uses `@dagrejs/graphlib` (`alg.isAcyclic`, `alg.findCycles`, and `alg.topsort`) to reject cycles
+ * and enforce `maxPrerequisiteDepth` across all prerequisite chains before committing.
  *
  * @param {ReadonlyMap<string, readonly string[]>} depsByItem           - Adjacency map of `itemKey -> dependsOn[]`.
  * @param {number}                                 maxPrerequisiteDepth - Maximum allowed prerequisite chain depth.
@@ -47,12 +42,29 @@ export function assertValidLaneDag(
   maxPrerequisiteDepth: number,
   laneId: string,
 ): void {
-  const traversal = { state: new Map<string, number>(), depthMemo: new Map<string, number>() };
-  for (const nodeKey of depsByItem.keys()) {
-    const depth = computeNodePrerequisiteDepth(nodeKey, depsByItem, traversal);
-    if (depth > maxPrerequisiteDepth) {
-      throw new Error(`Prerequisite chain depth ${String(depth)} for item '${nodeKey}' in lane '${laneId}' exceeds maxPrerequisiteDepth (${String(maxPrerequisiteDepth)}).`);
+  const graph = buildPrerequisiteGraph(depsByItem);
+  if (!alg.isAcyclic(graph)) {
+    const cycles = alg.findCycles(graph);
+    const firstCycleNode = cycles[0]?.[0] ?? 'unknown';
+    throw new Error(`Cycle detected in lane prerequisite DAG involving item '${firstCycleNode}'.`);
+  }
+  const topoOrder = alg.topsort(graph);
+  const depthMemo = new Map<string, number>();
+  for (let idx = topoOrder.length - 1; idx >= 0; idx -= 1) {
+    const nodeKey = topoOrder[idx];
+    if (nodeKey === undefined) continue;
+    const directDeps = graph.successors(nodeKey) ?? [];
+    let maxChildDepth = 0;
+    for (const depKey of directDeps) {
+      const edgeDepth = 1 + (depthMemo.get(depKey) ?? 0);
+      if (edgeDepth > maxChildDepth) maxChildDepth = edgeDepth;
     }
+    if (maxChildDepth > maxPrerequisiteDepth) {
+      throw new Error(
+        `Prerequisite chain depth ${String(maxChildDepth)} for item '${nodeKey}' in lane '${laneId}' exceeds maxPrerequisiteDepth (${String(maxPrerequisiteDepth)}).`,
+      );
+    }
+    depthMemo.set(nodeKey, maxChildDepth);
   }
 }
 

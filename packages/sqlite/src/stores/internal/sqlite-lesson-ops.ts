@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { LessonOutcome, LessonRecord } from '@harness-dsl/core';
 import type Database from 'better-sqlite3';
 import type { AdmitLessonParams } from './admit-lesson-params.js';
-import { computeNormalizedRelevance } from './compute-normalized-relevance.js';
+import { computeNormalizedRelevanceScores } from './compute-normalized-relevance.js';
 import type { SqliteLessonRow } from './sqlite-lesson-row.js';
 
 /**
@@ -21,10 +21,16 @@ export function queryLessonCandidatesInSqlite(
 ): readonly LessonRecord[] {
   const rows = db.prepare('SELECT * FROM harness_lessons WHERE retired = 0 ORDER BY id ASC').all() as SqliteLessonRow[];
   const partitionSet = new Set<string>(req.partitions);
-  const candidates: LessonRecord[] = [];
+  const eligibleRows: SqliteLessonRow[] = [];
   for (const row of rows) {
-    if (row.partition !== null && !partitionSet.has(row.partition)) continue;
-    const relevanceScore = computeNormalizedRelevance(row.directive, req.queryText);
+    if (row.partition === null || partitionSet.has(row.partition)) {
+      eligibleRows.push(row);
+    }
+  }
+  const scoresById = computeNormalizedRelevanceScores(eligibleRows, req.queryText);
+  const candidates: LessonRecord[] = [];
+  for (const row of eligibleRows) {
+    const relevanceScore = scoresById.get(row.id) ?? 0;
     const signalMap = row.signal_last_emitted_at_json !== null
       ? Object.freeze(JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
       : undefined;

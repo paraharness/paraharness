@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { H, createExecutorRegistry } from '@harness-dsl/core';
 import type {
@@ -13,6 +13,8 @@ import {
   PostgresLedgerStore,
   PostgresLessonStore,
   PostgresTopologyStore,
+  type PostgresQueryClient,
+  type PostgresQueryResult,
   createCompactionConfigBuilder,
   createPostgresExecutors,
   createPostgresGlobalRulesBuilder,
@@ -22,7 +24,7 @@ import {
   postgres,
   postgresExecutors,
 } from '../src/index.js';
-import { SqliteBackedPgClient } from './fixtures/sqlite-backed-pg-client.js';
+import { PgliteTestClient } from './fixtures/pglite-test-client.js';
 
 function createSampleWireFrame(
   messageId: string,
@@ -46,20 +48,24 @@ function createSampleWireFrame(
 }
 
 describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, and global-rules executor', () => {
-  let pgClient: SqliteBackedPgClient;
+  let pgClient: PgliteTestClient;
   let ledgerStore: PostgresLedgerStore;
   let topologyStore: PostgresTopologyStore;
   let lessonStore: PostgresLessonStore;
 
-  beforeEach(() => {
-    pgClient = new SqliteBackedPgClient();
+  beforeAll(() => {
+    pgClient = new PgliteTestClient();
+  });
+
+  beforeEach(async () => {
+    await pgClient.resetTables();
     ledgerStore = new PostgresLedgerStore(pgClient);
     topologyStore = new PostgresTopologyStore(pgClient);
     lessonStore = new PostgresLessonStore(pgClient);
   });
 
-  afterEach(() => {
-    pgClient.close();
+  afterAll(async () => {
+    await pgClient.close();
   });
 
   it('builds frozen Postgres AST nodes with H.env(DATABASE_URL) and validates compaction and SQL identifiers', () => {
@@ -306,30 +312,21 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     const mergedBranchB = await topologyStore.commitRunOverlay('r-branch-b');
     expect(mergedBranchB).toEqual({ committedRunIds: ['r-branch-b'], updatedEpochs: new Map([['api', 3]]) });
     expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe('v2-top\nv2-extra\nv2-bottom');
-
     await topologyStore.updateContract('r-prereq', 'api', 'v3-prereq\nv2-extra\nv2-bottom', 's-p');
     await topologyStore.sealRunOverlay('r-prereq');
     await topologyStore.updateContract('r-parent', 'api', 'v2-top\nv2-extra\nv3-parent', 's-par');
     await topologyStore.syncRunOverlays('r-parent', ['r-prereq']);
-    expect((await topologyStore.getPartitions('r-parent')).get('api')?.contractText).toBe(
-      'v3-prereq\nv2-extra\nv3-parent',
-    );
+    expect((await topologyStore.getPartitions('r-parent')).get('api')?.contractText).toBe('v3-prereq\nv2-extra\nv3-parent');
     expect((await topologyStore.getPartitions('r-parent')).get('api')?.lastMutatedByRunId).toBe('r-parent');
-
     await topologyStore.resetRunOverlay('r-parent', { scope: 'run' });
-    expect((await topologyStore.getPartitions('r-parent')).get('api')?.contractText).toBe(
-      'v3-prereq\nv2-extra\nv2-bottom',
-    );
+    expect((await topologyStore.getPartitions('r-parent')).get('api')?.contractText).toBe('v3-prereq\nv2-extra\nv2-bottom');
     await topologyStore.sealRunOverlay('r-parent');
     const stackedCommit = await topologyStore.commitRunOverlay('r-parent');
     expect(stackedCommit.committedRunIds).toEqual(['r-prereq', 'r-parent']);
     expect(stackedCommit.updatedEpochs).toEqual(new Map([['api', 4]]));
-
     await topologyStore.updateContract('r-discard', 'api', 'discard-me', 's-d');
     await topologyStore.discardRunOverlay('r-discard');
-    expect((await topologyStore.getPartitions('r-discard')).get('api')?.contractText).toBe(
-      'v3-prereq\nv2-extra\nv2-bottom',
-    );
+    expect((await topologyStore.getPartitions('r-discard')).get('api')?.contractText).toBe('v3-prereq\nv2-extra\nv2-bottom');
 
     const lessonId = await lessonStore.admit({
       partition: 'api',
@@ -341,13 +338,54 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await lessonStore.recordOutcomes([{ lessonId, outcome: 'clean_pass' }]);
     await lessonStore.markSignalEmitted(lessonId, 'sig-promote', '2026-02-01T00:00:00.000Z');
 
-    const recalled = await lessonStore.queryCandidates({ queryText: 'pagination cursor signatures', partitions: ['api'] });
+    const recalled = await lessonStore.queryCandidates({ queryText: 'paginaton cursr signaturs', partitions: ['api'] });
     expect(recalled).toHaveLength(1);
+    expect(recalled[0]?.relevanceScore).toBe(1);
     expect(recalled[0]?.epochAtCreation).toBe(1);
     expect(recalled[0]?.totalCleanPasses).toBe(1);
     expect(recalled[0]?.signalLastEmittedAt).toEqual({ 'sig-promote': '2026-02-01T00:00:00.000Z' });
 
     await lessonStore.retire([lessonId]);
     expect(await lessonStore.queryCandidates({ queryText: 'pagination cursor', partitions: ['api'] })).toEqual([]);
+  });
+
+  it('pins a dedicated pooled connection via connect() and releases it in finally across commit and rollback', async () => {
+    const events: string[] = [];
+    const pooledClient: PostgresQueryClient = {
+      query<TRow = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<PostgresQueryResult<TRow>> {
+        events.push(`pool.query:${sql.slice(0, 12)}`);
+        return pgClient.query<TRow>(sql, params);
+      },
+      async connect() {
+        events.push('pool.connect');
+        return {
+          query<TRow = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<PostgresQueryResult<TRow>> {
+            events.push(`pinned.query:${sql.split(/\s+/)[0] ?? ''}`);
+            return pgClient.query<TRow>(sql, params);
+          },
+          release(): void {
+            events.push('pinned.release');
+          },
+        };
+      },
+    };
+    const pooledLedger = new PostgresLedgerStore(pooledClient);
+    await pooledLedger.createOrResumeRun({
+      runId: 'pool-run-1', laneId: 'lane-pool', itemKey: 'ISS-POOL-1', inputJson: '{}',
+    });
+    expect(events).toContain('pool.connect');
+    expect(events).toContain('pinned.query:BEGIN');
+    expect(events).toContain('pinned.query:COMMIT');
+    expect(events).toContain('pinned.release');
+
+    const beforeRollbackLen = events.length;
+    await expect(
+      pooledLedger.recordStepTransition({ stepExecId: 'missing-step', status: 'COMPLETED', telemetryJson: '{}' }),
+    ).rejects.toThrow(/unknown stepExecId/i);
+    const rollbackSlice = events.slice(beforeRollbackLen);
+    expect(rollbackSlice).toContain('pool.connect');
+    expect(rollbackSlice).toContain('pinned.query:BEGIN');
+    expect(rollbackSlice).toContain('pinned.query:ROLLBACK');
+    expect(rollbackSlice[rollbackSlice.length - 1]).toBe('pinned.release');
   });
 });

@@ -1,5 +1,6 @@
 import type { LessonOutcome, LessonRecord, LessonStore } from '@harness-dsl/core';
 import type Database from 'better-sqlite3';
+import PQueue from 'p-queue';
 import { openSqliteConnection } from '../ddl/internal/open-sqlite-connection.js';
 import {
   admitLessonInSqlite,
@@ -17,6 +18,8 @@ import {
 export class SqliteLessonStore implements LessonStore {
   /** Underlying `better-sqlite3` database connection. */
   private readonly db: Database.Database;
+  /** Single-concurrency FIFO queue serializing asynchronous store operations. */
+  private readonly queue = new PQueue({ concurrency: 1 });
 
   /**
    * Initializes a `SqliteLessonStore` against a SQLite file path, `:memory:`, or existing `Database` handle.
@@ -42,7 +45,7 @@ export class SqliteLessonStore implements LessonStore {
     readonly queryText: string;
     readonly partitions: readonly string[];
   }): Promise<readonly LessonRecord[]> {
-    return Promise.resolve(queryLessonCandidatesInSqlite(this.db, req));
+    return this.queue.add(() => queryLessonCandidatesInSqlite(this.db, req));
   }
 
   /**
@@ -60,8 +63,7 @@ export class SqliteLessonStore implements LessonStore {
     readonly epochAtCreation: number;
     readonly createdByRunId?: string;
   }): Promise<string> {
-    const tx = this.db.transaction(() => admitLessonInSqlite(this.db, lesson));
-    return Promise.resolve(tx());
+    return this.queue.add(() => this.db.transaction(() => admitLessonInSqlite(this.db, lesson))());
   }
 
   /**
@@ -76,8 +78,9 @@ export class SqliteLessonStore implements LessonStore {
   recordOutcomes(
     outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>,
   ): Promise<readonly LessonRecord[]> {
-    const tx = this.db.transaction(() => recordLessonOutcomesInSqlite(this.db, outcomes));
-    return Promise.resolve(tx());
+    return this.queue.add(() =>
+      this.db.transaction(() => recordLessonOutcomesInSqlite(this.db, outcomes))(),
+    );
   }
 
   /**
@@ -94,9 +97,9 @@ export class SqliteLessonStore implements LessonStore {
     runIds: readonly string[],
     updatedEpochs: ReadonlyMap<string, number>,
   ): Promise<void> {
-    const tx = this.db.transaction(() => syncLessonEpochsInSqlite(this.db, runIds, updatedEpochs));
-    tx();
-    return Promise.resolve();
+    return this.queue.add(() => {
+      this.db.transaction(() => syncLessonEpochsInSqlite(this.db, runIds, updatedEpochs))();
+    });
   }
 
   /**
@@ -111,24 +114,24 @@ export class SqliteLessonStore implements LessonStore {
    * @returns {Promise<void>} Resolves when the cooldown timestamp is persisted.
    */
   markSignalEmitted(lessonId: string, signalId: string, emittedAt: string): Promise<void> {
-    const tx = this.db.transaction(() => {
-      const row = this.db
-        .prepare('SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = ?')
-        .get(lessonId) as { readonly signal_last_emitted_at_json: string | null } | undefined;
-      if (row === undefined) {
-        return;
-      }
-      const map: Record<string, string> =
-        row.signal_last_emitted_at_json !== null
-          ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
-          : {};
-      map[signalId] = emittedAt;
-      this.db
-        .prepare('UPDATE harness_lessons SET signal_last_emitted_at_json = ? WHERE id = ?')
-        .run(JSON.stringify(map), lessonId);
+    return this.queue.add(() => {
+      this.db.transaction(() => {
+        const row = this.db
+          .prepare('SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = ?')
+          .get(lessonId) as { readonly signal_last_emitted_at_json: string | null } | undefined;
+        if (row === undefined) {
+          return;
+        }
+        const map: Record<string, string> =
+          row.signal_last_emitted_at_json !== null
+            ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
+            : {};
+        map[signalId] = emittedAt;
+        this.db
+          .prepare('UPDATE harness_lessons SET signal_last_emitted_at_json = ? WHERE id = ?')
+          .run(JSON.stringify(map), lessonId);
+      })();
     });
-    tx();
-    return Promise.resolve();
   }
 
   /**
@@ -141,14 +144,14 @@ export class SqliteLessonStore implements LessonStore {
    * @returns {Promise<void>} Resolves when all specified lessons are retired.
    */
   retire(lessonIds: readonly string[]): Promise<void> {
-    const tx = this.db.transaction(() => {
-      const stmt = this.db.prepare('UPDATE harness_lessons SET retired = 1 WHERE id = ?');
-      for (const lessonId of lessonIds) {
-        stmt.run(lessonId);
-      }
+    return this.queue.add(() => {
+      this.db.transaction(() => {
+        const stmt = this.db.prepare('UPDATE harness_lessons SET retired = 1 WHERE id = ?');
+        for (const lessonId of lessonIds) {
+          stmt.run(lessonId);
+        }
+      })();
     });
-    tx();
-    return Promise.resolve();
   }
 
   /**

@@ -1,3 +1,5 @@
+import type PQueue from 'p-queue';
+import type { Pool } from 'pg';
 import type { PostgresQueryClient } from './postgres-query-client.js';
 
 /**
@@ -6,9 +8,19 @@ import type { PostgresQueryClient } from './postgres-query-client.js';
 export const POSTGRES_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Per-client transaction serialization queues preventing overlapping `BEGIN` / `COMMIT` blocks on a single `PostgresQueryClient`.
+ * Per-client `PQueue` (`concurrency: 1`) instances serializing transactions on a `PostgresQueryClient`.
  */
-export const POSTGRES_TRANSACTION_QUEUES = new WeakMap<PostgresQueryClient, Promise<unknown>>();
+export const POSTGRES_TRANSACTION_QUEUES = new WeakMap<PostgresQueryClient, PQueue>();
+
+/**
+ * Memoized `PostgresQueryClient` adapters keyed by `pg.Pool` instance.
+ */
+export const POSTGRES_POOL_WRAPPERS = new WeakMap<Pool, PostgresQueryClient>();
+
+/**
+ * Memoized `pg.Pool`-backed `PostgresQueryClient` instances keyed by PostgreSQL connection URI.
+ */
+export const POSTGRES_URI_POOLS = new Map<string, PostgresQueryClient>();
 
 /**
  * Ordered PostgreSQL DDL statements initializing the ledger, topology CoW overlay, and lesson store tables.

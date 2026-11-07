@@ -145,6 +145,21 @@ describe('SqliteTopologyStore CoW overlays and SqliteLessonStore lifecycle', () 
     );
     expect(mergedInRunView?.contractText).toBe('header-spawned\nbody-child\nfooter-parent');
     expect(mergedInRunView?.lastMutatedByRunId).toBe('run-parent-mutated');
+
+    await topologyStore.updateContract('run-mid-base', 'payments', 'top\nshared-mid\nbottom', 's-mb');
+    await topologyStore.sealRunOverlay('run-mid-base');
+    await topologyStore.commitRunOverlay('run-mid-base');
+    await topologyStore.getPartitions('run-mid-1');
+    await topologyStore.getPartitions('run-mid-2');
+    await topologyStore.updateContract('run-mid-1', 'payments', 'top\nmid-from-1\nbottom', 's-m1');
+    await topologyStore.sealRunOverlay('run-mid-1');
+    await topologyStore.commitRunOverlay('run-mid-1');
+    await topologyStore.updateContract('run-mid-2', 'payments', 'top\nmid-from-2\nbottom', 's-m2');
+    await topologyStore.sealRunOverlay('run-mid-2');
+    await topologyStore.commitRunOverlay('run-mid-2');
+    expect((await topologyStore.getPartitions()).get('payments')?.contractText).toBe(
+      'top\nmid-from-1\nmid-from-2\nbottom',
+    );
   });
 
   it('admits, queries with relevanceScore, records outcomes, syncs epochs, marks signals, and retires lessons', async () => {
@@ -168,7 +183,21 @@ describe('SqliteTopologyStore CoW overlays and SqliteLessonStore lifecycle', () 
     });
     expect(candidates).toHaveLength(2);
     const jwtCandidate = candidates.find((c) => c.id === jwtLessonId);
-    expect(jwtCandidate?.relevanceScore).toBeGreaterThan(0.2);
+    expect(jwtCandidate?.relevanceScore).toBe(1);
+    const nonMatchingCandidate = candidates.find((c) => c.id !== jwtLessonId);
+    expect(nonMatchingCandidate?.relevanceScore).toBe(0);
+
+    const fuzzyCandidates = await lessonStore.queryCandidates({
+      queryText: 'signatre verificaton jwk',
+      partitions: ['auth'],
+    });
+    expect(fuzzyCandidates.find((c) => c.id === jwtLessonId)?.relevanceScore).toBe(1);
+
+    const emptyQueryCandidates = await lessonStore.queryCandidates({
+      queryText: '   ',
+      partitions: ['auth'],
+    });
+    expect(emptyQueryCandidates.map((c) => c.relevanceScore)).toEqual([1, 1]);
 
     await lessonStore.recordOutcomes([
       { lessonId: jwtLessonId, outcome: 'clean_pass' },

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { LessonOutcome, LessonRecord } from '@harness-dsl/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { AdmitLessonParams } from './admit-lesson-params.js';
-import { computeNormalizedRelevance } from './compute-normalized-relevance.js';
+import { computeNormalizedRelevanceScores } from './compute-normalized-relevance.js';
 import type { PgLessonRow } from './pg-lesson-row.js';
 
 /**
@@ -21,10 +21,15 @@ export async function queryLessonCandidatesInPg(
 ): Promise<readonly LessonRecord[]> {
   const queryResult = await client.query<PgLessonRow>('SELECT * FROM harness_lessons WHERE retired = 0 ORDER BY id ASC');
   const partitionSet = new Set<string>(req.partitions);
-  const candidates: LessonRecord[] = [];
+  const matchingRows: PgLessonRow[] = [];
   for (const row of queryResult.rows) {
     if (row.partition !== null && !partitionSet.has(row.partition)) continue;
-    const relevanceScore = computeNormalizedRelevance(row.directive, req.queryText);
+    matchingRows.push(row);
+  }
+  const relevanceById = computeNormalizedRelevanceScores(matchingRows, req.queryText);
+  const candidates: LessonRecord[] = [];
+  for (const row of matchingRows) {
+    const relevanceScore = relevanceById.get(row.id) ?? 0;
     const signalMap = row.signal_last_emitted_at_json !== null ? Object.freeze(JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>) : undefined;
     candidates.push(Object.freeze<LessonRecord>({
       id: row.id, partition: row.partition ?? undefined, directive: row.directive,

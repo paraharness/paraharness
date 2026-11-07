@@ -7,6 +7,7 @@ import {
   type ResolvedSourceArtifact,
   z,
 } from '@harness-dsl/core';
+import type { Pool } from 'pg';
 import {
   assertValidPostgresIdentifier,
   resolvePostgresClient,
@@ -20,24 +21,19 @@ import type { PostgresQueryClient } from '../ddl/postgres-query-client.js';
  * Validates `node.table` against `^[A-Za-z_][A-Za-z0-9_]*$`, queries `SELECT id, directive FROM "<table>" ORDER BY id ASC`,
  * validates all rows via `z.array(GlobalRuleSchema)`, and computes a deterministic SHA-256 hex digest.
  *
- * @param {PostgresRulesSourceNode}                     node          - Passive PostgreSQL global rules source AST node.
- * @param {ResolutionContext}                           ctx           - Active source resolution context.
- * @param {PostgresPoolFactory | PostgresQueryClient}   [poolFactory] - Pool factory or query client used to run the query.
+ * @param {PostgresRulesSourceNode}                            node          - Passive PostgreSQL global rules source AST node.
+ * @param {ResolutionContext}                                  ctx           - Active source resolution context.
+ * @param {PostgresPoolFactory | PostgresQueryClient | Pool}   [poolFactory] - Optional pool factory, query client, or `pg.Pool`.
  *
  * @returns {Promise<ResolvedSourceArtifact<readonly GlobalRule[]>>} Validated global rules and SHA-256 digest.
  */
 export async function executePostgresGlobalRulesSource(
   node: PostgresRulesSourceNode,
   ctx: ResolutionContext,
-  poolFactory?: PostgresPoolFactory | PostgresQueryClient,
+  poolFactory?: PostgresPoolFactory | PostgresQueryClient | Pool,
 ): Promise<ResolvedSourceArtifact<readonly GlobalRule[]>> {
   assertValidPostgresIdentifier(node.table, 'table');
-  if (poolFactory === undefined) {
-    throw new Error(
-      `Cannot execute PostgresRulesSourceNode '${node.id}': no PostgresPoolFactory or PostgresQueryClient was provided to createPostgresExecutors().`,
-    );
-  }
-  const client = await resolvePostgresClient(
+  const client = resolvePostgresClient(
     node.uri,
     (value) => ctx.resolveEnv(value),
     poolFactory,

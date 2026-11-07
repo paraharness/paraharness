@@ -4,6 +4,7 @@ import type {
   TopologyStore,
 } from '@harness-dsl/core';
 import type Database from 'better-sqlite3';
+import PQueue from 'p-queue';
 import { openSqliteConnection } from '../ddl/internal/open-sqlite-connection.js';
 import {
   commitOverlayThreeWayMerge,
@@ -26,6 +27,8 @@ import {
 export class SqliteTopologyStore implements TopologyStore {
   /** Underlying `better-sqlite3` database connection. */
   private readonly db: Database.Database;
+  /** Single-concurrency FIFO queue serializing asynchronous store operations. */
+  private readonly queue = new PQueue({ concurrency: 1 });
 
   /**
    * Initializes a `SqliteTopologyStore` against a SQLite file path, `:memory:`, or existing `Database` handle.
@@ -48,8 +51,7 @@ export class SqliteTopologyStore implements TopologyStore {
    * @returns {Promise<ReadonlyMap<string, TopologyPartitionState>>} Map of `partitionId` to partition state.
    */
   getPartitions(runId?: string): Promise<ReadonlyMap<string, TopologyPartitionState>> {
-    const tx = this.db.transaction(() => getPartitionsWithOverlay(this.db, runId));
-    return Promise.resolve(tx());
+    return this.queue.add(() => this.db.transaction(() => getPartitionsWithOverlay(this.db, runId))());
   }
 
   /**
@@ -71,10 +73,11 @@ export class SqliteTopologyStore implements TopologyStore {
     newContractText: string,
     stepExecId?: string,
   ): Promise<{ readonly newEpoch: number }> {
-    const tx = this.db.transaction(() =>
-      updateContractInOverlay(this.db, { runId, partitionId, newContractText, stepExecId }),
+    return this.queue.add(() =>
+      this.db.transaction(() =>
+        updateContractInOverlay(this.db, { runId, partitionId, newContractText, stepExecId }),
+      )(),
     );
-    return Promise.resolve(tx());
   }
 
   /**
@@ -89,11 +92,9 @@ export class SqliteTopologyStore implements TopologyStore {
    * @returns {Promise<void>} Resolves once prerequisite overlays are merged.
    */
   syncRunOverlays(targetRunId: string, prerequisiteRunIds: readonly string[]): Promise<void> {
-    const tx = this.db.transaction(() =>
-      syncPrerequisiteOverlays(this.db, targetRunId, prerequisiteRunIds),
-    );
-    tx();
-    return Promise.resolve();
+    return this.queue.add(() => {
+      this.db.transaction(() => syncPrerequisiteOverlays(this.db, targetRunId, prerequisiteRunIds))();
+    });
   }
 
   /**
@@ -110,9 +111,9 @@ export class SqliteTopologyStore implements TopologyStore {
     runId: string,
     opts?: { readonly scope?: 'step' | 'run'; readonly stepExecId?: string },
   ): Promise<void> {
-    const tx = this.db.transaction(() => resetOverlayByScope(this.db, runId, opts));
-    tx();
-    return Promise.resolve();
+    return this.queue.add(() => {
+      this.db.transaction(() => resetOverlayByScope(this.db, runId, opts))();
+    });
   }
 
   /**
@@ -125,8 +126,9 @@ export class SqliteTopologyStore implements TopologyStore {
    * @returns {Promise<void>} Resolves once the overlay is sealed.
    */
   sealRunOverlay(runId: string): Promise<void> {
-    sealOverlayForRun(this.db, runId);
-    return Promise.resolve();
+    return this.queue.add(() => {
+      sealOverlayForRun(this.db, runId);
+    });
   }
 
   /**
@@ -140,8 +142,7 @@ export class SqliteTopologyStore implements TopologyStore {
    * @returns {Promise<CommitRunOverlayResult>} Committed run IDs and newly allocated base epoch numbers.
    */
   commitRunOverlay(runId: string): Promise<CommitRunOverlayResult> {
-    const tx = this.db.transaction(() => commitOverlayThreeWayMerge(this.db, runId));
-    return Promise.resolve(tx());
+    return this.queue.add(() => this.db.transaction(() => commitOverlayThreeWayMerge(this.db, runId))());
   }
 
   /**
@@ -154,8 +155,9 @@ export class SqliteTopologyStore implements TopologyStore {
    * @returns {Promise<void>} Resolves once the overlay is removed.
    */
   discardRunOverlay(runId: string): Promise<void> {
-    discardOverlayForRun(this.db, runId);
-    return Promise.resolve();
+    return this.queue.add(() => {
+      discardOverlayForRun(this.db, runId);
+    });
   }
 
   /**

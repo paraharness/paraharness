@@ -29,7 +29,10 @@ export {
 export { createSqliteExecutors } from './executors/create-sqlite-executors.js';
 export { sqliteExecutors } from './executors/sqlite-executors.constants.js';
 export { executeSqliteGlobalRulesSource } from './executors/sqlite-rules-source-executor.js';
-export { computeNormalizedRelevance } from './stores/internal/compute-normalized-relevance.js';
+export {
+  computeNormalizedRelevance,
+  computeNormalizedRelevanceScores,
+} from './stores/internal/compute-normalized-relevance.js';
 export { SqliteLedgerStore } from './stores/sqlite-ledger-store.js';
 export { SqliteLessonStore } from './stores/sqlite-lesson-store.js';
 export { SqliteTopologyStore } from './stores/sqlite-topology-store.js';

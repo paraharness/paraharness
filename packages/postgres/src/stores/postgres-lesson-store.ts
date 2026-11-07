@@ -1,4 +1,7 @@
 import type { LessonOutcome, LessonRecord, LessonStore } from '@harness-dsl/core';
+import PQueue from 'p-queue';
+import type { Pool } from 'pg';
+import { normalizePostgresClient } from '../ddl/internal/normalize-postgres-client.js';
 import {
   ensurePostgresSchemaInitialized,
   runInPostgresTransaction,
@@ -14,24 +17,26 @@ import {
 /**
  * PostgreSQL implementation of the `@harness-dsl/core` `LessonStore` runtime port.
  *
- * Persists distilled empirical lessons, computes normalized token/trigram relevance scores $R(L, Q) \in [0, 1]$,
+ * Persists distilled empirical lessons, computes normalized BM25/fuzzy relevance scores $R(L, Q) \in [0, 1]$,
  * tracks 4-state execution outcome windows, aligns creation epochs on overlay commit, and retires lessons.
  */
 export class PostgresLessonStore implements LessonStore {
   /** Underlying PostgreSQL query client. */
   private readonly client: PostgresQueryClient;
+  /** Single-concurrency FIFO queue serializing asynchronous store operations. */
+  private readonly queue = new PQueue({ concurrency: 1 });
   /** Lazily memoized schema initialization promise. */
   private initPromise: Promise<PostgresQueryClient> | undefined;
 
   /**
-   * Initializes a `PostgresLessonStore` backed by `client`.
+   * Initializes a `PostgresLessonStore` backed by a `PostgresQueryClient`, `pg.Pool`, or connection URI string.
    *
    * Defers DDL execution until the first store operation so constructing the store performs zero I/O.
    *
-   * @param {PostgresQueryClient} client - PostgreSQL query client instance.
+   * @param {PostgresQueryClient | Pool | string} client - PostgreSQL query client, `pg.Pool`, or connection URI.
    */
-  constructor(client: PostgresQueryClient) {
-    this.client = client;
+  constructor(client: PostgresQueryClient | Pool | string) {
+    this.client = normalizePostgresClient(client);
   }
 
   /**
@@ -60,12 +65,11 @@ export class PostgresLessonStore implements LessonStore {
    *
    * @returns {Promise<readonly LessonRecord[]>} Candidate lesson records with `relevanceScore` populated.
    */
-  async queryCandidates(req: {
+  queryCandidates(req: {
     readonly queryText: string;
     readonly partitions: readonly string[];
   }): Promise<readonly LessonRecord[]> {
-    const client = await this.ensureReady();
-    return queryLessonCandidatesInPg(client, req);
+    return this.queue.add(async () => queryLessonCandidatesInPg(await this.ensureReady(), req));
   }
 
   /**
@@ -77,14 +81,15 @@ export class PostgresLessonStore implements LessonStore {
    *
    * @returns {Promise<string>} Newly assigned or content-addressed `lessonId`.
    */
-  async admit(lesson: {
+  admit(lesson: {
     readonly partition?: string;
     readonly directive: string;
     readonly epochAtCreation: number;
     readonly createdByRunId?: string;
   }): Promise<string> {
-    const client = await this.ensureReady();
-    return runInPostgresTransaction(client, () => admitLessonInPg(client, lesson));
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) => admitLessonInPg(tx, lesson)),
+    );
   }
 
   /**
@@ -96,11 +101,12 @@ export class PostgresLessonStore implements LessonStore {
    *
    * @returns {Promise<readonly LessonRecord[]>} Updated lesson records reflecting the recorded outcomes.
    */
-  async recordOutcomes(
+  recordOutcomes(
     outcomes: ReadonlyArray<{ readonly lessonId: string; readonly outcome: LessonOutcome }>,
   ): Promise<readonly LessonRecord[]> {
-    const client = await this.ensureReady();
-    return runInPostgresTransaction(client, () => recordLessonOutcomesInPg(client, outcomes));
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) => recordLessonOutcomesInPg(tx, outcomes)),
+    );
   }
 
   /**
@@ -113,13 +119,14 @@ export class PostgresLessonStore implements LessonStore {
    *
    * @returns {Promise<void>} Resolves when creation epochs are synchronized.
    */
-  async syncCreationEpochsForRuns(
+  syncCreationEpochsForRuns(
     runIds: readonly string[],
     updatedEpochs: ReadonlyMap<string, number>,
   ): Promise<void> {
-    const client = await this.ensureReady();
-    await runInPostgresTransaction(client, () =>
-      syncLessonEpochsInPg(client, runIds, updatedEpochs),
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), (tx) =>
+        syncLessonEpochsInPg(tx, runIds, updatedEpochs),
+      ),
     );
   }
 
@@ -134,25 +141,26 @@ export class PostgresLessonStore implements LessonStore {
    *
    * @returns {Promise<void>} Resolves when the cooldown timestamp is persisted.
    */
-  async markSignalEmitted(lessonId: string, signalId: string, emittedAt: string): Promise<void> {
-    const client = await this.ensureReady();
-    await runInPostgresTransaction(client, async () => {
-      const queryResult = await client.query<{ readonly signal_last_emitted_at_json: string | null }>(
-        'SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = $1',
-        [lessonId],
-      );
-      const row = queryResult.rows[0];
-      if (row === undefined) return;
-      const map: Record<string, string> =
-        row.signal_last_emitted_at_json !== null
-          ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
-          : {};
-      map[signalId] = emittedAt;
-      await client.query(
-        'UPDATE harness_lessons SET signal_last_emitted_at_json = $1 WHERE id = $2',
-        [JSON.stringify(map), lessonId],
-      );
-    });
+  markSignalEmitted(lessonId: string, signalId: string, emittedAt: string): Promise<void> {
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), async (tx) => {
+        const queryResult = await tx.query<{ readonly signal_last_emitted_at_json: string | null }>(
+          'SELECT signal_last_emitted_at_json FROM harness_lessons WHERE id = $1',
+          [lessonId],
+        );
+        const row = queryResult.rows[0];
+        if (row === undefined) return;
+        const map: Record<string, string> =
+          row.signal_last_emitted_at_json !== null
+            ? (JSON.parse(row.signal_last_emitted_at_json) as Record<string, string>)
+            : {};
+        map[signalId] = emittedAt;
+        await tx.query(
+          'UPDATE harness_lessons SET signal_last_emitted_at_json = $1 WHERE id = $2',
+          [JSON.stringify(map), lessonId],
+        );
+      }),
+    );
   }
 
   /**
@@ -164,12 +172,13 @@ export class PostgresLessonStore implements LessonStore {
    *
    * @returns {Promise<void>} Resolves when all specified lessons are retired.
    */
-  async retire(lessonIds: readonly string[]): Promise<void> {
-    const client = await this.ensureReady();
-    await runInPostgresTransaction(client, async () => {
-      for (const id of lessonIds) {
-        await client.query('UPDATE harness_lessons SET retired = 1 WHERE id = $1', [id]);
-      }
-    });
+  retire(lessonIds: readonly string[]): Promise<void> {
+    return this.queue.add(async () =>
+      runInPostgresTransaction(await this.ensureReady(), async (tx) => {
+        for (const id of lessonIds) {
+          await tx.query('UPDATE harness_lessons SET retired = 1 WHERE id = $1', [id]);
+        }
+      }),
+    );
   }
 }
