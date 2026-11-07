@@ -108,8 +108,8 @@ export async function flushParentWorkingTreeCleanChanges(
   }
   const headSha = (await runGitCommand({ cwd: parentHandle.worktreePath, args: ['rev-parse', 'HEAD'] })).stdout.trim();
   if (toAdd.length === 0 && toRemove.length === 0) return headSha;
-  if (toAdd.length > 0) await runGitCommand({ cwd: parentHandle.worktreePath, args: ['update-index', '--add', '-z', '--stdin'], stdin: `${toAdd.join('\0')}\0` });
   if (toRemove.length > 0) await runGitCommand({ cwd: parentHandle.worktreePath, args: ['update-index', '--force-remove', '-z', '--stdin'], stdin: `${toRemove.join('\0')}\0` });
+  if (toAdd.length > 0) await runGitCommand({ cwd: parentHandle.worktreePath, args: ['update-index', '--add', '-z', '--stdin'], stdin: `${toAdd.join('\0')}\0` });
   const treeSha = (await runGitCommand({ cwd: parentHandle.worktreePath, args: ['write-tree'] })).stdout.trim();
   const commitSha = (await runGitCommand({ cwd: parentHandle.worktreePath, args: ['commit-tree', treeSha, '-p', headSha, '-m', 'harness: flush parent working tree'] })).stdout.trim();
   await runGitCommand({ cwd: parentHandle.worktreePath, args: ['update-ref', 'HEAD', commitSha, headSha] });

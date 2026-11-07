@@ -25,14 +25,14 @@ import {
  *
  * Collects boundary-only tests from each candidate and transplants them into sibling candidates inside a checkpoint sandbox.
  *
- * @param {GitPublicSurfaceCrossTesterNode}                                node       - Public-surface cross-tester AST node.
+ * @param {GitPublicSurfaceCrossTesterNode<unknown>}                       node       - Public-surface cross-tester AST node.
  * @param {ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>} candidates - Surviving speculative candidate branches.
  * @param {StepExecutionContext<GitWorktreeHandle>}                        ctx        - Active step execution context.
  *
  * @returns {Promise<Readonly<Record<number, unknown>>>} Per-branch cross-testing report indexed by `branchIndex`.
  */
 export async function executeGitPublicSurfaceCrossTester(
-  node: GitPublicSurfaceCrossTesterNode,
+  node: GitPublicSurfaceCrossTesterNode<unknown>,
   candidates: ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>,
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<Readonly<Record<number, unknown>>> {
@@ -72,49 +72,44 @@ export async function executeGitPublicSurfaceCrossTester(
  *
  * Computes normalized patch digests relative to `baseRef` and groups equivalent candidate branch indices.
  *
- * @param {GitPatchEquivalenceNode}                                        node       - Patch-equivalence cross-verifier AST node.
+ * @param {GitPatchEquivalenceNode<unknown>}                               node       - Patch-equivalence cross-verifier AST node.
  * @param {ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>} candidates - Surviving speculative candidate branches.
  * @param {StepExecutionContext<GitWorktreeHandle>}                        _ctx       - Active step execution context.
  *
  * @returns {Promise<Readonly<Record<number, unknown>>>} Per-branch patch equivalence report indexed by `branchIndex`.
  */
 export async function executeGitPatchEquivalence(
-  node: GitPatchEquivalenceNode,
+  node: GitPatchEquivalenceNode<unknown>,
   candidates: ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>,
   _ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<Readonly<Record<number, unknown>>> {
   const digestByBranch = new Map<number, string>();
   const branchesByDigest = new Map<string, number[]>();
+  const groupIndexByDigest = new Map<string, number>();
   for (const cand of candidates) {
     const headSha = typeof cand.scopeReceipt['headRef'] === 'string'
       ? cand.scopeReceipt['headRef']
       : (cand.scopeHandle.headRef ?? cand.scopeHandle.baseRef);
-    const rawDiff = (await runGitCommand({
-      cwd: cand.scopeHandle.worktreePath,
-      args: ['diff', '--no-ext-diff', '--no-color', cand.scopeHandle.baseRef, headSha],
-    })).stdout;
+    const rawDiff = (await runGitCommand({ cwd: cand.scopeHandle.worktreePath, args: ['diff', '--no-ext-diff', '--no-color', cand.scopeHandle.baseRef, headSha] })).stdout;
     const keptLines: string[] = [];
     for (const line of rawDiff.split('\n')) {
       if (!line.startsWith('index ')) keptLines.push(line.trimEnd());
     }
-    const normalizedLines = keptLines.join('\n').trim();
-    const digest = createHash('sha256').update(normalizedLines, 'utf8').digest('hex');
+    const digest = createHash('sha256').update(keptLines.join('\n').trim(), 'utf8').digest('hex');
     digestByBranch.set(cand.branchIndex, digest);
-    const existingGroup = branchesByDigest.get(digest) ?? [];
-    existingGroup.push(cand.branchIndex);
-    branchesByDigest.set(digest, existingGroup);
+    const existingGroup = branchesByDigest.get(digest);
+    if (existingGroup !== undefined) existingGroup.push(cand.branchIndex);
+    else {
+      groupIndexByDigest.set(digest, branchesByDigest.size);
+      branchesByDigest.set(digest, [cand.branchIndex]);
+    }
   }
-  const uniqueDigests = [...branchesByDigest.keys()];
   const reports: Record<number, unknown> = {};
   for (const cand of candidates) {
     const digest = digestByBranch.get(cand.branchIndex) ?? '';
-    const equivalenceGroupIndex = uniqueDigests.indexOf(digest);
+    const equivalenceGroupIndex = groupIndexByDigest.get(digest) ?? 0;
     const equivalentBranchIndices = branchesByDigest.get(digest) ?? [cand.branchIndex];
-    reports[cand.branchIndex] = node.reportSchema.parse({
-      equivalenceGroupIndex,
-      equivalentBranchIndices,
-      normalizedPatchDigest: digest,
-    });
+    reports[cand.branchIndex] = node.reportSchema.parse({ equivalenceGroupIndex, equivalentBranchIndices, normalizedPatchDigest: digest });
   }
   return Object.freeze(reports);
 }

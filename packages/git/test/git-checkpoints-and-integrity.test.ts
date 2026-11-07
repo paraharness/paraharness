@@ -166,6 +166,13 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
       'utf8',
     );
     await rm(path.join(handle.worktreePath, 'src/internal/helper.ts'));
+    await mkdir(path.join(handle.worktreePath, 'src/internal/helper.ts'), { recursive: true });
+    await writeFile(
+      path.join(handle.worktreePath, 'src/internal/helper.ts/nested.ts'),
+      'export const replacedByDir = true;\n',
+      'utf8',
+    );
+    const ckptReplacedByDir = await scope.serializeCheckpoint(handle);
     await rm(oversizedUntracked);
     await rm(symlinkPath);
     await mkdir(symlinkPath, { recursive: true });
@@ -185,6 +192,7 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     const effectPaths = (fsEffect?.attributes?.['paths'] as readonly string[]) ?? [];
     expect(effectPaths).toContain('src/index.ts');
     expect(effectPaths).toContain('src/internal/helper.ts');
+    expect(effectPaths).toContain('src/internal/helper.ts/nested.ts');
     expect(effectPaths).toContain('extra/new-file.ts');
 
     await scope.restoreCheckpoint(handle, ckpt1);
@@ -204,6 +212,15 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     expect(extraExists).toBe(false);
     const postRestoreEffects = await scope.diffEffects(ckpt1, handle);
     expect(postRestoreEffects).toHaveLength(0);
+
+    await scope.restoreCheckpoint(handle, ckptReplacedByDir);
+    expect(
+      await readFile(path.join(handle.worktreePath, 'src/internal/helper.ts/nested.ts'), 'utf8'),
+    ).toBe('export const replacedByDir = true;\n');
+    await scope.restoreCheckpoint(handle, ckpt1);
+    expect(await readFile(path.join(handle.worktreePath, 'src/internal/helper.ts'), 'utf8')).toContain(
+      'BASE_OFFSET',
+    );
     await scope.release(handle);
   });
 
@@ -218,7 +235,7 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
 
     await writeFile(
       path.join(handle.worktreePath, '.gitignore'),
-      'dist/\n*.log\nhidden-dir/\n',
+      'dist/\n*.log\nhidden-dir/\nsub/\n',
       'utf8',
     );
     await mkdir(path.join(handle.worktreePath, 'hidden-dir'), { recursive: true });
@@ -227,6 +244,9 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
       'hidden',
       'utf8',
     );
+    await mkdir(path.join(handle.worktreePath, 'sub'), { recursive: true });
+    await writeFile(path.join(handle.worktreePath, 'sub/.gitignore'), '*\n', 'utf8');
+    await writeFile(path.join(handle.worktreePath, 'sub/secret.txt'), 'sub-hidden', 'utf8');
 
     const effects = await scope.diffEffects(ckpt, handle);
     expect(effects).toHaveLength(1);
@@ -234,7 +254,9 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     expect(paths).toContain('.gitignore');
     expect(paths).toContain('hidden-dir/secret-payload.txt');
 
+    Object.assign(handle, { headRef: '0'.repeat(40) });
     await scope.restoreCheckpoint(handle, ckpt);
+    expect(handle.headRef).toBe(handle.baseRef);
     expect(await readFile(path.join(handle.worktreePath, '.gitignore'), 'utf8')).toBe(
       'dist/\n*.log\n',
     );
@@ -245,10 +267,22 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
       () => false,
     );
     expect(hiddenStillExists).toBe(false);
+    const subGitignoreExists = await lstat(
+      path.join(handle.worktreePath, 'sub/.gitignore'),
+    ).then(
+      () => true,
+      () => false,
+    );
+    expect(subGitignoreExists).toBe(false);
+    const subSecretExists = await lstat(path.join(handle.worktreePath, 'sub/secret.txt')).then(
+      () => true,
+      () => false,
+    );
+    expect(subSecretExists).toBe(false);
     await scope.release(handle);
   });
 
-  it('rolls back to fromCheckpoint and throws on worktree-local .git metadata or node_modules tampering', async () => {
+  it('rolls back to fromCheckpoint and throws on worktree-local .git metadata or node_modules tampering across multiple checkpoints', async () => {
     const scopeNode = git
       .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
       .toAST();
@@ -260,6 +294,18 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     await writeFile(nmFile, 'export const safe = 1;\n', 'utf8');
 
     const ckpt = await scope.serializeCheckpoint(handle);
+
+    await writeFile(nmFile, 'export const safe = 2;\n', 'utf8');
+    const ckpt2 = await scope.serializeCheckpoint(handle);
+
+    await scope.restoreCheckpoint(handle, ckpt);
+    expect(await readFile(nmFile, 'utf8')).toBe('export const safe = 1;\n');
+
+    await scope.restoreCheckpoint(handle, ckpt2);
+    expect(await readFile(nmFile, 'utf8')).toBe('export const safe = 2;\n');
+
+    await scope.restoreCheckpoint(handle, ckpt);
+    expect(await readFile(nmFile, 'utf8')).toBe('export const safe = 1;\n');
 
     await mkdir(path.join(handle.gitDirPath, 'info'), { recursive: true });
     await writeFile(path.join(handle.gitDirPath, 'info', 'exclude'), '*.tampered\n', 'utf8');

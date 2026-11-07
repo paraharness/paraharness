@@ -135,14 +135,14 @@ export async function runTransplantedTestsOnTarget(
  * Guarantees `candidateHandle` remains bit-for-bit identical after `command` finishes.
  *
  * @param {GitWorktreeHandle}                       candidateHandle - Target candidate worktree handle.
- * @param {string}                                  command         - Shell command to execute.
+ * @param {string | readonly string[]}              command         - Shell command string or argv tuple to execute.
  * @param {StepExecutionContext<GitWorktreeHandle>} ctx             - Active step execution context.
  *
  * @returns {Promise<Record<string, unknown>>} Command execution result `{ exitCode, stdout, stderr }`.
  */
 export async function runEvalCommandInSandboxedCandidate(
   candidateHandle: GitWorktreeHandle,
-  command: string,
+  command: string | readonly string[],
   ctx: StepExecutionContext<GitWorktreeHandle>,
 ): Promise<Record<string, unknown>> {
   const scope = ctx.scope !== undefined && 'serializeCheckpoint' in ctx.scope && 'restoreCheckpoint' in ctx.scope
@@ -154,8 +154,10 @@ export async function runEvalCommandInSandboxedCandidate(
   try {
     const cwd = candidateHandle.worktreePath;
     const env = buildIsolatedWorktreeGitEnv(cwd);
+    const bin = typeof command === 'string' ? 'sh' : (command[0] ?? 'true');
+    const args = typeof command === 'string' ? ['-c', command] : command.slice(1);
     return await new Promise<Record<string, unknown>>((resolve) => {
-      execFile('sh', ['-c', command], { cwd, env }, (err, stdout, stderr) => {
+      execFile(bin, args, { cwd, env }, (err, stdout, stderr) => {
         const exitCode = err === null ? 0 : typeof err.code === 'number' ? err.code : 1;
         resolve({ exitCode, stdout, stderr });
       });

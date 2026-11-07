@@ -65,7 +65,9 @@ export async function dispatchRefReaderToolCall(
       const res = await runGitCommand({ cwd, args });
       return { content: res.stdout };
     }
-    const res = await runGitCommand({ cwd, args: ['ls-tree', '-r', '--name-only', String(parsed['ref'])] });
+    const prefix = typeof parsed['prefix'] === 'string' && parsed['prefix'].length > 0 ? parsed['prefix'] : undefined;
+    const args = ['ls-tree', '-r', '--name-only', String(parsed['ref']), ...(prefix !== undefined ? ['--', prefix] : [])];
+    const res = await runGitCommand({ cwd, args });
     return { content: res.stdout };
   };
   if (node.runner !== undefined && typeof ctx.getRunner === 'function') {
@@ -94,8 +96,8 @@ export async function dispatchCandidateComparisonToolCall(
   const cwd = ctx.scopeHandle.worktreePath;
   const runCmd = async (): Promise<ToolExecutionResult> => {
     if (node.name === 'diffCandidates') {
-      const leftRef = await resolveCandidateBranchRef(Number(parsed['leftBranchIndex']), ctx);
-      const rightRef = await resolveCandidateBranchRef(Number(parsed['rightBranchIndex']), ctx);
+      const leftRef = await resolveCandidateBranchRef(Number(parsed['fromBranchIndex']), ctx);
+      const rightRef = await resolveCandidateBranchRef(Number(parsed['toBranchIndex']), ctx);
       const paths = Array.isArray(parsed['paths']) ? (parsed['paths'] as string[]) : [];
       const args = ['diff', leftRef, rightRef, ...(paths.length > 0 ? ['--', ...paths] : [])];
       return { content: (await runGitCommand({ cwd, args })).stdout };
@@ -104,8 +106,11 @@ export async function dispatchCandidateComparisonToolCall(
       const ref = await resolveCandidateBranchRef(Number(parsed['branchIndex']), ctx);
       return { content: (await runGitCommand({ cwd, args: ['show', `${ref}:${String(parsed['path'])}`] })).stdout };
     }
-    const branchIndices = parsed['branchIndices'] as readonly number[];
-    const command = String(parsed['command']);
+    const branchIndices: readonly number[] = Array.isArray(parsed['branchIndices'])
+      ? (parsed['branchIndices'] as number[])
+      : typeof parsed['branchIndex'] === 'number' ? [parsed['branchIndex']] : ctx.candidateHandles !== undefined ? [...ctx.candidateHandles.keys()] : [0];
+    const rawCmd = parsed['argv'] ?? parsed['command'];
+    const command: string | readonly string[] = Array.isArray(rawCmd) ? (rawCmd as string[]) : String(rawCmd ?? '');
     const outcomes: Array<Record<string, unknown>> = [];
     for (const branchIndex of branchIndices) {
       const candidateHandle = ctx.candidateHandles?.get(branchIndex) ?? ctx.scopeHandle;

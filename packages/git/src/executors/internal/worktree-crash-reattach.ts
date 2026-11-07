@@ -14,6 +14,29 @@ import { materializeInFlightMergeIntoWorktree } from './merge-tree-materializer.
 import { restoreGitWorktreeCheckpoint } from './porcelain-v2-and-checkpoints.js';
 
 /**
+ * Merges `node.excludeFromCloneGlobs` and `node.checkpointPolicy?.excludeGlobs` into an effective checkpoint policy.
+ *
+ * Precomputes the combined exclusion globs so checkpoint serialization, diffing, and restoration share one policy.
+ *
+ * @param {GitCowWorktreeNode} node - Passive worktree scope AST configuration node.
+ *
+ * @returns {GitCowWorktreeNode['checkpointPolicy']} Effective checkpoint policy with merged `excludeGlobs`.
+ */
+export function resolveEffectiveCheckpointPolicy(
+  node: GitCowWorktreeNode,
+): GitCowWorktreeNode['checkpointPolicy'] {
+  const cloneGlobs = node.excludeFromCloneGlobs ?? [];
+  const policyGlobs = node.checkpointPolicy?.excludeGlobs ?? [];
+  if (cloneGlobs.length === 0 && node.checkpointPolicy === undefined) return undefined;
+  const mergedGlobs = Object.freeze([...new Set([...cloneGlobs, ...policyGlobs])]);
+  return Object.freeze({
+    partitionMap: node.checkpointPolicy?.partitionMap,
+    excludeGlobs: mergedGlobs,
+    maxUntrackedFileSizeBytes: node.checkpointPolicy?.maxUntrackedFileSizeBytes,
+  });
+}
+
+/**
  * Completes or rolls back any interrupted atomic metadata state (`pendingParentHeadSha`, `inFlightMerge`, `inFlightCommitAndPush`).
  *
  * Preserves intact working-tree edits across process reboots when no in-flight atomic transition was interrupted.
@@ -91,7 +114,9 @@ export async function reattachRootWorktree(
   const emptyConflicts: Readonly<Record<string, string>> = Object.freeze({});
   await writeHarnessMeta(gitDirPath, { baseRef, baseBranch: 'main', unresolvedConflictPaths: emptyConflicts });
   const handle: GitWorktreeHandle = { worktreePath, gitDirPath, baseRef, baseBranch: 'main', headRef: baseRef, unresolvedConflictPaths: emptyConflicts };
-  if (checkpoint !== undefined) await restoreGitWorktreeCheckpoint(handle, checkpoint);
+  if (checkpoint !== undefined) {
+    await restoreGitWorktreeCheckpoint(handle, checkpoint, resolveEffectiveCheckpointPolicy(node));
+  }
   return handle;
 }
 
@@ -100,13 +125,15 @@ export async function reattachRootWorktree(
  *
  * Completes any interrupted `inFlightMerge` materialization and preserves uncommitted child edits across reboots.
  *
- * @param {GitWorktreeHandle} parent       - Reattached parent worktree handle.
- * @param {string}            forkId       - Unique child fork or branch identifier.
- * @param {string}            [checkpoint] - Optional serialized checkpoint fallback when the directory is missing.
+ * @param {GitCowWorktreeNode} node         - Worktree scope AST node configuration.
+ * @param {GitWorktreeHandle}  parent       - Reattached parent worktree handle.
+ * @param {string}             forkId       - Unique child fork or branch identifier.
+ * @param {string}             [checkpoint] - Optional serialized checkpoint fallback when the directory is missing.
  *
  * @returns {Promise<GitWorktreeHandle>} Reattached child `GitWorktreeHandle`.
  */
 export async function reattachChildWorktree(
+  node: GitCowWorktreeNode,
   parent: GitWorktreeHandle,
   forkId: string,
   checkpoint?: string,
@@ -128,10 +155,12 @@ export async function reattachChildWorktree(
   await runGitCommand({ cwd: parent.worktreePath, args: ['worktree', 'add', '--detach', '--force', worktreePath, baseRef] });
   const rawGitDir = (await runGitCommand({ cwd: worktreePath, args: ['rev-parse', '--git-dir'] })).stdout.trim();
   const gitDirPath = path.resolve(worktreePath, rawGitDir);
-  await cloneNodeModulesTree(parent.worktreePath, worktreePath);
+  await cloneNodeModulesTree(parent.worktreePath, worktreePath, node.excludeFromCloneGlobs);
   const emptyConflicts: Readonly<Record<string, string>> = Object.freeze({});
   await writeHarnessMeta(gitDirPath, { baseRef, baseBranch: parent.baseBranch, branchName: parent.branchName, unresolvedConflictPaths: emptyConflicts });
   const handle: GitWorktreeHandle = { worktreePath, gitDirPath, baseRef, baseBranch: parent.baseBranch, branchName: parent.branchName, headRef: baseRef, unresolvedConflictPaths: emptyConflicts };
-  if (checkpoint !== undefined) await restoreGitWorktreeCheckpoint(handle, checkpoint);
+  if (checkpoint !== undefined) {
+    await restoreGitWorktreeCheckpoint(handle, checkpoint, resolveEffectiveCheckpointPolicy(node));
+  }
   return handle;
 }

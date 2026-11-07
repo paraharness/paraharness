@@ -29,35 +29,15 @@ function buildStepCtx(
     activeLeases: [],
     observedEffects: [],
     resolveEnv: (v) => (typeof v === 'string' ? v : 'resolved-secret'),
-    getRunner: () => ({
-      id: 'test-runner',
-      withSlot: (fn) => fn(),
-      withDaemonSlot: (fn) => fn(() => undefined),
-    }),
+    getRunner: () => ({ id: 'test-runner', withSlot: (fn) => fn(), withDaemonSlot: (fn) => fn(() => undefined) }),
     recordEffects: () => undefined,
     registry: {
-      steps: gitExecutors.steps ?? {},
-      sources: {},
-      checks: gitExecutors.checks ?? {},
-      abortHooks: gitExecutors.abortHooks ?? {},
-      rewindHooks: gitExecutors.rewindHooks ?? {},
-      crossVerifiers: gitExecutors.crossVerifiers ?? {},
-      services: {},
-      policyGuards: {},
-      quotaTripwires: {},
-      telemetryCollectors: {},
-      effectMatchers: {},
-      tools: gitExecutors.tools ?? {},
-      runners: {},
-      scopes: gitExecutors.scopes ?? {},
-      models: {},
-      ledgers: {},
-      topologies: {},
-      lessons: {},
-      trackers: {},
-      streamSources: {},
-      humanChannels: {},
-      controlPlanes: {},
+      steps: gitExecutors.steps ?? {}, sources: {}, checks: gitExecutors.checks ?? {},
+      abortHooks: gitExecutors.abortHooks ?? {}, rewindHooks: gitExecutors.rewindHooks ?? {},
+      crossVerifiers: gitExecutors.crossVerifiers ?? {}, services: {}, policyGuards: {},
+      quotaTripwires: {}, telemetryCollectors: {}, effectMatchers: {}, tools: gitExecutors.tools ?? {},
+      runners: {}, scopes: gitExecutors.scopes ?? {}, models: {}, ledgers: {},
+      topologies: {}, lessons: {}, trackers: {}, streamSources: {}, humanChannels: {}, controlPlanes: {},
     },
   };
 }
@@ -127,10 +107,11 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
 
     const listRes = await refDriver.execute(
       listRefFilesTool,
-      { ref: abortMeta1.abortedSnapshotRef },
+      { ref: abortMeta1.abortedSnapshotRef, prefix: 'src/' },
       ctx,
     );
     expect(listRes.content).toContain('src/aborted-work.ts');
+    expect(listRes.content).not.toContain('README.md');
 
     await writeFile(path.join(handle.worktreePath, 'src/keep.ts'), 'export const k = 1;\n', 'utf8');
     await executeGitKeepWorktreeHook(git.keepWorktree().toAST(), { handle }, ctx);
@@ -188,16 +169,20 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       [1, cand1],
     ]);
     const ctx = buildStepCtx(root, scope, candMap);
-    const [, , evalCandTool] = git.candidateComparisonTools(TEST_RUNNER);
+    const [diffCandTool, readCandTool, evalCandTool] = git.candidateComparisonTools(TEST_RUNNER);
     const compDriver = createGitCandidateComparisonToolDrivers();
-    if (evalCandTool === undefined) throw new Error('Expected evalInCandidates tool');
+    if (diffCandTool === undefined || readCandTool === undefined || evalCandTool === undefined) {
+      throw new Error('Expected 3 candidateComparisonTools');
+    }
+
+    const diffCandRes = await compDriver.execute(diffCandTool, { fromBranchIndex: 0, toBranchIndex: 1 }, ctx);
+    expect(diffCandRes.content).toContain('test/public.test.mjs');
+    const readCandRes = await compDriver.execute(readCandTool, { branchIndex: 0, path: 'test/public.test.mjs' }, ctx);
+    expect(readCandRes.content).toContain('multiply(3, 4)');
 
     const evalRes = await compDriver.execute(
       evalCandTool,
-      {
-        branchIndices: [0, 1],
-        command: 'echo "mutated" > polluted.txt && cat polluted.txt',
-      },
+      { branchIndices: [0, 1], command: 'echo "mutated" > polluted.txt && cat polluted.txt' },
       ctx,
     );
     const parsedEval = JSON.parse(evalRes.content) as Array<{
@@ -207,11 +192,20 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     }>;
     expect(parsedEval).toHaveLength(2);
     expect(parsedEval[0]?.exitCode).toBe(0);
-    const pollutedRemains = await readFile(
-      path.join(cand0.worktreePath, 'polluted.txt'),
-      'utf8',
-    ).catch(() => 'CLEAN');
+    const pollutedRemains = await readFile(path.join(cand0.worktreePath, 'polluted.txt'), 'utf8').catch(() => 'CLEAN');
     expect(pollutedRemains).toBe('CLEAN');
+
+    const evalSingleRes = await compDriver.execute(
+      evalCandTool,
+      { branchIndex: 1, argv: [process.execPath, '-e', 'process.stdout.write("argv-ok")'] },
+      ctx,
+    );
+    const parsedSingle = JSON.parse(evalSingleRes.content) as Array<{
+      readonly branchIndex: number;
+      readonly exitCode: number;
+      readonly stdout: string;
+    }>;
+    expect(parsedSingle).toEqual([{ branchIndex: 1, exitCode: 0, stdout: 'argv-ok', stderr: '' }]);
 
     const partitionMap = Object.freeze<FsPartitionMapNode<'core'>>({
       type: 'fs:partition-map',

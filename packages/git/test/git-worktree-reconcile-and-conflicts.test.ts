@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { StepExecutionContext, GitWorktreeHandle } from '@harness-dsl/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -103,6 +103,12 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
     );
     expect(cleanCheckRes.ok).toBe(true);
 
+    const rootHeadTree = (
+      await runGitCommand({
+        cwd: hostRepo.repoPath,
+        args: ['rev-parse', `${root.headRef ?? root.baseRef}^{tree}`],
+      })
+    ).stdout.trim();
     await scope.release(child0);
     await scope.release(child1);
     await scope.release(root);
@@ -120,7 +126,14 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
         args: ['rev-parse', 'refs/harness/completed/roots/run-fork-pin'],
       })
     ).stdout.trim();
-    expect(pinnedCompletedRoot.length).toBeGreaterThan(10);
+    expect(pinnedCompletedRoot).toMatch(/^[0-9a-f]{40}$/);
+    const pinnedCompletedRootTree = (
+      await runGitCommand({
+        cwd: hostRepo.repoPath,
+        args: ['rev-parse', `${pinnedCompletedRoot}^{tree}`],
+      })
+    ).stdout.trim();
+    expect(pinnedCompletedRootTree).toBe(rootHeadTree);
   });
 
   it('reconciles clean and conflicted commitChild via stateless merge-tree, populates unresolvedConflictPaths, and grants getConflictLease', async () => {
@@ -202,14 +215,40 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
       'a + b + 100',
     );
 
+    const c1Content = await readFile(path.join(parent.worktreePath, 'src/index.ts'), 'utf8');
+    await writeFile(
+      path.join(parent.worktreePath, 'src/index.ts'),
+      '<<<<<<< HEAD\nreturn a + b + 100;\n=======\nreturn a + b + 200;\n>>>>>>> prereq\n',
+      'utf8',
+    );
+    const parentMeta = await readHarnessMeta(parent.gitDirPath);
+    const simulatedConflicts = Object.freeze({ 'src/index.ts': '100644:simulated' });
+    await writeHarnessMeta(parent.gitDirPath, {
+      ...parentMeta,
+      unresolvedConflictPaths: simulatedConflicts,
+    });
+    Object.assign(parent, { unresolvedConflictPaths: simulatedConflicts });
+
+    const childC = await scope.forkChild(parent, 'worker-c');
+    expect(Object.keys(childC.unresolvedConflictPaths)).toEqual(['src/index.ts']);
+    await writeFile(path.join(childC.worktreePath, 'src/index.ts'), c1Content, 'utf8');
+
+    const resC = await scope.commitChild(childC, parent);
+    expect(resC.status).toBe('clean');
+    expect(parent.unresolvedConflictPaths).toEqual({});
+    expect((await readHarnessMeta(parent.gitDirPath)).unresolvedConflictPaths).toEqual({});
+    expect(await readFile(path.join(parent.worktreePath, 'src/index.ts'), 'utf8')).toBe(c1Content);
+
     await scope.release(childA);
     await scope.release(childB);
+    await scope.release(childC);
     await scope.release(parent);
   });
 
   it('executes syncChild, syncRoot stacked prerequisite lineage, and reattachRoot/reattachChild crash recovery', async () => {
     const scopeNode = git
       .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .excludeFromCloneGlobs(['**/node_modules/excluded-cache/**'])
       .toAST();
     const scope = new GitCowWorktreeScopeDriver(scopeNode);
 
@@ -225,6 +264,10 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
     };
 
     const downstreamRoot = await scope.acquireRoot('run-downstream');
+    await mkdir(path.join(downstreamRoot.worktreePath, 'node_modules/excluded-cache'), { recursive: true });
+    await writeFile(path.join(downstreamRoot.worktreePath, 'node_modules/excluded-cache/tmp.js'), 'cached\n', 'utf8');
+    await mkdir(path.join(downstreamRoot.worktreePath, 'node_modules/kept-pkg'), { recursive: true });
+    await writeFile(path.join(downstreamRoot.worktreePath, 'node_modules/kept-pkg/index.js'), 'kept\n', 'utf8');
     const pausedChild = await scope.forkChild(downstreamRoot, 'child-sync');
     await writeFile(
       path.join(pausedChild.worktreePath, 'src/child-local.ts'),
@@ -259,12 +302,26 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
     expect(metaAfterReattach.pendingParentHeadSha).toBeUndefined();
     expect(reattachedRoot.headRef).toBe(prereqReceipt.headRef);
 
+    const childCkpt = await scope.serializeCheckpoint(pausedChild);
     const reattachedChild = await scope.reattachChild(reattachedRoot, 'child-sync');
     expect(await readFile(path.join(reattachedChild.worktreePath, 'src/child-local.ts'), 'utf8')).toContain(
       'LOCAL = 42',
     );
 
-    await scope.release(pausedChild);
+    await rm(pausedChild.worktreePath, { recursive: true, force: true });
+    const recreatedChild = await scope.reattachChild(reattachedRoot, 'child-sync', childCkpt);
+    expect(await readFile(path.join(recreatedChild.worktreePath, 'src/child-local.ts'), 'utf8')).toContain(
+      'LOCAL = 42',
+    );
+    const excludedCloned = await lstat(
+      path.join(recreatedChild.worktreePath, 'node_modules/excluded-cache/tmp.js'),
+    ).then(
+      () => true,
+      () => false,
+    );
+    expect(excludedCloned).toBe(false);
+
+    await scope.release(recreatedChild);
     await scope.release(prereqRoot);
     await scope.release(downstreamRoot);
   });

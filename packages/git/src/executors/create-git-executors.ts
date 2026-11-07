@@ -1,10 +1,22 @@
 import type {
+  AbortHookExecutionInput,
+  CrossVerifierBranchCandidate,
+  GitCandidateComparisonToolNode,
+  GitCleanWorkingTreeNode,
+  GitCommitAndPushNode,
   GitCowWorktreeNode,
+  GitDiscardBranchNode,
+  GitKeepWorktreeNode,
+  GitMergeQueueNode,
   GitPatchEquivalenceNode,
   GitPublicSurfaceCrossTesterNode,
+  GitRefReaderToolNode,
+  GitSnapshotAndResetNode,
   GitWorktreeHandle,
+  RewindHookExecutionInput,
   RuntimeExecutorRegistrySlice,
   StepExecutionContext,
+  ToolDriver,
 } from '@harness-dsl/core';
 import {
   executeGitCommitAndPushStep,
@@ -36,71 +48,79 @@ import {
 export function createGitExecutors(): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({
     scopes: Object.freeze({
-      'git:cow-worktree': (node) =>
-        new GitCowWorktreeScopeDriver(node as GitCowWorktreeNode) as never,
+      'git:cow-worktree': (node: GitCowWorktreeNode) =>
+        new GitCowWorktreeScopeDriver(node) as never,
     }),
     steps: Object.freeze({
-      'git:commit-and-push': (node, input, ctx) =>
-        executeGitCommitAndPushStep(
-          node,
-          input,
-          ctx as StepExecutionContext<GitWorktreeHandle>,
-        ),
-      'git:merge-queue': (node, input, ctx) =>
-        executeGitMergeQueueStep(
-          node,
-          input,
-          ctx as StepExecutionContext<GitWorktreeHandle>,
-        ),
+      'git:commit-and-push': (node: GitCommitAndPushNode, input: unknown, ctx: StepExecutionContext<unknown>) =>
+        executeGitCommitAndPushStep(node, input, ctx as StepExecutionContext<GitWorktreeHandle>),
+      'git:merge-queue': (node: GitMergeQueueNode, input: unknown, ctx: StepExecutionContext<unknown>) =>
+        executeGitMergeQueueStep(node, input, ctx as StepExecutionContext<GitWorktreeHandle>),
     }),
     checks: Object.freeze({
-      'git:clean-working-tree': (node, input, ctx) =>
-        executeGitCleanWorkingTreeCheck(
-          node,
-          input,
-          ctx as StepExecutionContext<GitWorktreeHandle>,
-        ),
+      'git:clean-working-tree': (node: GitCleanWorkingTreeNode, input: void, ctx: StepExecutionContext<unknown>) =>
+        executeGitCleanWorkingTreeCheck(node, input, ctx as StepExecutionContext<GitWorktreeHandle>),
     }),
     abortHooks: Object.freeze({
-      'git:snapshot-and-reset': (node, input, ctx) =>
+      'git:snapshot-and-reset': (
+        node: GitSnapshotAndResetNode,
+        input: AbortHookExecutionInput,
+        ctx: StepExecutionContext<unknown>,
+      ) =>
         executeGitSnapshotAndResetHook(
           node,
-          input as never,
+          input as AbortHookExecutionInput<GitWorktreeHandle>,
           ctx as StepExecutionContext<GitWorktreeHandle>,
         ),
     }),
     rewindHooks: Object.freeze({
-      'git:keep-worktree': (node, input, ctx) =>
+      'git:keep-worktree': (
+        node: GitKeepWorktreeNode,
+        input: RewindHookExecutionInput,
+        ctx: StepExecutionContext<unknown>,
+      ) =>
         executeGitKeepWorktreeHook(
           node,
-          input as never,
+          input as RewindHookExecutionInput<GitWorktreeHandle>,
           ctx as StepExecutionContext<GitWorktreeHandle>,
         ),
-      'git:discard-branch': (node, input, ctx) =>
+      'git:discard-branch': (
+        node: GitDiscardBranchNode,
+        input: RewindHookExecutionInput,
+        ctx: StepExecutionContext<unknown>,
+      ) =>
         executeGitDiscardBranchHook(
           node,
-          input as never,
+          input as RewindHookExecutionInput<GitWorktreeHandle>,
           ctx as StepExecutionContext<GitWorktreeHandle>,
         ),
     }),
     crossVerifiers: Object.freeze({
-      'git:public-surface-cross-tester': (node, candidates, ctx) =>
+      'git:public-surface-cross-tester': (
+        node: GitPublicSurfaceCrossTesterNode<unknown>,
+        candidates: ReadonlyArray<CrossVerifierBranchCandidate>,
+        ctx: StepExecutionContext<unknown>,
+      ) =>
         executeGitPublicSurfaceCrossTester(
-          node as GitPublicSurfaceCrossTesterNode,
-          candidates as never,
+          node,
+          candidates as ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>,
           ctx as StepExecutionContext<GitWorktreeHandle>,
         ),
-      'git:patch-equivalence': (node, candidates, ctx) =>
+      'git:patch-equivalence': (
+        node: GitPatchEquivalenceNode<unknown>,
+        candidates: ReadonlyArray<CrossVerifierBranchCandidate>,
+        ctx: StepExecutionContext<unknown>,
+      ) =>
         executeGitPatchEquivalence(
-          node as GitPatchEquivalenceNode,
-          candidates as never,
+          node,
+          candidates as ReadonlyArray<CrossVerifierBranchCandidate<GitWorktreeHandle>>,
           ctx as StepExecutionContext<GitWorktreeHandle>,
         ),
     }),
     tools: Object.freeze({
-      'git:ref-reader-tool': createGitRefReaderToolDrivers() as never,
+      'git:ref-reader-tool': createGitRefReaderToolDrivers() as ToolDriver<GitRefReaderToolNode, unknown>,
       'git:candidate-comparison-tool':
-        createGitCandidateComparisonToolDrivers() as never,
+        createGitCandidateComparisonToolDrivers() as ToolDriver<GitCandidateComparisonToolNode, unknown>,
     }),
   });
 }

@@ -38,8 +38,8 @@ export async function synthesizeWorkingTreeCommitOverBase(
   }
   try {
     await runGitCommand({ cwd: handle.worktreePath, args: ['read-tree', headSha], env: { GIT_INDEX_FILE: tmpIndex } });
-    if (toAdd.length > 0) await runGitCommand({ cwd: handle.worktreePath, args: ['update-index', '--add', '-z', '--stdin'], env: { GIT_INDEX_FILE: tmpIndex }, stdin: `${toAdd.join('\0')}\0` });
     if (toRemove.length > 0) await runGitCommand({ cwd: handle.worktreePath, args: ['update-index', '--force-remove', '-z', '--stdin'], env: { GIT_INDEX_FILE: tmpIndex }, stdin: `${toRemove.join('\0')}\0` });
+    if (toAdd.length > 0) await runGitCommand({ cwd: handle.worktreePath, args: ['update-index', '--add', '-z', '--stdin'], env: { GIT_INDEX_FILE: tmpIndex }, stdin: `${toAdd.join('\0')}\0` });
     const treeSha = (await runGitCommand({ cwd: handle.worktreePath, args: ['write-tree'], env: { GIT_INDEX_FILE: tmpIndex } })).stdout.trim();
     const commitSha = (await runGitCommand({ cwd: handle.worktreePath, args: ['commit-tree', treeSha, '-p', parentCommitSha, '-m', 'harness: synthesized worktree state'] })).stdout.trim();
     return Object.freeze({ treeSha, commitSha });

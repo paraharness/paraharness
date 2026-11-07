@@ -26,25 +26,28 @@ export async function fastForwardParentToTargetCommit(
   c1Sha: string,
   cTargetSha: string,
 ): Promise<void> {
+  const meta = await readHarnessMeta(parent.gitDirPath);
   const diffRes = await runGitCommand({
     cwd: parent.worktreePath,
     args: ['diff-tree', '-r', '--name-only', '-z', c1Sha, cTargetSha],
   });
   const touchedPaths = diffRes.stdout.split('\0').filter((p) => p.length > 0);
+  const pathsToReset = new Set<string>([...touchedPaths, ...Object.keys(meta.unresolvedConflictPaths)]);
   const c1Paths = await listTreePaths(parent.worktreePath, c1Sha);
-  for (const relPath of touchedPaths) {
+  for (const relPath of pathsToReset) {
     if (c1Paths.has(relPath)) {
       await runGitCommand({ cwd: parent.worktreePath, args: ['checkout-index', '-f', '--', relPath], allowNonZeroExit: true });
     } else {
       await rm(path.join(parent.worktreePath, relPath), { force: true });
     }
   }
-  const meta = await readHarnessMeta(parent.gitDirPath);
   await writeHarnessMeta(parent.gitDirPath, { ...meta, pendingParentHeadSha: cTargetSha });
   await runGitCommand({ cwd: parent.worktreePath, args: ['read-tree', '-u', '-m', c1Sha, cTargetSha] });
   await runGitCommand({ cwd: parent.worktreePath, args: ['update-ref', 'HEAD', cTargetSha, c1Sha] });
-  const nextConflicts: Record<string, string> = { ...meta.unresolvedConflictPaths };
-  for (const relPath of touchedPaths) delete nextConflicts[relPath];
+  const nextConflicts: Record<string, string> = {};
+  for (const [relPath, digest] of Object.entries(meta.unresolvedConflictPaths)) {
+    if (!pathsToReset.has(relPath)) nextConflicts[relPath] = digest;
+  }
   const frozenConflicts = Object.freeze(nextConflicts);
   await writeHarnessMeta(parent.gitDirPath, {
     ...meta,

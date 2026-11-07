@@ -72,28 +72,25 @@ export function compileWorktreeExcludeMatcher(
 }
 
 /**
- * Computes a structural SHA-256 digest of `<worktreePath>/node_modules` and optionally mirrors it to `backupDir`.
+ * Computes a structural SHA-256 digest of `<worktreePath>/node_modules` and optionally mirrors it under `backupRootDir/<digest>`.
  *
  * Walks regular files and symlinks inside `node_modules` (excluding `.cache`, `.vite`, and `.vitest`)
- * so `diffEffects` and `restoreCheckpoint` can detect and roll back `node_modules` tampering.
+ * so `diffEffects` and `restoreCheckpoint` can detect and roll back `node_modules` tampering across multiple checkpoints.
  *
- * @param {string} worktreePath - Worktree root directory path.
- * @param {string} [backupDir]  - Optional `<gitdir>/harness-ckpt-nm` directory to populate via CoW copy.
+ * @param {string} worktreePath    - Worktree root directory path.
+ * @param {string} [backupRootDir] - Optional `<gitdir>/harness-ckpt-nm` root directory to populate via CoW copy.
  *
  * @returns {Promise<string>} Hex SHA-256 digest of the `node_modules` tree, or `'ABSENT'` when not present.
  */
 export async function computeNodeModulesDigest(
   worktreePath: string,
-  backupDir?: string,
+  backupRootDir?: string,
 ): Promise<string> {
   const nmRoot = path.join(worktreePath, 'node_modules');
-  if (backupDir !== undefined) await rm(backupDir, { recursive: true, force: true });
-  try {
-    await lstat(nmRoot);
-  } catch {
-    return 'ABSENT';
-  }
+  const rootStat = await lstat(nmRoot).catch(() => null);
+  if (rootStat === null) return 'ABSENT';
   const hash = createHash('sha256');
+  const filesToBackup: string[] = [];
   const stack: string[] = [''];
   while (stack.length > 0) {
     const relDir = stack.pop() ?? '';
@@ -102,17 +99,25 @@ export async function computeNodeModulesDigest(
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       const childRel = relDir.length === 0 ? entry.name : `${relDir}/${entry.name}`;
-      const childAbs = path.join(nmRoot, childRel);
-      if (entry.isDirectory()) {
-        stack.push(childRel);
-      } else {
-        const digest = await computePathModeAndSha256(childAbs);
+      if (entry.isDirectory()) stack.push(childRel);
+      else {
+        const digest = await computePathModeAndSha256(path.join(nmRoot, childRel));
         hash.update(`${childRel}:${digest}\n`, 'utf8');
-        if (backupDir !== undefined) await copyFileCowOrValue(childAbs, path.join(backupDir, childRel));
+        filesToBackup.push(childRel);
       }
     }
   }
-  return hash.digest('hex');
+  const digest = hash.digest('hex');
+  if (backupRootDir !== undefined) {
+    const digestBackupDir = path.join(backupRootDir, digest);
+    const exists = await lstat(digestBackupDir).then(() => true, () => false);
+    if (!exists) {
+      for (const rel of filesToBackup) {
+        await copyFileCowOrValue(path.join(nmRoot, rel), path.join(digestBackupDir, rel));
+      }
+    }
+  }
+  return digest;
 }
 
 /**

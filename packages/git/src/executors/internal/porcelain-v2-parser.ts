@@ -49,7 +49,8 @@ export async function parsePorcelainV2Records(
       if (spaceIdx === -1) continue;
       const relPath = record.slice(spaceIdx + 1);
       if (isExcluded(relPath)) continue;
-      const digest = await computePathModeAndSha256(path.join(worktreePath, relPath));
+      const rawDigest = await computePathModeAndSha256(path.join(worktreePath, relPath));
+      const digest = rawDigest === '040000:directory' ? 'DELETED' : rawDigest;
       statusMap[relPath] = digest;
       if (digest === 'DELETED') deletedPaths.add(relPath);
     }

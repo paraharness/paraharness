@@ -2,7 +2,7 @@ import { lstat, mkdir, readdir, rmdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { GitWorktreeHandle } from '@harness-dsl/core';
 import type { GitCheckpointPayload } from '../git-checkpoint-payload.js';
-import { copyFileCowOrValue } from './file-digest-and-globs.js';
+import { computeNodeModulesDigest, copyFileCowOrValue } from './file-digest-and-globs.js';
 import { runGitCommand, writeHarnessMeta } from './git-cli-runner.js';
 
 /**
@@ -35,20 +35,22 @@ export async function restoreGitdirMetadataAndGitignores(
     baseRef: fromCheckpoint.meta.baseRef,
     baseBranch: fromCheckpoint.meta.baseBranch,
     branchName: fromCheckpoint.meta.branchName,
+    headRef: fromCheckpoint.headSha,
     unresolvedConflictPaths: Object.freeze({ ...fromCheckpoint.meta.unresolvedConflictPaths }),
   });
-  await runGitCommand({ cwd: handle.worktreePath, args: ['read-tree', fromCheckpoint.headSha] });
-  const preStatus = await runGitCommand({ cwd: handle.worktreePath, args: ['status', '--porcelain=v2', '-z', '--untracked-files=all'] });
-  for (const record of preStatus.stdout.split('\0')) {
-    if (record.startsWith('? ') && record.endsWith('.gitignore')) {
-      const rel = record.slice(2);
-      if (!treePaths.has(rel)) await rm(path.join(handle.worktreePath, rel), { force: true });
-    }
-  }
   const gitignorePaths = [...treePaths].filter((p) => p === '.gitignore' || p.endsWith('/.gitignore'));
   if (gitignorePaths.length > 0) {
     await checkoutCheckpointTreeAndRestoreIndex(handle, fromCheckpoint, gitignorePaths);
-    await runGitCommand({ cwd: handle.worktreePath, args: ['read-tree', fromCheckpoint.headSha] });
+  }
+  await runGitCommand({ cwd: handle.worktreePath, args: ['read-tree', fromCheckpoint.headSha] });
+  const untrackedGitignores = await runGitCommand({
+    cwd: handle.worktreePath,
+    args: ['ls-files', '--others', '-z', '--', '.gitignore', ':(glob)**/.gitignore', ':!node_modules/**', ':!**/node_modules/**'],
+  });
+  for (const rel of untrackedGitignores.stdout.split('\0')) {
+    if (rel.length > 0 && !treePaths.has(rel)) {
+      await rm(path.join(handle.worktreePath, rel), { force: true });
+    }
   }
 }
 
@@ -152,12 +154,14 @@ export async function restoreOversizedUntrackedBlobs(
     const destPath = path.join(handle.worktreePath, relPath);
     await copyFileCowOrValue(srcBlob, destPath, blobInfo.mode);
   }
-  const nmBackup = path.join(handle.gitDirPath, 'harness-ckpt-nm');
+  const currentNmDigest = await computeNodeModulesDigest(handle.worktreePath);
+  if (currentNmDigest === fromCheckpoint.nodeModulesDigest) return;
   const nmTarget = path.join(handle.worktreePath, 'node_modules');
   if (fromCheckpoint.nodeModulesDigest === 'ABSENT') {
     await rm(nmTarget, { recursive: true, force: true });
     return;
   }
+  const nmBackup = path.join(handle.gitDirPath, 'harness-ckpt-nm', fromCheckpoint.nodeModulesDigest);
   const backupStat = await lstat(nmBackup).catch(() => null);
   if (backupStat !== null && backupStat.isDirectory()) {
     await rm(nmTarget, { recursive: true, force: true });
