@@ -2,10 +2,8 @@ import { SocketModeClient } from '@slack/socket-mode';
 import { WebClient, type ChatPostMessageArguments, type ChatUpdateArguments } from '@slack/web-api';
 import { IncomingWebhook } from '@slack/webhook';
 import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/core';
-import {
-  handleSlackInteractiveEvent,
-  handleSlackSlashCommandEvent,
-} from './internal/slack-socket-envelope-router.js';
+import { handleSlackInteractiveEvent } from './internal/handle-slack-interactive-event.js';
+import { handleSlackSlashCommandEvent } from './internal/handle-slack-slash-command-event.js';
 import type { SlackMessageReceipt, SlackTransport } from './slack-transport.js';
 
 /** Default Slack transport backed by `@slack/web-api`, `@slack/webhook`, and `@slack/socket-mode`. */

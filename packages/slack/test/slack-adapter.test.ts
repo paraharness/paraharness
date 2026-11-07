@@ -14,10 +14,8 @@ import {
   defaultSlackTransport,
   slack,
 } from '../src/index.js';
-import {
-  handleSlackInteractiveEvent,
-  handleSlackSlashCommandEvent,
-} from '../src/executors/internal/slack-socket-envelope-router.js';
+import { handleSlackInteractiveEvent } from '../src/executors/internal/handle-slack-interactive-event.js';
+import { handleSlackSlashCommandEvent } from '../src/executors/internal/handle-slack-slash-command-event.js';
 import { RecordedSlackTransport } from './fixtures/recorded-slack-transport.js';
 
 function createTestDriverContext(
@@ -287,6 +285,67 @@ describe('@harness-dsl/slack adapter', () => {
       await handle.close();
       expect(transport.socketModeConnections).toEqual([expect.objectContaining({ appToken: 'xapp-ctrl-token', closed: true })]);
       await expect(adapter.dispatchSignal('steer-signal', {})).rejects.toThrow('Slack Socket Mode control plane is not active');
+    });
+
+    it('resolves runId and requestId from body.message.metadata and event_payload when omitted from actions[0].value (VF-3)', async () => {
+      let ackCount = 0;
+      const routed: Array<{ readonly runId: string; readonly requestId: string; readonly payload: unknown }> = [];
+      const ack = async (): Promise<void> => {
+        ackCount += 1;
+      };
+
+      await handleSlackInteractiveEvent(
+        {
+          ack,
+          body: {
+            actions: [{ value: JSON.stringify({ approved: true, note: 'From top-level metadata' }) }],
+            message: {
+              metadata: {
+                runId: 'run-meta-top',
+                requestId: 'req-meta-top',
+              },
+            },
+          },
+        },
+        (runId, requestId, payload) => {
+          routed.push({ runId, requestId, payload });
+        },
+      );
+
+      await handleSlackInteractiveEvent(
+        {
+          ack,
+          body: {
+            actions: [{ value: JSON.stringify({ approved: false, note: 'From nested event_payload' }) }],
+            message: {
+              metadata: {
+                event_type: 'harness_decision_request',
+                event_payload: {
+                  runId: 'run-meta-nested',
+                  requestId: 'req-meta-nested',
+                },
+              },
+            },
+          },
+        },
+        (runId, requestId, payload) => {
+          routed.push({ runId, requestId, payload });
+        },
+      );
+
+      expect(ackCount).toBe(2);
+      expect(routed).toEqual([
+        {
+          runId: 'run-meta-top',
+          requestId: 'req-meta-top',
+          payload: { approved: true, note: 'From top-level metadata' },
+        },
+        {
+          runId: 'run-meta-nested',
+          requestId: 'req-meta-nested',
+          payload: { approved: false, note: 'From nested event_payload' },
+        },
+      ]);
     });
 
     it('shares the same SlackApproverAdapter instance between humanChannels and controlPlanes per RuntimeDriverContext (VF-1)', async () => {

@@ -7,7 +7,7 @@ import { defaultGithubHttpTransport } from './default-github-http-transport.cons
 import type { GithubHttpTransport } from './github-http-transport.js';
 import type { GithubIssueRecord } from './github-issue-record.js';
 import { createGithubOctokitClient } from './internal/create-github-octokit-client.js';
-import { parseGithubIssueNumber } from './internal/normalize-github-issue.js';
+import { parseGithubIssueNumber } from './internal/parse-github-issue-number.js';
 import { parseGithubRepoSlug } from './internal/parse-github-repo-slug.js';
 import { pollOpenGithubIssues } from './internal/poll-open-github-issues.js';
 import { resolveRequiredGithubSecret } from './internal/resolve-required-github-secret.js';

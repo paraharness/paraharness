@@ -9,15 +9,13 @@ import type {
   SlackApproverNode,
 } from '@harness-dsl/core';
 import { defaultSlackTransport } from './default-slack-transport.constants.js';
-import { buildSlackDecisionMessagePayload } from './internal/build-slack-decision-payload.js';
-import {
-  buildSlackDecisionKey,
-  cleanupPendingSlackDecision,
-  registerPendingSlackDecisionAbortListener,
-  startSlackDecisionHeartbeat,
-} from './internal/manage-pending-slack-decision.js';
+import { buildSlackDecisionKey } from './internal/build-slack-decision-key.js';
+import { buildSlackDecisionMessagePayload } from './internal/build-slack-decision-message-payload.js';
+import { cleanupPendingSlackDecision } from './internal/cleanup-pending-slack-decision.js';
 import type { PendingSlackDecisionEntry } from './internal/pending-slack-decision-entry.js';
-import { resolveRequiredSlackSecret } from './internal/resolve-slack-env.js';
+import { registerPendingSlackDecisionAbortListener } from './internal/register-pending-slack-decision-abort-listener.js';
+import { resolveRequiredSlackSecret } from './internal/resolve-required-slack-secret.js';
+import { startSlackDecisionHeartbeat } from './internal/start-slack-decision-heartbeat.js';
 import type { SlackTransport } from './slack-transport.js';
 
 /**

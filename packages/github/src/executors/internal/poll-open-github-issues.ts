@@ -2,7 +2,8 @@ import type { Octokit } from '@octokit/rest';
 import { DEFAULT_GITHUB_ISSUES_PER_PAGE } from '../../builders/internal/github-builder-defaults.constants.js';
 import type { GithubIssueRecord } from '../github-issue-record.js';
 import type { GithubRepoCoordinates } from './github-repo-coordinates.js';
-import { isGithubPullRequestIssueItem, normalizeGithubIssueRecord } from './normalize-github-issue.js';
+import { isGithubPullRequestIssueItem } from './is-github-pull-request-issue-item.js';
+import { normalizeGithubIssueRecord } from './normalize-github-issue-record.js';
 
 /**
  * Parameters for paginating open GitHub issues via `pollOpenGithubIssues`.

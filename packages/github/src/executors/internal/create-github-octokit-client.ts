@@ -1,6 +1,5 @@
 import { Octokit } from '@octokit/rest';
 import { DEFAULT_GITHUB_API_BASE_URL } from '../../builders/internal/github-builder-defaults.constants.js';
-import { defaultGithubHttpTransport } from '../default-github-http-transport.constants.js';
 import type { GithubHttpTransport } from '../github-http-transport.js';
 
 /**
@@ -50,8 +49,8 @@ function createTransportFetchAdapter(
 /**
  * Creates an `@octokit/rest` `Octokit` client authenticated with `token` and bridged to `transport`.
  *
- * Uses native `Octokit` HTTP dispatch when `transport === defaultGithubHttpTransport`, or adapts
- * `request.fetch` to delegate through an injected `GithubHttpTransport` test double.
+ * Bridges `request.fetch` through `createTransportFetchAdapter(token, transport)` so both
+ * `defaultGithubHttpTransport` and injected test transports share the same execution path.
  *
  * @param {string}              token     - Resolved GitHub authentication token.
  * @param {GithubHttpTransport} transport - Active `GithubHttpTransport` implementation.
@@ -62,12 +61,6 @@ export function createGithubOctokitClient(
   token: string,
   transport: GithubHttpTransport,
 ): Octokit {
-  if (transport === defaultGithubHttpTransport) {
-    return new Octokit({
-      auth: token,
-      baseUrl: DEFAULT_GITHUB_API_BASE_URL,
-    });
-  }
   return new Octokit({
     auth: token,
     baseUrl: DEFAULT_GITHUB_API_BASE_URL,

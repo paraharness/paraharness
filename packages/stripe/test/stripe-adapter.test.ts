@@ -16,9 +16,6 @@ import {
   createStripeSdkGateway,
   stripe,
   stripeExecutors,
-  type StripeMaxRefundGuardNode,
-  type StripeMaxRefundMatcherNode,
-  type StripeReadToolNode,
 } from '../src/index.js';
 
 function createTestStepContext(): {
@@ -50,15 +47,21 @@ function createTestStepContext(): {
 
 describe('@harness-dsl/stripe adapter', () => {
   it('resolves CustomDomainAST namespaced keys for tool:stripe, guard:stripe, and effectMatcher:stripe', () => {
-    const tools = stripe.readTools();
+    const [listTool, refundTool] = stripe.readTools();
+    if (listTool === undefined || refundTool === undefined) {
+      throw new Error('Expected Stripe read tools.');
+    }
     const guard = stripe.maxRefundGuardUsd(500);
     const leaseDelta = stripe.allowRefundUpToUsd(10_000);
-    const matcher = leaseDelta.grantedMatchers[0] as StripeMaxRefundMatcherNode;
+    const [matcher] = leaseDelta.grantedMatchers;
+    if (matcher === undefined || matcher.type !== 'stripe:max-refund-matcher') {
+      throw new Error('Expected StripeMaxRefundMatcherNode.');
+    }
 
-    const toolAsDomain: ToolASTNode = tools[0] as StripeReadToolNode;
+    const toolAsDomain: ToolASTNode = listTool;
     const guardAsDomain: PolicyGuardASTNode = guard;
     const matcherAsDomain: EffectMatcherASTNode = matcher;
-    const customTool: CustomDomainAST<'tool'> = tools[0] as StripeReadToolNode;
+    const customTool: CustomDomainAST<'tool'> = listTool;
     const customGuard: CustomDomainAST<'guard'> = guard;
     const customMatcher: CustomDomainAST<'effectMatcher'> = matcher;
 
@@ -73,19 +76,20 @@ describe('@harness-dsl/stripe adapter', () => {
   it('emits passive StripeReadToolNode descriptors with effectTracking declared and predicts pre-flight billing effects', async () => {
     const tools = stripe.readTools();
     expect(tools).toHaveLength(2);
-    expect(tools[0]?.name).toBe('stripe_list_settlements');
-    expect(tools[0]?.effectTracking).toBe('declared');
-    expect(tools[1]?.name).toBe('stripe_stage_refund');
-    expect(tools[1]?.effectTracking).toBe('declared');
+    const [listTool, refundTool] = tools;
+    if (listTool === undefined || refundTool === undefined) {
+      throw new Error('Expected Stripe read tools.');
+    }
+    expect(listTool.name).toBe('stripe_list_settlements');
+    expect(listTool.effectTracking).toBe('declared');
+    expect(refundTool.name).toBe('stripe_stage_refund');
+    expect(refundTool.effectTracking).toBe('declared');
 
     const { ctx, recordedEffects } = createTestStepContext();
     const driver = ctx.registry.tools['stripe:read-tool'];
     if (driver === undefined || driver.describeEffects === undefined) {
       throw new Error('Expected stripe:read-tool driver with describeEffects to be registered.');
     }
-
-    const listTool = tools[0] as StripeReadToolNode;
-    const refundTool = tools[1] as StripeReadToolNode;
 
     const readEffects = await driver.describeEffects(
       listTool,
@@ -148,8 +152,10 @@ describe('@harness-dsl/stripe adapter', () => {
       }))
       .toAST();
 
-    const tools = stripe.readTools();
-    const refundTool = tools[1] as StripeReadToolNode;
+    const [listTool, refundTool] = stripe.readTools();
+    if (listTool === undefined || refundTool === undefined) {
+      throw new Error('Expected Stripe read tools.');
+    }
     const toolsByName = new Map<string, ToolASTNode>([[refundTool.name, refundTool]]);
     const { ctx } = createTestStepContext();
 
@@ -261,9 +267,10 @@ describe('@harness-dsl/stripe adapter', () => {
     }
 
     const { ctx } = createTestStepContext();
-    const tools = stripe.readTools();
-    const listTool = tools[0] as StripeReadToolNode;
-    const refundTool = tools[1] as StripeReadToolNode;
+    const [listTool, refundTool] = stripe.readTools();
+    if (listTool === undefined || refundTool === undefined) {
+      throw new Error('Expected Stripe read tools.');
+    }
 
     const listRes = await driver.execute(
       listTool,

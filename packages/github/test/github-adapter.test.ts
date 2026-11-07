@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { Octokit } from '@octokit/rest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   H,
   createExecutorRegistry,
@@ -11,6 +12,7 @@ import {
   GithubIssuesTrackerAdapter,
   GithubWebhookStreamSource,
   createGithubExecutors,
+  defaultGithubHttpTransport,
   github,
 } from '../src/index.js';
 import { RecordedGithubHttpTransport } from './fixtures/recorded-github-http-transport.js';
@@ -146,6 +148,70 @@ describe('@harness-dsl/github adapter', () => {
       await expect(adapter.poll()).rejects.toThrow(
         "Missing required GitHub secret/token 'MISSING_GH_TOKEN'",
       );
+    });
+
+    it('routes default-transport execution through defaultGithubHttpTransport.request (VF-4)', async () => {
+      const mockIssuesPayload = [
+        {
+          number: 99,
+          title: 'Default transport issue',
+          body: 'Routed via defaultGithubHttpTransport',
+          labels: ['agent-ready'],
+          state: 'open',
+          html_url: 'https://github.com/acme/app/issues/99',
+        },
+      ];
+      Object.defineProperty(Octokit.prototype, 'request', {
+        value: async () => ({ data: [] }),
+        writable: true,
+        configurable: true,
+      });
+      const requestSpy = vi.spyOn(Octokit.prototype, 'request').mockResolvedValue({
+        data: mockIssuesPayload,
+        status: 200,
+        url: 'https://api.github.com/repos/acme/app/issues',
+        headers: {},
+      });
+
+      try {
+        const directData = await defaultGithubHttpTransport.request(
+          'POST',
+          '/repos/acme/app/issues/99/labels',
+          { token: 'ghp_default_tok', body: { labels: ['queued'] } },
+        );
+        expect(directData).toEqual(mockIssuesPayload);
+
+        const trackerNode = github.issues({
+          repo: 'acme/app',
+          token: 'ghp_default_tok',
+        });
+        const ctx = createTestDriverContext({});
+        const adapter = new GithubIssuesTrackerAdapter(trackerNode, ctx);
+        const issues = await adapter.poll();
+
+        expect(issues).toEqual([
+          {
+            number: 99,
+            title: 'Default transport issue',
+            body: 'Routed via defaultGithubHttpTransport',
+            labels: ['agent-ready'],
+            state: 'open',
+            htmlUrl: 'https://github.com/acme/app/issues/99',
+          },
+        ]);
+        expect(requestSpy).toHaveBeenCalledTimes(2);
+        expect(requestSpy).toHaveBeenNthCalledWith(1, 'POST /repos/acme/app/issues/99/labels', {
+          labels: ['queued'],
+        });
+        expect(requestSpy).toHaveBeenNthCalledWith(
+          2,
+          'GET /repos/acme/app/issues?state=open&per_page=100&page=1',
+          {},
+        );
+      } finally {
+        requestSpy.mockRestore();
+        Reflect.deleteProperty(Octokit.prototype, 'request');
+      }
     });
   });
 

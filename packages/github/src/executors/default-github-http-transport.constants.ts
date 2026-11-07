@@ -17,7 +17,11 @@ export const defaultGithubHttpTransport: GithubHttpTransport = Object.freeze<Git
       typeof options.body === 'object' && options.body !== null
         ? { ...(options.body as Record<string, unknown>) }
         : {};
-    const response = await octokit.request(`${method} ${path}`, requestParams);
+    const requestFn =
+      typeof Octokit.prototype.request === 'function'
+        ? Octokit.prototype.request.bind(octokit)
+        : octokit.request;
+    const response = await requestFn(`${method} ${path}`, requestParams);
     return response.data as TResponse;
   },
 });

@@ -6,7 +6,7 @@ import type {
 } from '@harness-dsl/core';
 import type { NetSuiteJournalLineEntry } from '../../nodes/netsuite-draft-handle.js';
 import type { NetSuiteJournalToolNode } from '../../nodes/netsuite-journal-tool-node.js';
-import { isNetSuiteDraftHandle } from './compute-netsuite-journal-totals.js';
+import { isNetSuiteDraftHandle } from './is-netsuite-draft-handle.js';
 
 /**
  * Computes static pre-flight `ToolEffect` descriptors for a `NetSuiteJournalToolNode` invocation.
@@ -20,7 +20,7 @@ import { isNetSuiteDraftHandle } from './compute-netsuite-journal-totals.js';
  *
  * @returns {readonly ToolEffect[]} Frozen list of pre-flight tool effects.
  */
-export function describeNetSuiteJournalToolEffects(
+function describeNetSuiteJournalToolEffects(
   tool: NetSuiteJournalToolNode<unknown>,
   rawInput: unknown,
   scopeHandle: unknown,
@@ -68,7 +68,7 @@ export function describeNetSuiteJournalToolEffects(
  *
  * @throws {Error} If `ctx.scopeHandle` is not an active `NetSuiteDraftHandle` or if `rawInput` fails schema validation.
  */
-export function executeNetSuiteJournalToolCall(
+function executeNetSuiteJournalToolCall(
   tool: NetSuiteJournalToolNode<unknown>,
   rawInput: unknown,
   ctx: StepExecutionContext<unknown>,
@@ -107,6 +107,8 @@ export function executeNetSuiteJournalToolCall(
 
 /**
  * Creates the `ToolDriver<NetSuiteJournalToolNode<unknown>>` registered under `'netsuite:journal-tool'`.
+ *
+ * Binds `describeNetSuiteJournalToolEffects` for pre-flight policy inspection and `executeNetSuiteJournalToolCall` for tool execution.
  *
  * @returns {ToolDriver<NetSuiteJournalToolNode<unknown>>} Frozen tool driver for NetSuite draft journal operations.
  */

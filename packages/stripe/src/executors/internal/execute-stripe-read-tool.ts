@@ -1,12 +1,23 @@
-import type {
-  StepExecutionContext,
-  ToolDriver,
-  ToolEffect,
-  ToolExecutionResult,
-} from '@harness-dsl/core';
+import type { StepExecutionContext, ToolExecutionResult } from '@harness-dsl/core';
 import type { StripeReadToolNode } from '../../nodes/stripe-read-tool-node.js';
 import type { StripeGateway } from '../stripe-gateway.js';
-import { describeStripeToolEffects } from './evaluate-stripe-refund-effects.js';
+import { describeStripeToolEffects } from './describe-stripe-tool-effects.js';
+
+/**
+ * Parameters for executing a `StripeReadToolNode` invocation via `executeStripeReadTool`.
+ *
+ * Bundles the passive tool AST node, raw model input, active step execution context, and Stripe gateway.
+ */
+export interface ExecuteStripeReadToolParams {
+  /** Passive Stripe tool AST node. */
+  readonly node: StripeReadToolNode;
+  /** Raw tool input payload supplied by the model. */
+  readonly input: unknown;
+  /** Active step execution context. */
+  readonly ctx: StepExecutionContext<unknown>;
+  /** Active Stripe gateway implementation. */
+  readonly gateway: StripeGateway;
+}
 
 /**
  * Dispatches a validated `StripeReadToolNode` tool call to `gateway.stageRefund` or `gateway.listSettlements`.
@@ -41,61 +52,32 @@ async function invokeStripeGatewayOperation(
 }
 
 /**
- * Executes a `StripeReadToolNode` invocation against `gateway` and records declared `ToolEffect` descriptors.
+ * Executes a `StripeReadToolNode` invocation against `params.gateway` and records declared `ToolEffect` descriptors.
  *
- * Validates `input` against `node.inputSchema`, records effects via `ctx.recordEffects`, and returns a JSON `ToolExecutionResult`.
+ * Validates `params.input` against `params.node.inputSchema`, records effects via `params.ctx.recordEffects`,
+ * and returns a frozen JSON `ToolExecutionResult`.
  *
- * @param {StripeReadToolNode}            node    - Passive Stripe tool AST node.
- * @param {unknown}                       input   - Raw tool input payload.
- * @param {StepExecutionContext<unknown>} ctx     - Active step execution context.
- * @param {StripeGateway}                 gateway - Active Stripe gateway implementation.
+ * @param {ExecuteStripeReadToolParams} params - Stripe tool node, input payload, step execution context, and gateway.
  *
  * @returns {Promise<ToolExecutionResult>} Frozen JSON-serialized tool execution result.
  *
- * @throws {Error} If `input` fails `node.inputSchema` validation or the Stripe gateway call fails.
+ * @throws {Error} If `params.input` fails `params.node.inputSchema` validation or the Stripe gateway call fails.
  */
 export async function executeStripeReadTool(
-  node: StripeReadToolNode,
-  input: unknown,
-  ctx: StepExecutionContext<unknown>,
-  gateway: StripeGateway,
+  params: ExecuteStripeReadToolParams,
 ): Promise<ToolExecutionResult> {
-  const parsed = node.inputSchema.parse(input) as Readonly<Record<string, unknown>>;
-  const effects = describeStripeToolEffects(node, parsed);
-  ctx.recordEffects(effects);
-  const result = await invokeStripeGatewayOperation(node, parsed, gateway);
-  const payload =
-    result !== undefined
-      ? { tool: node.name, status: 'ok', input: parsed, result }
-      : { tool: node.name, status: 'ok', input: parsed };
+  const parsed = params.node.inputSchema.parse(params.input) as Readonly<Record<string, unknown>>;
+  const effects = describeStripeToolEffects(params.node, parsed);
+  params.ctx.recordEffects(effects);
+  const result = await invokeStripeGatewayOperation(params.node, parsed, params.gateway);
+  const payload = {
+    tool: params.node.name,
+    status: 'ok',
+    input: parsed,
+    result,
+  };
   return Object.freeze<ToolExecutionResult>({
     content: JSON.stringify(payload),
     isError: false,
-  });
-}
-
-/**
- * Creates a frozen `ToolDriver<StripeReadToolNode, unknown>` bound to `gateway`.
- *
- * Binds `describeStripeToolEffects` for pre-flight policy inspection and `executeStripeReadTool` for execution.
- *
- * @param {StripeGateway} gateway - Active Stripe gateway implementation.
- *
- * @returns {ToolDriver<StripeReadToolNode, unknown>} Frozen `ToolDriver` for `'stripe:read-tool'`.
- */
-export function createStripeReadToolDriver(
-  gateway: StripeGateway,
-): ToolDriver<StripeReadToolNode, unknown> {
-  return Object.freeze<ToolDriver<StripeReadToolNode, unknown>>({
-    describeEffects(node: StripeReadToolNode, args: unknown): readonly ToolEffect[] {
-      return describeStripeToolEffects(node, args);
-    },
-    execute(
-      node: StripeReadToolNode,
-      input: unknown,
-      ctx: StepExecutionContext<unknown>,
-    ): Promise<ToolExecutionResult> {
-      return executeStripeReadTool(node, input, ctx, gateway);
-    },
   });
 }

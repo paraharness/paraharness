@@ -5,7 +5,7 @@ import type {
   SlackNotifierNode,
 } from '@harness-dsl/core';
 import { defaultSlackTransport } from './default-slack-transport.constants.js';
-import { resolveRequiredSlackSecret } from './internal/resolve-slack-env.js';
+import { resolveRequiredSlackSecret } from './internal/resolve-required-slack-secret.js';
 import type { SlackTransport } from './slack-transport.js';
 
 /**

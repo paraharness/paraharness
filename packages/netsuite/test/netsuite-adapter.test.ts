@@ -14,12 +14,7 @@ import { describe, expect, it } from 'vitest';
 import {
   netsuite,
   netsuiteExecutors,
-  type NetSuiteBalanceZeroCheckNode,
-  type NetSuiteClosedPeriodGuardNode,
   type NetSuiteDraftHandle,
-  type NetSuiteDraftScopeNode,
-  type NetSuiteJournalToolNode,
-  type NetSuiteRollbackAbortHookNode,
 } from '../src/index.js';
 
 function createNetSuiteDriverContext(): RuntimeDriverContext {
@@ -71,15 +66,13 @@ describe('@harness-dsl/netsuite adapter', () => {
     const tools: readonly CustomDomainAST<'tool'>[] = netsuite.journalTools();
 
     expect(scopeNode.type).toBe('netsuite:draft-scope');
-    expect((scopeNode as NetSuiteDraftScopeNode).capabilityTier).toBe('scope');
-    expect((scopeNode as NetSuiteDraftScopeNode).supportsCheckpoints).toBe(false);
-    expect((scopeNode as NetSuiteDraftScopeNode).supportsBranching).toBe(false);
-    expect((guardNode as NetSuiteClosedPeriodGuardNode).type).toBe('netsuite:closed-period-guard');
-    expect((abortHookNode as NetSuiteRollbackAbortHookNode).type).toBe(
-      'netsuite:rollback-abort-hook',
-    );
-    expect((checkNode as NetSuiteBalanceZeroCheckNode).type).toBe('netsuite:balance-zero-check');
-    expect(tools.map((tool) => (tool as NetSuiteJournalToolNode).name)).toEqual([
+    expect(scopeNode.capabilityTier).toBe('scope');
+    expect(scopeNode.supportsCheckpoints).toBe(false);
+    expect(scopeNode.supportsBranching).toBe(false);
+    expect(guardNode.type).toBe('netsuite:closed-period-guard');
+    expect(abortHookNode.type).toBe('netsuite:rollback-abort-hook');
+    expect(checkNode.type).toBe('netsuite:balance-zero-check');
+    expect(tools.map((tool) => tool.name)).toEqual([
       'netsuite_add_journal_line',
       'netsuite_commit_journal',
     ]);
