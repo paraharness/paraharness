@@ -30,6 +30,11 @@ export async function executeReplaceWithPromotion<TIn = unknown, THandle = unkno
 ): Promise<string> {
   const { flowCtx, stepExecId, stepId, baseScopeCheckpoint, replacementExecutable, replacementInput, abortHook } = params;
   await flowCtx.serviceRegistry.quiesceScopeServices(stepExecId);
+  const branchScope = flowCtx.scopeDriver as Partial<BranchableScope<THandle, Record<string, unknown>, Record<string, unknown>>>;
+  for (const sf of await flowCtx.ledgerStore.getSuspendedForks(flowCtx.runId, { parentStepExecId: stepExecId })) {
+    if (branchScope.reattachChild !== undefined && branchScope.release !== undefined) await branchScope.release(await branchScope.reattachChild(flowCtx.scopeHandle, sf.forkId, sf.childScopeCheckpoint));
+    await flowCtx.ledgerStore.resolveSuspendedFork(sf.suspendedForkId, 'ABORTED');
+  }
   if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'step', stepExecId });
   if (abortHook !== undefined) {
     const abortExec = flowCtx.registry.abortHooks[abortHook.type as keyof typeof flowCtx.registry.abortHooks];
@@ -76,8 +81,11 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
     flowCtx.activeStepAbortController.abort(new Error(`Rewind drain barrier triggered for run '${flowCtx.runId}'.`));
     flowCtx.activeStepAbortController = new AbortController();
     for (const humanAdapter of flowCtx.humanAdaptersById.values()) await humanAdapter.cancelDecision?.(flowCtx.runId, flowCtx.activeStepExecId ?? flowCtx.runId);
-    const suspendedForks = await flowCtx.ledgerStore.getSuspendedForks(flowCtx.runId);
-    for (const sf of suspendedForks) await flowCtx.ledgerStore.resolveSuspendedFork(sf.suspendedForkId, 'ABORTED');
+    const branchScope = flowCtx.scopeDriver as Partial<BranchableScope<THandle, Record<string, unknown>, Record<string, unknown>>>;
+    for (const sf of await flowCtx.ledgerStore.getSuspendedForks(flowCtx.runId)) {
+      if (branchScope.reattachChild !== undefined && branchScope.release !== undefined) await branchScope.release(await branchScope.reattachChild(flowCtx.scopeHandle, sf.forkId, sf.childScopeCheckpoint));
+      await flowCtx.ledgerStore.resolveSuspendedFork(sf.suspendedForkId, 'ABORTED');
+    }
     if (flowCtx.activeStepExecId !== null) {
       await flowCtx.serviceRegistry.quiesceScopeServices(flowCtx.activeStepExecId);
       await flowCtx.ledgerStore.recordStepTransition({ stepExecId: flowCtx.activeStepExecId, status: stepTerminalStatus === 'CANCELLED' ? 'FAILED' : 'INTERRUPTED', telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }) });
@@ -92,7 +100,7 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
     } else if (rewindToStepId !== null && targetStepBaseScopeCheckpoint !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) {
       await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, targetStepBaseScopeCheckpoint);
     }
-    await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(updatedInput), rewindPendingToStepId: undefined });
+    await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, { inputJson: JSON.stringify(updatedInput), rewindPendingToStepId: null });
   });
   if (rewindToStepId !== null) flowCtx.pendingRewindToStepId = rewindToStepId;
   return Object.freeze({ deferredWhileSuspended: false });
@@ -114,24 +122,13 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
 export async function recoverInterruptedRunOnBoot<TIn = unknown, THandle = unknown>(
   params: RecoverInterruptedRunParams<TIn, THandle>,
 ): Promise<{ readonly reattachedChildHandles: ReadonlyMap<string, THandle>; readonly readyToResume: boolean }> {
-  const { bootRecord, flowCtx } = params;
+  const { bootRecord, flowCtx } = params, reattachedChildren = new Map<string, THandle>();
   flowCtx.scopeHandle = await flowCtx.scopeDriver.reattachRoot(bootRecord.runId, bootRecord.baseScopeCheckpoint);
-  const reattachedChildren = new Map<string, THandle>();
   const branchScope = flowCtx.scopeDriver as Partial<BranchableScope<THandle, Record<string, unknown>, Record<string, unknown>>>;
   for (const frame of bootRecord.continuationStack) {
-    if (frame.kind === 'agent-frame' && frame.pauseState.kind === 'tool-batch' && frame.pauseState.inFlightPreToolCheckpoint !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) {
-      await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, frame.pauseState.inFlightPreToolCheckpoint);
-    }
-    if (frame.kind === 'fork-batch-frame' && branchScope.reattachChild !== undefined) {
-      for (const fEntry of (frame as ForkBatchContinuationFrame).forks) {
-        if (fEntry.status !== 'CHILD_COMMITTED' && fEntry.status !== 'ABORTED') reattachedChildren.set(fEntry.forkId, await branchScope.reattachChild(flowCtx.scopeHandle, fEntry.forkId));
-      }
-    }
-    if (frame.kind === 'speculate-frame' && branchScope.reattachChild !== undefined) {
-      for (const bEntry of (frame as SpeculateContinuationFrame).branches) {
-        if (bEntry.status !== 'WINNER_COMMITTED' && bEntry.status !== 'FAILED') reattachedChildren.set(bEntry.forkId, await branchScope.reattachChild(flowCtx.scopeHandle, bEntry.forkId));
-      }
-    }
+    if (frame.kind === 'agent-frame' && frame.pauseState.kind === 'tool-batch' && frame.pauseState.inFlightPreToolCheckpoint !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, frame.pauseState.inFlightPreToolCheckpoint);
+    if (frame.kind === 'fork-batch-frame' && branchScope.reattachChild !== undefined) for (const fEntry of (frame as ForkBatchContinuationFrame).forks) if (fEntry.status !== 'CHILD_COMMITTED' && fEntry.status !== 'ABORTED') reattachedChildren.set(fEntry.forkId, await branchScope.reattachChild(flowCtx.scopeHandle, fEntry.forkId));
+    if (frame.kind === 'speculate-frame' && branchScope.reattachChild !== undefined) for (const bEntry of (frame as SpeculateContinuationFrame).branches) if (bEntry.status !== 'WINNER_COMMITTED' && bEntry.status !== 'FAILED') reattachedChildren.set(bEntry.forkId, await branchScope.reattachChild(flowCtx.scopeHandle, bEntry.forkId));
   }
   if (bootRecord.status === 'SUSPENDED' && bootRecord.stepExecId !== null) {
     const topAgent = bootRecord.continuationStack.find((f: ContinuationFrame): f is AgentContinuationFrame => f.kind === 'agent-frame');
@@ -140,9 +137,22 @@ export async function recoverInterruptedRunOnBoot<TIn = unknown, THandle = unkno
       if (terminalReceipts.size < bootRecord.dependsOn.length) return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume: false });
       const outerFrames = bootRecord.continuationStack.filter((f: ContinuationFrame) => f !== topAgent);
       const syncRes = await syncSuspendedRunPrerequisites({ runId: bootRecord.runId, stepExecId: bootRecord.stepExecId, headScopeCheckpoint: bootRecord.headScopeCheckpoint, prerequisiteItemKeys: bootRecord.dependsOn, prerequisiteRunIds: bootRecord.dependsOn.map((depKey: string) => terminalReceipts.get(depKey)?.runId ?? depKey), agentFrame: topAgent, outerFrames, ledgerStore: flowCtx.ledgerStore, continuationQueue: flowCtx.continuationQueue, topologyStore: flowCtx.topologyStore, branchableScope: branchScope as never, serviceRegistry: flowCtx.serviceRegistry, scopeHandle: flowCtx.scopeHandle });
-      const resumedStack = Object.freeze<readonly ContinuationFrame[]>([...outerFrames, syncRes.updatedAgentFrame ?? topAgent]);
-      Object.assign(flowCtx, { activeStepId: bootRecord.stepId, activeStepExecId: bootRecord.stepExecId, resumeContinuationStack: resumedStack });
+      const runState = await flowCtx.ledgerStore.createOrResumeRun({ runId: bootRecord.runId, laneId: bootRecord.laneId, itemKey: bootRecord.itemKey, inputJson: bootRecord.inputJson });
+      const pendingRewind = (bootRecord as { readonly rewindPendingToStepId?: string }).rewindPendingToStepId ?? runState.rewindPendingToStepId;
+      if (pendingRewind !== undefined) {
+        for (const sf of await flowCtx.ledgerStore.getSuspendedForks(bootRecord.runId)) {
+          if (branchScope.reattachChild !== undefined && branchScope.release !== undefined) await branchScope.release(await branchScope.reattachChild(flowCtx.scopeHandle, sf.forkId, sf.childScopeCheckpoint));
+          await flowCtx.ledgerStore.resolveSuspendedFork(sf.suspendedForkId, 'ABORTED');
+        }
+        if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.resetRunOverlay(bootRecord.runId, { scope: 'run' });
+        await flowCtx.ledgerStore.updateRunInput(bootRecord.runId, { inputJson: runState.inputJson, rewindPendingToStepId: null });
+        Object.assign(flowCtx, { pendingRewindToStepId: pendingRewind, activeStepId: pendingRewind, activeStepExecId: null });
+      } else {
+        Object.assign(flowCtx, { activeStepId: bootRecord.stepId, activeStepExecId: bootRecord.stepExecId, resumeContinuationStack: Object.freeze<readonly ContinuationFrame[]>([...outerFrames, syncRes.updatedAgentFrame ?? topAgent]) });
+      }
     }
+  } else if (bootRecord.status === 'RUNNING' && bootRecord.stepId !== null) {
+    Object.assign(flowCtx, { activeStepId: bootRecord.stepId, activeStepExecId: bootRecord.stepExecId, resumeContinuationStack: bootRecord.continuationStack });
   }
   return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume: true });
 }

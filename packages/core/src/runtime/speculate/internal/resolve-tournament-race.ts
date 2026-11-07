@@ -3,7 +3,6 @@ import type { LoopContinuationFrame } from '../../../ports/loop-continuation-fra
 import type { CrossVerifierBranchCandidate } from '../../../ports/runtime-executor-registry.js';
 import type {
   SpeculateBranchEntryRecord,
-  SpeculateBufferedLessonOutcomeRecord,
   SpeculateContinuationFrame,
   SpeculateHumanRulingRecord,
 } from '../../../ports/speculate-continuation-frame.js';
@@ -15,6 +14,12 @@ import type { UnparkBranchContext } from '../unpark-branch-context.js';
 import type { UnparkBranchResult } from '../unpark-branch-result.js';
 import type { ValidatedArbiterTurnResult } from '../validated-arbiter-turn-result.js';
 import type { WinnerRefinementCommitContext } from '../winner-refinement-commit-context.js';
+import {
+  commitWinnerWithConflictBounce,
+  flushCommittedWinnerLessons,
+  mergeBranchBufferedOutcomes,
+  promoteRefinedWinnerStack,
+} from './commit-and-flush-tournament-winner.js';
 
 /**
  * Classifies a completed speculative tournament race into Post-Race Cases 1–4 (`SPEC.md` §3.7.2 Capability 2).
@@ -138,7 +143,8 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(params:
   const receipt = await params.branchableScope.inspect(unparkCtx.handle);
   const updatedBranch: SpeculateBranchEntryRecord = outcome.status === 'completed' ? Object.freeze<SpeculateBranchEntryRecord>({ ...branch, status: 'COMPLETED', outputJson: JSON.stringify(outcome.output ?? null), scopeReceiptJson: JSON.stringify(receipt), continuationStack: outcome.continuationStack }) : Object.freeze<SpeculateBranchEntryRecord>({ ...branch, status: 'PARKED_ON_ESCALATION', parkedInterruptId: outcome.interruptId, parkedEscalationPayloadJson: JSON.stringify(outcome.interruptPayload ?? null), continuationStack: outcome.continuationStack });
   const ruling: SpeculateHumanRulingRecord = Object.freeze({ branchIndex: branch.branchIndex, interruptId, rulingSummary: JSON.stringify(decision) });
-  const nextFrame = Object.freeze<SpeculateContinuationFrame>({ ...frameWithReq, branches: Object.freeze(frameWithReq.branches.map((b) => b.branchIndex === branch.branchIndex ? updatedBranch : b)), humanRulingsHistory: Object.freeze([...frameWithReq.humanRulingsHistory, ruling]) });
+  const nextBuffered = outcome.status === 'completed' ? mergeBranchBufferedOutcomes(frameWithReq.bufferedLessonOutcomes, branch.branchIndex, outcome.accumulatedLessonOutcomes) : frameWithReq.bufferedLessonOutcomes;
+  const nextFrame = Object.freeze<SpeculateContinuationFrame>({ ...frameWithReq, bufferedLessonOutcomes: nextBuffered, branches: Object.freeze(frameWithReq.branches.map((b) => b.branchIndex === branch.branchIndex ? updatedBranch : b)), humanRulingsHistory: Object.freeze([...frameWithReq.humanRulingsHistory, ruling]) });
   await unparkCtx.persistFrame(nextFrame);
   return Object.freeze({ status: 'resumed', updatedFrame: nextFrame });
 }
@@ -159,39 +165,39 @@ export async function unparkEscalatedTournamentBranch<THandle = unknown>(params:
 export async function executeWinnerRefinementAndCommit<THandle = unknown>(params: SpeculateTournamentParams<THandle>, frame: SpeculateContinuationFrame, commitCtx: WinnerRefinementCommitContext<THandle>): Promise<SpeculateTournamentResult> {
   const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, humanAdaptersById: params.humanAdaptersById, outerFrames: [...params.outerFrames, frame] }));
   const winnerHandle = commitCtx.handlesByBranch.get(commitCtx.winnerBranchIndex);
-  let winnerBranch = frame.branches.find((b) => b.branchIndex === commitCtx.winnerBranchIndex);
+  let winnerBranch = frame.branches.find((b) => b.branchIndex === commitCtx.winnerBranchIndex), curFrame = Object.freeze<SpeculateContinuationFrame>({ ...frame, winnerBranchIndex: commitCtx.winnerBranchIndex });
   if (winnerHandle === undefined || winnerBranch === undefined) throw new Error(`Winning branch '${String(commitCtx.winnerBranchIndex)}' handle not found.`);
-  let curFrame = Object.freeze<SpeculateContinuationFrame>({ ...frame, winnerBranchIndex: commitCtx.winnerBranchIndex });
-  const refineCfg = params.capability.refineWinnerWhen;
-  if (refineCfg !== undefined && commitCtx.verdict !== undefined && refineCfg.predicate(commitCtx.verdict)) {
-    const preCkpt = await params.branchableScope.serializeCheckpoint(winnerHandle);
-    await commitCtx.persistFrame(Object.freeze<SpeculateContinuationFrame>({ ...curFrame, phase: 'REFINING_WINNER', preRefinementCheckpoint: preCkpt }));
-    const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}')), branchInputs = params.capability.mapBranches(params.parentInput, req);
-    const candidates = curFrame.branches.map((b) => ({ branchIndex: b.branchIndex, input: branchInputs[b.branchIndex], status: b.status, output: b.outputJson !== undefined ? JSON.parse(b.outputJson) : undefined, scopeReceipt: b.scopeReceiptJson !== undefined ? JSON.parse(b.scopeReceiptJson) : undefined }));
-    const inheritedLeases = winnerBranch.continuationStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')?.grantedLoopLeases ?? winnerBranch.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.activeLeases ?? params.ctx.activeLeases;
-    try {
-      const refinedOut = await runStep(refineCfg.refinementExecutable, refineCfg.mapInput(params.parentInput, commitCtx.verdict, candidates), Object.freeze({ ...params.ctx, stepExecId: `${params.ctx.stepExecId}:refine:${String(commitCtx.winnerBranchIndex)}`, scopeHandle: winnerHandle, activeLeases: inheritedLeases, candidateHandles: commitCtx.handlesByBranch }));
-      if (refinedOut.status === 'completed') {
-        winnerBranch = Object.freeze<SpeculateBranchEntryRecord>({ ...winnerBranch, outputJson: JSON.stringify(refinedOut.output ?? null) });
-        const refOutcomes = refinedOut.accumulatedLessonOutcomes !== undefined ? Object.entries(refinedOut.accumulatedLessonOutcomes).map(([lessonId, outcome]) => ({ lessonId, outcome })) : [];
-        const mergedBuffered: SpeculateBufferedLessonOutcomeRecord[] = refOutcomes.length > 0 ? [...(curFrame.bufferedLessonOutcomes ?? []), Object.freeze({ branchIndex: commitCtx.winnerBranchIndex, outcomes: Object.freeze(refOutcomes) })] : [...(curFrame.bufferedLessonOutcomes ?? [])];
-        curFrame = Object.freeze<SpeculateContinuationFrame>({ ...curFrame, bufferedLessonOutcomes: Object.freeze(mergedBuffered), branches: Object.freeze(curFrame.branches.map((b) => b.branchIndex === commitCtx.winnerBranchIndex && winnerBranch !== undefined ? winnerBranch : b)) });
-      } else await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
-    } catch {
-      await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
+  const req = params.capability.requestSchema.parse(JSON.parse(params.argsJson || '{}')), branchInputs = params.capability.mapBranches(params.parentInput, req), refineCfg = params.capability.refineWinnerWhen;
+  let activeExecutable = params.capability.workerExecutable, activeInput: unknown = branchInputs[commitCtx.winnerBranchIndex];
+  const inheritedLeases = winnerBranch.continuationStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')?.grantedLoopLeases ?? winnerBranch.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.activeLeases ?? params.ctx.activeLeases;
+  try {
+    if (refineCfg !== undefined && commitCtx.verdict !== undefined && refineCfg.predicate(commitCtx.verdict)) {
+      const preCkpt = await params.branchableScope.serializeCheckpoint(winnerHandle);
+      await commitCtx.persistFrame((curFrame = Object.freeze<SpeculateContinuationFrame>({ ...curFrame, phase: 'REFINING_WINNER', preRefinementCheckpoint: preCkpt })));
+      const candidates = curFrame.branches.map((b) => ({ branchIndex: b.branchIndex, input: branchInputs[b.branchIndex], status: b.status, output: b.outputJson !== undefined ? JSON.parse(b.outputJson) : undefined, scopeReceipt: b.scopeReceiptJson !== undefined ? JSON.parse(b.scopeReceiptJson) : undefined }));
+      const refineInput = refineCfg.mapInput(params.parentInput, commitCtx.verdict, candidates), parentRt = (params.ctx as { readonly _runtime?: Record<string, unknown> })._runtime ?? {};
+      try {
+        const refinedOut = await runStep(refineCfg.refinementExecutable, refineInput, Object.freeze({ ...params.ctx, stepExecId: `${params.ctx.stepExecId}:refine:${String(commitCtx.winnerBranchIndex)}`, scopeHandle: winnerHandle, activeLeases: inheritedLeases, candidateHandles: commitCtx.handlesByBranch, _runtime: { ...parentRt, outerFrames: [...params.outerFrames, curFrame] } }));
+        if (refinedOut.status === 'completed') {
+          winnerBranch = Object.freeze<SpeculateBranchEntryRecord>({ ...winnerBranch, outputJson: JSON.stringify(refinedOut.output ?? null), continuationStack: promoteRefinedWinnerStack(winnerBranch.continuationStack, refinedOut.continuationStack) });
+          curFrame = Object.freeze<SpeculateContinuationFrame>({ ...curFrame, bufferedLessonOutcomes: mergeBranchBufferedOutcomes(curFrame.bufferedLessonOutcomes, commitCtx.winnerBranchIndex, refinedOut.accumulatedLessonOutcomes), branches: Object.freeze(curFrame.branches.map((b) => b.branchIndex === commitCtx.winnerBranchIndex && winnerBranch !== undefined ? winnerBranch : b)) });
+          ({ refinementExecutable: activeExecutable } = refineCfg);
+          activeInput = refineInput;
+        } else await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
+      } catch {
+        await params.branchableScope.restoreCheckpoint(winnerHandle, preCkpt);
+      }
     }
+    const commitState = await commitWinnerWithConflictBounce({ params, commitCtx, winnerHandle, winnerBranch, curFrame, activeExecutable, activeInput, inheritedLeases, runStep });
+    ({ winnerBranch, curFrame } = commitState);
+    if (!commitState.committed || commitState.commitRes.status !== 'clean') return Object.freeze<SpeculateTournamentResult>({ toolResultText: JSON.stringify({ status: 'COMMIT_CONFLICT', winnerBranchIndex: commitCtx.winnerBranchIndex, conflictedSummary: commitState.commitRes.status === 'conflict' ? commitState.commitRes.conflictedSummary : 'conflict' }), isError: true, tournamentFrame: curFrame });
+    winnerBranch = Object.freeze<SpeculateBranchEntryRecord>({ ...winnerBranch, status: 'WINNER_COMMITTED', scopeReceiptJson: JSON.stringify(commitState.commitRes.data) });
+    await commitCtx.persistFrame((curFrame = Object.freeze<SpeculateContinuationFrame>({ ...curFrame, phase: 'COMMITTING', branches: Object.freeze(curFrame.branches.map((b) => b.branchIndex === commitCtx.winnerBranchIndex && winnerBranch !== undefined ? winnerBranch : b)) })));
+    curFrame = await flushCommittedWinnerLessons(params, curFrame, commitCtx, activeExecutable);
+    return Object.freeze<SpeculateTournamentResult>({ toolResultText: JSON.stringify({ status: 'WINNER_COMMITTED', winnerBranchIndex: commitCtx.winnerBranchIndex, output: JSON.parse(winnerBranch.outputJson ?? 'null'), scopeReceipt: commitState.commitRes.data }), isError: false, tournamentFrame: curFrame });
+  } finally {
+    const handles = [...commitCtx.handlesByBranch.values()];
+    (commitCtx.handlesByBranch as Map<number, THandle>).clear?.();
+    for (const h of handles) await params.branchableScope.release(h);
   }
-  const commitRes = await params.lockManager.withWriteLock(params.ctx.scopeHandle, () => params.branchableScope.commitChild(winnerHandle, params.ctx.scopeHandle));
-  if (commitRes.status !== 'clean') {
-    for (const h of commitCtx.handlesByBranch.values()) await params.branchableScope.release(h);
-    return Object.freeze<SpeculateTournamentResult>({ toolResultText: JSON.stringify({ status: 'COMMIT_CONFLICT', winnerBranchIndex: commitCtx.winnerBranchIndex, conflictedSummary: commitRes.conflictedSummary }), isError: true, tournamentFrame: curFrame });
-  }
-  winnerBranch = Object.freeze<SpeculateBranchEntryRecord>({ ...winnerBranch, status: 'WINNER_COMMITTED', scopeReceiptJson: JSON.stringify(commitRes.data) });
-  await commitCtx.persistFrame(Object.freeze<SpeculateContinuationFrame>({ ...curFrame, phase: 'COMMITTING', branches: Object.freeze(curFrame.branches.map((b) => b.branchIndex === commitCtx.winnerBranchIndex && winnerBranch !== undefined ? winnerBranch : b)) }));
-  if (curFrame.lessonsFlushed !== true && params.lessonStore !== undefined) {
-    for (const entry of curFrame.bufferedLessonOutcomes ?? []) if (entry.branchIndex === commitCtx.winnerBranchIndex && entry.outcomes.length > 0) await params.lessonStore.recordOutcomes(entry.outcomes);
-    await commitCtx.persistFrame(Object.freeze<SpeculateContinuationFrame>({ ...curFrame, lessonsFlushed: true }));
-  }
-  for (const h of commitCtx.handlesByBranch.values()) await params.branchableScope.release(h);
-  return Object.freeze<SpeculateTournamentResult>({ toolResultText: JSON.stringify({ status: 'WINNER_COMMITTED', winnerBranchIndex: commitCtx.winnerBranchIndex, output: JSON.parse(winnerBranch.outputJson ?? 'null'), scopeReceipt: commitRes.data }), isError: false, tournamentFrame: curFrame });
 }

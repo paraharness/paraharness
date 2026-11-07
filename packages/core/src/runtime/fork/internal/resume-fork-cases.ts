@@ -140,38 +140,37 @@ export async function injectCaseCResumeFrame<THandle = unknown>(
  *
  * @returns {Promise<ForkBatchEntryRecord>} Settled `ForkBatchEntryRecord` after resumption.
  */
-export async function resumeSuspendedForkEntry<THandle = unknown>(
-  params: ResumeSuspendedForkEntryParams<THandle>,
-): Promise<ForkBatchEntryRecord> {
-  const { batchParams, record } = params;
-  const forkCap = batchParams.parentNode.capabilities?.forks.find((f) => f.toolName === record.forkToolName);
+export async function resumeSuspendedForkEntry<THandle = unknown>(params: ResumeSuspendedForkEntryParams<THandle>): Promise<ForkBatchEntryRecord> {
+  const { batchParams, record } = params, forkCap = batchParams.parentNode.capabilities?.forks.find((f) => f.toolName === record.forkToolName);
   if (forkCap === undefined) throw new Error(`Unknown fork tool '${record.forkToolName}' on parent '${batchParams.parentNode.id}'.`);
   const childHandle = await batchParams.lockManager.withReadLock(batchParams.ctx.scopeHandle, () => batchParams.branchableScope.reattachChild(batchParams.ctx.scopeHandle, record.forkId, record.childScopeCheckpoint));
-  let curEntry = params.entry;
-  let conflictLease: LeaseDelta | undefined;
-  if (curEntry.syncedToParentCheckpoint === undefined) {
-    const syncOut = await batchParams.lockManager.withWriteLock(batchParams.ctx.scopeHandle, async () => {
-      if (record.childScopeCheckpoint !== undefined) await batchParams.branchableScope.restoreCheckpoint(childHandle, record.childScopeCheckpoint);
-      const syncRes = await batchParams.branchableScope.syncChild(batchParams.ctx.scopeHandle, childHandle);
-      const syncedCkpt = await batchParams.branchableScope.serializeCheckpoint(childHandle);
-      return { syncRes, syncedCkpt };
-    });
-    if (syncOut.syncRes.status === 'conflict') conflictLease = batchParams.branchableScope.getConflictLease?.(childHandle);
-    const updatedStack = curEntry.continuationStack.map((f) => f.kind === 'agent-frame' && conflictLease !== undefined ? Object.freeze<AgentContinuationFrame>({ ...f, conflictCheckArmed: true, activeLeases: Object.freeze([...f.activeLeases, conflictLease]) }) : f.kind === 'loop-frame' && conflictLease !== undefined ? Object.freeze<LoopContinuationFrame>({ ...f, conflictCheckArmed: true, grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, conflictLease]) }) : f);
-    curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, conflictCheckArmed: curEntry.conflictCheckArmed || syncOut.syncRes.status === 'conflict', syncedToParentCheckpoint: syncOut.syncedCkpt, syncResultJson: JSON.stringify(syncOut.syncRes), continuationStack: Object.freeze(updatedStack) });
-    await params.persistEntryUpdate(curEntry);
+  let handedOffToReconcile = false, curEntry = params.entry;
+  try {
+    if (curEntry.syncedToParentCheckpoint === undefined) {
+      const syncOut = await batchParams.lockManager.withWriteLock(batchParams.ctx.scopeHandle, async () => {
+        if (record.childScopeCheckpoint !== undefined) await batchParams.branchableScope.restoreCheckpoint(childHandle, record.childScopeCheckpoint);
+        const syncRes = await batchParams.branchableScope.syncChild(batchParams.ctx.scopeHandle, childHandle);
+        return { syncRes, syncedCkpt: await batchParams.branchableScope.serializeCheckpoint(childHandle) };
+      });
+      const conflictLease: LeaseDelta | undefined = syncOut.syncRes.status === 'conflict' ? batchParams.branchableScope.getConflictLease?.(childHandle) : undefined;
+      const updatedStack = curEntry.continuationStack.map((f) => f.kind === 'agent-frame' && conflictLease !== undefined ? Object.freeze<AgentContinuationFrame>({ ...f, conflictCheckArmed: true, activeLeases: Object.freeze([...f.activeLeases, conflictLease]) }) : f.kind === 'loop-frame' && conflictLease !== undefined ? Object.freeze<LoopContinuationFrame>({ ...f, conflictCheckArmed: true, grantedLoopLeases: Object.freeze([...f.grantedLoopLeases, conflictLease]) }) : f);
+      curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, conflictCheckArmed: curEntry.conflictCheckArmed || syncOut.syncRes.status === 'conflict', syncedToParentCheckpoint: syncOut.syncedCkpt, syncResultJson: JSON.stringify(syncOut.syncRes), continuationStack: Object.freeze(updatedStack) });
+      await params.persistEntryUpdate(curEntry);
+    }
+    if (curEntry.resumeFrameInjected !== true) {
+      const syncJson = curEntry.syncResultJson ?? '{}', innerAgent = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame');
+      const nextStack = record.suspensionReason === 'INTERRUPT_RAISED' ? await injectCaseAResumeFrame({ ...params, entry: curEntry }, syncJson) : innerAgent?.pausedAtPhase === 'BEFORE_STOP_GATE' ? await injectCaseCResumeFrame({ ...params, entry: curEntry }, syncJson) : await injectCaseBResumeFrame({ ...params, entry: curEntry }, syncJson);
+      curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, resumeFrameInjected: true, continuationStack: nextStack });
+      await params.persistEntryUpdate(curEntry);
+    }
+    const runStep = batchParams.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: batchParams.ledgerStore, lessonStore: batchParams.lessonStore, lockManager: batchParams.lockManager, continuationQueue: batchParams.continuationQueue, poolManager: batchParams.poolManager, humanAdaptersById: batchParams.humanAdaptersById }));
+    const innerInputJson = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.inputJson ?? curEntry.continuationStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')?.loopInputJson ?? 'null';
+    const outcome = await runStep(forkCap.childExecutable, JSON.parse(innerInputJson), Object.freeze({ ...batchParams.ctx, stepExecId: `${batchParams.ctx.stepExecId}:fork:${record.forkId}`, scopeHandle: childHandle, activePartitions: curEntry.activePartitions, resumeContinuationStack: curEntry.continuationStack }));
+    handedOffToReconcile = true;
+    const settled = await reconcileChildForkWithBounce({ batchParams: { ...batchParams, executeChildStep: runStep }, entry: curEntry, childHandle, childNode: forkCap.childExecutable, childInput: JSON.parse(innerInputJson), outcome, persistEntryUpdate: params.persistEntryUpdate });
+    await batchParams.ledgerStore.resolveSuspendedFork(record.suspendedForkId, 'RESUMED');
+    return settled;
+  } finally {
+    if (!handedOffToReconcile) await batchParams.branchableScope.release(childHandle);
   }
-  if (curEntry.resumeFrameInjected !== true) {
-    const syncJson = curEntry.syncResultJson ?? '{}';
-    const innerAgent = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame');
-    const nextStack = record.suspensionReason === 'INTERRUPT_RAISED' ? await injectCaseAResumeFrame({ ...params, entry: curEntry }, syncJson) : innerAgent?.pausedAtPhase === 'BEFORE_STOP_GATE' ? await injectCaseCResumeFrame({ ...params, entry: curEntry }, syncJson) : await injectCaseBResumeFrame({ ...params, entry: curEntry }, syncJson);
-    curEntry = Object.freeze<ForkBatchEntryRecord>({ ...curEntry, resumeFrameInjected: true, continuationStack: nextStack });
-    await params.persistEntryUpdate(curEntry);
-  }
-  const runStep = batchParams.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: batchParams.ledgerStore, lessonStore: batchParams.lessonStore, lockManager: batchParams.lockManager, continuationQueue: batchParams.continuationQueue, poolManager: batchParams.poolManager, humanAdaptersById: batchParams.humanAdaptersById }));
-  const innerInputJson = curEntry.continuationStack.find((f): f is AgentContinuationFrame => f.kind === 'agent-frame')?.inputJson ?? curEntry.continuationStack.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame')?.loopInputJson ?? 'null';
-  const outcome = await runStep(forkCap.childExecutable, JSON.parse(innerInputJson), Object.freeze({ ...batchParams.ctx, stepExecId: `${batchParams.ctx.stepExecId}:fork:${record.forkId}`, scopeHandle: childHandle, activePartitions: curEntry.activePartitions, resumeContinuationStack: curEntry.continuationStack }));
-  const settled = await reconcileChildForkWithBounce({ batchParams: { ...batchParams, executeChildStep: runStep }, entry: curEntry, childHandle, childNode: forkCap.childExecutable, childInput: JSON.parse(innerInputJson), outcome, persistEntryUpdate: params.persistEntryUpdate });
-  await batchParams.ledgerStore.resolveSuspendedFork(record.suspendedForkId, 'RESUMED');
-  return settled;
 }

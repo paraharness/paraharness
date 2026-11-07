@@ -99,7 +99,9 @@ export async function executePostFlightSandboxedTool<THandle = unknown>(
   if (policyRes.status !== 'allowed') {
     await params.checkpointScope.restoreCheckpoint(params.ctx.scopeHandle, preToolCkpt);
     await params.persistInFlightCheckpoint(undefined);
-    const errText = policyRes.deniedErrorMessage ?? `Post-flight policy violation (${policyRes.violatedClauseId ?? 'guard'}): rolled back subprocess changes.`;
+    const errText = policyRes.status === 'denied-with-error'
+      ? (policyRes.deniedErrorMessage ?? `Post-flight policy violation (${policyRes.violatedClauseId ?? 'guard'}): rolled back subprocess changes.`)
+      : `[Post-Flight Policy Violation — Workspace Rolled Back: ${policyRes.blockedCalls?.[0]?.violationSummary ?? policyRes.violatedClauseId ?? 'policy guard violation'}]`;
     return Object.freeze<PostFlightSandboxResult>({
       status: policyRes.status === 'denied-with-error' ? 'rolled-back-error' : 'rolled-back-interrupt',
       toolResult: Object.freeze({ content: errText, isError: true }),

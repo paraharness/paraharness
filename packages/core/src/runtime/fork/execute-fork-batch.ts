@@ -30,45 +30,44 @@ import {
  *
  * @returns {Promise<ForkBatchExecutionResult>} Per-`callId` tool results and settled `ForkBatchContinuationFrame`.
  */
-export async function executeForkBatch<THandle = unknown>(
-  params: ForkBatchExecutionParams<THandle>,
-): Promise<ForkBatchExecutionResult> {
+export async function executeForkBatch<THandle = unknown>(params: ForkBatchExecutionParams<THandle>): Promise<ForkBatchExecutionResult> {
   const entriesByForkId = new Map<string, ForkBatchEntryRecord>((params.existingBatchFrame?.forks ?? []).map((f) => [f.forkId, f]));
-  const handlesByForkId = new Map<string, THandle>(), triggers: PendingPauseTriggerRecord[] = [...(params.existingBatchFrame?.pendingPauseTriggers ?? [])];
+  const handlesByForkId = new Map<string, THandle>(), triggers: PendingPauseTriggerRecord[] = [...(params.existingBatchFrame?.pendingPauseTriggers ?? [])], unreleasedHandles = new Set<THandle>();
   const persistEntryUpdate = async (updated: ForkBatchEntryRecord): Promise<void> => {
     entriesByForkId.set(updated.forkId, updated);
-    const frame: ForkBatchContinuationFrame = Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) });
-    await params.continuationQueue.enqueueUpdate(params.ctx.stepExecId, () => params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, Object.freeze([...params.outerFrames, frame])));
+    await params.continuationQueue.enqueueUpdate(params.ctx.stepExecId, () => params.ledgerStore.updateContinuationStack(params.ctx.runId, params.ctx.stepExecId, Object.freeze([...params.outerFrames, Object.freeze<ForkBatchContinuationFrame>({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) })])));
   };
-  const prepared: Array<Awaited<ReturnType<typeof prepareForkCallContext<THandle>>>> = [];
-  for (const call of params.forkCalls ?? []) {
-    const prep = await prepareForkCallContext(params, call, entriesByForkId);
-    handlesByForkId.set(call.forkId, prep.childHandle);
-    prepared.push(prep);
-  }
-  const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, poolManager: params.poolManager, humanAdaptersById: params.humanAdaptersById }));
-  const limit = pLimit(Math.max(1, prepared.length)), settledOutcomes = await Promise.all(prepared.map((prep) => limit(() => runStep(prep.call.capability.childExecutable, prep.childInput, prep.childCtx))));
-  const outcomesByForkId = new Map<string, ChildForkExecutionOutcome<unknown>>();
+  const prepared: Array<Awaited<ReturnType<typeof prepareForkCallContext<THandle>>>> = [], outcomesByForkId = new Map<string, ChildForkExecutionOutcome<unknown>>();
   let batchHasInterrupt = false;
-  for (let idx = 0; idx < prepared.length; idx += 1) {
-    const prep = prepared[idx] as NonNullable<(typeof prepared)[number]>, outcome = settledOutcomes[idx] as ChildForkExecutionOutcome<unknown>;
-    outcomesByForkId.set(prep.call.forkId, outcome);
-    entriesByForkId.set(prep.call.forkId, Object.freeze<ForkBatchEntryRecord>({ ...prep.entry, continuationStack: outcome.continuationStack }));
-    if (outcome.status === 'interrupt-raised') batchHasInterrupt = true;
-  }
-  for (const prep of prepared) {
-    const entry = entriesByForkId.get(prep.call.forkId), outcome = outcomesByForkId.get(prep.call.forkId);
-    if (entry !== undefined && outcome !== undefined && outcome.status !== 'interrupt-raised' && !(batchHasInterrupt && outcome.continuationStack.length > 0)) {
-      await reconcileChildForkWithBounce({ batchParams: { ...params, executeChildStep: runStep }, entry, childHandle: prep.childHandle, childNode: prep.call.capability.childExecutable, childInput: prep.childInput, outcome, persistEntryUpdate });
-    } else if (entry !== undefined && outcome?.status === 'interrupt-raised') {
-      const barrier = await coordinateTurnBatchInterruptBarrier(params, entry, { ...outcome, childHandle: prep.childHandle, siblingEntries: Array.from(entriesByForkId.values()), handlesByForkId });
-      triggers.push(barrier.trigger);
-      await persistEntryUpdate(barrier.updatedRaisingEntry);
-      for (const paused of barrier.pausedSiblings) await persistEntryUpdate(paused);
+  try {
+    for (const call of params.forkCalls ?? []) {
+      const prep = await prepareForkCallContext(params, call, entriesByForkId);
+      handlesByForkId.set(call.forkId, (unreleasedHandles.add(prep.childHandle), prep.childHandle));
+      prepared.push(prep);
     }
+    const runStep = params.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: params.ledgerStore, lessonStore: params.lessonStore, lockManager: params.lockManager, continuationQueue: params.continuationQueue, poolManager: params.poolManager, humanAdaptersById: params.humanAdaptersById }));
+    const limit = pLimit(Math.max(1, prepared.length)), settledOutcomes = await Promise.all(prepared.map((prep) => limit(() => runStep(prep.call.capability.childExecutable, prep.childInput, prep.childCtx))));
+    for (let idx = 0; idx < prepared.length; idx += 1) {
+      const prep = prepared[idx] as NonNullable<(typeof prepared)[number]>, outcome = settledOutcomes[idx] as ChildForkExecutionOutcome<unknown>;
+      outcomesByForkId.set(prep.call.forkId, outcome);
+      entriesByForkId.set(prep.call.forkId, Object.freeze<ForkBatchEntryRecord>({ ...prep.entry, continuationStack: outcome.continuationStack }));
+      if (outcome.status === 'interrupt-raised') batchHasInterrupt = true;
+    }
+    for (const prep of prepared) {
+      const entry = entriesByForkId.get(prep.call.forkId), outcome = outcomesByForkId.get(prep.call.forkId);
+      if (entry !== undefined && outcome !== undefined && outcome.status !== 'interrupt-raised' && !(batchHasInterrupt && outcome.continuationStack.length > 0)) {
+        unreleasedHandles.delete(prep.childHandle);
+        await reconcileChildForkWithBounce({ batchParams: { ...params, executeChildStep: runStep }, entry, childHandle: prep.childHandle, childNode: prep.call.capability.childExecutable, childInput: prep.childInput, outcome, persistEntryUpdate });
+      } else if (entry !== undefined && outcome?.status === 'interrupt-raised') {
+        const barrier = await coordinateTurnBatchInterruptBarrier(params, entry, { ...outcome, childHandle: prep.childHandle, siblingEntries: Array.from(entriesByForkId.values()), handlesByForkId });
+        triggers.push(barrier.trigger);
+        for (const u of [barrier.updatedRaisingEntry, ...barrier.pausedSiblings]) await persistEntryUpdate(u);
+      }
+    }
+    return Object.freeze<ForkBatchExecutionResult>({ toolResultsByCallId: new Map<string, { readonly content: string; readonly isError: boolean }>(Array.from(entriesByForkId.values()).map((s) => [s.callId, { content: s.toolResultJson ?? '{}', isError: s.status === 'FAILED' }])), batchFrame: Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) }), pauseTriggers: Object.freeze(triggers) });
+  } finally {
+    for (const h of unreleasedHandles) await params.branchableScope.release(h);
   }
-  const resultsMap = new Map<string, { readonly content: string; readonly isError: boolean }>(Array.from(entriesByForkId.values()).map((s) => [s.callId, { content: s.toolResultJson ?? '{}', isError: s.status === 'FAILED' }]));
-  return Object.freeze<ForkBatchExecutionResult>({ toolResultsByCallId: resultsMap, batchFrame: Object.freeze({ kind: 'fork-batch-frame', parentStepExecId: params.ctx.stepExecId, pendingPauseTriggers: triggers.length > 0 ? Object.freeze([...triggers]) : undefined, forks: Object.freeze(Array.from(entriesByForkId.values())) }), pauseTriggers: Object.freeze(triggers) });
 }
 
 /**

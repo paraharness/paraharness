@@ -34,7 +34,7 @@ export function resolveLaneTrackerAdapter<TIn = unknown>(
     resolveEnv: (v) => (typeof v === 'string' ? v : cfg.env[v.key]),
     getRunner: (n) => {
       const f = cfg.registry.runners[n.type];
-      if (f === undefined) throw new Error(n.type);
+      if (f === undefined) throw new Error(`No RunnerDriver registered for '${n.type}' (runner id '${n.id}', lane '${cfg.lane.id}').`);
       return f(n as never);
     },
   });
@@ -64,7 +64,7 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
     registry: cfg.registry, resolveEnv: (v) => (typeof v === 'string' ? v : cfg.env[v.key]),
     getRunner: (n) => {
       const f = cfg.registry.runners[n.type];
-      if (f === undefined) throw new Error(n.type);
+      if (f === undefined) throw new Error(`No RunnerDriver registered for '${n.type}' (runner id '${n.id}', lane '${cfg.lane.id}').`);
       return f(n as never);
     },
   }) as IsolationScope<unknown>;

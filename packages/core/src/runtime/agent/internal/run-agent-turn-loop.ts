@@ -66,8 +66,8 @@ export async function initializeAgentContinuationFrame<TIn, TOut, THandle>(
     actorGroundingTexts: session.actorGroundingTexts, actorInstructionTexts: session.actorInstructionTexts,
     skillCatalog, topologyPartitions, updatedGroundingDiffs, scopedRuleDirectives: partitionDirectives, recalledLessons: session.recalledLessons,
   });
-  const userPrompt = `${roleContextText}\n\n[INPUT]\n${session.agentFrame.inputJson}`, turn0MsgId = `msg:${session.ctx.stepExecId}:turn-0`;
-  if (session.ledgerStore !== undefined) await session.ledgerStore.appendMessageFrame(session.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: turn0MsgId, parentMessageId: null, vendorId: session.modelNode.vendor, rawWireFrame: new TextEncoder().encode(userPrompt), canonical: Object.freeze({ role: 'user', visibleText: userPrompt }), prefixDigest: session.wirePrefix?.systemDigest ?? 'unpinned' }));
+  const userPrompt = `${roleContextText}\n\n[INPUT]\n${session.agentFrame.inputJson}`, turn0MsgId = `msg:${session.ctx.stepExecId}:turn-0`, seededLeafId = session.ctx.seededHistory?.[session.ctx.seededHistory.length - 1]?.messageId ?? null;
+  if (session.ledgerStore !== undefined) await session.ledgerStore.appendMessageFrame(session.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: turn0MsgId, parentMessageId: seededLeafId, vendorId: session.modelNode.vendor, rawWireFrame: new TextEncoder().encode(userPrompt), canonical: Object.freeze({ role: 'user', visibleText: userPrompt }), prefixDigest: session.wirePrefix?.systemDigest ?? 'unpinned' }));
   session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, leafMessageId: turn0MsgId, injectedScopedRuleIds: Object.freeze(Array.from(injectedIdSet)) });
 }
 
@@ -119,7 +119,7 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
 }
 
 /**
- * Initializes `PendingToolBatch` from `response.canonical.toolCalls` and drains it in `(1..k)` declaration order (`SPEC.md` §3.5).
+ * Initializes or resumes `PendingToolBatch` (or reacquires active skill services when no batch is pending) and drains it in `(1..k)` order (`SPEC.md` §3.5).
  *
  * Propagates step suspension or unhandled/replacing interrupts thrown during tool batch draining.
  *
@@ -127,22 +127,34 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
  * @template TOut    Validated agent output payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {AgentTurnSessionState<TIn, TOut, THandle>} session  - Active agent turn session state.
- * @param {ModelTurnResponse}                         response - Assistant turn response containing `canonical.toolCalls`.
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>} session    - Active agent turn session state.
+ * @param {ModelTurnResponse}                         [response] - Assistant turn response containing `canonical.toolCalls`, or `undefined` on initial resume.
  *
  * @returns {Promise<TOut | undefined>} Replacement output when a standalone `.replaceWith()` edge completes, or `undefined`.
  */
 export async function prepareAndDrainTurnToolBatch<TIn, TOut, THandle>(
   session: AgentTurnSessionState<TIn, TOut, THandle>,
-  response: ModelTurnResponse,
+  response?: ModelTurnResponse,
 ): Promise<TOut | undefined> {
-  const rawCalls: RemainingToolCallRecord[] = (response.canonical.toolCalls ?? []).map((tc) => Object.freeze<RemainingToolCallRecord>({ callId: tc.id, toolName: tc.name, argsJson: tc.argsJson }));
-  const batch: PendingToolBatch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze(rawCalls) });
+  let batch: PendingToolBatch | undefined;
+  if (response !== undefined) {
+    const rawCalls: RemainingToolCallRecord[] = (response.canonical.toolCalls ?? []).map((tc) => Object.freeze<RemainingToolCallRecord>({ callId: tc.id, toolName: tc.name, argsJson: tc.argsJson }));
+    batch = Object.freeze<PendingToolBatch>({ completedResults: Object.freeze([]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze(rawCalls) });
+  } else {
+    const ps = session.agentFrame.pauseState, pending = (ps.kind === 'tool-batch' || ps.kind === 'adjudication' || ps.kind === 'prerequisite-wait') ? ps.pendingToolBatch : undefined;
+    if (pending !== undefined && (pending.remainingCalls.length > 0 || pending.completedResults.length > 0)) batch = pending;
+    else if (session.agentFrame.activeSkillIds.length > 0) {
+      const notes = await session.serviceRegistry.reacquireActiveSkillServices({ runId: session.ctx.runId, scopeKey: session.ctx.stepExecId, scopeHandle: session.ctx.scopeHandle, activeSkillIds: session.agentFrame.activeSkillIds, skillsById: session.skillsById, driverContext: { registry: session.ctx.registry, resolveEnv: (v) => session.ctx.resolveEnv(v), getRunner: (n) => session.ctx.getRunner(n) } });
+      if (notes.length > 0 && session.ledgerStore !== undefined && session.agentFrame.leafMessageId !== null) {
+        const chain = await session.ledgerStore.getMessageChain(session.agentFrame.leafMessageId), last = chain[chain.length - 1];
+        if (last !== undefined && (last.canonical.role === 'tool' || last.canonical.role === 'user')) await session.ledgerStore.replaceMessageFrame(session.ctx.runId, await session.modelDriver.appendToolResultNotes(last, notes));
+      }
+    }
+  }
+  if (batch === undefined) return undefined;
   const drainOut = await drainPendingToolBatch(session, batch);
   if (drainOut.status === 'suspended') {
-    const suspErr = new Error(`Step '${session.ctx.stepExecId}' suspended on prerequisites.`) as Error & { code?: string };
-    suspErr.code = 'HARNESS_STEP_SUSPENDED';
-    throw suspErr;
+    throw Object.assign(new Error(`Step '${session.ctx.stepExecId}' in run '${session.ctx.runId}' suspended on prerequisites.`), { code: 'HARNESS_STEP_SUSPENDED' });
   }
   if (drainOut.status === 'interrupted' && drainOut.interruptResolution !== undefined) {
     const intrRes = drainOut.interruptResolution;
@@ -151,9 +163,7 @@ export async function prepareAndDrainTurnToolBatch<TIn, TOut, THandle>(
       const repOut = await session.executeChildStep(intrRes.replaceHandler.replacementExecutable, repInput, session.ctx);
       if (repOut.status === 'completed') return repOut.output as TOut;
     }
-    const err = new Error(`Unhandled or replacing interrupt '${intrRes.interruptId}' in agent '${session.node.id}'.`) as Error & { interruptResolution?: unknown };
-    err.interruptResolution = intrRes;
-    throw err;
+    throw Object.assign(new Error(`Unhandled or replacing interrupt '${intrRes.interruptId}' in agent '${session.node.id}'.`), { interruptResolution: intrRes });
   }
   return undefined;
 }
@@ -173,10 +183,8 @@ export async function prepareAndDrainTurnToolBatch<TIn, TOut, THandle>(
  */
 export async function runAgentTurnLoop<TIn, TOut, THandle>(session: AgentTurnSessionState<TIn, TOut, THandle>): Promise<TOut> {
   await initializeAgentContinuationFrame(session);
-  if (session.agentFrame.pauseState.kind === 'tool-batch' && (session.agentFrame.pauseState.pendingToolBatch.remainingCalls.length > 0 || session.agentFrame.pauseState.pendingToolBatch.completedResults.length > 0)) {
-    const resumedOut = await drainPendingToolBatch(session, session.agentFrame.pauseState.pendingToolBatch);
-    if (resumedOut.status === 'suspended') throw Object.assign(new Error('Suspended'), { code: 'HARNESS_STEP_SUSPENDED' });
-  }
+  const resumedRep = await prepareAndDrainTurnToolBatch(session);
+  if (resumedRep !== undefined) return resumedRep;
   for (;;) {
     const loopFrame = session.outerFrames.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame');
     const tripwireMetrics = loopFrame?.phase === 'act' ? { turnsTaken: loopFrame.actTurnsTaken, costUsd: loopFrame.actCostUsd, elapsedDurationMs: loopFrame.actElapsedDurationMs } : { turnsTaken: session.agentFrame.turnsTaken, costUsd: session.agentFrame.costUsd, elapsedDurationMs: session.agentFrame.elapsedDurationMs };

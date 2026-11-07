@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type AgentContinuationFrame, BudgetApprovalSchema, type FlowExecutionContext,
-  type ForkBatchContinuationFrame, type GitKeepWorktreeNode, type GitWorktreeHandle, H,
-  type InlineSkillNode, LaneScheduler, type LocalServiceNode, PoolManager, ScopeLockManager,
-  ServiceSessionRegistry, type SpeculateContinuationFrame, type SqliteLedgerNode,
-  StepContinuationQueue, type StepExecutionContext, createExecutorRegistry, createRuntime,
-  executeAddDependencies, executeHierarchicalRewindDrain, executeReplaceWithPromotion, executeSpawnTasks,
-  executeUpdatePartitionContract, recoverInterruptedRunOnBoot, syncSuspendedRunPrerequisites, z,
+  type AgentContinuationFrame, BudgetApprovalSchema, type FlowExecutionContext, type ForkBatchContinuationFrame,
+  type GitKeepWorktreeNode, type GitWorktreeHandle, H, type InlineSkillNode, LaneScheduler,
+  type LocalServiceNode, PoolManager, ScopeLockManager, ServiceSessionRegistry, type SpeculateContinuationFrame,
+  type SqliteLedgerNode, StepContinuationQueue, type StepExecutionContext, createExecutorRegistry, createRuntime,
+  executeAddDependencies, executeFlow, executeHierarchicalRewindDrain, executeReplaceWithPromotion,
+  executeSpawnTasks, executeUpdatePartitionContract, recoverInterruptedRunOnBoot, syncSuspendedRunPrerequisites, z,
 } from '../src/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import { InMemoryLessonStore } from './fixtures/in-memory-lesson-store.js';
@@ -20,10 +19,7 @@ import { ScriptedHumanAdapter } from './fixtures/scripted-human-adapter.js';
 import { ScriptedModelDriver } from './fixtures/scripted-model-driver.js';
 import { ScriptedServiceSession } from './fixtures/scripted-service-session.js';
 
-const SAMPLE_SERVICE_NODE: LocalServiceNode = Object.freeze({
-  type: 'node:service', id: 'db-daemon', lifecycle: 'skill', toolSchemas: Object.freeze([]),
-  runner: SAMPLE_RUNNER_NODE, ports: Object.freeze([]), startArgv: () => Object.freeze(['node', 'db.js']), interactions: Object.freeze([]),
-});
+const SAMPLE_SERVICE_NODE: LocalServiceNode = Object.freeze({ type: 'node:service', id: 'db-daemon', lifecycle: 'skill', toolSchemas: Object.freeze([]), runner: SAMPLE_RUNNER_NODE, ports: Object.freeze([]), startArgv: () => Object.freeze(['node', 'db.js']), interactions: Object.freeze([]) });
 
 function throwUnusedRunner(): never {
   throw new Error('unused');
@@ -36,10 +32,7 @@ function createBaseAgentFrame(stepExecId: string): AgentContinuationFrame {
     activeSkillIds: Object.freeze(['skill-db']), activeSkillActivations: Object.freeze({}),
     injectedScopedRuleIds: Object.freeze([]), activeLeases: Object.freeze([]), observedEffects: Object.freeze([]),
     pausedAtPhase: 'TOOL_BOUNDARY',
-    pauseState: Object.freeze({
-      kind: 'active-turn',
-      pendingToolBatch: Object.freeze({ completedResults: Object.freeze([]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([{ callId: 'call-after', toolName: 'finish', argsJson: '{}' }]) }),
-    }),
+    pauseState: Object.freeze({ kind: 'active-turn', pendingToolBatch: Object.freeze({ completedResults: Object.freeze([]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([{ callId: 'call-after', toolName: 'finish', argsJson: '{}' }]) }) }),
   });
 }
 
@@ -249,8 +242,7 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
     await ledgerStore.createOrResumeRun({ runId: 'run:lane-1:item-susp', laneId: 'lane-1', itemKey: 'item-susp', inputJson: JSON.stringify({ id: 'item-susp', deps: [] }) });
     await ledgerStore.recordForkSuspension({
       suspendedForkId: 'f-rew#1', forkId: 'f-rew', suspensionEpoch: 1, runId: 'run:lane-1:item-susp',
-      parentStepExecId: 'step-susp-1', forkToolName: 'fork', activePartitions: ['api'], suspensionReason: 'INTERRUPT_RAISED',
-      conflictRetryCount: 0, conflictCheckArmed: false, continuationStack: [],
+      parentStepExecId: 'step-susp-1', forkToolName: 'fork', activePartitions: ['api'], suspensionReason: 'INTERRUPT_RAISED', conflictRetryCount: 0, conflictCheckArmed: false, continuationStack: [],
     });
     await topologyStore.updateContract('run:lane-1:item-susp', 'api', 'v2-kept-on-rewind', 'step-susp-1');
     const suspRun = ledgerStore.runs.get('run:lane-1:item-susp');
@@ -264,39 +256,29 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
       wirePrefixesByGroupId: new Map(), completedStepOutputs: new Map(), stepBaseCheckpointsByStepId: new Map([['step-1', 'ckpt:step-1-base']]), observedRunEffects: [],
       activeStepId: 'step-1', activeStepExecId: 'step-susp-1', activeStepAbortController: new AbortController(),
     };
-    const deferredRewind = await executeHierarchicalRewindDrain({
-      flowCtx: suspFlowCtx, rewindToStepId: 'step-1', updatedInput: { id: 'item-susp', deps: [], note: 'deferred' }, onRewindHook: rewindHook,
-    });
-    expect(deferredRewind.deferredWhileSuspended).toBe(true);
-    expect(rewoundHandles).toHaveLength(0);
-    expect(ledgerStore.runs.get('run:lane-1:item-susp')?.rewindPendingToStepId).toBe('step-1');
+    const deferredRewind = await executeHierarchicalRewindDrain({ flowCtx: suspFlowCtx, rewindToStepId: 'step-1', updatedInput: { id: 'item-susp', deps: [], note: 'deferred' }, onRewindHook: rewindHook });
+    expect([deferredRewind.deferredWhileSuspended, rewoundHandles.length, ledgerStore.runs.get('run:lane-1:item-susp')?.rewindPendingToStepId]).toEqual([true, 0, 'step-1']);
 
     if (suspRun !== undefined) suspRun.status = 'RUNNING';
-    const liveRewind = await executeHierarchicalRewindDrain({
-      flowCtx: suspFlowCtx, rewindToStepId: 'step-1', updatedInput: { id: 'item-susp', deps: [], note: 'live-rewind' }, onRewindHook: rewindHook,
-    });
-    expect(liveRewind.deferredWhileSuspended).toBe(false);
-    expect(rewoundHandles).toEqual(['root:run:lane-1:item-susp:ckpt:step-1-base:run:lane-1:item-susp:env-ok']);
-    expect(ledgerStore.resolvedSuspendedForks.get('f-rew#1')).toBe('ABORTED');
-    expect((await topologyStore.getPartitions('run:lane-1:item-susp')).get('api')?.contractText).toBe('v2-kept-on-rewind');
-    expect(ledgerStore.runs.get('run:lane-1:item-susp')?.rewindPendingToStepId).toBeUndefined();
+    const liveRewind = await executeHierarchicalRewindDrain({ flowCtx: suspFlowCtx, rewindToStepId: 'step-1', updatedInput: { id: 'item-susp', deps: [], note: 'live-rewind' }, onRewindHook: rewindHook });
+    expect([liveRewind.deferredWhileSuspended, rewoundHandles, ledgerStore.resolvedSuspendedForks.get('f-rew#1')]).toEqual([false, ['root:run:lane-1:item-susp:ckpt:step-1-base:run:lane-1:item-susp:env-ok'], 'ABORTED']);
+    expect([scope.reattachedHandles.includes('root:run:lane-1:item-susp/child:f-rew'), scope.liveHandles.has('root:run:lane-1:item-susp/child:f-rew')]).toEqual([true, false]);
+    expect([(await topologyStore.getPartitions('run:lane-1:item-susp')).get('api')?.contractText, ledgerStore.runs.get('run:lane-1:item-susp')?.rewindPendingToStepId]).toEqual(['v2-kept-on-rewind', undefined]);
 
     await executeHierarchicalRewindDrain({ flowCtx: suspFlowCtx, rewindToStepId: 'step-1', updatedInput: { id: 'item-susp', deps: [], note: 'default-restore' } });
     expect(scope.restoredCheckpoints.at(-1)).toEqual({ handle: 'root:run:lane-1:item-susp', checkpoint: 'ckpt:step-1-base' });
+    await ledgerStore.recordForkSuspension({
+      suspendedForkId: 'f-rep#1', forkId: 'f-rep', suspensionEpoch: 1, runId: 'run:lane-1:item-susp',
+      parentStepExecId: 'step-susp-1', forkToolName: 'fork', activePartitions: ['api'], suspensionReason: 'INTERRUPT_RAISED', conflictRetryCount: 0, conflictCheckArmed: false, continuationStack: [],
+    });
     await executeReplaceWithPromotion({ flowCtx: suspFlowCtx, stepExecId: 'step-susp-1', stepId: 'step-1', baseScopeCheckpoint: 'ckpt:step-1-base', replacementExecutable: step2Cmd.toAST(), replacementInput: { id: 'item-susp', deps: [] }, abortHook: SAMPLE_ABORT_HOOK_NODE });
     expect(hookContexts).toContain('abort:run:lane-1:item-susp:root:run:lane-1:item-susp:env-ok:step-susp-1');
+    expect([ledgerStore.resolvedSuspendedForks.get('f-rep#1'), scope.reattachedHandles.includes('root:run:lane-1:item-susp/child:f-rep'), scope.liveHandles.has('root:run:lane-1:item-susp/child:f-rep')]).toEqual(['ABORTED', true, false]);
 
-    const topologyNode = H.topology('topo-1')
-      .store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ api: { dependsOn: [] } })
-      .commitOverlayWhen({ onSignal: { signal: prMergedSignal, correlateBy: (p: { readonly itemKey: string }) => p.itemKey } })
-      .toAST();
+    const topologyNode = H.topology('topo-1').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ api: { dependsOn: [] } }).commitOverlayWhen({ onSignal: { signal: prMergedSignal, correlateBy: (p: { readonly itemKey: string }) => p.itemKey } }).toAST();
     const ledgerNode: SqliteLedgerNode = Object.freeze({
       type: 'sqlite:ledger', uri: ':memory:',
-      compaction: Object.freeze({
-        type: 'harness:compaction',
-        signalTriggers: Object.freeze([{ signal: compactSignal.toAST(), correlateBy: (p: unknown) => (p as { readonly itemKey: string }).itemKey, afterGracePeriodHours: 0 }]),
-        terminalExitTriggers: Object.freeze([]),
-      }),
+      compaction: Object.freeze({ type: 'harness:compaction', signalTriggers: Object.freeze([{ signal: compactSignal.toAST(), correlateBy: (p: unknown) => (p as { readonly itemKey: string }).itemKey, afterGracePeriodHours: 0 }]), terminalExitTriggers: Object.freeze([]) }),
     });
     const harnessNode = H.harness('harness-1').ledger(ledgerNode).lanes(lane).toAST();
 
@@ -310,10 +292,7 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
 
     let bootQueryCalled = false;
     const origGetBoot = ledgerStore.getInterruptedStepsOnBoot.bind(ledgerStore);
-    ledgerStore.getInterruptedStepsOnBoot = async () => {
-      bootQueryCalled = true;
-      return origGetBoot();
-    };
+    ledgerStore.getInterruptedStepsOnBoot = async () => ((bootQueryCalled = true), origGetBoot());
     const runtime = createRuntime(harnessNode, { registry, topologyNode, topologyStore, lessonStore, humanAdaptersById: new Map([['budget-human', humanAdapter]]) });
     await runtime.start();
     expect(bootQueryCalled).toBe(true);
@@ -321,19 +300,17 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
 
     await runtime.controller.emitSignal('sig-pr-merged', { itemKey: 'item-stacked', baseBranch: 'feature/base-pr', prerequisiteRunId: 'run-base-pr' });
     expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe('v1');
-
     await runtime.controller.emitSignal('sig-pr-merged', { itemKey: 'item-base', baseBranch: 'main' });
-    expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe('v3-stacked-pr');
-    expect(lessonStore.lessons.get('lesson-1')?.epochAtCreation).toBe(2);
-
+    expect([(await topologyStore.getPartitions()).get('api')?.contractText, lessonStore.lessons.get('lesson-1')?.epochAtCreation]).toEqual(['v3-stacked-pr', 2]);
     await runtime.controller.emitSignal('sig-compact', { itemKey: 'item-base' });
     expect(ledgerStore.compactedRunIds).toEqual(['run-base-pr']);
   });
 });
 
 describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reattachRoot, reattachChild, inFlightPreToolCheckpoint)', () => {
-  it('recovers mid-subprocess inFlightPreToolCheckpoint, reattaches unfinished fork/speculate child handles, and gates SUSPENDED wakeup on terminal receipts', async () => {
+  it('recovers mid-subprocess inFlightPreToolCheckpoint, reattaches unfinished fork/speculate child handles, applies deferred rewindPendingToStepId, and resumes RUNNING steps at bootRecord.stepId', async () => {
     const ledgerStore = new InMemoryLedgerStore();
+    const topologyStore = new InMemoryTopologyStore({ api: { contractText: 'v1', epoch: 1 } });
     const scope = new ScriptedBranchableScope();
     const registry = createExecutorRegistry({ scopes: { 'git:cow-worktree': () => scope as never } });
 
@@ -341,7 +318,6 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
     scope.handleState.set(rootHandle, { handle: rootHandle, cleanState: true });
     const preToolCkpt = await scope.serializeCheckpoint(rootHandle);
     scope.handleState.set(rootHandle, { handle: rootHandle, cleanState: false, corruptedBySubprocess: true });
-
     await ledgerStore.createOrResumeRun({ runId: 'run-crash-1', laneId: 'lane-1', itemKey: 'item-crash-1', inputJson: JSON.stringify({ id: 'item-crash-1' }) });
 
     const forkFrame: ForkBatchContinuationFrame = Object.freeze<ForkBatchContinuationFrame>({
@@ -363,9 +339,8 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
         pendingToolBatch: Object.freeze({ completedResults: Object.freeze([]), blockedCalls: Object.freeze([]), remainingCalls: Object.freeze([]) }),
       }),
     });
-
     await ledgerStore.recordStepStart({
-      runId: 'run-crash-1', stepExecId: 'step-crash-1', stepId: 'step-1', inputMsgId: null, baseScopeCheckpoint: preToolCkpt,
+      runId: 'run-crash-1', stepExecId: 'step-crash-1', stepId: 'step-2', inputMsgId: null, baseScopeCheckpoint: preToolCkpt,
       continuationStack: [forkFrame, specFrame, midSubprocessAgentFrame],
     });
 
@@ -374,21 +349,45 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
     const bootRecord = bootRecords[0];
     if (bootRecord === undefined) throw new Error('Expected boot record.');
 
-    const dummyCmd = H.command('c-noop', { input: z.object({ id: z.string() }), output: z.object({ id: z.string() }), fn: async (i) => i });
-    const dummyFlow = H.flow('f-crash').input(z.object({ id: z.string() })).scope(SAMPLE_TIER3_SCOPE_NODE).step('step-1', dummyCmd).exit('done').toAST();
+    const executedSteps: string[] = [];
+    let triggerRewindOnce = true;
+    const step1Cmd = H.command('c-s1', { input: z.object({ id: z.string() }), output: z.object({ id: z.string() }), fn: async (i) => ((executedSteps.push('step-1')), i) });
+    const step2Cmd = H.command('c-s2', {
+      input: z.object({ id: z.string() }), output: z.object({ id: z.string() }),
+      fn: async (i) => {
+        executedSteps.push('step-2');
+        if (triggerRewindOnce) flowCtx.pendingRewindToStepId = ((triggerRewindOnce = false), 'step-1');
+        return i;
+      },
+    });
+    const dummyFlow = H.flow('f-crash').input(z.object({ id: z.string() })).scope(SAMPLE_TIER3_SCOPE_NODE).step('step-1', step1Cmd).step('step-2', step2Cmd).exit('done').toAST();
     const flowCtx: FlowExecutionContext<unknown, unknown> = {
       runId: 'run-crash-1', laneId: 'lane-1', itemKey: 'item-crash-1', flow: dummyFlow as never, currentInput: { id: 'item-crash-1' },
-      scopeHandle: '', scopeDriver: scope as never, registry, env: {}, ledgerStore, lockManager: new ScopeLockManager(),
+      scopeHandle: '', scopeDriver: scope as never, registry, env: {}, ledgerStore, topologyStore, lockManager: new ScopeLockManager(),
       continuationQueue: new StepContinuationQueue(), poolManager: new PoolManager(), serviceRegistry: new ServiceSessionRegistry(),
-      humanAdaptersById: new Map(), wirePrefixesByGroupId: new Map(), completedStepOutputs: new Map(), observedRunEffects: [],
-      activeStepId: 'step-1', activeStepExecId: 'step-crash-1', activeStepAbortController: new AbortController(),
+      humanAdaptersById: new Map(), wirePrefixesByGroupId: new Map(), completedStepOutputs: new Map([['step-1', { id: 'stale-s1' }], ['step-2', { id: 'stale-s2' }]]), observedRunEffects: [],
+      activeStepId: null, activeStepExecId: null, activeStepAbortController: new AbortController(),
     };
 
     const recoveryRes = await recoverInterruptedRunOnBoot({ bootRecord, flow: dummyFlow as never, flowCtx });
-    expect(recoveryRes.readyToResume).toBe(true);
-    expect(scope.restoredCheckpoints).toEqual([{ handle: 'root:run-crash-1', checkpoint: preToolCkpt }]);
-    expect(scope.handleState.get('root:run-crash-1')?.['cleanState']).toBe(true);
-    expect([...recoveryRes.reattachedChildHandles.keys()]).toEqual(['fork-open', 'spec-open']);
+    expect([recoveryRes.readyToResume, flowCtx.activeStepId, flowCtx.activeStepExecId]).toEqual([true, 'step-2', 'step-crash-1']);
+    expect([scope.restoredCheckpoints, scope.handleState.get('root:run-crash-1')?.['cleanState'], [...recoveryRes.reattachedChildHandles.keys()]]).toEqual([
+      [{ handle: 'root:run-crash-1', checkpoint: preToolCkpt }], true, ['fork-open', 'spec-open'],
+    ]);
+    await executeFlow(flowCtx);
+    expect(executedSteps).toEqual(['step-2', 'step-1', 'step-2']);
+
+    await ledgerStore.updateRunInput('run-crash-1', { inputJson: JSON.stringify({ id: 'item-crash-1' }), rewindPendingToStepId: 'step-1' });
+    await topologyStore.updateContract('run-crash-1', 'api', 'v2-uncommitted', 'step-crash-1');
+    await ledgerStore.recordForkSuspension({
+      suspendedForkId: 'f-boot-rew#1', forkId: 'f-boot-rew', suspensionEpoch: 1, runId: 'run-crash-1',
+      parentStepExecId: 'step-crash-1', forkToolName: 'fork', activePartitions: ['api'], suspensionReason: 'INTERRUPT_RAISED', conflictRetryCount: 0, conflictCheckArmed: false, continuationStack: [],
+    });
+    const suspReadyRecord = Object.freeze({ ...bootRecord, status: 'SUSPENDED' as const, dependsOn: Object.freeze([]) });
+    const suspReadyRes = await recoverInterruptedRunOnBoot({ bootRecord: suspReadyRecord, flow: dummyFlow as never, flowCtx });
+    expect([suspReadyRes.readyToResume, flowCtx.pendingRewindToStepId, flowCtx.activeStepId, ledgerStore.resolvedSuspendedForks.get('f-boot-rew#1'), (await topologyStore.getPartitions('run-crash-1')).get('api')?.contractText, ledgerStore.runs.get('run-crash-1')?.rewindPendingToStepId]).toEqual([
+      true, 'step-1', 'step-1', 'ABORTED', 'v1', undefined,
+    ]);
 
     const suspBootRecord = Object.freeze({ ...bootRecord, status: 'SUSPENDED' as const, dependsOn: Object.freeze(['dep-missing']) });
     const notReadyRes = await recoverInterruptedRunOnBoot({ bootRecord: suspBootRecord, flow: dummyFlow as never, flowCtx });

@@ -119,10 +119,7 @@ export async function executeFlow<TIn = unknown, THandle = unknown>(flowCtx: Flo
   if (flowCtx.wirePrefixesByGroupId.size === 0 && prefixGroups.length > 0) {
     const compiled = await compileRunWirePrefixes({ prefixGroups, actors: flowActors, registry: flowCtx.registry, resolutionContext: { runId: flowCtx.runId, scopeHandle: flowCtx.scopeHandle, activePartitions: [], observedEffects: [], resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]) } });
     const byId = new Map<string, CompiledWirePrefix>(), jsonMap: Record<string, string> = {};
-    for (const [pgId, p] of compiled.entries()) {
-      byId.set(pgId, p);
-      jsonMap[pgId] = JSON.stringify(p);
-    }
+    for (const [pgId, p] of compiled.entries()) jsonMap[(byId.set(pgId, p), pgId)] = JSON.stringify(p);
     flowCtx.wirePrefixesByGroupId = byId;
     await flowCtx.ledgerStore.createOrResumeRun({ runId: flowCtx.runId, laneId: flowCtx.laneId, itemKey: flowCtx.itemKey, inputJson: JSON.stringify(flowCtx.currentInput), compiledPrefixesJson: jsonMap });
   } else {
@@ -130,11 +127,15 @@ export async function executeFlow<TIn = unknown, THandle = unknown>(flowCtx: Flo
     for (const [stepId, outJson] of resumed.completedStepOutputsJson.entries()) if (!flowCtx.completedStepOutputs.has(stepId)) flowCtx.completedStepOutputs.set(stepId, JSON.parse(outJson));
   }
   try {
-    for (let idx = 0; idx < flowCtx.flow.nodes.length; ) {
+    let idx = flowCtx.activeStepId !== null ? Math.max(0, flowCtx.flow.nodes.findIndex((n) => n.id === flowCtx.activeStepId)) : 0;
+    for (; idx < flowCtx.flow.nodes.length; ) {
       if (flowCtx.pendingRewindToStepId !== undefined) {
         const jumpIdx = flowCtx.flow.nodes.findIndex((n) => n.id === flowCtx.pendingRewindToStepId);
         flowCtx.pendingRewindToStepId = undefined;
-        if (jumpIdx >= 0) idx = jumpIdx;
+        if (jumpIdx >= 0) {
+          for (let i = jumpIdx; i < flowCtx.flow.nodes.length; i += 1) flowCtx.completedStepOutputs.delete(flowCtx.flow.nodes[i]?.id ?? '');
+          idx = jumpIdx;
+        }
       }
       const node = flowCtx.flow.nodes[idx];
       if (node === undefined) break;
@@ -143,12 +144,11 @@ export async function executeFlow<TIn = unknown, THandle = unknown>(flowCtx: Flo
         const scopeReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle));
         return Object.freeze<FlowRunResult>({ runId: flowCtx.runId, exitState: 'SUSPENDED', scopeReceipt, stepOutputs: Object.freeze(Object.fromEntries(flowCtx.completedStepOutputs.entries())) });
       }
-      if (stepRes.status !== 'rewound') idx += 1;
+      if (stepRes.status !== 'rewound' && flowCtx.pendingRewindToStepId === undefined) idx += 1;
     }
     const finalReceipt = await flowCtx.lockManager.withReadLock(flowCtx.scopeHandle, () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle));
     if (flowCtx.topologyStore !== undefined) await flowCtx.topologyStore.sealRunOverlay(flowCtx.runId);
-    const customTelemetry = await foldFlowCustomTelemetry(flowCtx);
-    return Object.freeze<FlowRunResult>({ runId: flowCtx.runId, exitState: flowCtx.flow.exitState, scopeReceipt: finalReceipt, stepOutputs: Object.freeze(Object.fromEntries(flowCtx.completedStepOutputs.entries())), customTelemetry });
+    return Object.freeze<FlowRunResult>({ runId: flowCtx.runId, exitState: flowCtx.flow.exitState, scopeReceipt: finalReceipt, stepOutputs: Object.freeze(Object.fromEntries(flowCtx.completedStepOutputs.entries())), customTelemetry: await foldFlowCustomTelemetry(flowCtx) });
   } finally {
     await flowCtx.serviceRegistry.quiesceScopeServices(flowCtx.runId);
   }

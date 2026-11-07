@@ -63,8 +63,9 @@ export function computeLessonScore(
         : undefined) ??
       0);
   const relevance = lesson.relevanceScore ?? 1;
+  const activePartitionSet = new Set(activePartitions);
   const partitionMatched =
-    lesson.partition !== undefined && activePartitions.includes(lesson.partition);
+    lesson.partition !== undefined && activePartitionSet.has(lesson.partition);
   const partitionFactor = 1 + (partitionMatched ? scoring.partitionMatchBoost : 0);
   const epochDelta =
     lesson.partition === undefined ? 0 : Math.max(0, currentEpoch - lesson.epochAtCreation);

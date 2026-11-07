@@ -38,9 +38,9 @@ export async function applyReactiveScopedRulesAndRecordEffects<TIn, TOut, THandl
   content: string,
 ): Promise<string> {
   if (effects.length === 0) return content;
-  const injectedIds = [...session.agentFrame.injectedScopedRuleIds], appendedDirectives: string[] = [];
+  const injectedSet = new Set(session.agentFrame.injectedScopedRuleIds), appendedDirectives: string[] = [];
   for (const rule of session.scopedRules) {
-    if (injectedIds.includes(rule.id)) continue;
+    if (injectedSet.has(rule.id)) continue;
     const matcher = rule.when.effects, matcherExec = matcher !== undefined ? session.ctx.registry.effectMatchers[matcher.type] : undefined;
     let matched = false;
     if (matcherExec !== undefined && matcher !== undefined) {
@@ -52,11 +52,11 @@ export async function applyReactiveScopedRulesAndRecordEffects<TIn, TOut, THandl
       }
     }
     if (matched) {
-      injectedIds.push(rule.id);
+      injectedSet.add(rule.id);
       appendedDirectives.push(`[SCOPED_RULE: ${rule.id}]\n${typeof rule.directive === 'string' ? rule.directive : JSON.stringify(rule.directive)}`);
     }
   }
-  const mergedEffects = Object.freeze([...session.agentFrame.observedEffects, ...effects]);
+  const injectedIds = Array.from(injectedSet), mergedEffects = Object.freeze([...session.agentFrame.observedEffects, ...effects]);
   session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, observedEffects: mergedEffects, injectedScopedRuleIds: Object.freeze(injectedIds) });
   for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
     const outer = session.outerFrames[idx];
@@ -90,7 +90,7 @@ export async function handleSkillLifecycleToolCall<TIn, TOut, THandle>(
     const skill = session.skillsById.get(skillId);
     if (skill === undefined) return Object.freeze({ status: 'completed', content: `Unknown skill '${skillId}'.`, isError: true });
     await session.serviceRegistry.acquireSkillServices({ runId: session.ctx.runId, scopeKey: session.ctx.stepExecId, scopeHandle: session.ctx.scopeHandle, skill, driverContext: drvCtx });
-    const activeIds = session.agentFrame.activeSkillIds.includes(skillId) ? session.agentFrame.activeSkillIds : Object.freeze([...session.agentFrame.activeSkillIds, skillId]);
+    const activeIds = new Set(session.agentFrame.activeSkillIds).has(skillId) ? session.agentFrame.activeSkillIds : Object.freeze([...session.agentFrame.activeSkillIds, skillId]);
     const activations = Object.freeze({ ...session.agentFrame.activeSkillActivations, [skillId]: Object.freeze({ messageId: session.agentFrame.leafMessageId ?? 'turn-0', callId: call.callId }) });
     session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, activeSkillIds: activeIds, activeSkillActivations: activations });
     for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
@@ -103,8 +103,11 @@ export async function handleSkillLifecycleToolCall<TIn, TOut, THandle>(
     const summary = String(args['summary'] ?? ''), actCoord = session.agentFrame.activeSkillActivations[skillId];
     await session.serviceRegistry.releaseSkillServices(session.ctx.stepExecId, skillId);
     if (actCoord !== undefined && session.ledgerStore !== undefined) await session.ledgerStore.markFrameTombstone(session.ctx.runId, actCoord.messageId, actCoord.callId, summary);
-    const nextActs = { ...session.agentFrame.activeSkillActivations };
-    delete nextActs[skillId];
+    const nextActs: Record<string, { readonly messageId: string; readonly callId: string }> = {};
+    for (const id of session.agentFrame.activeSkillIds) {
+      const act = session.agentFrame.activeSkillActivations[id];
+      if (id !== skillId && act !== undefined) nextActs[id] = act;
+    }
     const nextActiveIds = Object.freeze(session.agentFrame.activeSkillIds.filter((id) => id !== skillId)), frozenActs = Object.freeze(nextActs);
     session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, activeSkillIds: nextActiveIds, activeSkillActivations: frozenActs });
     for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
@@ -187,13 +190,11 @@ export async function handleCapabilityToolCall<TIn, TOut, THandle>(
  *
  * @returns {Promise<{ readonly status: 'completed' | 'suspended' | 'interrupted'; readonly content: string; readonly isError: boolean; readonly newEffects?: readonly ToolEffect[]; readonly interruptResolution?: InterruptEdgeResolution<THandle> }>} Tool call execution outcome.
  */
-export async function executeSingleToolInPipeline<TIn, TOut, THandle>(
-  session: AgentTurnSessionState<TIn, TOut, THandle>, call: RemainingToolCallRecord, batch: PendingToolBatch,
-): Promise<{ readonly status: 'completed' | 'suspended' | 'interrupted'; readonly content: string; readonly isError: boolean; readonly newEffects?: readonly ToolEffect[]; readonly interruptResolution?: InterruptEdgeResolution<THandle> }> {
+export async function executeSingleToolInPipeline<TIn, TOut, THandle>(session: AgentTurnSessionState<TIn, TOut, THandle>, call: RemainingToolCallRecord, batch: PendingToolBatch): Promise<{ readonly status: 'completed' | 'suspended' | 'interrupted'; readonly content: string; readonly isError: boolean; readonly newEffects?: readonly ToolEffect[]; readonly interruptResolution?: InterruptEdgeResolution<THandle> }> {
   const builtIn = await handleCapabilityToolCall(session, call, batch);
   if (builtIn !== undefined) return builtIn;
   const requiredSkillId = session.skillOwnerByToolName.get(call.toolName);
-  if (requiredSkillId !== undefined && !session.agentFrame.activeSkillIds.includes(requiredSkillId)) return Object.freeze({ status: 'completed', content: `Tool '${call.toolName}' requires active skill '${requiredSkillId}' via activateSkill.`, isError: true });
+  if (requiredSkillId !== undefined && !new Set(session.agentFrame.activeSkillIds).has(requiredSkillId)) return Object.freeze({ status: 'completed', content: `Tool '${call.toolName}' requires active skill '${requiredSkillId}' via activateSkill.`, isError: true });
   const serviceId = session.serviceByToolName?.get(call.toolName);
   if (serviceId !== undefined) {
     const svcSession = session.serviceRegistry.getActiveSessionsForScope(session.ctx.stepExecId).get(serviceId);
@@ -212,11 +213,13 @@ export async function executeSingleToolInPipeline<TIn, TOut, THandle>(
   }
   const scopeFactory = session.ctx.scopeNode !== undefined ? session.ctx.registry.scopes[session.ctx.scopeNode.type] : undefined, scopeDriver = (session.ctx.scope ?? (scopeFactory !== undefined && session.ctx.scopeNode !== undefined ? scopeFactory(session.ctx.scopeNode as never, { registry: session.ctx.registry, resolveEnv: (v) => session.ctx.resolveEnv(v), getRunner: (n) => session.ctx.getRunner(n) }) : undefined)) as CheckpointableScope<THandle> | undefined;
   if (scopeDriver !== undefined) {
-    const sbOut = await executePostFlightSandboxedTool({ toolNode, toolDriver: toolDriver as never, parsedArgs: validatedArgs, callRecord: call, policy: session.node.policy, activeLeases: session.agentFrame.activeLeases, checkpointScope: scopeDriver, ctx: session.ctx, persistInFlightCheckpoint: async (ckpt) => {
-      session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pauseState: Object.freeze({ kind: 'tool-batch', pendingToolBatch: batch, inFlightPreToolCheckpoint: ckpt }) });
+    const persistBatch = async (nextBatch: PendingToolBatch, ckpt?: string): Promise<void> => {
+      session.agentFrame = Object.freeze<AgentContinuationFrame>({ ...session.agentFrame, pauseState: Object.freeze({ kind: 'tool-batch', pendingToolBatch: nextBatch, inFlightPreToolCheckpoint: ckpt }) });
       if (session.ledgerStore !== undefined) await session.continuationQueue.enqueueUpdate(session.ctx.stepExecId, () => (session.ledgerStore as NonNullable<typeof session.ledgerStore>).updateContinuationStack(session.ctx.runId, session.ctx.stepExecId, Object.freeze<readonly ContinuationFrame[]>([...session.outerFrames, session.agentFrame])));
-    } });
+    };
+    const sbOut = await session.lockManager.withWriteLock(session.ctx.scopeHandle, () => executePostFlightSandboxedTool({ toolNode, toolDriver: toolDriver as never, parsedArgs: validatedArgs, callRecord: call, policy: session.node.policy, activeLeases: session.agentFrame.activeLeases, checkpointScope: scopeDriver, ctx: session.ctx, persistInFlightCheckpoint: (ckpt) => persistBatch(batch, ckpt) }));
     if (sbOut.status === 'rolled-back-interrupt' && sbOut.policyResult?.raisedInterrupt !== undefined) {
+      await persistBatch(Object.freeze({ ...batch, completedResults: Object.freeze([...batch.completedResults, Object.freeze({ callId: call.callId, content: sbOut.toolResult.content, isError: true })]), remainingCalls: Object.freeze(batch.remainingCalls.slice(1)), activeInterruptCallId: call.callId }));
       const intrRes = await resolveInterruptEdge(session, sbOut.policyResult.raisedInterrupt.id, sbOut.policyResult.interruptPayload);
       return intrRes.status !== 'resumed' ? Object.freeze({ status: 'interrupted', content: sbOut.toolResult.content, isError: true, interruptResolution: intrRes }) : Object.freeze({ status: 'completed', content: `${sbOut.toolResult.content}\n[Adjudication: ${intrRes.feedback ?? ''}]`, isError: true });
     }

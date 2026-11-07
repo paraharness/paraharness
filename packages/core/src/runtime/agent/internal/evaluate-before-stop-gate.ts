@@ -28,9 +28,10 @@ export function collectTriggeredScopedRuleChecks<TIn, TOut, THandle>(
 ): readonly CheckASTNode<THandle>[] {
   const hasScopeMutation = session.agentFrame.observedEffects.some((e) => e.mutatesScope === true);
   if (!hasScopeMutation) return Object.freeze([]);
+  const injectedRuleIdSet = new Set(session.agentFrame.injectedScopedRuleIds);
   const checks: CheckASTNode<THandle>[] = [];
   for (const rule of session.scopedRules) {
-    if (!session.agentFrame.injectedScopedRuleIds.includes(rule.id)) continue;
+    if (!injectedRuleIdSet.has(rule.id)) continue;
     for (const check of rule.enforceBeforeStopChecks) checks.push(check as CheckASTNode<THandle>);
   }
   return Object.freeze(checks);

@@ -9,6 +9,7 @@ import type { LessonOutcome } from '../../../ports/lesson-outcome.types.js';
 import type { LessonStore } from '../../../ports/lesson-store.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { SuspendedForkRecord } from '../../../ports/suspended-fork-record.js';
+import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
 import { executeAgent } from '../../agent/execute-agent.js';
 import type { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import type { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
@@ -87,21 +88,26 @@ export async function prepareForkCallContext<THandle = unknown>(
     forkId: call.forkId, callId: call.callId, toolName: call.capability.toolName, activePartitions: Object.freeze([...parts]),
     status: 'RUNNING', conflictRetryCount: 0, conflictCheckArmed: false, suspensionEpoch: 0, continuationStack: Object.freeze([]),
   });
+  let seededHistory: readonly WireFrameRecord[] | undefined;
   if (params.modelDriver !== undefined && params.parentLeafMessageId !== undefined && params.parentLeafMessageId !== null) {
     const parentChain = await params.ledgerStore.getMessageChain(params.parentLeafMessageId);
     const rawModel = call.capability.childExecutable.type === 'harness:agent' ? call.capability.childExecutable.model : call.capability.childExecutable.actStep.actor.model;
+    const childModelId = 'modelId' in rawModel ? rawModel.modelId : (params.poolManager !== undefined ? params.poolManager.selectModel(rawModel, params.ctx.runId, 0).modelId : (rawModel.items[0] !== undefined && 'modelId' in rawModel.items[0] ? rawModel.items[0].modelId : 'pool-model'));
+    const outerAgent = [...params.outerFrames].reverse().find((f) => f.kind === 'agent-frame');
+    const parentModelId = outerAgent?.kind === 'agent-frame' ? outerAgent.modelId : ('modelId' in params.parentNode.model ? params.parentNode.model.modelId : (params.poolManager !== undefined ? params.poolManager.selectModel(params.parentNode.model, params.ctx.runId, 0).modelId : undefined));
     const forkedFrames = await params.modelDriver.prepareFork(
       { historyMode: call.capability.historyMode, parentChain, forkPointMessageId: params.parentLeafMessageId, precedingCompletedResults: params.precedingCompletedResults, siblingForkCallIds: params.siblingForkCallIds },
-      { modelId: 'modelId' in rawModel ? rawModel.modelId : 'pool-model', substituteTombstones: true },
+      { modelId: childModelId, substituteTombstones: childModelId !== parentModelId },
     );
     for (const ff of forkedFrames) await params.ledgerStore.appendMessageFrame(params.ctx.runId, ff);
+    if (call.capability.historyMode === 'clone-transcript' && forkedFrames.length > 0) seededHistory = forkedFrames;
   }
   const childHandle = await params.lockManager.withReadLock(params.ctx.scopeHandle, () => params.branchableScope.forkChild(params.ctx.scopeHandle, call.forkId));
   const initLease = params.branchableScope.getConflictLease?.(childHandle);
   const childCtx: StepExecutionContext<THandle> = Object.freeze({
     ...params.ctx, stepExecId: `${params.ctx.stepExecId}:fork:${call.forkId}`, scopeHandle: childHandle, activePartitions: entry.activePartitions,
     activeLeases: initLease !== undefined ? Object.freeze([...params.ctx.activeLeases, initLease]) : params.ctx.activeLeases,
-    resumeContinuationStack: entry.continuationStack.length > 0 ? entry.continuationStack : undefined,
+    seededHistory, resumeContinuationStack: entry.continuationStack.length > 0 ? entry.continuationStack : undefined,
   });
   return { call, childInput, entry, childHandle, childCtx };
 }

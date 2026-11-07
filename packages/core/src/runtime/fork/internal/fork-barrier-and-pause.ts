@@ -36,6 +36,12 @@ export function normalizeEvaluatorRollbackStack(
       out.push(Object.freeze<LoopContinuationFrame>({ ...frame, phase: 'act' }));
     } else if (frame.kind === 'agent-frame') {
       const parentLoop = out.find((f): f is LoopContinuationFrame => f.kind === 'loop-frame');
+      const hasActFrame = parentLoop !== undefined && stack.some((f) => f.kind === 'agent-frame' && f.agentId === parentLoop.roleKey);
+      if (parentLoop !== undefined && frame.agentId !== parentLoop.roleKey && hasActFrame) continue;
+      if (frame.pauseState.kind === 'adjudication' || frame.pauseState.kind === 'tool-batch') {
+        out.push(frame);
+        continue;
+      }
       out.push(Object.freeze<AgentContinuationFrame>({
         ...frame,
         agentId: parentLoop !== undefined ? parentLoop.roleKey : frame.agentId,
@@ -70,26 +76,36 @@ export async function pauseSiblingForkAtBoundary<THandle = unknown>(
   siblingEntry: ForkBatchEntryRecord,
   triggerWithHandle: PauseSiblingBarrierContext<THandle>,
 ): Promise<ForkBatchEntryRecord> {
-  for (const frame of siblingEntry.continuationStack) {
-    if (frame.kind === 'agent-frame' && frame.pauseState.kind === 'adjudication' && frame.pauseState.pendingAdjudication.humanRequestId !== undefined) {
-      const reqId = frame.pauseState.pendingAdjudication.humanRequestId;
-      for (const adapter of batchParams.humanAdaptersById?.values() ?? []) {
-        await adapter.cancelDecision?.(batchParams.ctx.runId, reqId);
-      }
+  const nextEpoch = siblingEntry.suspensionEpoch + 1, suspendedForkId = `${siblingEntry.forkId}#${String(nextEpoch)}`;
+  const baseStack = siblingEntry.continuationStack.some((f) => f.kind === 'loop-frame' && f.phase === 'evaluate') ? normalizeEvaluatorRollbackStack(siblingEntry.continuationStack, 'evaluate') : siblingEntry.continuationStack;
+  const normalizedStack: ContinuationFrame[] = [];
+  for (const frame of baseStack) {
+    if (frame.kind !== 'agent-frame') {
+      normalizedStack.push(frame);
+      continue;
+    }
+    const isEsc = frame.pauseState.kind === 'adjudication', reqId = isEsc ? frame.pauseState.pendingAdjudication.humanRequestId : undefined;
+    if (reqId !== undefined) for (const adapter of batchParams.humanAdaptersById?.values() ?? []) await adapter.cancelDecision?.(batchParams.ctx.runId, reqId);
+    const batch = (frame.pauseState.kind === 'adjudication' || frame.pauseState.kind === 'tool-batch') ? frame.pauseState.pendingToolBatch : undefined;
+    if (batch !== undefined && (batch.remainingCalls.length > 0 || batch.completedResults.length > 0)) {
+      const pauseMsg = isEsc ? '[Paused by sibling interrupt — pending escalation cancelled; re-evaluate after topology sync]' : '[Paused by sibling interrupt]';
+      const toolResults = [...batch.completedResults.map((cr) => Object.freeze({ callId: cr.callId, content: cr.content, isError: Boolean(cr.isError) })), ...batch.remainingCalls.map((rc) => Object.freeze({ callId: rc.callId, content: pauseMsg, isError: true }))];
+      const toolFrameId = `msg:${siblingEntry.forkId}:sibling-pause:${String(nextEpoch)}`, frameJson = JSON.stringify(toolResults);
+      await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: toolFrameId, parentMessageId: frame.leafMessageId, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(frameJson), canonical: Object.freeze({ role: 'tool', visibleText: frameJson, toolResults: Object.freeze(toolResults) }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
+      normalizedStack.push(Object.freeze<AgentContinuationFrame>({ ...frame, leafMessageId: toolFrameId, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }) }));
+    } else {
+      normalizedStack.push(isEsc ? Object.freeze<AgentContinuationFrame>({ ...frame, pausedAtPhase: 'TOOL_BOUNDARY', pauseState: Object.freeze({ kind: 'active-turn' }) }) : frame);
     }
   }
-  const ckpt = await batchParams.branchableScope.serializeCheckpoint(triggerWithHandle.siblingHandle);
-  const nextEpoch = siblingEntry.suspensionEpoch + 1;
-  const suspendedForkId = `${siblingEntry.forkId}#${String(nextEpoch)}`;
+  const frozenStack = Object.freeze(normalizedStack), ckpt = await batchParams.branchableScope.serializeCheckpoint(triggerWithHandle.siblingHandle);
   await batchParams.ledgerStore.recordForkSuspension(Object.freeze<SuspendedForkRecord>({
-    suspendedForkId, forkId: siblingEntry.forkId, suspensionEpoch: nextEpoch, runId: batchParams.ctx.runId,
-    parentStepExecId: batchParams.ctx.stepExecId, forkToolName: siblingEntry.toolName, activePartitions: siblingEntry.activePartitions,
-    suspensionReason: 'PAUSED_BY_SIBLING_INTERRUPT', triggeredByForkId: triggerWithHandle.triggeredByForkId,
-    conflictRetryCount: siblingEntry.conflictRetryCount, conflictCheckArmed: siblingEntry.conflictCheckArmed,
-    childScopeCheckpoint: ckpt, continuationStack: siblingEntry.continuationStack,
+    suspendedForkId, forkId: siblingEntry.forkId, suspensionEpoch: nextEpoch, runId: batchParams.ctx.runId, parentStepExecId: batchParams.ctx.stepExecId,
+    forkToolName: siblingEntry.toolName, activePartitions: siblingEntry.activePartitions, suspensionReason: 'PAUSED_BY_SIBLING_INTERRUPT',
+    triggeredByForkId: triggerWithHandle.triggeredByForkId, conflictRetryCount: siblingEntry.conflictRetryCount, conflictCheckArmed: siblingEntry.conflictCheckArmed,
+    childScopeCheckpoint: ckpt, continuationStack: frozenStack,
   }));
   const summary = JSON.stringify({ status: 'PAUSED_BY_SIBLING_INTERRUPT', suspendedForkId, forkId: siblingEntry.forkId, triggeredByForkId: triggerWithHandle.triggeredByForkId });
-  return Object.freeze<ForkBatchEntryRecord>({ ...siblingEntry, suspendedForkId, status: 'SUSPENDED', suspensionEpoch: nextEpoch, childScopeCheckpoint: ckpt, toolResultJson: summary });
+  return Object.freeze<ForkBatchEntryRecord>({ ...siblingEntry, suspendedForkId, status: 'SUSPENDED', suspensionEpoch: nextEpoch, childScopeCheckpoint: ckpt, continuationStack: frozenStack, toolResultJson: summary });
 }
 
 /**
@@ -126,10 +142,11 @@ export async function coordinateTurnBatchInterruptBarrier<THandle = unknown>(
     interruptId, interruptPayloadJson: payloadJson, suspendedAtCallId: outcomeCtx.suspendedAtCallId, childScopeCheckpoint: ckpt, continuationStack: rolledStack,
   }));
   const trigger: PendingPauseTriggerRecord = Object.freeze({ triggeredByForkId: suspendedForkId, interruptId, interruptPayloadJson: payloadJson, affectedPartitions: Object.freeze([...affected]) });
+  const affectedSet = new Set(affected);
   const alreadyCommittedSiblingForks: string[] = [];
   const pausedSiblings: ForkBatchEntryRecord[] = [];
   for (const sib of outcomeCtx.siblingEntries) {
-    if (sib.forkId === raisingEntry.forkId || !sib.activePartitions.some((p) => affected.includes(p))) continue;
+    if (sib.forkId === raisingEntry.forkId || !sib.activePartitions.some((p) => affectedSet.has(p))) continue;
     if (sib.status === 'CHILD_COMMITTED' || sib.status === 'COMPLETED') {
       alreadyCommittedSiblingForks.push(sib.forkId);
     } else if (sib.status === 'RUNNING') {
@@ -161,34 +178,35 @@ export async function reconcileChildForkWithBounce<THandle = unknown>(
   const runStep = batchParams.executeChildStep ?? ((cNode, cIn, cCtx) => executeDefaultForkOrTournamentChild(cNode, cIn, { childCtx: cCtx, ledgerStore: batchParams.ledgerStore, lessonStore: batchParams.lessonStore, lockManager: batchParams.lockManager, continuationQueue: batchParams.continuationQueue, poolManager: batchParams.poolManager, humanAdaptersById: batchParams.humanAdaptersById }));
   let currentEntry = params.entry;
   let currentOutcome = params.outcome;
-  while (currentEntry.status !== 'CHILD_COMMITTED') {
-    const commitRes = await batchParams.lockManager.withWriteLock(batchParams.ctx.scopeHandle, () => batchParams.branchableScope.commitChild(params.childHandle, batchParams.ctx.scopeHandle));
-    if (commitRes.status === 'clean') {
-      currentEntry = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, status: 'CHILD_COMMITTED', outputJson: JSON.stringify(currentOutcome.output ?? null), committedReceiptJson: JSON.stringify(commitRes.data) });
+  try {
+    while (currentEntry.status !== 'CHILD_COMMITTED') {
+      const commitRes = await batchParams.lockManager.withWriteLock(batchParams.ctx.scopeHandle, () => batchParams.branchableScope.commitChild(params.childHandle, batchParams.ctx.scopeHandle));
+      if (commitRes.status === 'clean') {
+        currentEntry = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, status: 'CHILD_COMMITTED', outputJson: JSON.stringify(currentOutcome.output ?? null), committedReceiptJson: JSON.stringify(commitRes.data) });
+        await params.persistEntryUpdate(currentEntry);
+        break;
+      }
+      if (currentEntry.conflictRetryCount >= 2) {
+        const failed = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, status: 'FAILED', toolResultJson: JSON.stringify({ status: 'COMMIT_CONFLICT_EXHAUSTED', forkId: currentEntry.forkId, conflictedSummary: commitRes.conflictedSummary }) });
+        await params.persistEntryUpdate(failed);
+        return failed;
+      }
+      const conflictLease = batchParams.branchableScope.getConflictLease?.(params.childHandle);
+      const note = `[COMMIT_CONFLICT] ${commitRes.conflictedSummary}`, bounceFrameId = `msg:${currentEntry.forkId}:conflict:${String(currentEntry.conflictRetryCount + 1)}`;
+      await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: bounceFrameId, parentMessageId: currentOutcome.leafMessageId ?? null, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(note), canonical: Object.freeze({ role: 'user', visibleText: note }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
+      const bouncedStack = normalizeEvaluatorRollbackStack(currentOutcome.continuationStack, 'evaluate').map((f) => f.kind === 'agent-frame' ? Object.freeze<AgentContinuationFrame>({ ...f, leafMessageId: bounceFrameId, conflictCheckArmed: true, activeLeases: conflictLease !== undefined ? Object.freeze([...f.activeLeases, conflictLease]) : f.activeLeases }) : f.kind === 'loop-frame' ? Object.freeze<LoopContinuationFrame>({ ...f, preservedActLeafMessageId: bounceFrameId, conflictCheckArmed: true, grantedLoopLeases: conflictLease !== undefined ? Object.freeze([...f.grantedLoopLeases, conflictLease]) : f.grantedLoopLeases }) : f);
+      currentEntry = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, conflictRetryCount: currentEntry.conflictRetryCount + 1, conflictCheckArmed: true, continuationStack: Object.freeze(bouncedStack) });
       await params.persistEntryUpdate(currentEntry);
-      break;
+      currentOutcome = await runStep(params.childNode, params.childInput, Object.freeze({ ...batchParams.ctx, stepExecId: `${batchParams.ctx.stepExecId}:fork:${currentEntry.forkId}`, scopeHandle: params.childHandle, activePartitions: currentEntry.activePartitions, activeLeases: conflictLease !== undefined ? Object.freeze([...batchParams.ctx.activeLeases, conflictLease]) : batchParams.ctx.activeLeases, resumeContinuationStack: currentEntry.continuationStack }));
     }
-    if (currentEntry.conflictRetryCount >= 2) {
-      await batchParams.branchableScope.release(params.childHandle);
-      const failed = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, status: 'FAILED', toolResultJson: JSON.stringify({ status: 'COMMIT_CONFLICT_EXHAUSTED', forkId: currentEntry.forkId, conflictedSummary: commitRes.conflictedSummary }) });
-      await params.persistEntryUpdate(failed);
-      return failed;
+    if (currentEntry.lessonsFlushed !== true && batchParams.lessonStore !== undefined && currentOutcome.accumulatedLessonOutcomes !== undefined) {
+      const pairs = Object.entries(currentOutcome.accumulatedLessonOutcomes).map(([lessonId, outcome]) => ({ lessonId, outcome }));
+      if (pairs.length > 0) await batchParams.lessonStore.recordOutcomes(pairs);
     }
-    const conflictLease = batchParams.branchableScope.getConflictLease?.(params.childHandle);
-    const note = `[COMMIT_CONFLICT] ${commitRes.conflictedSummary}`;
-    const bounceFrameId = `msg:${currentEntry.forkId}:conflict:${String(currentEntry.conflictRetryCount + 1)}`;
-    await batchParams.ledgerStore.appendMessageFrame(batchParams.ctx.runId, Object.freeze<WireFrameRecord>({ messageId: bounceFrameId, parentMessageId: currentOutcome.leafMessageId ?? null, vendorId: batchParams.modelDriver?.vendorId ?? 'anthropic', rawWireFrame: new TextEncoder().encode(note), canonical: Object.freeze({ role: 'user', visibleText: note }), prefixDigest: batchParams.wirePrefix?.systemDigest ?? 'unpinned' }));
-    const bouncedStack = normalizeEvaluatorRollbackStack(currentOutcome.continuationStack, 'evaluate').map((f) => f.kind === 'agent-frame' ? Object.freeze<AgentContinuationFrame>({ ...f, leafMessageId: bounceFrameId, conflictCheckArmed: true, activeLeases: conflictLease !== undefined ? Object.freeze([...f.activeLeases, conflictLease]) : f.activeLeases }) : f.kind === 'loop-frame' ? Object.freeze<LoopContinuationFrame>({ ...f, preservedActLeafMessageId: bounceFrameId, conflictCheckArmed: true, grantedLoopLeases: conflictLease !== undefined ? Object.freeze([...f.grantedLoopLeases, conflictLease]) : f.grantedLoopLeases }) : f);
-    currentEntry = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, conflictRetryCount: currentEntry.conflictRetryCount + 1, conflictCheckArmed: true, continuationStack: Object.freeze(bouncedStack) });
-    await params.persistEntryUpdate(currentEntry);
-    currentOutcome = await runStep(params.childNode, params.childInput, Object.freeze({ ...batchParams.ctx, stepExecId: `${batchParams.ctx.stepExecId}:fork:${currentEntry.forkId}`, scopeHandle: params.childHandle, activePartitions: currentEntry.activePartitions, activeLeases: conflictLease !== undefined ? Object.freeze([...batchParams.ctx.activeLeases, conflictLease]) : batchParams.ctx.activeLeases, resumeContinuationStack: currentEntry.continuationStack }));
+    const completed = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, status: 'COMPLETED', lessonsFlushed: true, toolResultJson: JSON.stringify({ status: 'COMPLETED', forkId: currentEntry.forkId, output: JSON.parse(currentEntry.outputJson ?? 'null'), scopeReceipt: JSON.parse(currentEntry.committedReceiptJson ?? '{}') }) });
+    await params.persistEntryUpdate(completed);
+    return completed;
+  } finally {
+    await batchParams.branchableScope.release(params.childHandle);
   }
-  if (currentEntry.lessonsFlushed !== true && batchParams.lessonStore !== undefined && currentOutcome.accumulatedLessonOutcomes !== undefined) {
-    const pairs = Object.entries(currentOutcome.accumulatedLessonOutcomes).map(([lessonId, outcome]) => ({ lessonId, outcome }));
-    if (pairs.length > 0) await batchParams.lessonStore.recordOutcomes(pairs);
-  }
-  await batchParams.branchableScope.release(params.childHandle);
-  const completed = Object.freeze<ForkBatchEntryRecord>({ ...currentEntry, status: 'COMPLETED', lessonsFlushed: true, toolResultJson: JSON.stringify({ status: 'COMPLETED', forkId: currentEntry.forkId, output: JSON.parse(currentEntry.outputJson ?? 'null'), scopeReceipt: JSON.parse(currentEntry.committedReceiptJson ?? '{}') }) });
-  await params.persistEntryUpdate(completed);
-  return completed;
 }

@@ -172,12 +172,16 @@ describe('M2 Runtime — H.stream, H.harness (.onSignal().notify, .expose) & H.l
     };
 
     const itemSchema = z.object({ id: z.string(), title: z.string(), deps: z.array(z.string()).default([]), shouldFail: z.boolean().optional(), shouldSuspend: z.boolean().optional() });
+    let capturedRunnerError = '';
     const stepCmd = H.command('tracker-step', {
       input: itemSchema, output: z.object({ ok: z.boolean() }),
-      fn: async (input: z.output<typeof itemSchema>) => {
-        if (input.shouldFail === true) {
-          throw new Error('Step failed');
+      fn: async (input: z.output<typeof itemSchema>, ctx) => {
+        try {
+          ctx.getRunner(SAMPLE_RUNNER_NODE);
+        } catch (e) {
+          capturedRunnerError = (e as Error).message;
         }
+        if (input.shouldFail === true) throw new Error('Step failed');
         if (input.shouldSuspend === true) {
           const err = new Error('Suspended') as Error & { code?: string };
           err.code = 'HARNESS_STEP_SUSPENDED';
@@ -200,12 +204,8 @@ describe('M2 Runtime — H.stream, H.harness (.onSignal().notify, .expose) & H.l
 
     const externalTransitions: Array<{ readonly itemKey: string; readonly state: string }> = [];
     const trackerAdapter: TrackerAdapter<{ readonly id: string; readonly title: string; readonly ready: boolean }, string> = {
-      async poll() {
-        return [{ id: 'iss-skip', title: 'Draft', ready: false }, { id: 'iss-1', title: 'Ready Issue', ready: true }];
-      },
-      async setExternalState(itemKey, state) {
-        externalTransitions.push({ itemKey, state });
-      },
+      async poll() { return [{ id: 'iss-skip', title: 'Draft', ready: false }, { id: 'iss-1', title: 'Ready Issue', ready: true }]; },
+      async setExternalState(itemKey, state) { externalTransitions.push({ itemKey, state }); },
     };
 
     const scope = new ScriptedBranchableScope();
@@ -220,21 +220,26 @@ describe('M2 Runtime — H.stream, H.harness (.onSignal().notify, .expose) & H.l
       .onSignal(webhookSig, ($s) => $s.notify(notifyHuman.toAST(), (p: { readonly pr: number }) => `PR #${String(p.pr)} merged`)).expose(controlPlaneNode);
 
     const runtime = createRuntime(harness, { registry, humanAdaptersById: new Map([['ops-pager', humanAdapter], ['budget-owner', humanAdapter]]) });
-
     await runtime.start();
     await pushedEventHandler?.({ prNumber: 10, merged: false });
     expect(humanAdapter.notifications).toHaveLength(0);
     await pushedEventHandler?.({ prNumber: 42, merged: true });
     expect(humanAdapter.notifications).toEqual(['PR #42 merged']);
     await runtime.stop();
+    expect([streamClosed, cpClosed]).toEqual([true, true]);
+
+    streamClosed = false;
+    const failCpRegistry = createExecutorRegistry(registry, { controlPlanes: { 'node:http-control-plane': () => ({ start: () => Promise.reject(new Error('cp start failed')) }) } });
+    const failingRuntime = createRuntime(harness, { registry: failCpRegistry });
+    await expect(failingRuntime.start()).rejects.toThrow('cp start failed');
     expect(streamClosed).toBe(true);
-    expect(cpClosed).toBe(true);
 
     const scheduler = new LaneScheduler({ lane: lane.toAST(), registry, env: {}, ledgerStore, humanAdaptersById: new Map([['budget-owner', humanAdapter]]) });
     expect((await scheduler.pollTrackerOnce()).map((p) => p.itemKey)).toEqual(['iss-1']);
     await scheduler.enqueueItem({ input: { id: 'iss-wait', title: 'Waiter', deps: ['iss-fail'] } });
     await scheduler.enqueueItem({ input: { id: 'iss-fail', title: 'Failing', deps: [], shouldFail: true } });
     await scheduler.scheduleNextReadyRuns();
+    expect(capturedRunnerError).toMatch(/No RunnerDriver registered for 'node:runner' \(runner id 'local-runner', lane 'tracker-lane'\)\./);
     await scheduler.enqueueItem({ input: { id: 'iss-susp', title: 'Suspending', deps: [], shouldSuspend: true } });
     await scheduler.scheduleNextReadyRuns();
     humanAdapter.enqueueDecision({ approved: false });

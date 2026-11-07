@@ -138,7 +138,7 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
     resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]),
     getRunner: (rNode: RunnerPoolASTNode) => {
       const f = flowCtx.registry.runners[rNode.type];
-      if (f === undefined) throw new Error(`No RunnerDriver registered for '${rNode.type}'.`);
+      if (f === undefined) throw new Error(`No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', lane '${flowCtx.laneId}').`);
       return f(rNode as never);
     },
     recordEffects: (effs: readonly ToolEffect[]) => {
