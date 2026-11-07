@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { open, readFile, stat, unlink } from 'node:fs/promises';
 import type { FileLockRecord } from './file-lock-record.js';
 
 /**
@@ -69,30 +68,48 @@ export async function isExistingLockStale(resolvedLockPath: string, staleMs: num
 }
 
 /**
- * Atomically reclaims a stale lockfile by writing a temporary claim file and renaming it over `resolvedLockPath`.
+ * Atomically reclaims a stale lockfile under an exclusive `.reclaim` guard lockfile.
  *
- * Re-reads `resolvedLockPath` after the atomic rename to verify that this caller's `ownerToken` won any
- * concurrent reclamation race.
+ * Acquires `${resolvedLockPath}.reclaim` via `open(..., 'wx')`, re-verifies that `resolvedLockPath` is
+ * still stale, unlinks the stale file, and creates the replacement lockfile exclusively via `open(..., 'wx')`
+ * so concurrent contenders cannot overwrite one another.
  *
  * @param {string} resolvedLockPath - Absolute path of the stale lockfile to reclaim.
  * @param {string} serializedRecord - JSON-serialized `FileLockRecord` for the new lease holder.
- * @param {string} ownerToken       - Unique token identifying the reclaiming caller.
+ * @param {number} staleMs          - Maximum allowed heartbeat age in milliseconds before expiration.
  *
- * @returns {Promise<boolean>} True if the stale lockfile was reclaimed and verified as owned by `ownerToken`.
+ * @returns {Promise<boolean>} True if the stale lockfile was exclusively reclaimed by this caller.
  */
 export async function tryReclaimStaleLock(
   resolvedLockPath: string,
   serializedRecord: string,
-  ownerToken: string,
+  staleMs: number,
 ): Promise<boolean> {
-  const claimPath = `${resolvedLockPath}.claim.${process.pid}.${randomUUID()}`;
+  const reclaimLockPath = `${resolvedLockPath}.reclaim`;
+  const reclaimHandle = await open(reclaimLockPath, 'wx').catch(async () => {
+    if (await isExistingLockStale(reclaimLockPath, staleMs)) {
+      await unlink(reclaimLockPath).catch(() => undefined);
+    }
+    return undefined;
+  });
+  if (reclaimHandle === undefined) return false;
   try {
-    await writeFile(claimPath, serializedRecord, 'utf8');
-    await rename(claimPath, resolvedLockPath);
-    const currentRecord = await readLockRecord(resolvedLockPath);
-    return currentRecord?.ownerToken === ownerToken;
+    if (!(await isExistingLockStale(resolvedLockPath, staleMs))) return false;
+    await unlink(resolvedLockPath);
+    const lockHandle = await open(resolvedLockPath, 'wx');
+    let wrotePayload = false;
+    try {
+      await lockHandle.writeFile(serializedRecord, 'utf8');
+      wrotePayload = true;
+      return true;
+    } finally {
+      await lockHandle.close();
+      if (!wrotePayload) await unlink(resolvedLockPath).catch(() => undefined);
+    }
   } catch {
-    await unlink(claimPath).catch(() => undefined);
     return false;
+  } finally {
+    await reclaimHandle.close().catch(() => undefined);
+    await unlink(reclaimLockPath).catch(() => undefined);
   }
 }

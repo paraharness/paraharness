@@ -41,12 +41,16 @@ export function acquireFileLock(lockPath: string, options?: FileLockOptions): Pr
           resolvedLockPath,
           ownerToken,
           heartbeatIntervalMs: resolvedOptions.heartbeatIntervalMs,
-          onReleased: () => releaseQueueSlot?.(),
+          onReleased: () =>
+            new Promise<void>((resolveReleased) => {
+              queue.once('next', () => resolveReleased());
+              releaseQueueSlot?.();
+            }),
         });
         resolveLease(lease);
         await queueSlotReleased;
       } catch (error: unknown) {
-        rejectLease(error);
+        queue.once('next', () => rejectLease(error));
       }
     });
   });

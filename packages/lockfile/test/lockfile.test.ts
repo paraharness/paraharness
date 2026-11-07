@@ -2,7 +2,9 @@ import { mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { LOCK_PATH_QUEUES } from '../src/file-lock.constants.js';
 import { acquireFileLock, withFileLock } from '../src/index.js';
+import { tryReclaimStaleLock } from '../src/internal/stale-lock-helpers.js';
 
 interface DeferredLatch {
   readonly promise: Promise<void>;
@@ -170,5 +172,100 @@ describe('@harness-dsl/lockfile — cross-process and in-process file locking', 
 
     const followUp = await withFileLock(lockPath, async () => 'recovered');
     expect(followUp).toBe('recovered');
+  });
+
+  it('evicts the per-path PQueue from LOCK_PATH_QUEUES immediately upon lease release or acquisition timeout', async () => {
+    const lockPath = path.join(tempDir, 'queue-eviction.lock');
+    const resolvedLockPath = path.resolve(lockPath);
+
+    const lease = await acquireFileLock(lockPath);
+    expect(LOCK_PATH_QUEUES.has(resolvedLockPath)).toBe(true);
+    await lease.release();
+    expect(LOCK_PATH_QUEUES.has(resolvedLockPath)).toBe(false);
+
+    const timeoutLockPath = path.join(tempDir, 'queue-timeout-eviction.lock');
+    const resolvedTimeoutLockPath = path.resolve(timeoutLockPath);
+    await writeFile(
+      timeoutLockPath,
+      JSON.stringify({
+        pid: process.pid,
+        acquiredAtMs: Date.now(),
+        ownerToken: 'active-holder-token',
+      }),
+      'utf8',
+    );
+
+    await expect(
+      acquireFileLock(timeoutLockPath, {
+        timeoutMs: 20,
+        staleMs: 60_000,
+        retryDelayMs: 5,
+      }),
+    ).rejects.toThrowError(`Timed out after 20ms waiting for file lock '${resolvedTimeoutLockPath}'.`);
+    expect(LOCK_PATH_QUEUES.has(resolvedTimeoutLockPath)).toBe(false);
+  });
+
+  it('preserves a replacement 0-byte or foreign-owner lockfile when a prior lease invokes release()', async () => {
+    const zeroByteLockPath = path.join(tempDir, 'zero-byte-replacement.lock');
+    const originalZeroByteLease = await acquireFileLock(zeroByteLockPath, {
+      heartbeatIntervalMs: 60_000,
+    });
+    await writeFile(zeroByteLockPath, '', 'utf8');
+    await originalZeroByteLease.release();
+
+    const zeroByteStats = await stat(zeroByteLockPath);
+    expect(zeroByteStats.size).toBe(0);
+
+    const foreignOwnerLockPath = path.join(tempDir, 'foreign-owner-replacement.lock');
+    const originalForeignLease = await acquireFileLock(foreignOwnerLockPath, {
+      heartbeatIntervalMs: 60_000,
+    });
+    const foreignPayload = JSON.stringify({
+      pid: process.pid,
+      acquiredAtMs: Date.now(),
+      ownerToken: 'foreign-owner-token',
+    });
+    await writeFile(foreignOwnerLockPath, foreignPayload, 'utf8');
+    await originalForeignLease.release();
+
+    const survivingContent = await readFile(foreignOwnerLockPath, 'utf8');
+    expect(survivingContent).toBe(foreignPayload);
+  });
+
+  it('allows strictly one contender to win concurrent tryReclaimStaleLock calls without overwriting the winner', async () => {
+    const staleLockPath = path.join(tempDir, 'concurrent-reclaim.lock');
+    const resolvedStaleLockPath = path.resolve(staleLockPath);
+    await writeFile(
+      resolvedStaleLockPath,
+      JSON.stringify({
+        pid: 999_999_999,
+        acquiredAtMs: Date.now() - 60_000,
+        ownerToken: 'crashed-owner-token',
+      }),
+      'utf8',
+    );
+
+    const contenderARecord = JSON.stringify({
+      pid: process.pid,
+      acquiredAtMs: Date.now(),
+      ownerToken: 'contender-a-token',
+    });
+    const contenderBRecord = JSON.stringify({
+      pid: process.pid,
+      acquiredAtMs: Date.now(),
+      ownerToken: 'contender-b-token',
+    });
+
+    const [firstWon, secondWon] = await Promise.all([
+      tryReclaimStaleLock(resolvedStaleLockPath, contenderARecord, 5_000),
+      tryReclaimStaleLock(resolvedStaleLockPath, contenderBRecord, 5_000),
+    ]);
+
+    expect([firstWon, secondWon].sort()).toEqual([false, true]);
+    const winningToken = firstWon ? 'contender-a-token' : 'contender-b-token';
+    const persistedRecord = JSON.parse(await readFile(resolvedStaleLockPath, 'utf8')) as {
+      readonly ownerToken: string;
+    };
+    expect(persistedRecord.ownerToken).toBe(winningToken);
   });
 });

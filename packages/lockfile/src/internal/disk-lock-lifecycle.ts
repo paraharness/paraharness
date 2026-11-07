@@ -36,19 +36,28 @@ export function resolveFileLockOptions(options?: FileLockOptions): ResolvedFileL
 /**
  * Retrieves or initializes the in-process `PQueue` (`concurrency: 1`) for a canonical lockfile path.
  *
- * Serializes same-process lock acquisitions in FIFO order before touching the filesystem.
+ * Serializes same-process lock acquisitions in FIFO order before touching the filesystem and evicts
+ * the queue entry from `LOCK_PATH_QUEUES` once it becomes idle.
  *
  * @param {string} resolvedLockPath - Canonical absolute path of the target lockfile.
  *
  * @returns {PQueue} Single-concurrency FIFO queue dedicated to `resolvedLockPath`.
  */
 export function getOrCreateLockQueue(resolvedLockPath: string): PQueue {
-  let queue = LOCK_PATH_QUEUES.get(resolvedLockPath);
-  if (queue === undefined) {
-    queue = new PQueue({ concurrency: 1 });
-    LOCK_PATH_QUEUES.set(resolvedLockPath, queue);
-  }
-  return queue;
+  const existingQueue = LOCK_PATH_QUEUES.get(resolvedLockPath);
+  if (existingQueue !== undefined) return existingQueue;
+  const createdQueue = new PQueue({ concurrency: 1 });
+  createdQueue.on('idle', () => {
+    if (
+      createdQueue.size === 0 &&
+      createdQueue.pending === 0 &&
+      LOCK_PATH_QUEUES.get(resolvedLockPath) === createdQueue
+    ) {
+      LOCK_PATH_QUEUES.delete(resolvedLockPath);
+    }
+  });
+  LOCK_PATH_QUEUES.set(resolvedLockPath, createdQueue);
+  return createdQueue;
 }
 
 /**
@@ -75,16 +84,19 @@ export async function acquireDiskFileLock(
     const payload = JSON.stringify({ pid: process.pid, acquiredAtMs: Date.now(), ownerToken });
     try {
       const handle = await open(resolvedLockPath, 'wx');
+      let wrotePayload = false;
       try {
         await handle.writeFile(payload, 'utf8');
+        wrotePayload = true;
       } finally {
         await handle.close();
+        if (!wrotePayload) await unlink(resolvedLockPath).catch(() => undefined);
       }
       return ownerToken;
     } catch (error: unknown) {
       if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
       if (await isExistingLockStale(resolvedLockPath, options.staleMs)) {
-        if (await tryReclaimStaleLock(resolvedLockPath, payload, ownerToken)) return ownerToken;
+        if (await tryReclaimStaleLock(resolvedLockPath, payload, options.staleMs)) return ownerToken;
       }
       if (Date.now() - startMs >= options.timeoutMs) {
         throw new Error(`Timed out after ${options.timeoutMs}ms waiting for file lock '${resolvedLockPath}'.`);
@@ -98,7 +110,7 @@ export async function acquireDiskFileLock(
  * Starts a periodic `.unref()`ed `utimes` heartbeat for an acquired lockfile and returns its `FileLockLease`.
  *
  * On `release()`, cancels the interval timer, awaits any in-flight heartbeat write before unlinking
- * `resolvedLockPath`, and invokes `onReleased` to unblock the next in-process `PQueue` waiter.
+ * `resolvedLockPath` when still owned by `ownerToken`, and awaits `onReleased` to unblock the `PQueue` slot.
  *
  * @param {CreateHeartbeatLeaseParams} params - Lock path, owner token, heartbeat interval, and release callback.
  *
@@ -129,11 +141,11 @@ export function createHeartbeatLease(params: CreateHeartbeatLeaseParams): FileLo
         try {
           if (inFlightHeartbeat !== undefined) await inFlightHeartbeat;
           const record = await readLockRecord(params.resolvedLockPath);
-          if (record === undefined || record.ownerToken === params.ownerToken) {
+          if (record?.ownerToken === params.ownerToken) {
             await unlink(params.resolvedLockPath).catch(() => undefined);
           }
         } finally {
-          params.onReleased();
+          await params.onReleased();
         }
       })();
       return releasePromise;

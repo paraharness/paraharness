@@ -12,5 +12,5 @@ export interface CreateHeartbeatLeaseParams {
   /** Interval in milliseconds between `utimes` heartbeat updates. */
   readonly heartbeatIntervalMs: number;
   /** Callback invoked inside `finally` when the lease finishes releasing. */
-  readonly onReleased: () => void;
+  readonly onReleased: () => Promise<void> | void;
 }
