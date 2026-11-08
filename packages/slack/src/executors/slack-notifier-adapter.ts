@@ -3,7 +3,7 @@ import type {
   HumanDecisionRequest,
   RuntimeDriverContext,
   SlackNotifierNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { defaultSlackTransport } from './default-slack-transport.constants.js';
 import { resolveRequiredSlackSecret } from './internal/resolve-required-slack-secret.js';
 import type { SlackTransport } from './slack-transport.js';
@@ -66,7 +66,7 @@ export class SlackNotifierAdapter implements HumanAdapter {
   /**
    * Rejects interactive decision requests on a one-way `'notify-only'` Slack webhook channel.
    *
-   * Enforces at runtime the same `'notify-only'` invariant verified statically by `@harness-dsl/core`.
+   * Enforces at runtime the same `'notify-only'` invariant verified statically by `@metaharness/core`.
    *
    * @template TRequest  Request brief payload type.
    * @template TResponse Validated response payload type.

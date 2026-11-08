@@ -1,4 +1,4 @@
-import type { CompactionSignalTrigger, CompactionTerminalExitTrigger } from '@harness-dsl/core';
+import type { CompactionSignalTrigger, CompactionTerminalExitTrigger } from '@metaharness/core';
 
 /**
  * Immutable internal state snapshot for `createCompactionConfigBuilder`.

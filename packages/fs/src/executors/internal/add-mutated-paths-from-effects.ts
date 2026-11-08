@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@harness-dsl/core';
+import type { ToolEffect } from '@metaharness/core';
 
 /**
  * Adds normalized mutated file paths from `observedEffects` (`mutatesScope === true` or `mode === 'write'`) into `mutated`.

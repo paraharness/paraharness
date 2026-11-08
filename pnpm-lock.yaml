@@ -51,7 +51,7 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^1.6.0
         version: 1.6.0(zod@4.6.7)
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -98,10 +98,10 @@ importers:
 
   packages/fs:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
-      '@harness-dsl/lockfile':
+      '@metaharness/lockfile':
         specifier: workspace:*
         version: link:../lockfile
       minisearch:
@@ -144,7 +144,7 @@ importers:
       '@google/genai':
         specifier: ^3.0.0
         version: 3.0.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -163,10 +163,10 @@ importers:
 
   packages/git:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
-      '@harness-dsl/lockfile':
+      '@metaharness/lockfile':
         specifier: workspace:*
         version: link:../lockfile
       es-module-lexer:
@@ -203,7 +203,7 @@ importers:
 
   packages/github:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       '@octokit/rest':
@@ -228,49 +228,49 @@ importers:
 
   packages/integration:
     dependencies:
-      '@harness-dsl/claude':
+      '@metaharness/claude':
         specifier: workspace:*
         version: link:../claude
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
-      '@harness-dsl/fs':
+      '@metaharness/fs':
         specifier: workspace:*
         version: link:../fs
-      '@harness-dsl/gemini':
+      '@metaharness/gemini':
         specifier: workspace:*
         version: link:../gemini
-      '@harness-dsl/git':
+      '@metaharness/git':
         specifier: workspace:*
         version: link:../git
-      '@harness-dsl/github':
+      '@metaharness/github':
         specifier: workspace:*
         version: link:../github
-      '@harness-dsl/lockfile':
+      '@metaharness/lockfile':
         specifier: workspace:*
         version: link:../lockfile
-      '@harness-dsl/markdown':
+      '@metaharness/markdown':
         specifier: workspace:*
         version: link:../markdown
-      '@harness-dsl/netsuite':
+      '@metaharness/netsuite':
         specifier: workspace:*
         version: link:../netsuite
-      '@harness-dsl/node':
+      '@metaharness/node':
         specifier: workspace:*
         version: link:../node
-      '@harness-dsl/openai':
+      '@metaharness/openai':
         specifier: workspace:*
         version: link:../openai
-      '@harness-dsl/postgres':
+      '@metaharness/postgres':
         specifier: workspace:*
         version: link:../postgres
-      '@harness-dsl/slack':
+      '@metaharness/slack':
         specifier: workspace:*
         version: link:../slack
-      '@harness-dsl/sqlite':
+      '@metaharness/sqlite':
         specifier: workspace:*
         version: link:../sqlite
-      '@harness-dsl/stripe':
+      '@metaharness/stripe':
         specifier: workspace:*
         version: link:../stripe
       zod:
@@ -305,7 +305,7 @@ importers:
 
   packages/markdown:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       mdast-util-from-markdown:
@@ -348,7 +348,7 @@ importers:
 
   packages/netsuite:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       big.js:
@@ -373,7 +373,7 @@ importers:
 
   packages/node:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       '@modelcontextprotocol/sdk':
@@ -419,7 +419,7 @@ importers:
 
   packages/openai:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       openai:
@@ -447,7 +447,7 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.15
         version: 0.5.15
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       minisearch:
@@ -487,7 +487,7 @@ importers:
 
   packages/slack:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       '@slack/socket-mode':
@@ -518,7 +518,7 @@ importers:
       '@dagrejs/graphlib':
         specifier: ^4.0.7
         version: 4.0.7
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       better-sqlite3:
@@ -552,7 +552,7 @@ importers:
 
   packages/stripe:
     dependencies:
-      '@harness-dsl/core':
+      '@metaharness/core':
         specifier: workspace:*
         version: link:../core
       stripe:

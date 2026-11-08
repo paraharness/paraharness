@@ -2,7 +2,7 @@ import type {
   AppendToolResultNotesOptions,
   CanonicalMessage,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 
 /**
  * Named parameter object for `appendNotesToWireFrame`.

@@ -31,7 +31,7 @@ import type { SpeculateCapabilityNode } from './speculate-capability-node.js';
 import type { StreamNode } from './stream-node.js';
 import type { TopologyNode } from './topology-node.js';
 
-/** Complete union of all `@harness-dsl/core` passive AST nodes. */
+/** Complete union of all `@metaharness/core` passive AST nodes. */
 export type CoreASTNode =
   | HarnessNode
   | LaneNode

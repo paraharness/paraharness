@@ -32,7 +32,7 @@ export function createForkCapabilityBuilder<
     AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>
   >,
 ): ForkCapabilityBuilder<TParentIn, unknown, TChildIn, TChildOut, THandle> {
-  assertNonEmptyIdentifier('H.agent.capabilities.fork', toolName);
+  assertNonEmptyIdentifier('M.agent.capabilities.fork', toolName);
   return createForkCapabilityFromState({
     toolName,
     childExecutable: extractAST(childExecutable),

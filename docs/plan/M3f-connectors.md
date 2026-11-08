@@ -1,9 +1,9 @@
-# Milestone M3f — `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe` & `@harness-dsl/netsuite` Connector Adapters
+# Milestone M3f — `@metaharness/github`, `@metaharness/slack`, `@metaharness/stripe` & `@metaharness/netsuite` Connector Adapters
 
 ## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
 - **Milestone**: `M3f` (Wave 2 — Parallel Adapter Fan-Out `c`, depends on `M1`)
-- **Packages**: `@harness-dsl/github` (`packages/github`), `@harness-dsl/slack` (`packages/slack`), `@harness-dsl/stripe` (`packages/stripe`), and `@harness-dsl/netsuite` (`packages/netsuite`)
+- **Packages**: `@metaharness/github` (`packages/github`), `@metaharness/slack` (`packages/slack`), `@metaharness/stripe` (`packages/stripe`), and `@metaharness/netsuite` (`packages/netsuite`)
 - **`owned_dirs`**:
   - `packages/github/src/**`, `packages/github/test/**`
   - `packages/slack/src/**`, `packages/slack/test/**`
@@ -14,7 +14,7 @@
   - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,integration}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@harness-dsl/github`, `@harness-dsl/slack`, `@harness-dsl/stripe`, and `@harness-dsl/netsuite` must have **zero runtime or type imports** from each other or from any other M3 adapter package. `@harness-dsl/github` depends exclusively on `@harness-dsl/core` (`workspace:*`), `@octokit/rest`, `@octokit/webhooks`, `zod`, and Node built-ins; `@harness-dsl/slack` depends exclusively on `@harness-dsl/core` (`workspace:*`), `@slack/web-api`, `@slack/socket-mode`, `@slack/webhook`, `zod`, and Node built-ins; `@harness-dsl/stripe` depends exclusively on `@harness-dsl/core` (`workspace:*`), `stripe`, `zod`, and Node built-ins; `@harness-dsl/netsuite` depends exclusively on `@harness-dsl/core` (`workspace:*`), `big.js`, `zod`, and Node built-ins.
+  - `@metaharness/github`, `@metaharness/slack`, `@metaharness/stripe`, and `@metaharness/netsuite` must have **zero runtime or type imports** from each other or from any other M3 adapter package. `@metaharness/github` depends exclusively on `@metaharness/core` (`workspace:*`), `@octokit/rest`, `@octokit/webhooks`, `zod`, and Node built-ins; `@metaharness/slack` depends exclusively on `@metaharness/core` (`workspace:*`), `@slack/web-api`, `@slack/socket-mode`, `@slack/webhook`, `zod`, and Node built-ins; `@metaharness/stripe` depends exclusively on `@metaharness/core` (`workspace:*`), `stripe`, `zod`, and Node built-ins; `@metaharness/netsuite` depends exclusively on `@metaharness/core` (`workspace:*`), `big.js`, `zod`, and Node built-ins.
 
 ### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
 
@@ -35,8 +35,8 @@
 | :--- | :--- | :--- |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`GithubIssuesTrackerNode`, `GithubWebhookStreamNode`, `GithubCreateOrUpdatePrNode`, `SlackApproverNode`, `SlackNotifierNode`, `StripeReadToolNode`, `StripeMaxRefundGuardNode`, `StripeMaxRefundMatcherNode`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode`), namespaced `CustomDomainASTRegistry` declaration merging (`'tool:stripe'`, `'guard:stripe'`, `'effectMatcher:stripe'`, `'scope:netsuite'`, `'guard:netsuite'`, `'abortHook:netsuite'`, `'tool:netsuite'`, `'check:netsuite'`), and late-bound `EnvRef` resolution via `ctx.resolveEnv`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2–§2.5 & §2.8 (`lines 682–1505`, `2089–2123`) | `BaseTrackerASTNode`, `BaseStreamSourceASTNode`, `BaseDomainStepASTNode`, `BaseHumanChannelASTNode` (`interactionMode: 'bidirectional' \| 'notify-only'`), `BaseControlPlaneASTNode`, `BaseIsolationScopeASTNode` (`capabilityTier: 'scope'`), `BaseToolASTNode` (`effectTracking: 'declared'`), `BasePolicyGuardASTNode`, `BaseCheckASTNode`, `BaseAbortHookASTNode`, `IsolationScope`, `TrackerAdapter`, `StreamSource`, `HumanAdapter`, `ControlPlaneAdapter`, `RuntimeExecutorRegistrySlice`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3136–3179`) | `@harness-dsl/github` (`github.issues(opts)`, `github.webhookStream(opts)` defaulting `port` to `3000` and `path` to `'/webhooks/github'`, `github.createOrUpdatePr(id, opts)`) and `@harness-dsl/slack` (`slack.webhook(url)` with `interactionMode: 'notify-only'`, `slack.bot(opts)` with `interactionMode: 'bidirectional'` implementing `HumanAdapter` & `ControlPlaneAdapter`). |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 (`lines 3182–3324`) | Non-coding financial harness domain adapters `@harness-dsl/stripe` (`stripe.readTools()`, `stripe.maxRefundGuardUsd(limit)`, `stripe.allowRefundUpToUsd(limit)`) and `@harness-dsl/netsuite` (`netsuite.draftJournalScope()` with `capabilityTier: 'scope'`, `netsuite.forbidClosedPeriodPosting()`, `netsuite.journalTools()`, `netsuite.balanceZeroCheck()`, `netsuite.rollbackDraftJournal()`). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3136–3179`) | `@metaharness/github` (`github.issues(opts)`, `github.webhookStream(opts)` defaulting `port` to `3000` and `path` to `'/webhooks/github'`, `github.createOrUpdatePr(id, opts)`) and `@metaharness/slack` (`slack.webhook(url)` with `interactionMode: 'notify-only'`, `slack.bot(opts)` with `interactionMode: 'bidirectional'` implementing `HumanAdapter` & `ControlPlaneAdapter`). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 (`lines 3182–3324`) | Non-coding financial harness domain adapters `@metaharness/stripe` (`stripe.readTools()`, `stripe.maxRefundGuardUsd(limit)`, `stripe.allowRefundUpToUsd(limit)`) and `@metaharness/netsuite` (`netsuite.draftJournalScope()` with `capabilityTier: 'scope'`, `netsuite.forbidClosedPeriodPosting()`, `netsuite.journalTools()`, `netsuite.balanceZeroCheck()`, `netsuite.rollbackDraftJournal()`). |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 (`lines 183, 186, 356–365, 431–452, 1132–1169, 1206`) | `slack.bot(...)`, `github.webhookStream(...)`, `github.issues(...)` in `engineering-harness.ts`. |
 
 ---
@@ -45,7 +45,7 @@
 
 Every file, class, method, and function in `packages/{github,slack,stripe,netsuite}/src/**` and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §§1–5: each file, class, method, and function has **one clear responsibility at one uniform level of abstraction** (Rules 1.1–1.8 & 3.1–3.4), single-kind entity files per Rule 1.1, 1 root `interface` per file plus reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces per Rule 1.2, 1 `class` per file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rule 1.3, 1 builder factory function per `create-*.ts` file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.6 & 3.3, pure `src/index.ts` barrels, complete `/** ... */` JSDoc on every declaration per Rules 2.1–2.3, and zero inline/non-JSDoc comments per Rule 2.4. Orchestrators and connector adapters only sequence high-level phase calls and lifecycle boundaries (`try / finally`), delegating webhook signature verification, Slack Socket Mode decision routing, Stripe guard evaluation, and NetSuite `big.js` decimal balance checks to focused `internal/` functions. Builders are free and expected to extract additional focused `internal/` phase, predicate, and projection helper files beyond the baseline §3 tables whenever responsibilities separate, while preserving all planned public exports.
 
-### 3.1 `packages/github` (`@harness-dsl/github`)
+### 3.1 `packages/github` (`@metaharness/github`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
@@ -67,7 +67,7 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
 | `test/github-adapter.test.ts` | `test` | Deterministic unit tests for `github.issues`, `github.webhookStream`, and `github.createOrUpdatePr` |
 | `test/github-webhook-and-pagination.test.ts` | `test` | Deterministic unit tests for multi-page `github.issues` pagination, PR filtering, `@octokit/webhooks` verification, HTTP `413`/`500` handling, premature stream close listener cleanup, and duplicate `subscribe()` rejection |
 
-### 3.2 `packages/slack` (`@harness-dsl/slack`)
+### 3.2 `packages/slack` (`@metaharness/slack`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
@@ -83,14 +83,14 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
 | `src/executors/slack-executors.constants.ts` | `const` | `slackExecutors: RuntimeExecutorRegistrySlice` |
 | `src/index.ts` | `barrel` | Pure explicit re-exports of `slack`, `SlackNamespace`, `slackExecutors`, `createSlackExecutors`, `SlackApproverAdapter`, `SlackNotifierAdapter`, `SlackTransport`, `defaultSlackTransport`, `SlackBotOptions`, `createSlackBotBuilder`, `createSlackWebhookBuilder`, `SlackApproverNode`, `SlackNotifierNode` |
 
-### 3.3 `packages/stripe` (`@harness-dsl/stripe`) & `packages/netsuite` (`@harness-dsl/netsuite`)
+### 3.3 `packages/stripe` (`@metaharness/stripe`) & `packages/netsuite` (`@metaharness/netsuite`)
 
 | Package & File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
 | `packages/stripe/src/nodes/stripe-read-tool-node.ts` | `interface` | `StripeReadToolNode` |
 | `packages/stripe/src/nodes/stripe-max-refund-guard-node.ts` | `interface` | `StripeMaxRefundGuardNode` |
 | `packages/stripe/src/nodes/stripe-max-refund-matcher-node.ts` | `interface` | `StripeMaxRefundMatcherNode` |
-| `packages/stripe/src/nodes/stripe-registry-augmentation.ts` | `interface` | `declare module '@harness-dsl/core'` augmenting `CustomDomainASTRegistry` with `'tool:stripe'`, `'guard:stripe'`, `'effectMatcher:stripe'` |
+| `packages/stripe/src/nodes/stripe-registry-augmentation.ts` | `interface` | `declare module '@metaharness/core'` augmenting `CustomDomainASTRegistry` with `'tool:stripe'`, `'guard:stripe'`, `'effectMatcher:stripe'` |
 | `packages/stripe/src/builders/create-stripe-read-tools.ts` | `function` | `createStripeReadTools` |
 | `packages/stripe/src/builders/create-stripe-max-refund-guard-builder.ts` | `function` | `createStripeMaxRefundGuardBuilder` |
 | `packages/stripe/src/builders/create-stripe-allow-refund-lease-delta.ts` | `function` | `createStripeAllowRefundLeaseDelta` |
@@ -106,7 +106,7 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
 | `packages/netsuite/src/nodes/netsuite-journal-tool-node.ts` | `interface` | `NetSuiteJournalToolNode` |
 | `packages/netsuite/src/nodes/netsuite-balance-zero-check-node.ts` | `interface` | `NetSuiteBalanceZeroCheckNode` |
 | `packages/netsuite/src/nodes/netsuite-rollback-abort-hook-node.ts` | `interface` | `NetSuiteRollbackAbortHookNode` |
-| `packages/netsuite/src/nodes/netsuite-registry-augmentation.ts` | `interface` | `declare module '@harness-dsl/core'` augmenting `CustomDomainASTRegistry` with `'scope:netsuite'`, `'guard:netsuite'`, `'abortHook:netsuite'`, `'tool:netsuite'`, `'check:netsuite'` |
+| `packages/netsuite/src/nodes/netsuite-registry-augmentation.ts` | `interface` | `declare module '@metaharness/core'` augmenting `CustomDomainASTRegistry` with `'scope:netsuite'`, `'guard:netsuite'`, `'abortHook:netsuite'`, `'tool:netsuite'`, `'check:netsuite'` |
 | `packages/netsuite/src/builders/create-netsuite-draft-journal-scope-builder.ts` | `function` | `createNetSuiteDraftJournalScopeBuilder` |
 | `packages/netsuite/src/builders/create-netsuite-closed-period-guard-builder.ts` | `function` | `createNetSuiteClosedPeriodGuardBuilder` |
 | `packages/netsuite/src/builders/create-netsuite-journal-tools.ts` | `function` | `createNetSuiteJournalTools` |
@@ -130,10 +130,10 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
    - Every domain AST node interface (`StripeReadToolNode`, `StripeMaxRefundGuardNode`, `StripeMaxRefundMatcherNode`, `NetSuiteDraftHandle`, `DraftJournalReceipt`, `NetSuiteDraftScopeNode`, `NetSuiteClosedPeriodGuardNode`, `NetSuiteJournalToolNode`, `NetSuiteBalanceZeroCheckNode`, `NetSuiteRollbackAbortHookNode`), every root builder/transport interface, and every namespace contract (`*-namespace-contract.ts`) lives in its own single-interface file, co-locating secondary interfaces reachable via `TSPropertySignature` or `TSMethodSignature` parameter/return types (`GithubIssuesOptions`, `GithubWebhookStreamOptions`, `GithubCreateOrUpdatePrOptions<TIn>`, `SlackBotOptions`) per Rule 1.2.
    - Every builder factory function (`create-*.ts`) gets its own focused file (`Rule 1.6`); every adapter class (`GithubIssuesTrackerAdapter`, `GithubWebhookStreamSource`, `SlackApproverAdapter`, `SlackNotifierAdapter`, `NetSuiteDraftScopeDriver`) gets its own single-class file; every `const` (`github`, `slack`, `stripe`, `netsuite`, `default*Transport`, `*Executors`) lives in its own `const`-only file.
 2. **JSDoc Anatomy & Official Vendor SDK Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
-   - Use the official vendor SDKs and libraries installed in each package (`@octokit/rest` + `@octokit/webhooks` in `@harness-dsl/github`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook` in `@harness-dsl/slack`, `stripe` in `@harness-dsl/stripe`, and `big.js` for exact decimal balance verification in `@harness-dsl/netsuite`).
-   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite lint`.
+   - Use the official vendor SDKs and libraries installed in each package (`@octokit/rest` + `@octokit/webhooks` in `@metaharness/github`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook` in `@metaharness/slack`, `stripe` in `@metaharness/stripe`, and `big.js` for exact decimal balance verification in `@metaharness/netsuite`).
+   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @metaharness/github --filter @metaharness/slack --filter @metaharness/stripe --filter @metaharness/netsuite lint`.
 
-### 4.1 `@harness-dsl/github` (`SPEC.md` §4.5 line 3177 & `CODING_SAMPLE.md` lines 431–452, 1132–1169)
+### 4.1 `@metaharness/github` (`SPEC.md` §4.5 line 3177 & `CODING_SAMPLE.md` lines 431–452, 1132–1169)
 1. **`github.issues({ repo, token, labels? })`**:
    - Compiles to `GithubIssuesTrackerNode` (`readonly type: 'github:issues'`).
    - `GithubIssuesTrackerAdapter` (`trackers['github:issues']`) implements `poll()` (fetching issues from `/repos/${repo}/issues` with resolved `token`) and `setExternalState(itemKey, state)` (updating issue labels on `/repos/${repo}/issues/${issueNumber}/labels`).
@@ -144,7 +144,7 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
    - Compiles to `GithubCreateOrUpdatePrNode` (`readonly type: 'github:create-or-update-pr'`, supporting `.input(schema)` and `.output(schema)`).
    - Step executor queries open PRs for `head: branch(input)` and creates or updates the PR on `/repos/${repo}/pulls`.
 
-### 4.2 `@harness-dsl/slack` (`SPEC.md` §4.5 line 3178 & `CODING_SAMPLE.md` lines 356–365, 1197–1206)
+### 4.2 `@metaharness/slack` (`SPEC.md` §4.5 line 3178 & `CODING_SAMPLE.md` lines 356–365, 1197–1206)
 1. **`slack.bot({ appToken, botToken, channel })`**:
    - Compiles to `SlackApproverNode` (`readonly type: 'slack:approver'`, `readonly interactionMode: 'bidirectional'`).
    - `SlackApproverAdapter` (`humanChannels['slack:approver']` & `controlPlanes['slack:approver']`):
@@ -156,7 +156,7 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
    - Compiles to `SlackNotifierNode` (`readonly type: 'slack:notifier'`, `readonly interactionMode: 'notify-only'`).
    - `SlackNotifierAdapter` implements `notify(message)` and throws an actionable error if `requestDecision` is ever called on a `'notify-only'` channel.
 
-### 4.3 `@harness-dsl/stripe` & `@harness-dsl/netsuite` (`SPEC.md` §5 lines 3182–3324)
+### 4.3 `@metaharness/stripe` & `@metaharness/netsuite` (`SPEC.md` §5 lines 3182–3324)
 - Implement the exact Tier-1 (`capabilityTier: 'scope'`) scope, tools (`effectTracking: 'declared'`), policy guards (`forbidClosedPeriodPosting`, `maxRefundGuardUsd(500)`), lease delta (`allowRefundUpToUsd(10_000)` with `grantedMatchers: [{ type: 'stripe:max-refund-matcher', id, maxRefundUsd }]`), check (`balanceZeroCheck`), and abort hook (`rollbackDraftJournal`) specified in `SPEC.md` §5 so the non-coding financial harness compiles and executes end-to-end without git semantics.
 - **Collision-Free `CustomDomainASTRegistry` Augmentation**:
   - `packages/stripe` augments `CustomDomainASTRegistry` with namespaced keys `'tool:stripe': StripeReadToolNode; 'guard:stripe': StripeMaxRefundGuardNode; 'effectMatcher:stripe': StripeMaxRefundMatcherNode;`.
@@ -181,8 +181,8 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
 Run from workspace root (plus the `IMPL_LOOP.md` `baseline_dirty` diff check against `<non_sibling_forbidden_dirs_excluding_upstream_patches>`):
 
 ```bash
-pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite lint
-pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite typecheck
-pnpm --filter @harness-dsl/github --filter @harness-dsl/slack --filter @harness-dsl/stripe --filter @harness-dsl/netsuite test -- --reporter=verbose
+pnpm --filter @metaharness/github --filter @metaharness/slack --filter @metaharness/stripe --filter @metaharness/netsuite lint
+pnpm --filter @metaharness/github --filter @metaharness/slack --filter @metaharness/stripe --filter @metaharness/netsuite typecheck
+pnpm --filter @metaharness/github --filter @metaharness/slack --filter @metaharness/stripe --filter @metaharness/netsuite test -- --reporter=verbose
 test -z "$(git status --porcelain -- docs .agents .claude package.json tsconfig.base.json vitest.config.ts)"
 ```

@@ -5,7 +5,7 @@ import {
   type MaybeBuilder,
   type SignalNode,
   extractAST,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type {
   CompactionConfigBuilder,
   CompactionSignalTriggerOptions,

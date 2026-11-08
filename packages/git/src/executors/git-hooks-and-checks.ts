@@ -9,7 +9,7 @@ import type {
   GitWorktreeHandle,
   RewindHookExecutionInput,
   StepExecutionContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { gitCheckpointRestore } from './internal/git-checkpoint-restore.js';
 import {
   readHarnessMeta,

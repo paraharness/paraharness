@@ -5,7 +5,7 @@ import type {
   FsReadToolNode,
   FsWriteToolNode,
   NodeRunnerNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   FsEditToolInputSchema,
   FsGlobToolInputSchema,

@@ -8,7 +8,7 @@ import type { SkillNode } from '../ast/skill-node.types.js';
 import type { ScopePredicateInput } from './scope-predicate-input.js';
 
 /**
- * Fluent builder for pull-based procedural skills (`H.skill(idOrSource)`).
+ * Fluent builder for pull-based procedural skills (`M.skill(idOrSource)`).
  *
  * Configures catalog descriptions, procedural instructions, dynamically unlocked tools
  * and background daemon services, and lease lifecycle modes.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  type AgentContinuationFrame, type ForkBatchEntryRecord, H, type LoopContinuationFrame,
+  type AgentContinuationFrame, type ForkBatchEntryRecord, M, type LoopContinuationFrame,
   ScopeLockManager, type SpeculateBranchEntryRecord, StepContinuationQueue, type StepExecutionContext,
   type WireFrameRecord, createExecutorRegistry, executeAgent, executeForkBatch,
   executeLoop, executeResumeForkBatch, executeSpeculateTournament, resolvePostRaceCases,
@@ -30,16 +30,16 @@ function makeTurn(visibleText: string, toolCalls: ReadonlyArray<{ id: string; na
 
 describe('Downward .fork() history modes, real LoopNode child execution, CHILD_COMMITTED lesson idempotency, and commitChild conflict bounce', () => {
   it('executes real child AgentNode & LoopNode via ModelDriver turns, supports shared-prefix-only vs clone-transcript, bounces commitChild conflicts back to .act() with conflictLease, and releases child handles', async () => {
-    const childActor = H.agent<string>('child-actor').model(SAMPLE_MODEL_NODE).input(z.object({ subtask: z.string() })).output(z.object({ done: z.string() }));
-    const childEval = H.agent<string>('child-eval').model(SAMPLE_MODEL_NODE).input(z.object({ done: z.string() })).output(z.object({ ok: z.boolean() }));
-    const childLoop = H.loop<string>('child-loop')
+    const childActor = M.agent<string>('child-actor').model(SAMPLE_MODEL_NODE).input(z.object({ subtask: z.string() })).output(z.object({ done: z.string() }));
+    const childEval = M.agent<string>('child-eval').model(SAMPLE_MODEL_NODE).input(z.object({ done: z.string() })).output(z.object({ ok: z.boolean() }));
+    const childLoop = M.loop<string>('child-loop')
       .input(z.object({ subtask: z.string() })).output(z.object({ done: z.string() })).maxIterations(2).preserveActorSession(true)
       .act('act-step', childActor)
       .evaluate('eval-step', childEval, { mapInput: (_in, actOut: { readonly done: string }) => actOut, acceptWhen: (v: { readonly ok: boolean }) => v.ok, feedbackMapper: () => 'retry' })
       .returnOutputFrom('act-step');
-    const childPool = H.pool('child-pool').with(Object.freeze({ ...SAMPLE_MODEL_NODE, modelId: 'gpt-5.4-mini' }));
-    const childPoolActor = H.agent<string>('child-pool-actor').model(childPool).input(z.object({ subtask: z.string() })).output(z.object({ done: z.string() }));
-    const parent = H.agent<string>('parent-agent')
+    const childPool = M.pool('child-pool').with(Object.freeze({ ...SAMPLE_MODEL_NODE, modelId: 'gpt-5.4-mini' }));
+    const childPoolActor = M.agent<string>('child-pool-actor').model(childPool).input(z.object({ subtask: z.string() })).output(z.object({ done: z.string() }));
+    const parent = M.agent<string>('parent-agent')
       .model(SAMPLE_MODEL_NODE).input(z.object({ goal: z.string() })).output(z.object({ ok: z.boolean() }))
       .capabilities(($c) =>
         $c.fork('forkShared', childActor, ($f) => $f.requestSchema(z.object({ subtask: z.string() })).mapInput((_p, req) => req).historyMode('shared-prefix-only'))
@@ -95,17 +95,17 @@ describe('Downward .fork() history modes, real LoopNode child execution, CHILD_C
 
 describe('Upward .onChildInterrupt() turn-batch barrier, resumeFork Cases A/B/C with exact wire headers, write-locked syncChild, and Case C neutralSyncContinuation reset', () => {
   it('coordinates turn-batch barrier, acquires write lock around restoreCheckpoint + syncChild, injects exact SPEC §3.7.2 wire headers, resets neutralSyncContinuation without false gate distillation, and releases handles on abort', async () => {
-    const childIntr = H.interrupt('schema-gap', z.object({ reason: z.string() }));
-    const lessonsBuilder = H.lessons<string>('lessons-c').store(SAMPLE_LESSON_STORE_NODE).distillWith(SAMPLE_MODEL_NODE, ($d) => $d.onGateRecovery({ minFailedChecks: 1 }));
-    const childActor = H.agent<string>('act-worker-role').model(SAMPLE_MODEL_NODE).input(z.object({ id: z.string() })).output(z.object({ ok: z.boolean() }));
-    const childEval = H.agent<string>('eval-only').model(SAMPLE_MODEL_NODE).canRaise(childIntr).input(z.object({ ok: z.boolean() })).output(z.object({ accepted: z.boolean() }));
-    const childLoop = H.loop<string>('l-raise')
+    const childIntr = M.interrupt('schema-gap', z.object({ reason: z.string() }));
+    const lessonsBuilder = M.lessons<string>('lessons-c').store(SAMPLE_LESSON_STORE_NODE).distillWith(SAMPLE_MODEL_NODE, ($d) => $d.onGateRecovery({ minFailedChecks: 1 }));
+    const childActor = M.agent<string>('act-worker-role').model(SAMPLE_MODEL_NODE).input(z.object({ id: z.string() })).output(z.object({ ok: z.boolean() }));
+    const childEval = M.agent<string>('eval-only').model(SAMPLE_MODEL_NODE).canRaise(childIntr).input(z.object({ ok: z.boolean() })).output(z.object({ accepted: z.boolean() }));
+    const childLoop = M.loop<string>('l-raise')
       .input(z.object({ id: z.string() })).output(z.object({ ok: z.boolean() })).maxIterations(2).preserveActorSession(true)
       .act('act-s', childActor)
       .evaluate('eval-s', childEval, { mapInput: (_in, actOut: { readonly ok: boolean }) => actOut, acceptWhen: (v: { readonly accepted: boolean }) => v.accepted, feedbackMapper: () => 'retry' })
       .returnOutputFrom('act-s');
-    const childWorkerC = H.agent<string>('child-worker-c').model(SAMPLE_MODEL_NODE).lessons(lessonsBuilder).beforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE).input(z.object({ id: z.string() })).output(z.object({ ok: z.boolean() }));
-    const parent = H.agent<string>('parent-barrier').model(SAMPLE_MODEL_NODE).input(z.object({ task: z.string() })).output(z.object({ finished: z.boolean() }))
+    const childWorkerC = M.agent<string>('child-worker-c').model(SAMPLE_MODEL_NODE).lessons(lessonsBuilder).beforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE).input(z.object({ id: z.string() })).output(z.object({ ok: z.boolean() }));
+    const parent = M.agent<string>('parent-barrier').model(SAMPLE_MODEL_NODE).input(z.object({ task: z.string() })).output(z.object({ finished: z.boolean() }))
       .capabilities(($c) =>
         $c.fork('runChild', childLoop, ($f) => $f.requestSchema(z.object({ id: z.string() })).mapInput((_p, r) => r))
           .fork('runChildC', childWorkerC, ($f) => $f.requestSchema(z.object({ id: z.string() })).mapInput((_p, r) => r)),
@@ -291,14 +291,14 @@ describe('.speculate() tournament: Post-Race Cases 1-4, real child/arbiter execu
     expect(resolvePostRaceCases([parkBranch, failBranch], [])).toEqual({ caseKind: 'unpark-sole-escalated', targetBranchIndex: 1 });
     expect(resolvePostRaceCases([compBranch, failBranch], [])).toEqual({ caseKind: 'sole-survivor', targetBranchIndex: 0 });
 
-    const escIntr = H.interrupt('arch-q', z.object({ q: z.string() }));
-    const human = H.human('arch-lead').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
-    const specLessons = H.lessons<string>('spec-lessons').store(SAMPLE_LESSON_STORE_NODE).retireAfter(($r) => $r.maxViolations(1));
-    const worker = H.agent<string>('spec-worker').model(SAMPLE_MODEL_NODE).lessons(specLessons).tools(SAMPLE_DECLARED_TOOL_NODE as never).input(z.object({ variant: z.number() })).output(z.object({ code: z.string() }))
+    const escIntr = M.interrupt('arch-q', z.object({ q: z.string() }));
+    const human = M.human('arch-lead').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const specLessons = M.lessons<string>('spec-lessons').store(SAMPLE_LESSON_STORE_NODE).retireAfter(($r) => $r.maxViolations(1));
+    const worker = M.agent<string>('spec-worker').model(SAMPLE_MODEL_NODE).lessons(specLessons).tools(SAMPLE_DECLARED_TOOL_NODE as never).input(z.object({ variant: z.number() })).output(z.object({ code: z.string() }))
       .capabilities(($c) => $c.escalate(escIntr, ($e) => $e.to(human).response(z.object({ approve: z.boolean() }))));
-    const arbiter = H.agent<string>('spec-arbiter').model(SAMPLE_MODEL_NODE).input(z.unknown()).output(z.object({ action: z.enum(['select-winner', 'unpark-escalation', 'reject-all']), idx: z.number(), needsRefine: z.boolean() }));
-    const refiner = H.agent<string>('spec-refiner').model(SAMPLE_MODEL_NODE).lessons(specLessons).tools(SAMPLE_DECLARED_TOOL_NODE as never).input(z.object({ variant: z.number() })).output(z.object({ code: z.string() }));
-    const parent = H.agent<string>('spec-parent').model(SAMPLE_MODEL_NODE).input(z.object({ prompt: z.string() })).output(z.object({ ok: z.boolean() }))
+    const arbiter = M.agent<string>('spec-arbiter').model(SAMPLE_MODEL_NODE).input(z.unknown()).output(z.object({ action: z.enum(['select-winner', 'unpark-escalation', 'reject-all']), idx: z.number(), needsRefine: z.boolean() }));
+    const refiner = M.agent<string>('spec-refiner').model(SAMPLE_MODEL_NODE).lessons(specLessons).tools(SAMPLE_DECLARED_TOOL_NODE as never).input(z.object({ variant: z.number() })).output(z.object({ code: z.string() }));
+    const parent = M.agent<string>('spec-parent').model(SAMPLE_MODEL_NODE).input(z.object({ prompt: z.string() })).output(z.object({ ok: z.boolean() }))
       .capabilities(($c) =>
         $c.speculate('raceBranches', ($s) =>
           $s.requestSchema(z.object({})).worker(worker).branches(2, () => [{ variant: 0 }, { variant: 1 }])
@@ -377,8 +377,8 @@ describe('.speculate() tournament: Post-Race Cases 1-4, real child/arbiter execu
     expect(finalWinnerAgent?.agentId).toBe('spec-refiner');
     expect([lessonStore.recordedBatches, lessonStore.retiredIds.has('lesson-1'), [...scope.liveHandles]]).toEqual([[[{ lessonId: 'lesson-1', outcome: 'violated' }]], true, ['root:run-spec']]);
 
-    const survivorVerifier = H.agent<string>('sole-verifier').model(SAMPLE_MODEL_NODE).input(z.object({ code: z.string() })).output(z.object({ ok: z.boolean() }));
-    const case3Cap = H.agent<string>('spec-case3-parent').model(SAMPLE_MODEL_NODE).input(z.object({ prompt: z.string() })).output(z.object({ ok: z.boolean() }))
+    const survivorVerifier = M.agent<string>('sole-verifier').model(SAMPLE_MODEL_NODE).input(z.object({ code: z.string() })).output(z.object({ ok: z.boolean() }));
+    const case3Cap = M.agent<string>('spec-case3-parent').model(SAMPLE_MODEL_NODE).input(z.object({ prompt: z.string() })).output(z.object({ ok: z.boolean() }))
       .capabilities(($c) =>
         $c.speculate('raceCase3', ($s) =>
           $s.requestSchema(z.object({})).worker(worker).branches(2, () => [{ variant: 0 }, { variant: 1 }])

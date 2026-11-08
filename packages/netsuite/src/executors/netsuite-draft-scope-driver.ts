@@ -1,4 +1,4 @@
-import type { IsolationScope, z } from '@harness-dsl/core';
+import type { IsolationScope, z } from '@metaharness/core';
 import type { DraftJournalReceipt } from '../nodes/draft-journal-receipt.js';
 import type { NetSuiteDraftHandle } from '../nodes/netsuite-draft-handle.js';
 import type { NetSuiteDraftScopeNode } from '../nodes/netsuite-draft-scope-node.js';

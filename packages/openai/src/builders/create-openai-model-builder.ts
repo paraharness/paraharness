@@ -4,7 +4,7 @@ import {
   type OpenAiAccountSeatNode,
   type OpenAiModelNode,
   type PoolNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { OpenAiModelBuilder } from './openai-model-builder.js';
 import type { OpenAiModelOptions } from './openai-model-options.js';
 

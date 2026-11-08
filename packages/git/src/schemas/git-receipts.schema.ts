@@ -1,4 +1,4 @@
-import { z } from '@harness-dsl/core';
+import { z } from '@metaharness/core';
 
 /**
  * Zod schema validating `GitScopeReceipt` objects returned by `inspect()` and `commitChild()`.

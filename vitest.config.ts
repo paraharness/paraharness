@@ -23,11 +23,11 @@ const packages = [
 ] as const;
 
 const alias: Record<string, string> = {
-  '@harness-dsl/core/runtime': path.resolve(rootDir, 'packages/core/src/runtime/index.ts'),
+  '@metaharness/core/runtime': path.resolve(rootDir, 'packages/core/src/runtime/index.ts'),
 };
 
 for (const pkg of packages) {
-  alias[`@harness-dsl/${pkg}`] = path.resolve(rootDir, `packages/${pkg}/src/index.ts`);
+  alias[`@metaharness/${pkg}`] = path.resolve(rootDir, `packages/${pkg}/src/index.ts`);
 }
 
 export default defineConfig({

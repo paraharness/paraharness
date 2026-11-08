@@ -8,7 +8,7 @@ import type {
   PrepareForkTarget,
   RuntimeDriverContext,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { ClaudeHttpTransport } from './claude-http-transport.js';
 import {
   ANTHROPIC_MESSAGES_ENDPOINT,
@@ -24,7 +24,7 @@ import { extractClaudeResponseBody } from './internal/extract-claude-response-bo
 import { resolveClaudeSeatAuth } from './internal/resolve-claude-seat-auth.js';
 
 /**
- * Runtime `ModelDriver` implementation for the Anthropic `/v1/messages` HTTP protocol (`@harness-dsl/claude`).
+ * Runtime `ModelDriver` implementation for the Anthropic `/v1/messages` HTTP protocol (`@metaharness/claude`).
  *
  * Resolves CLI subscription `configDir` OAuth tokens and `EnvRef` API keys at turn invocation time,
  * preserves `thinking` blocks and cryptographic `signature` fields in `rawWireFrame`, enforces native

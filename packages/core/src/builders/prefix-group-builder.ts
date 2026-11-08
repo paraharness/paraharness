@@ -4,7 +4,7 @@ import type { PrefixGroupNode } from '../ast/prefix-group-node.js';
 import type { RulesNode } from '../ast/rules-node.js';
 
 /**
- * Fluent builder for run-immutable KV-cache prompt prefix groups (`H.prefixGroup(id)`).
+ * Fluent builder for run-immutable KV-cache prompt prefix groups (`M.prefixGroup(id)`).
  *
  * Defines the shared `toolsMode`, `sharedGrounding`, `sharedInstructions`, and `sharedRules`
  * pinned in Slot 1 of the 4-slot wire compilation order.
@@ -51,7 +51,7 @@ export interface PrefixGroupBuilder extends AstBuilder<PrefixGroupNode> {
    *
    * Ensures every agent sharing this prefix group sees an identical `[GLOBAL_RULES]` block.
    *
-   * @param {MaybeBuilder<RulesNode>} rules - Compiled `RulesNode` or `H.rules(...)` builder.
+   * @param {MaybeBuilder<RulesNode>} rules - Compiled `RulesNode` or `M.rules(...)` builder.
    *
    * @returns {PrefixGroupBuilder} New immutable prefix group builder.
    */

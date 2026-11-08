@@ -4,7 +4,7 @@ import type {
   MaybeBuilder,
   NodeRunnerNode,
   z,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 
 /**
  * Configuration options for `git.commitAndPush(id, options)` (`createGitCommitAndPushBuilder`).

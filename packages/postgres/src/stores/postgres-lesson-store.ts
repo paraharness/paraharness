@@ -1,4 +1,4 @@
-import type { LessonRecord, LessonStore } from '@harness-dsl/core';
+import type { LessonRecord, LessonStore } from '@metaharness/core';
 import PQueue from 'p-queue';
 import type { Pool } from 'pg';
 import { normalizePostgresClient } from '../ddl/internal/normalize-postgres-client.js';
@@ -20,7 +20,7 @@ import {
 } from './internal/pg-lesson-ops.js';
 
 /**
- * PostgreSQL implementation of the `@harness-dsl/core` `LessonStore` runtime port.
+ * PostgreSQL implementation of the `@metaharness/core` `LessonStore` runtime port.
  *
  * Persists distilled empirical lessons, computes normalized BM25/fuzzy relevance scores $R(L, Q) \in [0, 1]$,
  * tracks 4-state execution outcome windows, aligns creation epochs on overlay commit, and retires lessons.

@@ -1,4 +1,4 @@
-import { z, type HarnessRuntimeController } from '@harness-dsl/core';
+import { z, type HarnessRuntimeController } from '@metaharness/core';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 /**
@@ -7,7 +7,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
  * Carries the target signal identifier and optional signal payload forwarded to `controller.emitSignal`.
  */
 export interface EmitSignalToolParams {
-  /** Signal identifier matching `H.signal(signalId)`. */
+  /** Signal identifier matching `M.signal(signalId)`. */
   readonly signalId: string;
   /** Optional payload delivered to waiting signal handlers. */
   readonly payload?: unknown;

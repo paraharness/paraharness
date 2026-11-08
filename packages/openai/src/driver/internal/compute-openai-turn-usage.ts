@@ -1,4 +1,4 @@
-import type { ModelUsageMetrics } from '@harness-dsl/core';
+import type { ModelUsageMetrics } from '@metaharness/core';
 
 /**
  * Computes normalized `ModelUsageMetrics` from an OpenAI `/v1/responses` JSON payload.

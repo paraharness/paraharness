@@ -1,9 +1,9 @@
-import { H } from '@harness-dsl/core';
-import { claude } from '@harness-dsl/claude';
-import { github } from '@harness-dsl/github';
-import { local } from '@harness-dsl/node';
-import { slack } from '@harness-dsl/slack';
-import { sqlite } from '@harness-dsl/sqlite';
+import { M } from '@metaharness/core';
+import { claude } from '@metaharness/claude';
+import { github } from '@metaharness/github';
+import { local } from '@metaharness/node';
+import { slack } from '@metaharness/slack';
+import { sqlite } from '@metaharness/sqlite';
 import { changeShippedSignal, prClosedUnmergedSignal } from './signals-and-interrupts.constants.js';
 
 /**
@@ -16,15 +16,15 @@ export const runner = local.runner({ slots: 8, maxDaemons: 8 });
 /**
  * Account capacity pool (`claude-accounts`) balancing across two CLI subscriptions with an API key fallback (`CODING_SAMPLE.md` §6.2).
  *
- * Uses the `'soonest-reset'` selection strategy and falls back to `H.env('ANTHROPIC_API_KEY')` on rate-limit exhaustion.
+ * Uses the `'soonest-reset'` selection strategy and falls back to `M.env('ANTHROPIC_API_KEY')` on rate-limit exhaustion.
  */
-export const claudeAccounts = H.pool('claude-accounts')
+export const claudeAccounts = M.pool('claude-accounts')
   .with(
     claude.cliAccount('sub-a').configDir('~/.claude-a'),
     claude.cliAccount('sub-b').configDir('~/.claude-b'),
   )
   .strategy('soonest-reset')
-  .fallback(claude.cliAccount('api-fallback').apiKey(H.env('ANTHROPIC_API_KEY')));
+  .fallback(claude.cliAccount('api-fallback').apiKey(M.env('ANTHROPIC_API_KEY')));
 
 /**
  * Claude Sonnet 4.6 model declaration backed by `claudeAccounts` (`CODING_SAMPLE.md` §6.2).
@@ -49,7 +49,7 @@ export const opus = claude
  *
  * Enforces a minimum empirical success rate of `0.75` after `10` samples before selecting the lower-tier model.
  */
-export const workerModels = H.pool('worker-models')
+export const workerModels = M.pool('worker-models')
   .with(sonnet, opus)
   .strategy(($) => $.escalateOnRetry().minSuccessRate(0.75).minSamples(10));
 
@@ -72,14 +72,14 @@ export const ledger = sqlite
   );
 
 /**
- * Slack bot adapter configured with symbolic `H.env(...)` credentials (`CODING_SAMPLE.md` §6.2).
+ * Slack bot adapter configured with symbolic `M.env(...)` credentials (`CODING_SAMPLE.md` §6.2).
  *
  * Serves both as the notification channel for `owner` and as an exposed control-plane surface on `appHarness`.
  */
 export const slackBot = slack.bot({
-  appToken: H.env('SLACK_APP_TOKEN'),
-  botToken: H.env('SLACK_BOT_TOKEN'),
-  channel: H.env('SLACK_CHANNEL_ID'),
+  appToken: M.env('SLACK_APP_TOKEN'),
+  botToken: M.env('SLACK_BOT_TOKEN'),
+  channel: M.env('SLACK_CHANNEL_ID'),
 });
 
 /**
@@ -87,7 +87,7 @@ export const slackBot = slack.bot({
  *
  * Adjudicates exogenous `normativeEscalation` trade-offs, budget approvals, and high-leverage lesson notifications.
  */
-export const owner = H.human('owner')
+export const owner = M.human('owner')
   .keepAliveSeconds(60)
   .notify(slackBot);
 
@@ -174,11 +174,11 @@ export const browserSandbox = local
 /**
  * GitHub webhook event stream source listening for `pull_request.closed` events on `acme/app` (`CODING_SAMPLE.md` §6.3).
  *
- * Validates webhook signatures using symbolic `H.env('GH_WEBHOOK_SECRET')`.
+ * Validates webhook signatures using symbolic `M.env('GH_WEBHOOK_SECRET')`.
  */
 export const githubWebhookSource = github.webhookStream({
   repo: 'acme/app',
-  secret: H.env('GH_WEBHOOK_SECRET'),
+  secret: M.env('GH_WEBHOOK_SECRET'),
   events: ['pull_request.closed'],
 });
 
@@ -187,7 +187,7 @@ export const githubWebhookSource = github.webhookStream({
  *
  * Extracts the issue `ref`, `mergeCommitSha`, and `baseBranch` for stacked-PR topology overlay commitment.
  */
-export const githubMergeStream = H.stream('github-merge-events')
+export const githubMergeStream = M.stream('github-merge-events')
   .source(githubWebhookSource)
   .filter((ev) => ev.pull_request.merged === true && /^fix\//.test(ev.pull_request.head.ref))
   .emitSignal(changeShippedSignal, (ev) => ({
@@ -201,7 +201,7 @@ export const githubMergeStream = H.stream('github-merge-events')
  *
  * Triggers cleanup of any sealed `repoTopology` overlay associated with the closed pull request's `ref`.
  */
-export const githubPrClosedStream = H.stream('github-pr-closed-events')
+export const githubPrClosedStream = M.stream('github-pr-closed-events')
   .source(githubWebhookSource)
   .filter((ev) => ev.pull_request.merged === false && /^fix\//.test(ev.pull_request.head.ref))
   .emitSignal(prClosedUnmergedSignal, (ev) => ({

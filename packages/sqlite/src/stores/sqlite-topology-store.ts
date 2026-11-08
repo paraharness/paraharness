@@ -2,7 +2,7 @@ import type {
   CommitRunOverlayResult,
   TopologyPartitionState,
   TopologyStore,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type Database from 'better-sqlite3';
 import PQueue from 'p-queue';
 import { openSqliteConnection } from '../ddl/internal/open-sqlite-connection.js';
@@ -20,7 +20,7 @@ import {
 } from './internal/sqlite-topology-overlay-ops.js';
 
 /**
- * WAL-mode SQLite implementation of the `@harness-dsl/core` `TopologyStore` runtime port.
+ * WAL-mode SQLite implementation of the `@metaharness/core` `TopologyStore` runtime port.
  *
  * Manages canonical base partition contracts alongside per-run Copy-on-Write overlays,
  * stacked prerequisite synchronization, step/run-scoped resets, and 3-way overlay commits.

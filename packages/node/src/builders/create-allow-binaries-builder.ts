@@ -1,4 +1,4 @@
-import type { AstBuilder, NodeAllowBinariesNode } from '@harness-dsl/core';
+import type { AstBuilder, NodeAllowBinariesNode } from '@metaharness/core';
 
 /**
  * Creates a policy guard builder and passive AST node restricting subprocess binaries (`local.allowBinaries`).

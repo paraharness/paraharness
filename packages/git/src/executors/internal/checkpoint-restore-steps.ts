@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, rmdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitWorktreeHandle } from '@harness-dsl/core';
+import type { GitWorktreeHandle } from '@metaharness/core';
 import type { GitCheckpointPayload } from '../git-checkpoint-payload.js';
 import { computeNodeModulesDigest, copyFileCowOrValue } from './file-digest-and-globs.js';
 import {

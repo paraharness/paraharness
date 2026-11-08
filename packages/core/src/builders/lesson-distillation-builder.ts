@@ -9,7 +9,7 @@ import type { LessonDistillationConfig } from '../ast/lessons-node.js';
  */
 export interface LessonDistillationBuilder {
   /**
-   * Enables or disables contrastive distillation on outer `H.loop` recovery iterations.
+   * Enables or disables contrastive distillation on outer `M.loop` recovery iterations.
    *
    * Pairs the most recent rejected `.act()` trajectory with the subsequent accepted iteration trajectory.
    *

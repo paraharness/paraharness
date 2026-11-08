@@ -1,5 +1,5 @@
 import type { Octokit } from '@octokit/rest';
-import type { GithubCreateOrUpdatePrNode, StepExecutionContext } from '@harness-dsl/core';
+import type { GithubCreateOrUpdatePrNode, StepExecutionContext } from '@metaharness/core';
 import { DEFAULT_GITHUB_BASE_BRANCH } from '../../builders/internal/github-builder-defaults.constants.js';
 import type { GithubHttpTransport } from '../github-http-transport.js';
 import { createGithubOctokitClient } from './create-github-octokit-client.js';

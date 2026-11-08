@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   type AgentContinuationFrame, type ClaudeModelNode, type FsGlobMatcherNode, type FsProtectGuardNode,
-  type FsQuotaTripwireNode, type GitScopeReceipt, type GitWorktreeHandle, H, type InlineSkillNode,
+  type FsQuotaTripwireNode, type GitScopeReceipt, type GitWorktreeHandle, M, type InlineSkillNode,
   type LeaseDelta, type LocalServiceNode, type ModelASTNode, type PolicyLimitExceededBuilder,
   type PolicyViolation, PoolManager, type PoolStrategyConfigurator, ScopeLockManager,
   ServiceSessionRegistry, type StepExecutionContext, type ToolEffect, createExecutorRegistry,
@@ -38,8 +38,8 @@ function throwUnusedRunner(): never {
 
 describe('Two-phase policy guard evaluation, multi-call batching, and nested adjudication', () => {
   it('enforces deny-with-error before raise-interrupt and batches trailing calls failing the same raise-interrupt clause C', async () => {
-    const intr = H.interrupt('sec-intr', z.object({ summary: z.string(), count: z.number() }));
-    const policy = H.policy<GitWorktreeHandle>('two-phase-policy')
+    const intr = M.interrupt('sec-intr', z.object({ summary: z.string(), count: z.number() }));
+    const policy = M.policy<GitWorktreeHandle>('two-phase-policy')
       .guard(WRITE_GUARD_NODE).onViolation('raise-interrupt', intr, (v: PolicyViolation) => ({ summary: v.violationSummary, count: v.blockedCalls.length }))
       .guard(HARD_DENY_GUARD_NODE).onViolation('deny-with-error', (v: PolicyViolation) => `Hard denied: ${v.violationSummary}`).toAST();
 
@@ -70,14 +70,14 @@ describe('Two-phase policy guard evaluation, multi-call batching, and nested adj
   });
 
   it('replays remainingCalls in declaration order after nested .adjudicateWith() lease elevation, unlocks same-turn skill tools, and skips dependent calls on lease denial', async () => {
-    const secIntr = H.interrupt('sec-intr', z.object({ summary: z.string() }));
-    const humanEscIntr = H.interrupt('human-esc', z.object({ question: z.string() }));
-    const human = H.human('sec-human').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const secIntr = M.interrupt('sec-intr', z.object({ summary: z.string() }));
+    const humanEscIntr = M.interrupt('human-esc', z.object({ question: z.string() }));
+    const human = M.human('sec-human').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
     const leaseDelta: LeaseDelta = Object.freeze({ type: 'harness:lease-delta', id: 'lease-secrets', grantedMatchers: Object.freeze([GLOB_MATCHER_NODE]) });
-    const unlockSkill = H.skill<GitWorktreeHandle>('sec-skill').description('S').instructions('I').unlocksTools(SAMPLE_EXTRA_COMPARE_TOOL_NODE);
-    const adjudicator = H.agent<GitWorktreeHandle>('adj-agent').model(SAMPLE_MODEL_NODE).input(z.object({ summary: z.string() })).output(z.object({ allow: z.boolean(), note: z.string() }));
-    const policy = H.policy<GitWorktreeHandle>('batch-policy').guard(WRITE_GUARD_NODE).onViolation('raise-interrupt', secIntr, (v: PolicyViolation) => ({ summary: v.violationSummary })).toAST();
-    const worker = H.agent<GitWorktreeHandle>('worker')
+    const unlockSkill = M.skill<GitWorktreeHandle>('sec-skill').description('S').instructions('I').unlocksTools(SAMPLE_EXTRA_COMPARE_TOOL_NODE);
+    const adjudicator = M.agent<GitWorktreeHandle>('adj-agent').model(SAMPLE_MODEL_NODE).input(z.object({ summary: z.string() })).output(z.object({ allow: z.boolean(), note: z.string() }));
+    const policy = M.policy<GitWorktreeHandle>('batch-policy').guard(WRITE_GUARD_NODE).onViolation('raise-interrupt', secIntr, (v: PolicyViolation) => ({ summary: v.violationSummary })).toAST();
+    const worker = M.agent<GitWorktreeHandle>('worker')
       .model(SAMPLE_MODEL_NODE).policy(policy).tools(SAMPLE_DECLARED_TOOL_NODE).skills(unlockSkill)
       .input(z.object({ task: z.string() })).output(z.object({ done: z.boolean() }))
       .onInterrupt(secIntr, ($i) =>
@@ -134,8 +134,8 @@ describe('Post-flight subprocess sandboxing and 4-step .onLimitExceeded() sequen
     const scope = new ScriptedBranchableScope();
     const handle = await scope.acquireRoot('run-sb');
     const persistedCheckpoints: Array<string | undefined> = [];
-    const intr = H.interrupt('post-intr', z.object({ msg: z.string() }));
-    const policy = H.policy<string>('sb-policy').guard(WRITE_GUARD_NODE).onViolation('raise-interrupt', intr, (v: PolicyViolation) => ({ msg: v.violationSummary })).toAST();
+    const intr = M.interrupt('post-intr', z.object({ msg: z.string() }));
+    const policy = M.policy<string>('sb-policy').guard(WRITE_GUARD_NODE).onViolation('raise-interrupt', intr, (v: PolicyViolation) => ({ msg: v.violationSummary })).toAST();
     const registry = createExecutorRegistry({ policyGuards: { 'fs:protect': (_guard, input) => ({ allowed: input.proposedEffects.length === 0, violatedEffects: input.proposedEffects, violationSummary: 'Unauthorized subprocess write' }) } });
     const ctx: StepExecutionContext<string> = { runId: 'run-sb', stepExecId: 'step-sb', scopeHandle: handle, activePartitions: [], activeLeases: [], observedEffects: [], registry, resolveEnv: () => '', getRunner: throwUnusedRunner, recordEffects: () => undefined };
 
@@ -171,8 +171,8 @@ describe('Post-flight subprocess sandboxing and 4-step .onLimitExceeded() sequen
       makeTurn('', [{ id: 'sb-call-1', name: 'shell_exec', argsJson: JSON.stringify({ cmd: 'touch secrets/token' }) }]),
       makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
     ]);
-    const adjAgent = H.agent<string>('adj').model(SAMPLE_MODEL_NODE).input(z.object({ msg: z.string() })).output(z.object({ note: z.string() }));
-    const sbWorker = H.agent<string>('sb-worker').model(SAMPLE_MODEL_NODE).policy(policy).tools(SAMPLE_POST_FLIGHT_SUBPROCESS_TOOL_NODE as never)
+    const adjAgent = M.agent<string>('adj').model(SAMPLE_MODEL_NODE).input(z.object({ msg: z.string() })).output(z.object({ note: z.string() }));
+    const sbWorker = M.agent<string>('sb-worker').model(SAMPLE_MODEL_NODE).policy(policy).tools(SAMPLE_POST_FLIGHT_SUBPROCESS_TOOL_NODE as never)
       .input(z.object({ cmd: z.string() })).output(z.object({ ok: z.boolean() }))
       .onInterrupt(intr, ($i) => $i.adjudicateWith(adjAgent, (_in, p: { readonly msg: string }) => p).resumeWith((_in, _p, out: { readonly note: string }) => out.note)).toAST();
     const sbRegistry = createExecutorRegistry(registry, { models: { 'claude:model': () => adjModel }, tools: { 'node:command-tool': okDriver as never }, scopes: { 'git:cow-worktree': () => scope as never } });
@@ -198,8 +198,8 @@ describe('Post-flight subprocess sandboxing and 4-step .onLimitExceeded() sequen
   });
 
   it('executes the 4-step .onLimitExceeded() sequence on direct call and when QuotaTripwire trips inside drainPendingToolBatch', async () => {
-    const flushIntr = H.interrupt('limit-flush', z.object({ partialSummary: z.string() }));
-    const policy = H.policy<GitWorktreeHandle>('limit-policy')
+    const flushIntr = M.interrupt('limit-flush', z.object({ partialSummary: z.string() }));
+    const policy = M.policy<GitWorktreeHandle>('limit-policy')
       .maxTurns(1).tripwire(MAX_FILES_TRIPWIRE_NODE)
       .onLimitExceeded(($l: PolicyLimitExceededBuilder<GitWorktreeHandle>) => $l.flushWithInterrupt(flushIntr).onAbort(SAMPLE_ABORT_HOOK_NODE)).toAST();
     if (policy.onLimitExceeded === undefined) throw new Error('Expected onLimitExceeded');
@@ -211,7 +211,7 @@ describe('Post-flight subprocess sandboxing and 4-step .onLimitExceeded() sequen
     await topology.updateContract('run-lim', 'core', 'v2-uncommitted', 'step-1');
     const serviceSession = new ScriptedServiceSession('dev-server');
     const serviceRegistry = new ServiceSessionRegistry();
-    const skillNode = H.skill<GitWorktreeHandle>('srv-skill').description('d').instructions('i').unlocksServices(SAMPLE_SERVICE_NODE).toAST() as InlineSkillNode<GitWorktreeHandle>;
+    const skillNode = M.skill<GitWorktreeHandle>('srv-skill').description('d').instructions('i').unlocksServices(SAMPLE_SERVICE_NODE).toAST() as InlineSkillNode<GitWorktreeHandle>;
     const toolDriver = new ScriptedToolDriver<GitWorktreeHandle>({ describeEffects: () => [Object.freeze<ToolEffect>({ kind: 'fs:write', mutatesScope: true, attributes: { path: 'a.ts' } })] });
     const modelDriver = new ScriptedModelDriver([
       makeTurn(JSON.stringify({ partialSummary: 'Stopped at 80%' }), [], { partialSummary: 'Stopped at 80%' }),
@@ -246,8 +246,8 @@ describe('Post-flight subprocess sandboxing and 4-step .onLimitExceeded() sequen
       { callId: 'c2', content: '[Aborted: Limit Exceeded]\n[LIMIT_EXCEEDED_FLUSH] Exceeded maxTurns (1). Summarize state and emit final structured output.', isError: true },
     ]);
 
-    const fallbackAgent = H.agent<GitWorktreeHandle>('fallback-agent').model(SAMPLE_MODEL_NODE).input(z.object({ partialSummary: z.string() })).output(z.object({ recovered: z.string() }));
-    const tripAgent = H.agent<GitWorktreeHandle>('trip-agent').model(SAMPLE_MODEL_NODE).policy(policy).tools(SAMPLE_DECLARED_TOOL_NODE)
+    const fallbackAgent = M.agent<GitWorktreeHandle>('fallback-agent').model(SAMPLE_MODEL_NODE).input(z.object({ partialSummary: z.string() })).output(z.object({ recovered: z.string() }));
+    const tripAgent = M.agent<GitWorktreeHandle>('trip-agent').model(SAMPLE_MODEL_NODE).policy(policy).tools(SAMPLE_DECLARED_TOOL_NODE)
       .input(z.object({ task: z.string() })).output(z.object({ recovered: z.string() }))
       .onInterrupt(flushIntr, ($i) => $i.replaceWith(fallbackAgent, (_in, p: { readonly partialSummary: string }) => p)).toAST();
     const tripOut = await executeAgent(tripAgent, { task: 'go' }, {
@@ -259,7 +259,7 @@ describe('Post-flight subprocess sandboxing and 4-step .onLimitExceeded() sequen
   });
 });
 
-describe('H.skill reference-counted ServiceSession lifecycle and H.loop cross-model escalation', () => {
+describe('M.skill reference-counted ServiceSession lifecycle and M.loop cross-model escalation', () => {
   it('shares reference-counted ServiceSessions across skills, quiesces on step boundaries, and injects [SERVICE_REACQUIRED] on pre-drain and turn-boundary resume', async () => {
     let startCount = 0;
     const sessions: ScriptedServiceSession[] = [];
@@ -281,8 +281,8 @@ describe('H.skill reference-counted ServiceSession lifecycle and H.loop cross-mo
       },
     });
     const drvCtx = { registry, resolveEnv: () => undefined, getRunner: throwUnusedRunner };
-    const skillA = H.skill<string>('skill-a').description('A').instructions('inst A').unlocksServices(SAMPLE_SERVICE_NODE).unlocksTools(SAMPLE_DECLARED_TOOL_NODE as never).toAST() as InlineSkillNode<string>;
-    const skillB = H.skill<string>('skill-b').description('B').instructions('inst B').unlocksServices(SAMPLE_SERVICE_NODE).toAST() as InlineSkillNode<string>;
+    const skillA = M.skill<string>('skill-a').description('A').instructions('inst A').unlocksServices(SAMPLE_SERVICE_NODE).unlocksTools(SAMPLE_DECLARED_TOOL_NODE as never).toAST() as InlineSkillNode<string>;
+    const skillB = M.skill<string>('skill-b').description('B').instructions('inst B').unlocksServices(SAMPLE_SERVICE_NODE).toAST() as InlineSkillNode<string>;
     const svcRegistry = new ServiceSessionRegistry();
 
     await svcRegistry.acquireSkillServices({ runId: 'r1', scopeKey: 's1', scopeHandle: 'h1', skill: skillA, driverContext: drvCtx });
@@ -319,10 +319,10 @@ describe('H.skill reference-counted ServiceSession lifecycle and H.loop cross-mo
     expect([secondPrefixStopCount, svcRegistry.getActiveSessionsForScope('r-prefix:step-2:1').size]).toEqual([2, 0]);
     const ledger = new InMemoryLedgerStore();
     await ledger.createOrResumeRun({ runId: 'r1', laneId: 'l1', itemKey: 'k1', inputJson: '{}' });
-    const repIntr = H.interrupt('rep-intr', z.object({ why: z.string() }));
-    const repPol = H.policy<string>('rep-pol').guard(WRITE_GUARD_NODE).onViolation('raise-interrupt', repIntr, (v) => ({ why: v.violationSummary })).toAST();
-    const repFallback = H.agent<string>('rep-fb').model(SAMPLE_MODEL_NODE).input(z.object({ why: z.string() })).output(z.object({ ok: z.boolean() }));
-    const resAgent = H.agent<string>('res-agent').model(SAMPLE_MODEL_NODE).policy(repPol).skills(skillA as never).input(z.object({})).output(z.object({ ok: z.boolean() }))
+    const repIntr = M.interrupt('rep-intr', z.object({ why: z.string() }));
+    const repPol = M.policy<string>('rep-pol').guard(WRITE_GUARD_NODE).onViolation('raise-interrupt', repIntr, (v) => ({ why: v.violationSummary })).toAST();
+    const repFallback = M.agent<string>('rep-fb').model(SAMPLE_MODEL_NODE).input(z.object({ why: z.string() })).output(z.object({ ok: z.boolean() }));
+    const resAgent = M.agent<string>('res-agent').model(SAMPLE_MODEL_NODE).policy(repPol).skills(skillA as never).input(z.object({})).output(z.object({ ok: z.boolean() }))
       .onInterrupt(repIntr, ($i) => $i.replaceWith(repFallback, (_in, p: { readonly why: string }) => p)).toAST();
 
     const batchResumeFrame: AgentContinuationFrame = Object.freeze({
@@ -370,14 +370,14 @@ describe('H.skill reference-counted ServiceSession lifecycle and H.loop cross-mo
   it('preserves actor session with prepareFork(substituteTombstones: true) when true, starts fresh transcript while inheriting grantedLoopLeases when false, and records scopeReceipt in gate failure snapshot', async () => {
     const haiku: ClaudeModelNode = Object.freeze({ type: 'claude:model', vendor: 'anthropic', modelId: 'claude-haiku', alias: 'haiku' });
     const opus: ClaudeModelNode = Object.freeze({ type: 'claude:model', vendor: 'anthropic', modelId: 'claude-opus', alias: 'opus' });
-    const modelPool = H.pool<ModelASTNode>('loop-models').with(haiku as ModelASTNode, opus as ModelASTNode).strategy(($s: PoolStrategyConfigurator<ModelASTNode>) => $s.escalateOnRetry()).toAST();
-    const skillOne = H.skill<GitWorktreeHandle>('skill-1').description('S1').instructions('Detailed S1').unlocksTools(SAMPLE_DECLARED_TOOL_NODE).toAST();
-    const skillTwo = H.skill<GitWorktreeHandle>('skill-2').description('S2').instructions('Detailed S2').unlocksTools(SAMPLE_EXTRA_COMPARE_TOOL_NODE).toAST();
+    const modelPool = M.pool<ModelASTNode>('loop-models').with(haiku as ModelASTNode, opus as ModelASTNode).strategy(($s: PoolStrategyConfigurator<ModelASTNode>) => $s.escalateOnRetry()).toAST();
+    const skillOne = M.skill<GitWorktreeHandle>('skill-1').description('S1').instructions('Detailed S1').unlocksTools(SAMPLE_DECLARED_TOOL_NODE).toAST();
+    const skillTwo = M.skill<GitWorktreeHandle>('skill-2').description('S2').instructions('Detailed S2').unlocksTools(SAMPLE_EXTRA_COMPARE_TOOL_NODE).toAST();
     let gatePass = false;
-    const actor = H.agent<GitWorktreeHandle>('loop-actor').model(modelPool).skills(skillOne, skillTwo).beforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE).input(z.object({ goal: z.string() })).output(z.object({ patch: z.string() }));
-    const evaluator = H.agent<GitWorktreeHandle>('loop-eval').model(haiku).input(z.object({ patch: z.string() })).output(z.object({ passed: z.boolean(), feedback: z.string() }));
+    const actor = M.agent<GitWorktreeHandle>('loop-actor').model(modelPool).skills(skillOne, skillTwo).beforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE).input(z.object({ goal: z.string() })).output(z.object({ patch: z.string() }));
+    const evaluator = M.agent<GitWorktreeHandle>('loop-eval').model(haiku).input(z.object({ patch: z.string() })).output(z.object({ passed: z.boolean(), feedback: z.string() }));
 
-    const loopNode = H.loop<GitWorktreeHandle>('refine-loop')
+    const loopNode = M.loop<GitWorktreeHandle>('refine-loop')
       .input(z.object({ goal: z.string() })).output(z.object({ patch: z.string() })).maxIterations(2).preserveActorSession(true)
       .act('code', actor)
       .evaluate('review', evaluator, { mapInput: (_in: { readonly goal: string }, actOut: { readonly patch: string }, _r: GitScopeReceipt) => ({ patch: actOut.patch }), acceptWhen: (v: { readonly passed: boolean; readonly feedback: string }) => v.passed, feedbackMapper: (v: { readonly passed: boolean; readonly feedback: string }) => v.feedback })

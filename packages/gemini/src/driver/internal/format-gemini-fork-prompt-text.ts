@@ -1,4 +1,4 @@
-import type { ForkContext } from '@harness-dsl/core';
+import type { ForkContext } from '@metaharness/core';
 
 /**
  * Formats the combined child role context and task prompt text for a forked Gemini child session.

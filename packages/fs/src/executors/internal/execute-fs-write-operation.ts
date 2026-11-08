@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { ToolExecutionResult } from '@harness-dsl/core';
+import type { ToolExecutionResult } from '@metaharness/core';
 import { resolveJailedWorktreePath } from './resolve-jailed-worktree-path.js';
 
 /**

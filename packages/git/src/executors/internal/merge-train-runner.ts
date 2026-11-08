@@ -2,7 +2,7 @@ import type {
   GitMergeQueueNode,
   GitWorktreeHandle,
   StepExecutionContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { runGitCommand } from './git-cli-runner.js';
 import {
   buildCumulativeRebaseChain,

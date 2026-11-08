@@ -1,4 +1,4 @@
-import type { LeaseDelta } from '@harness-dsl/core';
+import type { LeaseDelta } from '@metaharness/core';
 import { compileGlobOrExactMatcher } from './compile-glob-or-exact-matcher.js';
 import { CACHED_ACTIVE_LEASE_WRITE_MATCHERS } from './glob-matcher-cache.constants.js';
 

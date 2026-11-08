@@ -1,11 +1,11 @@
-import type { ControlPlaneHandle, HarnessRuntimeController } from '@harness-dsl/core';
+import type { ControlPlaneHandle, HarnessRuntimeController } from '@metaharness/core';
 import type {
   SlackMessageReceipt,
   SlackTransport,
 } from '../../src/executors/slack-transport.js';
 
 /**
- * Deterministic in-memory `SlackTransport` test double for `@harness-dsl/slack` unit tests.
+ * Deterministic in-memory `SlackTransport` test double for `@metaharness/slack` unit tests.
  *
  * Records all `postMessage`, `updateMessage`, `postWebhook`, and `connectSocketMode` invocations
  * and assigns monotonically increasing message timestamps (`1000.1`, `1000.2`, ...).

@@ -1,4 +1,4 @@
-import type { EnvRef } from '@harness-dsl/core';
+import type { EnvRef } from '@metaharness/core';
 import type { PostgresGlobalRulesBuilder } from './postgres-global-rules-builder.js';
 import type { PostgresLedgerBuilder } from './postgres-ledger-builder.js';
 import type { PostgresLessonsBuilder } from './postgres-lessons-builder.js';
@@ -17,7 +17,7 @@ export interface PostgresGlobalRulesOptions {
 }
 
 /**
- * Public `postgres` adapter builder namespace contract (`@harness-dsl/postgres`).
+ * Public `postgres` adapter builder namespace contract (`@metaharness/postgres`).
  *
  * Provides pure, side-effect-free AST builders for PostgreSQL-backed durable ledgers,
  * relational CoW topology stores, empirical lesson stores, and global rule sources.
@@ -28,7 +28,7 @@ export interface PostgresNamespace {
    *
    * Returns a fluent builder supporting `.compactWhen(...)` wire-frame pruning policies.
    *
-   * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `H.env(...)` reference.
+   * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `M.env(...)` reference.
    *
    * @returns {PostgresLedgerBuilder} Fluent builder supporting `.compactWhen(...)` and `.toAST()`.
    */
@@ -39,7 +39,7 @@ export interface PostgresNamespace {
    *
    * Returns a fluent builder compiling to an immutable `PostgresTopologyNode`.
    *
-   * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `H.env(...)` reference.
+   * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `M.env(...)` reference.
    *
    * @returns {PostgresTopologyBuilder} Fluent builder compiling to `PostgresTopologyNode`.
    */
@@ -50,7 +50,7 @@ export interface PostgresNamespace {
    *
    * Returns a fluent builder compiling to an immutable `PostgresLessonsNode`.
    *
-   * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `H.env(...)` reference.
+   * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `M.env(...)` reference.
    *
    * @returns {PostgresLessonsBuilder} Fluent builder compiling to `PostgresLessonsNode`.
    */
@@ -61,7 +61,7 @@ export interface PostgresNamespace {
    *
    * Validates `options.table` as a safe SQL identifier and compiles to `PostgresRulesSourceNode`.
    *
-   * @param {string | EnvRef}            uri     - PostgreSQL connection URI or symbolic `H.env(...)` reference.
+   * @param {string | EnvRef}            uri     - PostgreSQL connection URI or symbolic `M.env(...)` reference.
    * @param {PostgresGlobalRulesOptions} options - Configuration specifying the SQL table name.
    *
    * @returns {PostgresGlobalRulesBuilder} Fluent builder compiling to `PostgresRulesSourceNode`.

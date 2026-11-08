@@ -27,7 +27,7 @@ export class PglitePoolFactory implements PostgresQueryClient, PostgresPoolFacto
   /**
    * Returns this client instance for `connectionUri`, recording `lastRequestedUri` for test assertions.
    *
-   * Satisfies `PostgresPoolFactory` so `createPostgresExecutors(client)` resolves late-bound `H.env(...)` URIs.
+   * Satisfies `PostgresPoolFactory` so `createPostgresExecutors(client)` resolves late-bound `M.env(...)` URIs.
    *
    * @param {string} connectionUri - Resolved PostgreSQL connection URI.
    *

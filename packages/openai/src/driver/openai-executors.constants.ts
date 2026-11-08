@@ -1,5 +1,5 @@
-import type { RuntimeExecutorRegistrySlice } from '@harness-dsl/core';
+import type { RuntimeExecutorRegistrySlice } from '@metaharness/core';
 import { createOpenAiExecutors } from './create-openai-executors.js';
 
-/** Default `RuntimeExecutorRegistrySlice` for `@harness-dsl/openai` (`models['openai:model']`). */
+/** Default `RuntimeExecutorRegistrySlice` for `@metaharness/openai` (`models['openai:model']`). */
 export const openaiExecutors: RuntimeExecutorRegistrySlice = createOpenAiExecutors();

@@ -18,7 +18,7 @@ export interface ResolutionContext {
   readonly scopeHandle?: unknown;
 
   /**
-   * Resolves a literal string or symbolic `H.env(key)` reference against the runtime environment map.
+   * Resolves a literal string or symbolic `M.env(key)` reference against the runtime environment map.
    *
    * Evaluates symbolic environment references against the injected runtime environment map without reading `process.env`.
    *

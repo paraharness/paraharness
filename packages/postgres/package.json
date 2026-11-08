@@ -1,5 +1,5 @@
 {
-  "name": "@harness-dsl/postgres",
+  "name": "@metaharness/postgres",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
   "dependencies": {
     "@dagrejs/graphlib": "^4.0.7",
     "@electric-sql/pglite": "^0.5.15",
-    "@harness-dsl/core": "workspace:*",
+    "@metaharness/core": "workspace:*",
     "minisearch": "^7.2.0",
     "node-diff3": "^3.2.1",
     "p-queue": "^9.1.0",

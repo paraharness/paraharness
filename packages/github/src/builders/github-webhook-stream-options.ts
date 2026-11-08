@@ -1,4 +1,4 @@
-import type { EnvRef } from '@harness-dsl/core';
+import type { EnvRef } from '@metaharness/core';
 
 /**
  * Configuration options for the GitHub webhook event stream builder (`github.webhookStream`).
@@ -13,7 +13,7 @@ export interface GithubWebhookStreamOptions {
   readonly port?: number;
   /** Optional HTTP route path for incoming webhook deliveries (defaults to `'/webhooks/github'`). */
   readonly path?: string;
-  /** GitHub webhook HMAC-SHA256 secret string or symbolic `H.env(...)` reference. */
+  /** GitHub webhook HMAC-SHA256 secret string or symbolic `M.env(...)` reference. */
   readonly secret: string | EnvRef;
   /** Subscribed GitHub webhook event names (such as `'pull_request.closed'`). */
   readonly events: readonly string[];

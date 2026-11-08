@@ -22,13 +22,13 @@ import { ServiceSessionRegistry } from '../services/service-session-registry.js'
 import { handleEmittedRuntimeSignal } from './internal/handle-emitted-runtime-signal.js';
 
 /**
- * Instantiates a `HarnessRuntime` from a declarative `HarnessNode` AST (or `H.harness` builder) (`SPEC.md` §3.1 & §3.10).
+ * Instantiates a `HarnessRuntime` from a declarative `HarnessNode` AST (or `M.harness` builder) (`SPEC.md` §3.1 & §3.10).
  *
  * Binds the `RuntimeExecutorRegistry`, initializes per-lane `LaneScheduler` instances, subscribes
  * inbound `StreamSource` adapters, starts exposed `ControlPlaneAdapter` servers, and routes signals
  * across `.notify()`, `commitOverlayWhen`, `compactWhen`, and `.onSignal()` lane rewinds.
  *
- * @param {HarnessNode | AstBuilder<HarnessNode>} harness   - Compiled `HarnessNode` or `H.harness(...)` builder.
+ * @param {HarnessNode | AstBuilder<HarnessNode>} harness   - Compiled `HarnessNode` or `M.harness(...)` builder.
  * @param {HarnessRuntimeOptions}                 [options] - Optional executor registry, environment map, and runtime stores.
  *
  * @returns {HarnessRuntime} Lifecycle handle with `start()`, `stop()`, and `controller`.

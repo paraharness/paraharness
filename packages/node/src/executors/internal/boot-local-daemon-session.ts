@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import type { LocalServiceNode, ServiceSession } from '@harness-dsl/core';
+import type { LocalServiceNode, ServiceSession } from '@metaharness/core';
 import type { LocalDaemonCommandContext } from '../../builders/local-daemon-builder.js';
 import { createActiveDaemonSession } from './create-active-daemon-session.js';
 import {

@@ -1,4 +1,4 @@
-import type { EnvRef, GeminiAccountSeatNode } from '@harness-dsl/core';
+import type { EnvRef, GeminiAccountSeatNode } from '@metaharness/core';
 import type { GeminiAccountSeatBuilder } from './gemini-account-seat-builder.js';
 
 /**

@@ -1,5 +1,5 @@
 {
-  "name": "@harness-dsl/git",
+  "name": "@metaharness/git",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,8 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@harness-dsl/core": "workspace:*",
-    "@harness-dsl/lockfile": "workspace:*",
+    "@metaharness/core": "workspace:*",
+    "@metaharness/lockfile": "workspace:*",
     "es-module-lexer": "^3.0.4",
     "p-queue": "^9.1.0",
     "picomatch": "^4.0.3",

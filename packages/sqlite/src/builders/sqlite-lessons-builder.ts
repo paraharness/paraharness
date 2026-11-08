@@ -1,4 +1,4 @@
-import type { AstBuilder, SqliteLessonsNode } from '@harness-dsl/core';
+import type { AstBuilder, SqliteLessonsNode } from '@metaharness/core';
 
 /**
  * Fluent builder for a passive `SqliteLessonsNode` (`sqlite.lessonStore(uri)`).

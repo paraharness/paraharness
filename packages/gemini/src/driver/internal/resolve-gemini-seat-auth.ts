@@ -2,7 +2,7 @@ import type {
   GeminiAccountSeatNode,
   GeminiModelNode,
   RuntimeDriverContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { GeminiSeatAuth } from './gemini-seat-auth.js';
 
 /**

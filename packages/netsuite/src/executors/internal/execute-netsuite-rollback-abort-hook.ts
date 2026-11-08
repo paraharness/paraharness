@@ -1,4 +1,4 @@
-import type { AbortHookExecutionInput, StepExecutionContext } from '@harness-dsl/core';
+import type { AbortHookExecutionInput, StepExecutionContext } from '@metaharness/core';
 import type { NetSuiteRollbackAbortHookNode } from '../../nodes/netsuite-rollback-abort-hook-node.js';
 import { isNetSuiteDraftHandle } from './is-netsuite-draft-handle.js';
 

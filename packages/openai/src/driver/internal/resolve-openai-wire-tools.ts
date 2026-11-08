@@ -1,4 +1,4 @@
-import type { ModelTurnRequest, WireToolSchema } from '@harness-dsl/core';
+import type { ModelTurnRequest, WireToolSchema } from '@metaharness/core';
 
 /**
  * Resolves OpenAI Responses API function tool definitions from `CompiledWirePrefix` or `req.wireToolSchemas`.

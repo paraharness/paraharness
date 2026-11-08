@@ -3,7 +3,7 @@ import type {
   FsGrepToolNode,
   StepExecutionContext,
   ToolExecutionResult,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { enumerateWorkspaceFiles } from './enumerate-workspace-files.js';
 import { extractWorktreeRootAndBaseRef } from './extract-worktree-root-and-base-ref.js';
 import {

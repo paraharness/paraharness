@@ -3,7 +3,7 @@ import type { ClaudeModelBuilder } from './claude-model-builder.js';
 import type { ClaudeModelOptions } from './claude-model-options.js';
 
 /**
- * Builder namespace contract exported as `claude` by `@harness-dsl/claude`.
+ * Builder namespace contract exported as `claude` by `@metaharness/claude`.
  *
  * Provides entrypoints for declaring passive `ClaudeAccountSeatNode` and `ClaudeModelNode`
  * AST descriptors without import-time or declaration-time side effects.

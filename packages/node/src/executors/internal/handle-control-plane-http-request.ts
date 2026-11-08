@@ -1,5 +1,5 @@
 import type http from 'node:http';
-import type { HarnessRuntimeController } from '@harness-dsl/core';
+import type { HarnessRuntimeController } from '@metaharness/core';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { connectSseControlPlaneSession } from './connect-sse-control-plane-session.js';

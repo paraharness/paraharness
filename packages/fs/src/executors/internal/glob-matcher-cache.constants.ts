@@ -1,4 +1,4 @@
-import type { FsBoundaryGuardNode, LeaseDelta } from '@harness-dsl/core';
+import type { FsBoundaryGuardNode, LeaseDelta } from '@metaharness/core';
 
 /**
  * WeakMap cache of pre-compiled `(candidatePath: string) => boolean` matchers keyed by `globs` array reference (`Rule 4.4`).

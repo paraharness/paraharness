@@ -1,4 +1,4 @@
-import type { AstBuilder, NodeDenyNetworkNode } from '@harness-dsl/core';
+import type { AstBuilder, NodeDenyNetworkNode } from '@metaharness/core';
 
 /**
  * Creates a policy guard builder and passive AST node denying outbound network access (`local.denyNetwork`).

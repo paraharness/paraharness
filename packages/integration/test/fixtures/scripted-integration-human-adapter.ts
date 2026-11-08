@@ -1,4 +1,4 @@
-import type { HumanAdapter, HumanDecisionRequest } from '@harness-dsl/core';
+import type { HumanAdapter, HumanDecisionRequest } from '@metaharness/core';
 
 /**
  * Deterministic `HumanAdapter` test double capturing Slack notifications, decision requests, and cancellations (`M4-integration.md` §5).

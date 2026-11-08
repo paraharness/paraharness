@@ -1,4 +1,4 @@
-import type { BaseToolASTNode } from '@harness-dsl/core';
+import type { BaseToolASTNode } from '@metaharness/core';
 import type { NetSuiteDraftHandle } from './netsuite-draft-handle.js';
 
 /**

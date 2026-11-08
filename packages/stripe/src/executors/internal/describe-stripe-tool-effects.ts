@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@harness-dsl/core';
+import type { ToolEffect } from '@metaharness/core';
 import type { StripeReadToolNode } from '../../nodes/stripe-read-tool-node.js';
 
 /**

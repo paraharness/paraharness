@@ -1,4 +1,4 @@
-import { H, type RuntimeExecutorRegistry } from '@harness-dsl/core';
+import { M, type RuntimeExecutorRegistry } from '@metaharness/core';
 import { describe, expect, it } from 'vitest';
 import {
   OpenAiModelDriver,
@@ -40,7 +40,7 @@ async function withMockedFetch<T>(
   }
 }
 
-describe('@harness-dsl/openai official openai SDK transport and HTTP status handling', () => {
+describe('@metaharness/openai official openai SDK transport and HTTP status handling', () => {
   it('dispatches defaultOpenAiHttpTransport requests through the official openai SDK client', async () => {
     const capturedCalls: Array<{
       readonly url: string;
@@ -77,7 +77,7 @@ describe('@harness-dsl/openai official openai SDK transport and HTTP status hand
         );
       },
       async () => {
-        const seat = openai.account('sdk-seat').apiKey(H.env('OPENAI_API_KEY')).toAST();
+        const seat = openai.account('sdk-seat').apiKey(M.env('OPENAI_API_KEY')).toAST();
         const modelNode = openai.model('gpt5', { id: 'gpt-5' }).toAST();
         const driver = new OpenAiModelDriver(defaultOpenAiHttpTransport, modelNode, {
           registry: {} as RuntimeExecutorRegistry,

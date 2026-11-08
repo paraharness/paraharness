@@ -1,4 +1,4 @@
-import type { AstBuilder, NodeMcpStdioNode } from '@harness-dsl/core';
+import type { AstBuilder, NodeMcpStdioNode } from '@metaharness/core';
 
 /**
  * Creates an MCP stdio control-plane builder and passive AST node (`local.mcpStdio(serverName)`).

@@ -8,7 +8,7 @@ import { createMcpSseBuilder } from './create-mcp-sse-builder.js';
 import { createMcpStdioBuilder } from './create-mcp-stdio-builder.js';
 import type { LocalNamespace } from './local-namespace-contract.js';
 
-/** Frozen `local.*` DSL builder namespace for `@harness-dsl/node`. */
+/** Frozen `local.*` DSL builder namespace for `@metaharness/node`. */
 export const local: LocalNamespace = Object.freeze<LocalNamespace>({
   runner: createLocalRunnerBuilder,
   command: createLocalCommandBuilder,

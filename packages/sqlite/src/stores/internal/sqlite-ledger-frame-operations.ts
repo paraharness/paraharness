@@ -1,4 +1,4 @@
-import type { CanonicalMessage, WireFrameRecord } from '@harness-dsl/core';
+import type { CanonicalMessage, WireFrameRecord } from '@metaharness/core';
 import type { SqliteWireFrameRow } from './sqlite-wire-frame-row.js';
 
 /**

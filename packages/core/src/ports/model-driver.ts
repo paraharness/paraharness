@@ -6,7 +6,7 @@ import type { PrepareForkTarget } from './prepare-fork-target.js';
 import type { WireFrameRecord } from './wire-frame-record.js';
 
 /**
- * Runtime port for LLM provider protocol drivers (`@harness-dsl/claude`, `@harness-dsl/openai`, `@harness-dsl/gemini`).
+ * Runtime port for LLM provider protocol drivers (`@metaharness/claude`, `@metaharness/openai`, `@metaharness/gemini`).
  *
  * Manages wire-accurate turn invocation, KV-cache-preserving fork preparation, and in-place
  * synchronization note injection on `tool` and `user` frames.

@@ -1,4 +1,4 @@
-import type { AstBuilder, MarkdownFrontmatterSourceNode } from '@harness-dsl/core';
+import type { AstBuilder, MarkdownFrontmatterSourceNode } from '@metaharness/core';
 
 /**
  * Fluent builder and passive AST descriptor for Markdown frontmatter sources (`md.*`).

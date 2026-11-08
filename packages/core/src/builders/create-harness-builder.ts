@@ -17,7 +17,7 @@ import { createHarnessSignalNotificationSubBuilder } from './internal/create-har
 import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js';
 
 /**
- * Creates a fluent `HarnessBuilder` for `H.harness(id)`.
+ * Creates a fluent `HarnessBuilder` for `M.harness(id)`.
  *
  * Accumulates the durable ledger store, warm pools, streams, lanes, signal notifications,
  * and exposed control planes, requiring `.ledger(ledgerStore)` before `.toAST()` compilation.
@@ -28,7 +28,7 @@ import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js'
  * @returns {HarnessBuilder} Frozen `HarnessBuilder` instance.
  */
 export function createHarnessBuilder(id: string, state?: CreateHarnessBuilderState): HarnessBuilder {
-  assertNonEmptyIdentifier('H.harness', id);
+  assertNonEmptyIdentifier('M.harness', id);
   const pools = state?.pools ?? [];
   const streams = state?.streams ?? [];
   const lanes = state?.lanes ?? [];

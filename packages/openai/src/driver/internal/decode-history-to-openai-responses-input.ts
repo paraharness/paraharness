@@ -1,4 +1,4 @@
-import type { WireFrameRecord } from '@harness-dsl/core';
+import type { WireFrameRecord } from '@metaharness/core';
 import { decodeFrameToOpenAiWire } from './decode-frame-to-openai-wire.js';
 import type { DecodedOpenAiResponsesInput } from './decoded-openai-responses-input.js';
 import { stripOpenAiServerItemIdsAndEncryptedContent } from './strip-openai-server-item-ids-and-encrypted-content.js';

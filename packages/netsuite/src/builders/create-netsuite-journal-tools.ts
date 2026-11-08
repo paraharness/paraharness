@@ -1,4 +1,4 @@
-import { z } from '@harness-dsl/core';
+import { z } from '@metaharness/core';
 import type { NetSuiteJournalToolNode } from '../nodes/netsuite-journal-tool-node.js';
 import '../nodes/netsuite-registry-augmentation.js';
 

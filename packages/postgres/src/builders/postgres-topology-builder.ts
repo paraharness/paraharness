@@ -1,4 +1,4 @@
-import type { AstBuilder, PostgresTopologyNode } from '@harness-dsl/core';
+import type { AstBuilder, PostgresTopologyNode } from '@metaharness/core';
 
 /**
  * Fluent builder for a passive `PostgresTopologyNode` (`postgres:topology`) AST node.

@@ -1,4 +1,4 @@
-import type { ModelTurnRequest, WireToolSchema } from '@harness-dsl/core';
+import type { ModelTurnRequest, WireToolSchema } from '@metaharness/core';
 
 /**
  * Resolves Gemini `functionDeclarations` tool descriptors from `CompiledWirePrefix` or `req.wireToolSchemas`.

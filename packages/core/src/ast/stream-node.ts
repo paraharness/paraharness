@@ -3,7 +3,7 @@ import type { StreamSourceASTNode } from './domain-ast.types.js';
 import type { SignalNode } from './signal-node.js';
 
 /**
- * Passive AST node representing an inbound event stream (`H.stream(id)`).
+ * Passive AST node representing an inbound event stream (`M.stream(id)`).
  *
  * Subscribes to a `StreamSourceASTNode<TEvent>`, optionally filters inbound events via `filterFn`,
  * and projects matching events into a typed `SignalNode<TPayload>` via `mapPayload`.

@@ -1,4 +1,4 @@
-import type { LocalCommandNode } from '@harness-dsl/core';
+import type { LocalCommandNode } from '@metaharness/core';
 import type { LocalCommandBuilderState } from './local-command-builder-state.js';
 
 /**

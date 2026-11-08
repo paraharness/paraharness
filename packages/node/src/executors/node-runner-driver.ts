@@ -1,4 +1,4 @@
-import type { NodeRunnerNode, RunnerDriver } from '@harness-dsl/core';
+import type { NodeRunnerNode, RunnerDriver } from '@metaharness/core';
 import PQueue from 'p-queue';
 import { enqueueWithQueuedAbortSignal } from './internal/enqueue-with-queued-abort-signal.js';
 

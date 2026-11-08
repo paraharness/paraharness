@@ -1,4 +1,4 @@
-import type { ModelTurnResponse } from '@harness-dsl/core';
+import type { ModelTurnResponse } from '@metaharness/core';
 
 /**
  * Extracts token usage and USD cost metrics from an Anthropic `/v1/messages` response payload.

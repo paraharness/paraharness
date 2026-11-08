@@ -1,4 +1,4 @@
-import { z, type LocalServiceInteractionConfig } from '@harness-dsl/core';
+import { z, type LocalServiceInteractionConfig } from '@metaharness/core';
 import type {
   LocalDaemonInteractOptions,
   LocalDaemonRegexDescriptor,

@@ -17,7 +17,7 @@ export const DEFAULT_LESSON_WEIGHTS = Object.freeze({
   decayOnPartitionEpochChange: 0.7,
 });
 
-/** Default 4-state empirical lesson scoring and recall configuration for `H.lessons(id)`. */
+/** Default 4-state empirical lesson scoring and recall configuration for `M.lessons(id)`. */
 export const DEFAULT_LESSON_SCORING: LessonScoringConfig = deepFreeze<LessonScoringConfig>({
   slidingWindowInjections: DEFAULT_LESSON_WEIGHTS.slidingWindowInjections,
   partitionMatchBoost: DEFAULT_LESSON_WEIGHTS.partitionMatchBoost,

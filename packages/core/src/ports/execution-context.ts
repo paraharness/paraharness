@@ -49,7 +49,7 @@ export interface ExecutionContext<THandle = unknown> {
   readonly resumeContinuationStack?: readonly ContinuationFrame[];
 
   /**
-   * Resolves a literal string or symbolic `H.env(key)` reference against the runtime environment map.
+   * Resolves a literal string or symbolic `M.env(key)` reference against the runtime environment map.
    *
    * Returns literal strings unchanged and looks up `EnvRef.key` in the explicit runtime `env` record.
    *

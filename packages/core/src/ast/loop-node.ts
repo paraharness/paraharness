@@ -61,7 +61,7 @@ export interface LoopEvaluateStepConfig<
 }
 
 /**
- * Passive AST node representing an iterative action-and-evaluation refinement loop (`H.loop(id)`).
+ * Passive AST node representing an iterative action-and-evaluation refinement loop (`M.loop(id)`).
  *
  * Repeatedly executes `actStep` followed by `evaluateStep` up to `maxIterations` times until
  * `evaluateStep.acceptWhen` returns `true`, optionally preserving the actor transcript and distilling lessons.

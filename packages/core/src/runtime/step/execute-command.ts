@@ -2,7 +2,7 @@ import type { CommandNode } from '../../ast/command-node.js';
 import type { StepExecutionContext } from '../../ports/step-execution-context.js';
 
 /**
- * Executes a passive `CommandNode` (`H.command(id)`) by validating `input`, invoking `node.fn(validatedInput, ctx)`, and validating the returned output (`SPEC.md` §2.3 & §3.7).
+ * Executes a passive `CommandNode` (`M.command(id)`) by validating `input`, invoking `node.fn(validatedInput, ctx)`, and validating the returned output (`SPEC.md` §2.3 & §3.7).
  *
  * Enforces Declarative Compilation Invariant 6 (`node` is a passive AST record with zero `.execute` method; execution occurs exclusively here).
  *

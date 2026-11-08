@@ -2,7 +2,7 @@ import type {
   GeminiModelNode,
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { defaultGeminiHttpTransport } from './default-gemini-http-transport.constants.js';
 import type { GeminiHttpTransport } from './gemini-http-transport.js';
 import { GeminiModelDriver } from './gemini-model-driver.js';

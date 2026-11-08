@@ -3,7 +3,7 @@ import {
   type LocalServiceNode,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { compileDaemonInteractionConfig } from './internal/compile-daemon-interaction-config.js';
 import { compileLocalDaemonNode } from './internal/compile-local-daemon-node.js';
 import type { LocalDaemonBuilderState } from './internal/local-daemon-builder-state.js';

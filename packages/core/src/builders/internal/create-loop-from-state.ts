@@ -82,7 +82,7 @@ export function createLoopFromState<TIn = unknown, TOut = unknown, THandle = unk
       stepId: TNewActStepId,
       actor: MaybeBuilder<AgentNode<TActIn, TActOut, THandle>>,
     ) => {
-      assertNonEmptyIdentifier('H.loop.act', stepId);
+      assertNonEmptyIdentifier('M.loop.act', stepId);
       const actorNode = extractAST(actor);
       const wideState: LoopBuilderState<unknown, unknown, THandle, string> = {
         ...state,
@@ -105,7 +105,7 @@ export function createLoopFromState<TIn = unknown, TOut = unknown, THandle = unk
       evaluator: MaybeBuilder<AgentNode<TEvalIn, TEvalOut, THandle>>,
       options: LoopEvaluateOptions<TIn, TOut, TEvalIn, TEvalOut, TReceipt>,
     ) => {
-      assertNonEmptyIdentifier('H.loop.evaluate', stepId);
+      assertNonEmptyIdentifier('M.loop.evaluate', stepId);
       return createLoopFromState({
         ...state,
         evaluateStep: { stepId, evaluator: extractAST(evaluator), mapInput: options.mapInput, acceptWhen: options.acceptWhen, feedbackMapper: options.feedbackMapper },

@@ -6,7 +6,7 @@ import type {
   GitWorktreeHandle,
   NodeExecutor,
   StepExecutionContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   MergeTrainStepInputSchema,
   type MergeTrainInputItem,

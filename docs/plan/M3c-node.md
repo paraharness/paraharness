@@ -1,9 +1,9 @@
-# Milestone M3c — `@harness-dsl/node` OS Subprocesses, Stream Checks, Daemons & MCP Control Plane
+# Milestone M3c — `@metaharness/node` OS Subprocesses, Stream Checks, Daemons & MCP Control Plane
 
 ## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
 - **Milestone**: `M3c` (Wave 2 — Parallel Adapter Fan-Out `c`, depends on `M1`)
-- **Package**: `@harness-dsl/node` (`packages/node`)
+- **Package**: `@metaharness/node` (`packages/node`)
 - **`owned_dirs`**:
   - `packages/node/src/**`
   - `packages/node/test/**`
@@ -12,7 +12,7 @@
   - `packages/{sqlite,postgres,fs,markdown,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@harness-dsl/node` must have **zero runtime or type imports** from any other M3 adapter package. It depends exclusively on `@harness-dsl/core` (`workspace:*`), `node-pty`, `@modelcontextprotocol/sdk`, `pidtree`, `fkill`, `get-port`, `wait-on`, `p-queue`, `p-limit`, `zod`, and Node built-ins (`node:child_process`, `node:net`, `node:http`, `node:crypto`, `node:events`).
+  - `@metaharness/node` must have **zero runtime or type imports** from any other M3 adapter package. It depends exclusively on `@metaharness/core` (`workspace:*`), `node-pty`, `@modelcontextprotocol/sdk`, `pidtree`, `fkill`, `get-port`, `wait-on`, `p-queue`, `p-limit`, `zod`, and Node built-ins (`node:child_process`, `node:net`, `node:http`, `node:crypto`, `node:events`).
 
 ### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
 
@@ -35,7 +35,7 @@
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`NodeRunnerNode`, `LocalCommandNode`, `LocalCommandCheckNode`, `LocalCommandToolNode`, `LocalStreamCheckNode`, `LocalStreamCheckToolNode`, `LocalServiceNode`, `LocalServiceToolNode`, `NodeAllowBinariesNode`, `NodeDenyNetworkNode`, `NodeHttpControlPlaneNode`, `NodeMcpStdioNode`, `NodeMcpSseNode`) and late-bound `EnvRef` resolution via `ctx.resolveEnv`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2–§2.4 (`lines 682–1438`) | `BaseRunnerPoolASTNode`, `BaseDomainStepASTNode`, `BaseCheckASTNode`, `BaseToolASTNode` (`effectTracking: 'subprocess-post-flight'`), `BaseServiceASTNode`, `BasePolicyGuardASTNode`, `BaseControlPlaneASTNode`, `RunnerDriver`, `ToolDriver` (omitting `describeEffects` on `'subprocess-post-flight'` tools), `ServiceSession`, `ControlPlaneAdapter`, `RuntimeExecutorRegistrySlice`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.2 & §3.5 (`lines 2243–2306`) | Service lifecycle (`'scope' \| 'fork' \| 'skill'`), `LocalServiceNode.toolSchemas` up-front wire registration, and post-flight subprocess sandboxing (`effectTracking: 'subprocess-post-flight'`). |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.2 (`lines 2677–2789`) | Complete `@harness-dsl/node` specification: `local.runner({ id?, slots, maxDaemons? })`, `local.command(id)` (`.runner()`, `.stdin()`, `.env()`, `.argv()`, `.timeoutMinutes()`, `.input()`, `.output()`, `.unrepeatable(preCheckCmd, { key })`, `.asCheck()`, `.asTool()`), `local.streamCheck(id)` (`.runner()`, `.argv()`, `.env()`, `.timeoutMinutes()`, `.circuitBreakWhenStdout(regex, { graceLinesAfterMatch })`, `.asTool()`), `local.daemon(id)` (`.runner()`, `.lifecycle()`, `.port()`, `.start()`, `.stopCommand()`, `.readyWhenStdout()`, `.interact()`, `${sanitizedPrefix}-${sha256(rawScopeKey).slice(0, 8)}`, pre-start `.stopCommand()` cleanup, TCP readiness verification, PTY `ECHO`-disabled framed interaction), `local.allowBinaries(bins)`, `local.denyNetwork()`, `mcp.server({ port })`, `local.mcpStdio(...)`, `local.mcpSse(...)`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.2 (`lines 2677–2789`) | Complete `@metaharness/node` specification: `local.runner({ id?, slots, maxDaemons? })`, `local.command(id)` (`.runner()`, `.stdin()`, `.env()`, `.argv()`, `.timeoutMinutes()`, `.input()`, `.output()`, `.unrepeatable(preCheckCmd, { key })`, `.asCheck()`, `.asTool()`), `local.streamCheck(id)` (`.runner()`, `.argv()`, `.env()`, `.timeoutMinutes()`, `.circuitBreakWhenStdout(regex, { graceLinesAfterMatch })`, `.asTool()`), `local.daemon(id)` (`.runner()`, `.lifecycle()`, `.port()`, `.start()`, `.stopCommand()`, `.readyWhenStdout()`, `.interact()`, `${sanitizedPrefix}-${sha256(rawScopeKey).slice(0, 8)}`, pre-start `.stopCommand()` cleanup, TCP readiness verification, PTY `ECHO`-disabled framed interaction), `local.allowBinaries(bins)`, `local.denyNetwork()`, `mcp.server({ port })`, `local.mcpStdio(...)`, `local.mcpSse(...)`. |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 (`lines 185, 322, 370–430, 505–510, 609–610, 620, 727, 730, 981, 1002–1030, 1194, 1205`) | All `local.*` and `mcp.*` usages in `engineering-harness.ts`. |
 
 ---
@@ -75,7 +75,7 @@ Every file, class, method, and function in `packages/node/src/**` and `packages/
 | `src/executors/node-control-plane-and-mcp-adapters.ts` | `function` | `createNodeHttpControlPlaneAdapter`, `createNodeMcpStdioAdapter`, `createNodeMcpSseAdapter` (backed by `@modelcontextprotocol/sdk`) |
 | `src/executors/create-node-executors.ts` | `function` | `createNodeExecutors` |
 | `src/executors/node-executors.constants.ts` | `const` | `nodeExecutors: RuntimeExecutorRegistrySlice` |
-| `src/index.ts` | `barrel` | Pure explicit re-exports of `local`, `LocalNamespace`, `mcp`, `McpNamespace`, `nodeExecutors`, `createNodeExecutors`, `NodeRunnerDriver`, `sanitizeDaemonScopeKey`, `LocalRunnerBuilder`, `LocalRunnerOptions`, `LocalCommandBuilder`, `LocalCommandUnrepeatableOptions`, `LocalStreamCheckBuilder`, `LocalStreamCheckCircuitBreakerOptions`, `LocalDaemonBuilder`, `LocalDaemonInteractOptions`, `McpServerOptions`, all `create*` builder factories, and all `Node*` / `Local*` AST node types from `@harness-dsl/core` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `local`, `LocalNamespace`, `mcp`, `McpNamespace`, `nodeExecutors`, `createNodeExecutors`, `NodeRunnerDriver`, `sanitizeDaemonScopeKey`, `LocalRunnerBuilder`, `LocalRunnerOptions`, `LocalCommandBuilder`, `LocalCommandUnrepeatableOptions`, `LocalStreamCheckBuilder`, `LocalStreamCheckCircuitBreakerOptions`, `LocalDaemonBuilder`, `LocalDaemonInteractOptions`, `McpServerOptions`, all `create*` builder factories, and all `Node*` / `Local*` AST node types from `@metaharness/core` |
 
 ---
 
@@ -89,7 +89,7 @@ Every file, class, method, and function in `packages/node/src/**` and `packages/
    - Every builder factory function (`create-*.ts`) gets its own focused file (`Rule 1.6`); `NodeRunnerDriver` and `PtyFramedInteractiveSession` each get their own single-class file; every `const` (`local`, `mcp`, `nodeExecutors`, `ISOLATED_GIT_ENV_OVERRIDES`) lives in its own `const`-only file.
 2. **JSDoc Anatomy & Approved Library Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
    - Use `node-pty` for PTY daemon sessions, `@modelcontextprotocol/sdk` for MCP stdio/SSE control-plane servers (normalizing incoming `'data'` stream chunks to `Buffer` and never calling `setEncoding('utf8')` on `Readable` streams passed to `StdioServerTransport` per `docs/lessons/BUILDER.md`), `pidtree` + `fkill` for process-tree teardown, `get-port` for dynamic port allocation, `wait-on` for TCP port readiness polling, and `p-queue` / `p-limit` for runner slot concurrency.
-   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @harness-dsl/node lint`.
+   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @metaharness/node lint`.
 
 ### 4.1 `local.runner({ id?, slots, maxDaemons? })` & `NodeRunnerDriver` (`SPEC.md` §4.2 line 2783)
 - Compiles to `NodeRunnerNode` (`readonly type: 'node:runner'`, defaulting `id` to `'default-runner'` and `maxDaemons` to `slots`).
@@ -157,8 +157,8 @@ All `test/fixtures/**` files strictly obey single-entity-kind file separation, s
 Run from workspace root (plus the `IMPL_LOOP.md` `baseline_dirty` diff check against `<non_sibling_forbidden_dirs_excluding_upstream_patches>`):
 
 ```bash
-pnpm --filter @harness-dsl/node lint
-pnpm --filter @harness-dsl/node typecheck
-pnpm --filter @harness-dsl/node test -- --reporter=verbose
+pnpm --filter @metaharness/node lint
+pnpm --filter @metaharness/node typecheck
+pnpm --filter @metaharness/node test -- --reporter=verbose
 test -z "$(git status --porcelain -- docs .agents .claude package.json tsconfig.base.json vitest.config.ts)"
 ```

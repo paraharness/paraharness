@@ -1,5 +1,5 @@
 {
-  "name": "@harness-dsl/gemini",
+  "name": "@metaharness/gemini",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@google/genai": "^3.0.0",
-    "@harness-dsl/core": "workspace:*",
+    "@metaharness/core": "workspace:*",
     "zod": "^4.6.7"
   },
   "devDependencies": {

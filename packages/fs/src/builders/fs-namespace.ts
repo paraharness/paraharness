@@ -21,7 +21,7 @@ import { createFsWriteGuardBuilder } from './create-fs-write-guard-builder.js';
 import type { FsNamespace } from './fs-namespace-contract.js';
 
 /**
- * Frozen `@harness-dsl/fs` builder namespace (`fs.*`).
+ * Frozen `@metaharness/fs` builder namespace (`fs.*`).
  *
  * Provides pure AST builder factories for filesystem sources, partition maps, policy guards,
  * capability lease deltas, quota tripwires, regex checks, telemetry collectors, lesson stores,

@@ -1,4 +1,4 @@
-import type { SlackApproverNode } from '@harness-dsl/core';
+import type { SlackApproverNode } from '@metaharness/core';
 import type { SlackBotOptions } from './slack-bot-options.js';
 
 /**

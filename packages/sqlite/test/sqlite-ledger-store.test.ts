@@ -3,7 +3,7 @@ import type {
   AgentContinuationFrame,
   SuspendedForkRecord,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { SqliteLedgerStore } from '../src/index.js';
 import { createTempSqliteDb } from './fixtures/temp-sqlite-db.js';
 import type { TempSqliteDbHandle } from './fixtures/temp-sqlite-db-handle.js';

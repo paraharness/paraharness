@@ -1,4 +1,4 @@
-import type { TopologyPartitionState } from '@harness-dsl/core';
+import type { TopologyPartitionState } from '@metaharness/core';
 import type Database from 'better-sqlite3';
 import type { SqliteOverlayStepMutationEntry } from './sqlite-overlay-step-mutation-entry.js';
 import type { SqliteTopologyBaseRow } from './sqlite-topology-base-row.js';

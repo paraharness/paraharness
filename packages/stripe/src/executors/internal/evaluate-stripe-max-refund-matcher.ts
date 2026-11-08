@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@harness-dsl/core';
+import type { ToolEffect } from '@metaharness/core';
 import type { StripeMaxRefundMatcherNode } from '../../nodes/stripe-max-refund-matcher-node.js';
 
 /**

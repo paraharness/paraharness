@@ -4,7 +4,7 @@ import type {
   ForkContext,
   PrecedingCompletedToolResult,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { formatOpenAiForkPromptText } from './format-openai-fork-prompt-text.js';
 import { projectCanonicalToOpenAiWire } from './project-canonical-to-openai-wire.js';
 

@@ -1,4 +1,4 @@
-import type { GithubCreateOrUpdatePrNode, StepExecutionContext } from '@harness-dsl/core';
+import type { GithubCreateOrUpdatePrNode, StepExecutionContext } from '@metaharness/core';
 import { defaultGithubHttpTransport } from './default-github-http-transport.constants.js';
 import { executeGithubPrWithTransport } from './internal/execute-github-pr-with-transport.js';
 

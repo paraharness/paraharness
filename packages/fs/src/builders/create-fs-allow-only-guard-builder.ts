@@ -1,4 +1,4 @@
-import type { FsAllowOnlyGuardNode } from '@harness-dsl/core';
+import type { FsAllowOnlyGuardNode } from '@metaharness/core';
 
 /**
  * Compiles a passive `FsAllowOnlyGuardNode` (`fs:allow-only`) for `fs.allowOnly(globs)`.

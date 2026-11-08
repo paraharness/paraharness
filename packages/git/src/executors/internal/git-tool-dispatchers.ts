@@ -4,7 +4,7 @@ import type {
   GitWorktreeHandle,
   StepExecutionContext,
   ToolExecutionResult,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   DiffCandidatesInputSchema,
   DiffRefsInputSchema,

@@ -4,7 +4,7 @@ import type {
   NodeDenyNetworkNode,
   NodeMcpSseNode,
   NodeMcpStdioNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { LocalCommandBuilder } from './local-command-builder.js';
 import type { LocalDaemonBuilder } from './local-daemon-builder.js';
 import type { LocalRunnerBuilder } from './local-runner-builder.js';
@@ -27,7 +27,7 @@ export interface LocalRunnerOptions {
 }
 
 /**
- * Public `local.*` DSL builder namespace exported by `@harness-dsl/node`.
+ * Public `local.*` DSL builder namespace exported by `@metaharness/node`.
  *
  * Provides declarative builders for local OS process pools (`local.runner`), one-shot commands
  * (`local.command`), streaming verification checks (`local.streamCheck`), background daemons

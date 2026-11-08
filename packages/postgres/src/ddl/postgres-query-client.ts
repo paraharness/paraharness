@@ -15,7 +15,7 @@ export interface PostgresQueryResult<TRow = Record<string, unknown>> {
 }
 
 /**
- * Minimal asynchronous PostgreSQL query client contract used by `@harness-dsl/postgres` stores and executors.
+ * Minimal asynchronous PostgreSQL query client contract used by `@metaharness/postgres` stores and executors.
  *
  * Compatible with `pg.Pool` (`node-postgres`), `pg.Client`, and `@electric-sql/pglite` test fixtures,
  * supporting optional `connect()` transaction pinning when backed by a connection pool.

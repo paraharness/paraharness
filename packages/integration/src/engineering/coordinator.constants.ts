@@ -1,6 +1,6 @@
-import { H } from '@harness-dsl/core';
-import { fs } from '@harness-dsl/fs';
-import { git } from '@harness-dsl/git';
+import { M } from '@metaharness/core';
+import { fs } from '@metaharness/fs';
+import { git } from '@metaharness/git';
 import {
   forkRequestSchema,
   ownerDecisionSchema,
@@ -42,7 +42,7 @@ import {
  * via `mutatePlan`, escalates exogenous trade-offs via `normativeEscalation`, and handles upward `contractViolation`
  * interrupts across affected sibling forks.
  */
-export const coordinator = H.agent('coordinator')
+export const coordinator = M.agent('coordinator')
   .prefixGroup(engineeringPrefix)
   .model(opus)
   .topology(repoTopology)

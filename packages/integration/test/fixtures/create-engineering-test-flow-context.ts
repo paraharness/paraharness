@@ -7,19 +7,19 @@ import {
   type FlowExecutionContext,
   type GitWorktreeHandle,
   type HumanAdapter,
-} from '@harness-dsl/core';
-import { FsJsonlLessonStore, fsExecutors } from '@harness-dsl/fs';
-import { type GitCowWorktreeScopeDriver, gitExecutors } from '@harness-dsl/git';
-import { githubExecutors } from '@harness-dsl/github';
-import { markdownExecutors } from '@harness-dsl/markdown';
-import { nodeExecutors } from '@harness-dsl/node';
-import { postgresExecutors } from '@harness-dsl/postgres';
-import { slackExecutors } from '@harness-dsl/slack';
+} from '@metaharness/core';
+import { FsJsonlLessonStore, fsExecutors } from '@metaharness/fs';
+import { type GitCowWorktreeScopeDriver, gitExecutors } from '@metaharness/git';
+import { githubExecutors } from '@metaharness/github';
+import { markdownExecutors } from '@metaharness/markdown';
+import { nodeExecutors } from '@metaharness/node';
+import { postgresExecutors } from '@metaharness/postgres';
+import { slackExecutors } from '@metaharness/slack';
 import {
   SqliteLedgerStore,
   SqliteTopologyStore,
   sqliteExecutors,
-} from '@harness-dsl/sqlite';
+} from '@metaharness/sqlite';
 import {
   engineeringFlow,
   engineeringPrefix,

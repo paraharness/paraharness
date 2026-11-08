@@ -4,7 +4,7 @@ import {
   type ClaudeModelNode,
   type MaybeBuilder,
   type PoolNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { ClaudeModelBuilder } from './claude-model-builder.js';
 import type { ClaudeModelOptions } from './claude-model-options.js';
 

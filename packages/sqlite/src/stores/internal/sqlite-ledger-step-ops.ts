@@ -2,7 +2,7 @@ import type {
   InterruptedStepBootRecord,
   RecordStepStartInput,
   RecordStepTransitionInput,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type Database from 'better-sqlite3';
 import {
   mapInterruptedBootRecordFromSqlite,

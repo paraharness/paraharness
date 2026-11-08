@@ -4,7 +4,7 @@ import type {
   FsGlobMatcherNode,
   GitWorktreeHandle,
   LeaseDelta,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { computePathModeAndSha256 } from './file-digest-and-globs.js';
 import { gitCheckpointStatusMap } from './git-checkpoint-status-map.js';
 import {
@@ -168,7 +168,7 @@ export async function gitWorktreeFlushCleanParentChanges(
 /**
  * Constructs the temporary `LeaseDelta` (`type: 'harness:lease-delta'`) granting write access to `handle.unresolvedConflictPaths`.
  *
- * Returns `undefined` when `handle.unresolvedConflictPaths` is empty, without importing `@harness-dsl/fs`.
+ * Returns `undefined` when `handle.unresolvedConflictPaths` is empty, without importing `@metaharness/fs`.
  *
  * @param {GitWorktreeHandle} handle - Worktree handle to inspect for unresolved conflicts.
  *

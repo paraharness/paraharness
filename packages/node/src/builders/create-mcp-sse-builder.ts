@@ -1,4 +1,4 @@
-import type { AstBuilder, NodeMcpSseNode } from '@harness-dsl/core';
+import type { AstBuilder, NodeMcpSseNode } from '@metaharness/core';
 import type { McpServerOptions } from './mcp-namespace-contract.js';
 
 /**

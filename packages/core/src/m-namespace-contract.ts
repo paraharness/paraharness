@@ -40,11 +40,11 @@ import type {
 } from './schemas/speculation-schemas.js';
 
 /**
- * Root declarative builder namespace (`H`) for constructing passive MetaHarness AST definitions.
+ * Root declarative builder namespace (`M`) for constructing passive MetaHarness AST definitions.
  *
  * Exposes factory methods for every core orchestration construct alongside canonical Zod schemas.
  */
-export interface HNamespace {
+export interface MNamespace {
   /**
    * Creates a symbolic environment variable reference (`EnvRef`) without reading `process.env`.
    *
@@ -54,7 +54,7 @@ export interface HNamespace {
    */
   env(key: string): EnvRef;
   /**
-   * Creates a fluent `SignalBuilder` for a cross-lane or external signal (`H.signal(id)`).
+   * Creates a fluent `SignalBuilder` for a cross-lane or external signal (`M.signal(id)`).
    *
    * Defaults the payload schema to `z.unknown()` when `schema` is omitted.
    * @template TPayload Validated signal payload type.
@@ -64,7 +64,7 @@ export interface HNamespace {
    */
   signal<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload>): SignalBuilder<TPayload>;
   /**
-   * Creates a fluent `InterruptBuilder` for an upward or guard-triggered interrupt (`H.interrupt(id)`).
+   * Creates a fluent `InterruptBuilder` for an upward or guard-triggered interrupt (`M.interrupt(id)`).
    *
    * Defaults the payload schema to `z.unknown()` when `schema` is omitted.
    * @template TPayload Validated interrupt payload type.
@@ -74,7 +74,7 @@ export interface HNamespace {
    */
   interrupt<TPayload = unknown>(id: string, schema?: z.ZodType<TPayload>): InterruptBuilder<TPayload>;
   /**
-   * Creates a fluent `StreamBuilder` for an inbound event stream (`H.stream(id)`).
+   * Creates a fluent `StreamBuilder` for an inbound event stream (`M.stream(id)`).
    *
    * Connects an external stream source to a typed signal emission rule.
    * @template TEvent   Raw external event payload type.
@@ -84,7 +84,7 @@ export interface HNamespace {
    */
   stream<TEvent = unknown, TPayload = unknown>(id: string): StreamBuilder<TEvent, TPayload>;
   /**
-   * Creates a fluent `PoolBuilder` for an account seat or model pool (`H.pool(id)`).
+   * Creates a fluent `PoolBuilder` for an account seat or model pool (`M.pool(id)`).
    *
    * Aggregates candidate items with a selection strategy and optional fallback item.
    * @template TItem Candidate AST node type managed by the pool.
@@ -93,7 +93,7 @@ export interface HNamespace {
    */
   pool<TItem extends ASTNode = ASTNode>(id: string): PoolBuilder<TItem>;
   /**
-   * Creates a fluent `PrefixGroupBuilder` for shared byte-identical wire system prompts (`H.prefixGroup(id)`).
+   * Creates a fluent `PrefixGroupBuilder` for shared byte-identical wire system prompts (`M.prefixGroup(id)`).
    *
    * Pins shared grounding, instructions, and global rules across multiple agent roles.
    * @param {string} id - Unique identifier of the prefix group.
@@ -101,7 +101,7 @@ export interface HNamespace {
    */
   prefixGroup(id: string): PrefixGroupBuilder;
   /**
-   * Creates a fluent `TopologyConfigBuilder` for a relational partition DAG (`H.topology(id)`).
+   * Creates a fluent `TopologyConfigBuilder` for a relational partition DAG (`M.topology(id)`).
    *
    * Validates partition dependency graphs and configures signal-driven contract overlays.
    * @param {string} id - Unique identifier of the topology.
@@ -109,7 +109,7 @@ export interface HNamespace {
    */
   topology(id: string): TopologyConfigBuilder<string>;
   /**
-   * Creates a fluent `HumanBuilder` for an external human authority or notification channel (`H.human(id)`).
+   * Creates a fluent `HumanBuilder` for an external human authority or notification channel (`M.human(id)`).
    *
    * Tracks bidirectional versus notify-only channel capabilities at the type level.
    * @param {string} id - Unique identifier of the human authority.
@@ -117,7 +117,7 @@ export interface HNamespace {
    */
   human(id: string): HumanBuilder<'bidirectional' | 'notify-only'>;
   /**
-   * Creates a fluent `RulesBuilder` for global and scoped rules (`H.rules(id)`).
+   * Creates a fluent `RulesBuilder` for global and scoped rules (`M.rules(id)`).
    *
    * Aggregates always-active global rules and partition- or effect-scoped rules.
    * @param {string} id - Unique identifier of the rules registry.
@@ -125,7 +125,7 @@ export interface HNamespace {
    */
   rules(id: string): RulesBuilder;
   /**
-   * Creates a fluent `ScopedRuleBuilder` for a path/partition-activated rule (`H.scopedRule(idOrSource)`).
+   * Creates a fluent `ScopedRuleBuilder` for a path/partition-activated rule (`M.scopedRule(idOrSource)`).
    *
    * Binds activation predicates, directives, and optional `beforeStop` check gates.
    * @param {string | MaybeBuilder<SourceASTNode<ScopedRule>>} idOrSource - Unique identifier or frontmatter rule source.
@@ -133,7 +133,7 @@ export interface HNamespace {
    */
   scopedRule(idOrSource: string | MaybeBuilder<SourceASTNode<ScopedRule>>): ScopedRuleBuilder;
   /**
-   * Creates a fluent `SkillBuilder` for a dynamically unlocked skill (`H.skill(idOrSource)`).
+   * Creates a fluent `SkillBuilder` for a dynamically unlocked skill (`M.skill(idOrSource)`).
    *
    * Configures pull-based instructions, unlocked tools, and background daemon services.
    * @template THandle Isolation scope handle type.
@@ -144,7 +144,7 @@ export interface HNamespace {
     idOrSource: string | MaybeBuilder<SourceASTNode<SkillNode<THandle>>>,
   ): SkillBuilder<THandle>;
   /**
-   * Creates a fluent `LessonsBuilder` for empirical lesson recall, distillation, and scoring (`H.lessons(id)`).
+   * Creates a fluent `LessonsBuilder` for empirical lesson recall, distillation, and scoring (`M.lessons(id)`).
    *
    * Configures contrastive distillation, 4-state utility scoring, retirement, and promotion signals.
    * @template TIn Actor input payload type for `.queryFrom(...)`.
@@ -153,7 +153,7 @@ export interface HNamespace {
    */
   lessons<TIn = unknown>(id: string): LessonsBuilder<TIn>;
   /**
-   * Creates a fluent `PolicyBuilder` for capability guards and quantitative limits (`H.policy(id)`).
+   * Creates a fluent `PolicyBuilder` for capability guards and quantitative limits (`M.policy(id)`).
    *
    * Configures pre-flight/post-flight guard clauses, tripwires, and resource ceilings.
    * @template THandle Isolation scope handle type.
@@ -162,7 +162,7 @@ export interface HNamespace {
    */
   policy<THandle = unknown>(id: string): PolicyBuilder<THandle>;
   /**
-   * Creates a fluent `CommandBuilder` for a deterministic TypeScript step command (`H.command(id)` or `H.command(id, options)`).
+   * Creates a fluent `CommandBuilder` for a deterministic TypeScript step command (`M.command(id)` or `M.command(id, options)`).
    *
    * Supports both fluent method chaining and the 2-argument `CommandConfigOptions` overload.
    * @template TIn     Validated command input payload type.
@@ -174,7 +174,7 @@ export interface HNamespace {
    */
   command<TIn = unknown, TOut = unknown, THandle = unknown>(id: string, options?: CommandConfigOptions<TIn, TOut, THandle>): CommandBuilder<TIn, TOut, THandle>;
   /**
-   * Creates a fluent `AgentBuilder` for the universal LLM actor primitive (`H.agent(id)`).
+   * Creates a fluent `AgentBuilder` for the universal LLM actor primitive (`M.agent(id)`).
    *
    * Compiles to a passive `AgentNode` with canonical `roleKey` derivation.
    * @template THandle Isolation scope handle type.
@@ -183,7 +183,7 @@ export interface HNamespace {
    */
   agent<THandle = unknown>(id: string): AgentBuilder<unknown, unknown, THandle>;
   /**
-   * Creates a fluent `LoopBuilder` for an iterative action-and-evaluation refinement loop (`H.loop(id)`).
+   * Creates a fluent `LoopBuilder` for an iterative action-and-evaluation refinement loop (`M.loop(id)`).
    *
    * Pairs a write-capable `.act()` agent with a read-only adversarial `.evaluate()` agent.
    * @template THandle Isolation scope handle type.
@@ -192,7 +192,7 @@ export interface HNamespace {
    */
   loop<THandle = unknown>(id: string): LoopBuilder<unknown, unknown, THandle, string>;
   /**
-   * Creates a fluent `FlowBuilder` for a declarative multi-step workflow (`H.flow(id)`).
+   * Creates a fluent `FlowBuilder` for a declarative multi-step workflow (`M.flow(id)`).
    *
    * Threads scope handles, receipts, telemetry metrics, and step outputs across sequential steps and branches.
    * @param {string} id - Unique identifier of the flow.
@@ -200,7 +200,7 @@ export interface HNamespace {
    */
   flow(id: string): FlowBuilder<unknown, unknown, never, unknown, Record<string, unknown>, Record<string, never>>;
   /**
-   * Creates a fluent `LaneBuilder` for a concurrent work execution lane (`H.lane(id)`).
+   * Creates a fluent `LaneBuilder` for a concurrent work execution lane (`M.lane(id)`).
    *
    * Configures tracker polling, flow execution, concurrency, priority aging, and signal rewinds.
    * @param {string} id - Unique identifier of the lane.
@@ -208,7 +208,7 @@ export interface HNamespace {
    */
   lane(id: string): LaneBuilder<unknown, string>;
   /**
-   * Creates a fluent `HarnessBuilder` for a root MetaHarness application (`H.harness(id)`).
+   * Creates a fluent `HarnessBuilder` for a root MetaHarness application (`M.harness(id)`).
    *
    * Binds the state ledger, pools, streams, lanes, signal notifications, and control planes.
    * @param {string} id - Unique identifier of the harness application.

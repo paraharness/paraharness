@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   type AgentContinuationFrame, BudgetApprovalSchema, type FlowExecutionContext, type ForkBatchContinuationFrame,
-  type GitKeepWorktreeNode, type GitWorktreeHandle, H, type InlineSkillNode, LaneScheduler,
+  type GitKeepWorktreeNode, type GitWorktreeHandle, M, type InlineSkillNode, LaneScheduler,
   type LocalServiceNode, PoolManager, ScopeLockManager, ServiceSessionRegistry, type SpeculateContinuationFrame,
   type SqliteLedgerNode, StepContinuationQueue, type StepExecutionContext, createExecutorRegistry, createRuntime,
   executeAddDependencies, executeFlow, executeHierarchicalRewindDrain, executeReplaceWithPromotion,
@@ -55,9 +55,9 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
     });
     expect(daemonSession.running).toBe(true);
 
-    const topologyBuilder = H.topology('topo-plan').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ core: { dependsOn: [] } });
+    const topologyBuilder = M.topology('topo-plan').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ core: { dependsOn: [] } });
     const taskSchema = z.object({ id: z.string(), title: z.string(), tag: z.string().optional() });
-    const mutatePlanCap = H.agent('planner-agent').model(SAMPLE_MODEL_NODE).input(taskSchema).output(taskSchema)
+    const mutatePlanCap = M.agent('planner-agent').model(SAMPLE_MODEL_NODE).input(taskSchema).output(taskSchema)
       .capabilities(($c) =>
         $c.mutatePlan(($m) =>
           $m.canSpawnTasks(taskSchema, { maxSpawnedPerRun: 3, maxPrerequisiteDepth: 4, priorityStrategy: 'inherit-parent-with-boost', enforcePatch: { tag: 'enforced-patch' }, onPrerequisiteSpawned: 'suspend-and-yield-slot', resumeWhen: 'prerequisite-exit' })
@@ -143,28 +143,28 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
   });
 });
 
-describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors, .maxCostUsd, .retry restoreCheckpoint, Hierarchical Rewind Drain, commitOverlayWhen & compactWhen)', () => {
+describe('M2 Runtime — M.lane (syncRoot on QUEUED->RUNNING, collectFlowActors, .maxCostUsd, .retry restoreCheckpoint, Hierarchical Rewind Drain, commitOverlayWhen & compactWhen)', () => {
   it('runs initial syncRoot, collects flow actors for prefixGroups, validates nextLimit > costUsd on budget approval, restores checkpoint on .retry, and preserves overlay on rewind when resetsRunOverlay is false', async () => {
     const ledgerStore = new InMemoryLedgerStore();
     const topologyStore = new InMemoryTopologyStore({ api: { contractText: 'v1', epoch: 1 } });
     const lessonStore = new InMemoryLessonStore();
     const scope = new ScriptedBranchableScope();
     const humanAdapter = new ScriptedHumanAdapter();
-    const budgetHuman = H.human('budget-human').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE).withName('budget-approver').output(BudgetApprovalSchema);
-    const rewindSignal = H.signal('sig-amend', z.object({ id: z.string(), note: z.string() }));
-    const prMergedSignal = H.signal('sig-pr-merged', z.object({ itemKey: z.string(), baseBranch: z.string(), prerequisiteRunId: z.string().optional() }));
-    const compactSignal = H.signal('sig-compact', z.object({ itemKey: z.string() }));
+    const budgetHuman = M.human('budget-human').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE).withName('budget-approver').output(BudgetApprovalSchema);
+    const rewindSignal = M.signal('sig-amend', z.object({ id: z.string(), note: z.string() }));
+    const prMergedSignal = M.signal('sig-pr-merged', z.object({ itemKey: z.string(), baseBranch: z.string(), prerequisiteRunId: z.string().optional() }));
+    const compactSignal = M.signal('sig-compact', z.object({ itemKey: z.string() }));
     const rewoundHandles: string[] = [];
     const hookContexts: string[] = [];
     const rewindHook: GitKeepWorktreeNode = Object.freeze({ type: 'git:keep-worktree', id: 'git-keep-hook', resetsRunOverlay: false });
-    const unionGroup = H.prefixGroup('pg-flow-union').toolsMode('union');
+    const unionGroup = M.prefixGroup('pg-flow-union').toolsMode('union');
 
     const itemSchema = z.object({ id: z.string(), deps: z.array(z.string()).default([]), failStep2: z.boolean().optional(), note: z.string().optional() });
     let step2Attempts = 0;
-    const step1Agent = H.agent<GitWorktreeHandle>('agent-step-1')
+    const step1Agent = M.agent<GitWorktreeHandle>('agent-step-1')
       .model(SAMPLE_MODEL_NODE).prefixGroup(unionGroup).tools(SAMPLE_DECLARED_TOOL_NODE)
       .input(itemSchema).output(z.object({ step1Done: z.boolean(), note: z.string() }));
-    const step2Cmd = H.command('cmd-step-2', {
+    const step2Cmd = M.command('cmd-step-2', {
       input: itemSchema, output: z.object({ attempts: z.number() }),
       fn: async (input: z.output<typeof itemSchema>) => {
         if (input.failStep2 === true) {
@@ -176,10 +176,10 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
       },
     });
 
-    const flow = H.flow('flow-lane-1')
+    const flow = M.flow('flow-lane-1')
       .input(itemSchema).scope(SAMPLE_TIER3_SCOPE_NODE).telemetry(SAMPLE_TELEMETRY_COLLECTOR_NODE)
       .step('step-1', step1Agent).step('step-2', step2Cmd).exit('merged');
-    const lane = H.lane('lane-1')
+    const lane = M.lane('lane-1')
       .input(itemSchema).key((i: z.output<typeof itemSchema>) => i.id).runs(flow).concurrency(2).priority('normal').agingMinutes(10)
       .waitFor((i: z.output<typeof itemSchema>) => i.deps, 'abandoned').maxCostUsd(1.0, budgetHuman)
       .retry(($r) => $r.tries(2).exponential(0).orFail('failed'))
@@ -292,12 +292,12 @@ describe('M2 Runtime — H.lane (syncRoot on QUEUED->RUNNING, collectFlowActors,
     expect(hookContexts).toContain('abort:run:lane-1:item-susp:root:run:lane-1:item-susp:env-ok:step-susp-1');
     expect([ledgerStore.resolvedSuspendedForks.get('f-rep#1'), scope.reattachedHandles.includes('root:run:lane-1:item-susp/child:f-rep'), scope.liveHandles.has('root:run:lane-1:item-susp/child:f-rep')]).toEqual(['ABORTED', true, false]);
 
-    const topologyNode = H.topology('topo-1').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ api: { dependsOn: [] } }).commitOverlayWhen({ onSignal: { signal: prMergedSignal, correlateBy: (p: { readonly itemKey: string }) => p.itemKey } }).toAST();
+    const topologyNode = M.topology('topo-1').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ api: { dependsOn: [] } }).commitOverlayWhen({ onSignal: { signal: prMergedSignal, correlateBy: (p: { readonly itemKey: string }) => p.itemKey } }).toAST();
     const ledgerNode: SqliteLedgerNode = Object.freeze({
       type: 'sqlite:ledger', uri: ':memory:',
       compaction: Object.freeze({ type: 'harness:compaction', signalTriggers: Object.freeze([{ signal: compactSignal.toAST(), correlateBy: (p: unknown) => (p as { readonly itemKey: string }).itemKey, afterGracePeriodHours: 0 }]), terminalExitTriggers: Object.freeze([]) }),
     });
-    const harnessNode = H.harness('harness-1').ledger(ledgerNode).lanes(lane).toAST();
+    const harnessNode = M.harness('harness-1').ledger(ledgerNode).lanes(lane).toAST();
 
     await topologyStore.updateContract('run-base-pr', 'api', 'v2-base-pr', 'step-base');
     await topologyStore.sealRunOverlay('run-base-pr');
@@ -368,8 +368,8 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
 
     const executedSteps: string[] = [];
     let triggerRewindOnce = true;
-    const step1Cmd = H.command('c-s1', { input: z.object({ id: z.string() }), output: z.object({ id: z.string() }), fn: async (i) => ((executedSteps.push('step-1')), i) });
-    const step2Cmd = H.command('c-s2', {
+    const step1Cmd = M.command('c-s1', { input: z.object({ id: z.string() }), output: z.object({ id: z.string() }), fn: async (i) => ((executedSteps.push('step-1')), i) });
+    const step2Cmd = M.command('c-s2', {
       input: z.object({ id: z.string() }), output: z.object({ id: z.string() }),
       fn: async (i) => {
         executedSteps.push('step-2');
@@ -377,7 +377,7 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
         return i;
       },
     });
-    const dummyFlow = H.flow('f-crash').input(z.object({ id: z.string() })).scope(SAMPLE_TIER3_SCOPE_NODE).step('step-1', step1Cmd).step('step-2', step2Cmd).exit('done').toAST();
+    const dummyFlow = M.flow('f-crash').input(z.object({ id: z.string() })).scope(SAMPLE_TIER3_SCOPE_NODE).step('step-1', step1Cmd).step('step-2', step2Cmd).exit('done').toAST();
     const flowCtx: FlowExecutionContext<unknown, unknown> = {
       runId: 'run-crash-1', laneId: 'lane-1', itemKey: 'item-crash-1', flow: dummyFlow as never, currentInput: { id: 'item-crash-1' },
       scopeHandle: '', scopeDriver: scope as never, registry, env: {}, ledgerStore, topologyStore, lockManager: new ScopeLockManager(),

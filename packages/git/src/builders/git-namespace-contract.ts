@@ -12,7 +12,7 @@ import type {
   GitWorktreeHandle,
   MaybeBuilder,
   NodeRunnerNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type {
   GitAbortMetaSchema,
   GitScopeReceiptSchema,
@@ -27,7 +27,7 @@ import type { GitMergeQueueOptions } from './git-merge-queue-options.js';
 import type { GitPublicSurfaceCrossTesterOptions } from './git-public-surface-cross-tester-options.js';
 
 /**
- * Public `git` builder and schema namespace contract (`import { git } from '@harness-dsl/git'`).
+ * Public `git` builder and schema namespace contract (`import { git } from '@metaharness/git'`).
  *
  * Mounts `ScopeReceiptSchema`, `SyncReceiptSchema`, `AbortMetaSchema`, and all declarative
  * Copy-on-Write worktree, hook, cross-verifier, tool, and delivery step builders.

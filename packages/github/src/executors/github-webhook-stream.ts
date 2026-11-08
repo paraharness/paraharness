@@ -5,7 +5,7 @@ import type {
   RuntimeDriverContext,
   StreamSource,
   StreamSubscriptionHandle,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   DEFAULT_GITHUB_WEBHOOK_PATH,
   DEFAULT_GITHUB_WEBHOOK_PORT,

@@ -8,7 +8,7 @@ import type {
   PrepareForkTarget,
   RuntimeDriverContext,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   GEMINI_API_BASE_URL,
   defaultGeminiHttpTransport,
@@ -24,7 +24,7 @@ import {
 import { resolveGeminiSeatAuth } from './internal/resolve-gemini-seat-auth.js';
 
 /**
- * Runtime `ModelDriver` implementation for the Google Gemini `generateContent` HTTP protocol (`@harness-dsl/gemini`).
+ * Runtime `ModelDriver` implementation for the Google Gemini `generateContent` HTTP protocol (`@metaharness/gemini`).
  *
  * Maps `CompiledWirePrefix` to `systemInstruction` and `tools: [{ functionDeclarations }]`, preserves
  * `thought: true` and cryptographic `thoughtSignature` fields on same-model turns and forks, enforces

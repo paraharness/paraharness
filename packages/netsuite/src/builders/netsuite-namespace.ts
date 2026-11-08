@@ -6,7 +6,7 @@ import { createNetSuiteRollbackAbortHookBuilder } from './create-netsuite-rollba
 import type { NetSuiteNamespace } from './netsuite-namespace-contract.js';
 
 /**
- * Frozen `@harness-dsl/netsuite` builder namespace (`netsuite.*`).
+ * Frozen `@metaharness/netsuite` builder namespace (`netsuite.*`).
  *
  * Exposes `netsuite.draftJournalScope()`, `netsuite.forbidClosedPeriodPosting()`,
  * `netsuite.journalTools()`, `netsuite.balanceZeroCheck()`, and `netsuite.rollbackDraftJournal()`.

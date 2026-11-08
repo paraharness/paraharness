@@ -17,7 +17,7 @@ import type { ChildInterruptHandlerBuilder as ChildInterruptBuilder } from './ch
 import type { InterruptEdgeBuilder } from './interrupt-edge-builder.js';
 
 /**
- * Fluent builder for the universal LLM actor primitive (`H.agent(id)`).
+ * Fluent builder for the universal LLM actor primitive (`M.agent(id)`).
  *
  * Compiles to a passive, deeply frozen `AgentNode` with canonical `roleKey` derivation.
  *

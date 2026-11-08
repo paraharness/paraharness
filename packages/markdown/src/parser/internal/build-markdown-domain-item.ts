@@ -3,7 +3,7 @@ import {
   GlobalRuleSchema,
   type InlineSkillNode,
   ScopedRuleSchema,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { ParsedMarkdownDocument } from '../parsed-markdown-document.js';
 import { buildScopePredicateFromFrontmatter } from './build-scope-predicate-from-frontmatter.js';
 

@@ -42,7 +42,7 @@ import type { ScopedRuleBuilder } from './builders/scoped-rule-builder.js';
 import type { SkillBuilder } from './builders/skill-builder.js';
 import type { StreamBuilder } from './builders/stream-builder.js';
 import type { TopologyConfigBuilder } from './builders/topology-config-builder.js';
-import type { HNamespace } from './h-namespace-contract.js';
+import type { MNamespace } from './m-namespace-contract.js';
 import {
   BudgetApprovalSchema,
   DistilledLessonCandidateSchema,
@@ -60,13 +60,13 @@ import {
 } from './schemas/speculation-schemas.js';
 
 /**
- * Root declarative builder namespace (`H`) for constructing passive MetaHarness AST definitions.
+ * Root declarative builder namespace (`M`) for constructing passive MetaHarness AST definitions.
  *
- * All builders under `H` are pure, copy-on-write immutable, and produce deeply frozen passive AST nodes.
+ * All builders under `M` are pure, copy-on-write immutable, and produce deeply frozen passive AST nodes.
  */
-export const H: HNamespace = Object.freeze<HNamespace>({
+export const M: MNamespace = Object.freeze<MNamespace>({
   env(key: string): EnvRef {
-    assertNonEmptyIdentifier('H.env', key);
+    assertNonEmptyIdentifier('M.env', key);
     return deepFreeze<EnvRef>({
       type: 'harness:env-ref',
       key,

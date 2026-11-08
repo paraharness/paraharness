@@ -1,10 +1,10 @@
 import {
   createRuntime,
-  H,
+  M,
   type HarnessRuntime,
   type HarnessRuntimeOptions,
-} from '@harness-dsl/core';
-import { sqlite } from '@harness-dsl/sqlite';
+} from '@metaharness/core';
+import { sqlite } from '@metaharness/sqlite';
 import { createAllIntegrationExecutorsRegistry } from '../internal/create-all-integration-executors-registry.js';
 import { reconciliationFlow } from './reconciliation-harness.constants.js';
 import { discrepancyItem } from './reconciliation-schemas.schema.js';
@@ -24,11 +24,11 @@ export function createReconciliationHarnessRuntime(
 ): HarnessRuntime {
   const registry = createAllIntegrationExecutorsRegistry(options?.registry);
   const ledgerUri = options?.env?.['RECONCILIATION_LEDGER_PATH'] ?? ':memory:';
-  const reconciliationLane = H.lane('reconciliation-lane')
+  const reconciliationLane = M.lane('reconciliation-lane')
     .input(discrepancyItem)
     .key((item) => item.discrepancyId)
     .flow(reconciliationFlow);
-  const reconciliationHarness = H.harness('reconciliation-harness')
+  const reconciliationHarness = M.harness('reconciliation-harness')
     .ledger(sqlite.ledger(ledgerUri))
     .lanes(reconciliationLane);
 

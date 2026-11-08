@@ -1,5 +1,5 @@
 {
-  "name": "@harness-dsl/openai",
+  "name": "@metaharness/openai",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@harness-dsl/core": "workspace:*",
+    "@metaharness/core": "workspace:*",
     "openai": "^7.53.0",
     "zod": "^4.6.7"
   },

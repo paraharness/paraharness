@@ -1,8 +1,8 @@
 /**
  * Domain-agnostic base AST node contract for human notification and decision channels (`HumanChannelASTNode`).
  *
- * Carries `interactionMode` (`'bidirectional'` vs `'notify-only'`) so `H.human`, `.ask()`,
- * `.escalate()`, and `H.lane.maxCostUsd()` can statically reject notify-only channels when
+ * Carries `interactionMode` (`'bidirectional'` vs `'notify-only'`) so `M.human`, `.ask()`,
+ * `.escalate()`, and `M.lane.maxCostUsd()` can statically reject notify-only channels when
  * interactive decisions are required.
  *
  * @template TType String-literal discriminant of the human channel node.

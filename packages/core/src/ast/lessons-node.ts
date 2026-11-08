@@ -14,7 +14,7 @@ import type { SignalNode } from './signal-node.js';
 export interface LessonDistillationConfig {
   /** Model or model pool used by the contrastive distiller agent. */
   readonly model: ModelASTNode | PoolNode<ModelASTNode>;
-  /** True when accepted iterations following a rejected `H.loop` evaluation trigger distillation. */
+  /** True when accepted iterations following a rejected `M.loop` evaluation trigger distillation. */
   readonly onLoopRecovery: boolean;
   /** Optional threshold configuring in-session `beforeStop` gate recovery distillation. */
   readonly onGateRecovery?: { readonly minFailedChecks: number };
@@ -23,7 +23,7 @@ export interface LessonDistillationConfig {
 }
 
 /**
- * Scoring and recall configuration for `H.lessons`.
+ * Scoring and recall configuration for `M.lessons`.
  *
  * Governs sliding-window Bayesian score calculation, partition-affinity boosting, contract-epoch
  * decay, and top-$N$ recall filtering at session start.
@@ -74,7 +74,7 @@ export interface LessonEmitSignalTrigger<TPayload = unknown> {
 }
 
 /**
- * Passive AST node representing an empirical lesson memory subsystem (`H.lessons(id)`).
+ * Passive AST node representing an empirical lesson memory subsystem (`M.lessons(id)`).
  *
  * Combines a backing `LessonStoreASTNode` with query extraction, contrastive distillation,
  * sliding-window outcome scoring, automatic retirement, and promotion signal triggers.

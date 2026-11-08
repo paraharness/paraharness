@@ -8,8 +8,8 @@ import {
   type ModelTurnRequest,
   type ModelTurnResponse,
   type StepExecutionContext,
-} from '@harness-dsl/core';
-import { git, GitCowWorktreeScopeDriver } from '@harness-dsl/git';
+} from '@metaharness/core';
+import { git, GitCowWorktreeScopeDriver } from '@metaharness/git';
 import { describe, expect, it } from 'vitest';
 import { workspace, type WorkItem } from '../src/index.js';
 import { createEngineeringTestFlowContext } from './fixtures/create-engineering-test-flow-context.js';

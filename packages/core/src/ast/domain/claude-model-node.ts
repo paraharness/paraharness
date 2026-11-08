@@ -3,7 +3,7 @@ import type { PoolNode } from '../pool-node.js';
 import type { ClaudeAccountSeatNode } from './claude-account-seat-node.js';
 
 /**
- * Passive AST node representing an Anthropic Claude model configuration (`@harness-dsl/claude`).
+ * Passive AST node representing an Anthropic Claude model configuration (`@metaharness/claude`).
  *
  * Dispatched via `RuntimeExecutorRegistry.models['claude:model']` over `/v1/messages`.
  */

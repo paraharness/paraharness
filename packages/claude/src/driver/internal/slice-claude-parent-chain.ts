@@ -1,4 +1,4 @@
-import type { ForkContext, WireFrameRecord } from '@harness-dsl/core';
+import type { ForkContext, WireFrameRecord } from '@metaharness/core';
 
 /**
  * Slices `ctx.parentChain` up to and including `ctx.forkPointMessageId` when specified.

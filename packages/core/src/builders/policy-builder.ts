@@ -59,7 +59,7 @@ export interface PolicyLimitExceededBuilder<THandle = unknown> {
 }
 
 /**
- * Intermediate fluent builder returned by `H.policy(id).guard(...guards)` requiring `.onViolation(...)`.
+ * Intermediate fluent builder returned by `M.policy(id).guard(...guards)` requiring `.onViolation(...)`.
  *
  * Forces callers to explicitly bind either `'deny-with-error'` or `'raise-interrupt'`
  * for every registered guard clause before returning to `PolicyBuilder`.
@@ -103,7 +103,7 @@ export interface PolicyGuardClauseBuilder<THandle = unknown> {
 }
 
 /**
- * Fluent builder for capability and sandbox policies (`H.policy(id)`).
+ * Fluent builder for capability and sandbox policies (`M.policy(id)`).
  *
  * Aggregates ordered guard clauses (`fs.protect`, `fs.readOnly`, `node.allowBinaries`),
  * quota tripwires (`fs.quotaTripwire`), quantitative turn/cost/duration limits, and `.extend(newId)`.

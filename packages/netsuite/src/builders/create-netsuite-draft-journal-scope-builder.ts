@@ -1,4 +1,4 @@
-import { z } from '@harness-dsl/core';
+import { z } from '@metaharness/core';
 import type { DraftJournalReceipt } from '../nodes/draft-journal-receipt.js';
 import type { NetSuiteDraftScopeNode } from '../nodes/netsuite-draft-scope-node.js';
 import '../nodes/netsuite-registry-augmentation.js';

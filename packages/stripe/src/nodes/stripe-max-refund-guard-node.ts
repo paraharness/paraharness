@@ -1,4 +1,4 @@
-import type { BasePolicyGuardASTNode } from '@harness-dsl/core';
+import type { BasePolicyGuardASTNode } from '@metaharness/core';
 
 /**
  * Passive policy guard AST node enforcing a maximum per-call refund ceiling in USD (`stripe.maxRefundGuardUsd`).

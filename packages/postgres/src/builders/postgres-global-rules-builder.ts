@@ -1,4 +1,4 @@
-import type { AstBuilder, PostgresRulesSourceNode } from '@harness-dsl/core';
+import type { AstBuilder, PostgresRulesSourceNode } from '@metaharness/core';
 
 /**
  * Fluent builder for a passive `PostgresRulesSourceNode` (`postgres:global-rules`) AST node.

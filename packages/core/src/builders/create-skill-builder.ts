@@ -11,7 +11,7 @@ import type { ScopePredicateInput } from './scope-predicate-input.js';
 import type { SkillBuilder } from './skill-builder.js';
 
 /**
- * Creates a fluent `SkillBuilder` for `H.skill(idOrSource)`.
+ * Creates a fluent `SkillBuilder` for `M.skill(idOrSource)`.
  *
  * Supports both inline skill definitions (requiring `.description()` and `.instructions()`)
  * and frontmatter-sourced skill definitions with optional tool and service unlocks.
@@ -30,7 +30,7 @@ export function createSkillBuilder<THandle = unknown>(
   const isStringId = typeof idOrSource === 'string';
   const sourceNode = isStringId ? options?.source : extractAST(idOrSource);
   const resolvedId = isStringId ? idOrSource : sourceNode !== undefined ? resolveSourceRuleId(sourceNode, 'sourced-skill') : 'sourced-skill';
-  assertNonEmptyIdentifier('H.skill', resolvedId);
+  assertNonEmptyIdentifier('M.skill', resolvedId);
   const currentTools = options?.unlockedTools ?? Object.freeze([]);
   const currentServices = options?.unlockedServices ?? Object.freeze([]);
   const currentLeaseMode = options?.leaseMode ?? 'until-completed-or-fork-exit';

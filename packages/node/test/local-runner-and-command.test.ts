@@ -1,12 +1,12 @@
 import { getEventListeners } from 'node:events';
 import path from 'node:path';
 import {
-  H,
+  M,
   createExecutorRegistry,
   z,
   type RunnerPoolASTNode,
   type StepExecutionContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { describe, expect, it } from 'vitest';
 import {
   NodeRunnerDriver,
@@ -172,7 +172,7 @@ describe('local.runner & NodeRunnerDriver concurrency isolation', () => {
 });
 
 describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup, and .unrepeatable()', () => {
-  it('injects cwd: worktreePath, all 9 isolated GIT_* env vars, resolved H.env() secrets, and stdin payload', async () => {
+  it('injects cwd: worktreePath, all 9 isolated GIT_* env vars, resolved M.env() secrets, and stdin payload', async () => {
     const runner = local.runner({ slots: 2 });
     const worktreePath = process.cwd();
     const probeSchema = z.object({
@@ -188,7 +188,7 @@ describe('local.command execution, worktree GIT_* isolation, AbortSignal cleanup
       .stdin((input) => input.body)
       .env({
         STATIC_FLAG: 'enabled',
-        SECRET_TOKEN: H.env('TEST_SECRET_TOKEN'),
+        SECRET_TOKEN: M.env('TEST_SECRET_TOKEN'),
       })
       .argv(buildEnvAndStdinProbeArgv())
       .toAST();

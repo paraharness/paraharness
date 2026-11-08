@@ -1,4 +1,4 @@
-import type { EnvRef, RuntimeDriverContext, SlackApproverNode } from '@harness-dsl/core';
+import type { EnvRef, RuntimeDriverContext, SlackApproverNode } from '@metaharness/core';
 import { SlackApproverAdapter } from '../slack-approver-adapter.js';
 import type { SlackTransport } from '../slack-transport.js';
 

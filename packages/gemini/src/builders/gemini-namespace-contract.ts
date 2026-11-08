@@ -3,7 +3,7 @@ import type { GeminiModelBuilder } from './gemini-model-builder.js';
 import type { GeminiModelOptions } from './gemini-model-options.js';
 
 /**
- * Builder namespace contract exported as `gemini` by `@harness-dsl/gemini`.
+ * Builder namespace contract exported as `gemini` by `@metaharness/gemini`.
  *
  * Provides entrypoints for declaring passive `GeminiAccountSeatNode` and `GeminiModelNode`
  * AST descriptors without import-time or declaration-time side effects.

@@ -19,22 +19,22 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@harness-dsl/lockfile": ["packages/lockfile/src/index.ts"],
-      "@harness-dsl/core": ["packages/core/src/index.ts"],
-      "@harness-dsl/core/runtime": ["packages/core/src/runtime/index.ts"],
-      "@harness-dsl/sqlite": ["packages/sqlite/src/index.ts"],
-      "@harness-dsl/postgres": ["packages/postgres/src/index.ts"],
-      "@harness-dsl/fs": ["packages/fs/src/index.ts"],
-      "@harness-dsl/markdown": ["packages/markdown/src/index.ts"],
-      "@harness-dsl/node": ["packages/node/src/index.ts"],
-      "@harness-dsl/git": ["packages/git/src/index.ts"],
-      "@harness-dsl/claude": ["packages/claude/src/index.ts"],
-      "@harness-dsl/openai": ["packages/openai/src/index.ts"],
-      "@harness-dsl/gemini": ["packages/gemini/src/index.ts"],
-      "@harness-dsl/github": ["packages/github/src/index.ts"],
-      "@harness-dsl/slack": ["packages/slack/src/index.ts"],
-      "@harness-dsl/stripe": ["packages/stripe/src/index.ts"],
-      "@harness-dsl/netsuite": ["packages/netsuite/src/index.ts"]
+      "@metaharness/lockfile": ["packages/lockfile/src/index.ts"],
+      "@metaharness/core": ["packages/core/src/index.ts"],
+      "@metaharness/core/runtime": ["packages/core/src/runtime/index.ts"],
+      "@metaharness/sqlite": ["packages/sqlite/src/index.ts"],
+      "@metaharness/postgres": ["packages/postgres/src/index.ts"],
+      "@metaharness/fs": ["packages/fs/src/index.ts"],
+      "@metaharness/markdown": ["packages/markdown/src/index.ts"],
+      "@metaharness/node": ["packages/node/src/index.ts"],
+      "@metaharness/git": ["packages/git/src/index.ts"],
+      "@metaharness/claude": ["packages/claude/src/index.ts"],
+      "@metaharness/openai": ["packages/openai/src/index.ts"],
+      "@metaharness/gemini": ["packages/gemini/src/index.ts"],
+      "@metaharness/github": ["packages/github/src/index.ts"],
+      "@metaharness/slack": ["packages/slack/src/index.ts"],
+      "@metaharness/stripe": ["packages/stripe/src/index.ts"],
+      "@metaharness/netsuite": ["packages/netsuite/src/index.ts"]
     }
   }
 }

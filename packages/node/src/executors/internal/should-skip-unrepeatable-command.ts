@@ -1,7 +1,7 @@
 import type {
   LocalCommandNode,
   StepExecutionContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 
 /**
  * Parameters for evaluating a command's `.unrepeatable(preCheckCmd, { key })` guard.

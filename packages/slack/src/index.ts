@@ -1,4 +1,4 @@
-export type { SlackApproverNode, SlackNotifierNode } from '@harness-dsl/core';
+export type { SlackApproverNode, SlackNotifierNode } from '@metaharness/core';
 export { createSlackBotBuilder } from './builders/create-slack-bot-builder.js';
 export { createSlackWebhookBuilder } from './builders/create-slack-webhook-builder.js';
 export type { SlackBotOptions } from './builders/slack-bot-options.js';

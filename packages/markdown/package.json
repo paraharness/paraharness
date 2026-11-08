@@ -1,5 +1,5 @@
 {
-  "name": "@harness-dsl/markdown",
+  "name": "@metaharness/markdown",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@harness-dsl/core": "workspace:*",
+    "@metaharness/core": "workspace:*",
     "mdast-util-frontmatter": "^2.0.1",
     "mdast-util-from-markdown": "^2.1.0",
     "mdast-util-to-markdown": "^2.2.3",

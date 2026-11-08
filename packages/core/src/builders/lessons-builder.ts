@@ -12,7 +12,7 @@ import type { LessonScoringBuilder } from './lesson-scoring-builder.js';
 import type { LessonSignalTriggerBuilder } from './lesson-signal-trigger-builder.js';
 
 /**
- * Fluent builder for empirical lesson memory subsystems (`H.lessons(id)`).
+ * Fluent builder for empirical lesson memory subsystems (`M.lessons(id)`).
  *
  * Configures backing store binding, typed recall query extraction, contrastive
  * distillation, 4-state empirical scoring, automatic retirement, and promotion signals.

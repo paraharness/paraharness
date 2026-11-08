@@ -6,7 +6,7 @@ import {
   type ResolutionContext,
   type ResolvedSourceArtifact,
   z,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { Pool } from 'pg';
 import {
   assertValidPostgresIdentifier,

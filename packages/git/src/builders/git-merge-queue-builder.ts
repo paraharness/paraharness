@@ -1,4 +1,4 @@
-import type { AstBuilder, GitMergeQueueNode, z } from '@harness-dsl/core';
+import type { AstBuilder, GitMergeQueueNode, z } from '@metaharness/core';
 
 /**
  * Fluent builder for cumulative batch merge-train verification (`git.mergeQueue`).

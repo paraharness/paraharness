@@ -2,7 +2,7 @@ import type {
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
   ToolEffect,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { FsToolEffect } from '../fs-tool-effect.js';
 import { compileActiveLeaseWriteMatcher } from './compile-active-lease-write-matcher.js';
 

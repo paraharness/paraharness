@@ -1,4 +1,4 @@
-import type { LessonOutcome } from '@harness-dsl/core';
+import type { LessonOutcome } from '@metaharness/core';
 
 /**
  * Mutable per-lesson telemetry counter record persisted in `statsPath` (`SPEC.md` §4.3).

@@ -4,7 +4,7 @@ import {
   type GitPatchEquivalenceNode,
   type GitScopeReceipt,
   type GitWorktreeHandle,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 
 /**
  * Creates a `CrossVerifierBuilder` for normalized patch equivalence clustering (`git.patchEquivalence`).

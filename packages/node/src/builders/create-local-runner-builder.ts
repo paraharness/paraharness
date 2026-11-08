@@ -1,4 +1,4 @@
-import type { NodeRunnerNode } from '@harness-dsl/core';
+import type { NodeRunnerNode } from '@metaharness/core';
 import type { LocalRunnerOptions } from './local-namespace-contract.js';
 import type { LocalRunnerBuilder } from './local-runner-builder.js';
 

@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@harness-dsl/core';
+import type { ToolEffect } from '@metaharness/core';
 import { checkPathsExistAtBaseRef } from './check-paths-exist-at-base-ref.js';
 
 /**

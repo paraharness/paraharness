@@ -474,7 +474,7 @@ async function finalizeAcceptedAgentTurn<TIn, TOut, THandle>(
 }
 
 /**
- * Runs the `H.agent` turn loop until the model produces a completion output that passes `evaluateBeforeStopGate` (`SPEC.md` §3.7.1).
+ * Runs the `M.agent` turn loop until the model produces a completion output that passes `evaluateBeforeStopGate` (`SPEC.md` §3.7.1).
  *
  * Enforces quantitative quota tripwires, resumes mid-tool-batch states on crash recovery, and flushes standalone lesson outcomes on pass.
  *

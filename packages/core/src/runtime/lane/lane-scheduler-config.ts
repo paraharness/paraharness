@@ -24,7 +24,7 @@ export interface LaneSchedulerConfig<TIn = unknown> {
   readonly lane: LaneNode<TIn, string>;
   /** Composite runtime executor registry. */
   readonly registry: RuntimeExecutorRegistry;
-  /** Explicit environment variable map for resolving symbolic `H.env(key)` references. */
+  /** Explicit environment variable map for resolving symbolic `M.env(key)` references. */
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Durable state ledger store. */
   readonly ledgerStore: LedgerStore;

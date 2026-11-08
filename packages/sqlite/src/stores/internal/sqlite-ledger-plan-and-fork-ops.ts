@@ -1,4 +1,4 @@
-import type { MutateLanePlanRequest, SuspendedForkRecord } from '@harness-dsl/core';
+import type { MutateLanePlanRequest, SuspendedForkRecord } from '@metaharness/core';
 import type Database from 'better-sqlite3';
 import {
   matchesSuspendedForkFilter,

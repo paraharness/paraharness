@@ -1,4 +1,4 @@
-import type { AstBuilder, GitKeepWorktreeNode } from '@harness-dsl/core';
+import type { AstBuilder, GitKeepWorktreeNode } from '@metaharness/core';
 
 /**
  * Creates a fluent `AstBuilder<GitKeepWorktreeNode>` (`git.keepWorktree()`).

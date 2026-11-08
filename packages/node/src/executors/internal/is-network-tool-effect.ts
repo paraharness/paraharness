@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@harness-dsl/core';
+import type { ToolEffect } from '@metaharness/core';
 
 /**
  * Determines whether a `ToolEffect` represents an outbound network operation.

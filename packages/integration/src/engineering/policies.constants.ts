@@ -1,6 +1,6 @@
-import { H } from '@harness-dsl/core';
-import { fs } from '@harness-dsl/fs';
-import { git } from '@harness-dsl/git';
+import { M } from '@metaharness/core';
+import { fs } from '@metaharness/fs';
+import { git } from '@metaharness/git';
 import { mapLeaseRequestViolation } from './internal/map-lease-request-violation.js';
 import { leaseRequest, scopeTripwire } from './signals-and-interrupts.constants.js';
 import { repoPartitions } from './topology-and-workspace.constants.js';
@@ -10,7 +10,7 @@ import { repoPartitions } from './topology-and-workspace.constants.js';
  *
  * Enforced on `evaluator`, `leaseAdjudicator`, and `candidateArbiter` so verification and adjudication actors never mutate the worktree.
  */
-export const readOnlyPolicy = H.policy('read-only')
+export const readOnlyPolicy = M.policy('read-only')
   .guard(fs.writeGuard({ denyGlobs: ['**/*'] }))
   .onViolation('deny-with-error');
 
@@ -21,7 +21,7 @@ export const readOnlyPolicy = H.policy('read-only')
  * Clause 2 intercepts edits to existing `.test.ts`/`.test.tsx` files pre-flight and raises `leaseRequest`;
  * binds `git.snapshotAndReset()` as the default abort hook.
  */
-export const workerBasePolicy = H.policy('worker-base')
+export const workerBasePolicy = M.policy('worker-base')
   .guard(
     fs.boundaryGuard(repoPartitions),
     fs.writeGuard({
@@ -71,7 +71,7 @@ export const fastPathPolicy = workerBasePolicy
  * Permits direct edits only to `TECH_DESIGN.md` and `packages/<partition>/src/index.ts`, requiring `delegate-partition` for leaf code
  * and `normative-tradeoff` owner lease elevation for `PRODUCT_SPEC.md` or `openapi.yaml`.
  */
-export const coordinatorPolicy = H.policy('coordinator-policy')
+export const coordinatorPolicy = M.policy('coordinator-policy')
   .guard(
     fs.writeGuard({
       denyGlobs: ['**/*'],

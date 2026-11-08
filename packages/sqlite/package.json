@@ -1,5 +1,5 @@
 {
-  "name": "@harness-dsl/sqlite",
+  "name": "@metaharness/sqlite",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@dagrejs/graphlib": "^4.0.7",
-    "@harness-dsl/core": "workspace:*",
+    "@metaharness/core": "workspace:*",
     "better-sqlite3": "^12.8.0",
     "minisearch": "^7.2.0",
     "node-diff3": "^3.2.1",

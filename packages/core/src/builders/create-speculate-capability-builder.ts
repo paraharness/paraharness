@@ -27,6 +27,6 @@ export function createSpeculateCapabilityBuilder<TParentIn = unknown, THandle = 
   unknown,
   unknown
 > {
-  assertNonEmptyIdentifier('H.agent.capabilities.speculate', toolName);
+  assertNonEmptyIdentifier('M.agent.capabilities.speculate', toolName);
   return createSpeculateFromState({ toolName });
 }

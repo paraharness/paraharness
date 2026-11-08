@@ -1,7 +1,7 @@
 import type {
   LocalServiceNode,
   ServiceToolSchemaDescriptor,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { LocalDaemonBuilderState } from './local-daemon-builder-state.js';
 
 /**

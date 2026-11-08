@@ -1,10 +1,10 @@
-import type { AstBuilder, ClaudeAccountSeatNode, EnvRef } from '@harness-dsl/core';
+import type { AstBuilder, ClaudeAccountSeatNode, EnvRef } from '@metaharness/core';
 
 /**
  * Fluent builder for constructing a passive `ClaudeAccountSeatNode` (`type: 'claude:account-seat'`).
  *
  * Configures either a Claude CLI subscription seat backed by an OAuth `configDir` or an API key
- * seat resolved late via `H.env(key)` at turn execution time without import-time I/O.
+ * seat resolved late via `M.env(key)` at turn execution time without import-time I/O.
  */
 export interface ClaudeAccountSeatBuilder extends AstBuilder<ClaudeAccountSeatNode> {
   /** Unique identifier of the Claude account seat within capacity pools. */
@@ -24,7 +24,7 @@ export interface ClaudeAccountSeatBuilder extends AstBuilder<ClaudeAccountSeatNo
   configDir(path: string): ClaudeAccountSeatBuilder;
 
   /**
-   * Binds a literal API key or symbolic `H.env(key)` reference for Anthropic API authentication.
+   * Binds a literal API key or symbolic `M.env(key)` reference for Anthropic API authentication.
    *
    * Returns a new immutable builder instance that resolves the key only at leaf turn invocation time.
    *

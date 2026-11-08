@@ -8,7 +8,7 @@ import { createMdSkillsBuilder } from './create-md-skills-builder.js';
 import type { MdNamespace } from './md-namespace-contract.js';
 
 /**
- * Frozen `@harness-dsl/markdown` builder namespace (`md.*`).
+ * Frozen `@metaharness/markdown` builder namespace (`md.*`).
  *
  * Provides pure AST builders for Markdown rules, skills, YAML frontmatter, and heading sections.
  */

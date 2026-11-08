@@ -22,7 +22,7 @@ export interface FlowBuilderState<
   THandle = unknown,
   TStepIds extends string = never,
 > {
-  /** Unique flow identifier passed to `H.flow(id)`. */
+  /** Unique flow identifier passed to `M.flow(id)`. */
   readonly id: string;
   /** Zod schema validating work item input payloads entering the flow. */
   readonly inputSchema?: z.ZodType<TIn>;

@@ -3,7 +3,7 @@ import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 import type { LoopBuilder } from './loop-builder.js';
 
 /**
- * Creates a fluent `LoopBuilder` for `H.loop(id)`.
+ * Creates a fluent `LoopBuilder` for `M.loop(id)`.
  *
  * Validates that `id` is a non-empty identifier and initializes an immutable
  * `LoopBuilder` with `maxIterations: 3` and `preserveActorSession: true`.
@@ -17,7 +17,7 @@ import type { LoopBuilder } from './loop-builder.js';
 export function createLoopBuilder<THandle = unknown>(
   id: string,
 ): LoopBuilder<unknown, unknown, THandle, string> {
-  assertNonEmptyIdentifier('H.loop', id);
+  assertNonEmptyIdentifier('M.loop', id);
   return createLoopFromState<unknown, unknown, THandle, string>({
     id,
     roleKey: id,

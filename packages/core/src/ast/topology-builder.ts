@@ -2,7 +2,7 @@ import type { AstBuilder } from './ast-builder.js';
 import type { TopologyNode } from './topology-node.js';
 
 /**
- * Fluent builder and query surface for relational partition topologies (`H.topology(id)`).
+ * Fluent builder and query surface for relational partition topologies (`M.topology(id)`).
  *
  * Compiles to a passive `TopologyNode<TPartition>` and exposes `dependentsOf` and `affectedBy`
  * directly on the builder for ergonomic partition impact queries.

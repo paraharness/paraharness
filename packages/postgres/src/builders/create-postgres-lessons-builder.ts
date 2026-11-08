@@ -1,4 +1,4 @@
-import type { EnvRef, PostgresLessonsNode } from '@harness-dsl/core';
+import type { EnvRef, PostgresLessonsNode } from '@metaharness/core';
 import type { PostgresLessonsBuilder } from './postgres-lessons-builder.js';
 
 /**
@@ -7,7 +7,7 @@ import type { PostgresLessonsBuilder } from './postgres-lessons-builder.js';
  * Produces an immutable builder whose `.toAST()` method returns a frozen `PostgresLessonsNode`
  * referencing the target PostgreSQL connection URI or symbolic `EnvRef`.
  *
- * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `H.env(...)` reference.
+ * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `M.env(...)` reference.
  *
  * @returns {PostgresLessonsBuilder} Immutable builder for `PostgresLessonsNode`.
  */

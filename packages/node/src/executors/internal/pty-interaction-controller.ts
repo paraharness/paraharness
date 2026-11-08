@@ -1,4 +1,4 @@
-import type { ToolExecutionResult } from '@harness-dsl/core';
+import type { ToolExecutionResult } from '@metaharness/core';
 
 /**
  * Controller managing lazy PTY interaction sessions and turn dispatch for a running `LocalServiceNode`.

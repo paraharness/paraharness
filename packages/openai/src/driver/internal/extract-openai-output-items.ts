@@ -1,4 +1,4 @@
-import type { CanonicalToolCall } from '@harness-dsl/core';
+import type { CanonicalToolCall } from '@metaharness/core';
 import type { ExtractedOpenAiOutputItems } from './extracted-openai-output-items.js';
 
 /**

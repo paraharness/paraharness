@@ -1,21 +1,21 @@
-import { claudeExecutors } from '@harness-dsl/claude';
+import { claudeExecutors } from '@metaharness/claude';
 import {
   createExecutorRegistry,
   type RuntimeExecutorRegistry,
   type RuntimeExecutorRegistrySlice,
-} from '@harness-dsl/core';
-import { fsExecutors } from '@harness-dsl/fs';
-import { geminiExecutors } from '@harness-dsl/gemini';
-import { gitExecutors } from '@harness-dsl/git';
-import { githubExecutors } from '@harness-dsl/github';
-import { markdownExecutors } from '@harness-dsl/markdown';
-import { netsuiteExecutors } from '@harness-dsl/netsuite';
-import { nodeExecutors } from '@harness-dsl/node';
-import { openaiExecutors } from '@harness-dsl/openai';
-import { postgresExecutors } from '@harness-dsl/postgres';
-import { slackExecutors } from '@harness-dsl/slack';
-import { sqliteExecutors } from '@harness-dsl/sqlite';
-import { stripeExecutors } from '@harness-dsl/stripe';
+} from '@metaharness/core';
+import { fsExecutors } from '@metaharness/fs';
+import { geminiExecutors } from '@metaharness/gemini';
+import { gitExecutors } from '@metaharness/git';
+import { githubExecutors } from '@metaharness/github';
+import { markdownExecutors } from '@metaharness/markdown';
+import { netsuiteExecutors } from '@metaharness/netsuite';
+import { nodeExecutors } from '@metaharness/node';
+import { openaiExecutors } from '@metaharness/openai';
+import { postgresExecutors } from '@metaharness/postgres';
+import { slackExecutors } from '@metaharness/slack';
+import { sqliteExecutors } from '@metaharness/sqlite';
+import { stripeExecutors } from '@metaharness/stripe';
 
 /**
  * Merges all 13 peer adapter `RuntimeExecutorRegistrySlice` maps with an optional caller override slice (`M4-integration.md` §4.1.3).

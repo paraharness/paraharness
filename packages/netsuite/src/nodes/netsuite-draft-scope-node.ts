@@ -1,4 +1,4 @@
-import type { BaseIsolationScopeASTNode } from '@harness-dsl/core';
+import type { BaseIsolationScopeASTNode } from '@metaharness/core';
 import type { DraftJournalReceipt } from './draft-journal-receipt.js';
 import type { NetSuiteDraftHandle } from './netsuite-draft-handle.js';
 

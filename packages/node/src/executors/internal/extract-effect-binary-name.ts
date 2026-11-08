@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@harness-dsl/core';
+import type { ToolEffect } from '@metaharness/core';
 
 /**
  * Extracts the executable binary name from a `ToolEffect` if the effect describes a subprocess invocation.

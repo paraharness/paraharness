@@ -2,7 +2,7 @@ import type {
   GitCommitAndPushNode,
   GitWorktreeHandle,
   StepExecutionContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { HarnessMetaRecord } from '../../schemas/git-receipts.schema.js';
 import {
   readHarnessMeta,

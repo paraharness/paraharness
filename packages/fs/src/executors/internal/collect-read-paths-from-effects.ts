@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@harness-dsl/core';
+import type { ToolEffect } from '@metaharness/core';
 
 /**
  * Collects the set of normalized file paths read across `observedEffects` (`mode === 'read'`).

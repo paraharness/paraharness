@@ -1,4 +1,4 @@
-import { H, z, type BaseIsolationScopeASTNode, type CompiledWirePrefix, type RuntimeDriverContext, type RuntimeExecutorRegistry, type WireFrameRecord } from '@harness-dsl/core';
+import { M, z, type BaseIsolationScopeASTNode, type CompiledWirePrefix, type RuntimeDriverContext, type RuntimeExecutorRegistry, type WireFrameRecord } from '@metaharness/core';
 import { describe, expect, it } from 'vitest';
 import { GeminiModelDriver, createGeminiExecutors, gemini, geminiExecutors } from '../src/index.js';
 import { RecordedGeminiTransport } from './fixtures/recorded-gemini-transport.js';
@@ -38,14 +38,14 @@ function createSampleWirePrefix(): CompiledWirePrefix {
   });
 }
 
-describe('@harness-dsl/gemini builders and AST invariants', () => {
+describe('@metaharness/gemini builders and AST invariants', () => {
   it('compiles passive GeminiAccountSeatNode and GeminiModelNode without import or build I/O', () => {
-    const apiSeat = gemini.account('g-seat-a').apiKey(H.env('GEMINI_API_KEY_A')).toAST();
+    const apiSeat = gemini.account('g-seat-a').apiKey(M.env('GEMINI_API_KEY_A')).toAST();
     const cliSeat = gemini.cliAccount('g-cli-b').configDir('~/.config/gcloud-b').toAST();
     expect(apiSeat).toEqual({ type: 'gemini:account-seat', id: 'g-seat-a', configDir: undefined, apiKey: { type: 'harness:env-ref', key: 'GEMINI_API_KEY_A' } });
     expect(cliSeat).toEqual({ type: 'gemini:account-seat', id: 'g-cli-b', configDir: '~/.config/gcloud-b', apiKey: undefined });
 
-    const pool = H.pool('gemini-seats').with(apiSeat, cliSeat).strategy('round-robin');
+    const pool = M.pool('gemini-seats').with(apiSeat, cliSeat).strategy('round-robin');
     const pro = gemini.model('geminiPro', { id: 'gemini-3.1-pro', effort: 'high' }).accountPool(pool).toAST();
     const flash = gemini.model('geminiFlash', { id: 'gemini-3.1-flash' }).effort('low').pool(pool).toAST();
 
@@ -63,9 +63,9 @@ describe('@harness-dsl/gemini builders and AST invariants', () => {
   });
 });
 
-describe('@harness-dsl/gemini invokeTurn, role alternation coalescing, functionResponse errors, and HTTP 429', () => {
+describe('@metaharness/gemini invokeTurn, role alternation coalescing, functionResponse errors, and HTTP 429', () => {
   it('maps systemInstruction, functionDeclarations, thinkingConfig, responseJsonSchema, strict role alternation, and functionResponse errors', async () => {
-    const seatA = gemini.account('g-seat-a').apiKey(H.env('GEMINI_API_KEY_A')).toAST();
+    const seatA = gemini.account('g-seat-a').apiKey(M.env('GEMINI_API_KEY_A')).toAST();
     const modelNode = gemini.model('geminiPro', { id: 'gemini-3.1-pro' }).toAST();
     const transport = new RecordedGeminiTransport([
       {
@@ -237,7 +237,7 @@ describe('@harness-dsl/gemini invokeTurn, role alternation coalescing, functionR
   });
 });
 
-describe('@harness-dsl/gemini prepareFork and appendToolResultNotes', () => {
+describe('@metaharness/gemini prepareFork and appendToolResultNotes', () => {
   it('supports shared-prefix-only and clone-transcript preserving vs stripping thought/thoughtSignature and full-turn (1..k) pairing', async () => {
     const driver = new GeminiModelDriver(new RecordedGeminiTransport());
     const skillToolFrame: WireFrameRecord = {

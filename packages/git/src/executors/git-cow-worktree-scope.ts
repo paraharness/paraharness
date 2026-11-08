@@ -7,7 +7,7 @@ import type {
   LeaseDelta,
   ReconcileResult,
   ToolEffect,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import PQueue from 'p-queue';
 import {
   GitScopeReceiptSchema,

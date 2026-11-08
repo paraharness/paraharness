@@ -1,4 +1,4 @@
-import type { CanonicalMessage, CanonicalToolResult } from '@harness-dsl/core';
+import type { CanonicalMessage, CanonicalToolResult } from '@metaharness/core';
 
 /**
  * Projects a single `CanonicalToolResult` into an OpenAI `function_call_output` wire item.

@@ -1,5 +1,5 @@
-import { z } from '@harness-dsl/core';
-import { git } from '@harness-dsl/git';
+import { z } from '@metaharness/core';
+import { git } from '@metaharness/git';
 
 /**
  * Zod enumeration of repository architectural partitions (`'db'`, `'api'`, `'web'`).

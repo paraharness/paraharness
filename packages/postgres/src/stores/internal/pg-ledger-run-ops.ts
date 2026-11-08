@@ -2,7 +2,7 @@ import type {
   CreateOrResumeRunInput,
   CreateOrResumeRunResult,
   RunTerminalReceiptRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { PgRunRow } from './pg-run-row.js';
 import {

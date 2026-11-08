@@ -29,7 +29,7 @@ import type { TopologyNode } from '../../ast/topology-node.js';
  * @template THandle Runtime handle type of the active isolation scope.
  */
 export interface AgentBuilderState<TIn = unknown, TOut = unknown, THandle = unknown> {
-  /** Base actor identifier passed to `H.agent(id)`. */
+  /** Base actor identifier passed to `M.agent(id)`. */
   readonly id: string;
   /** Canonical order-independent role key indexing compiled wire tool schemas. */
   readonly roleKey: string;

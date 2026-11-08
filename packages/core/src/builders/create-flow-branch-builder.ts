@@ -39,7 +39,7 @@ export function createFlowBranchBuilder<
   TCustomMetrics,
   TStepOutputs
 > {
-  assertNonEmptyIdentifier('H.flow.branch', id);
+  assertNonEmptyIdentifier('M.flow.branch', id);
   return createFlowBranchFromState({
     id,
     outputSchema: undefined,

@@ -3,7 +3,7 @@ export type {
   PostgresLessonsNode,
   PostgresRulesSourceNode,
   PostgresTopologyNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 export type {
   CompactionConfigBuilder,
   CompactionSignalTriggerOptions,

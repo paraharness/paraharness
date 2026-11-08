@@ -3,7 +3,7 @@ import { createStripeMaxRefundGuardBuilder } from './create-stripe-max-refund-gu
 import { createStripeReadTools } from './create-stripe-read-tools.js';
 import type { StripeNamespace } from './stripe-namespace-contract.js';
 
-/** Frozen `@harness-dsl/stripe` DSL namespace singleton (`stripe.readTools`, `stripe.maxRefundGuardUsd`, `stripe.allowRefundUpToUsd`). */
+/** Frozen `@metaharness/stripe` DSL namespace singleton (`stripe.readTools`, `stripe.maxRefundGuardUsd`, `stripe.allowRefundUpToUsd`). */
 export const stripe: StripeNamespace = Object.freeze<StripeNamespace>({
   readTools: createStripeReadTools,
   maxRefundGuardUsd: createStripeMaxRefundGuardBuilder,

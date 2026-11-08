@@ -66,7 +66,7 @@ export function createFlowFromState<
         $s: FlowStepConfigBuilder<TIn, ExtractStepInput<TStep>, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>,
       ) => FlowStepConfigBuilder<TIn, ExtractStepInput<TStep>, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>,
     ) => {
-      assertNonEmptyIdentifier('H.flow.step', id);
+      assertNonEmptyIdentifier('M.flow.step', id);
       const baseConfig = createFlowStepConfigFromState<TIn, ExtractStepInput<TStep>, THandle, TReceipt, TCustomMetrics, TStepOutputs, TStepId>({ id, step: extractAST(step), onInterruptHandlers: [] });
       const compiledStep = (configure !== undefined ? configure(baseConfig) : baseConfig).toAST();
       const wideState: FlowBuilderState<TIn, THandle, string> = { ...state, __stepIdsBrand: undefined };
@@ -81,7 +81,7 @@ export function createFlowFromState<
         $b: FlowBranchBuilder<TIn, unknown, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>,
       ) => FlowBranchBuilder<TIn, TBranchOut, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>,
     ) => {
-      assertNonEmptyIdentifier('H.flow.branch', id);
+      assertNonEmptyIdentifier('M.flow.branch', id);
       const branchNode = configure(
         createFlowBranchFromState<TIn, unknown, THandle, TBranchId, TReceipt, TCustomMetrics, TStepOutputs>({ id, outputSchema: undefined, cases: [], otherwiseSteps: [] }),
       ).toAST();
@@ -92,7 +92,7 @@ export function createFlowFromState<
       });
     },
     exit: (exitState: string) => {
-      assertNonEmptyIdentifier('H.flow.exit', exitState);
+      assertNonEmptyIdentifier('M.flow.exit', exitState);
       return createFlowFromState<TIn, THandle, TStepIds, TReceipt, TCustomMetrics, TStepOutputs>({ ...state, exitState });
     },
     toAST: (): FlowNode<TIn, THandle, TStepIds> => compileFlowStateToNode(state),

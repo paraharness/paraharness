@@ -1,9 +1,9 @@
-# Milestone M4 — `@harness-dsl/integration` Reference Harnesses (`engineering-harness` & `reconciliation-harness`) & End-to-End Protocol Verification
+# Milestone M4 — `@metaharness/integration` Reference Harnesses (`engineering-harness` & `reconciliation-harness`) & End-to-End Protocol Verification
 
 ## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
 - **Milestone**: `M4` (Wave 3 — End-to-End Integration `b`, depends on `M2` and `M3a..M3f`)
-- **Package**: `@harness-dsl/integration` (`packages/integration`)
+- **Package**: `@metaharness/integration` (`packages/integration`)
 - **`owned_dirs`**:
   - `packages/integration/src/**`
   - `packages/integration/test/**`
@@ -12,14 +12,14 @@
   - `packages/{sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Upstream Escalation Rule (`docs/rules/BUILDER.md` Rule 2)**:
-  - If an end-to-end integration test exposes a contract or runtime defect in `@harness-dsl/core` or any `@harness-dsl/*` adapter package, escalate immediately via `BLOCKED_ON_UPSTREAM` citing the exact `file:line` and failing assertion rather than modifying `forbidden_dirs` without Head authorization in `upstream_patches`.
+  - If an end-to-end integration test exposes a contract or runtime defect in `@metaharness/core` or any `@metaharness/*` adapter package, escalate immediately via `BLOCKED_ON_UPSTREAM` citing the exact `file:line` and failing assertion rather than modifying `forbidden_dirs` without Head authorization in `upstream_patches`.
 
 ### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
 
 | Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| Full-stack DSL & adapter orchestration (`engineering-harness` & `reconciliation-harness`) | `@harness-dsl/{core,lockfile,sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite}` | `workspace:*` (`MIT`) | Re-implementing adapter logic inside `packages/integration` (forbidden by Rule 3.4 & Rule 3.5) | Composes all 15 workspace packages via `createExecutorRegistry` and `createRuntime`; cleans up real SQLite DBs, Git worktrees, and subprocesses in `try / finally` and `afterEach` | Approved (`Rule 3.5`) |
-| Reference harness schema definitions (`workItem`, `workReceipt`, `evaluationResult`, `discrepancyItem`, `settlementReceipt`) | `zod` (re-exported via `@harness-dsl/core` & direct `zod` dependency) | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validation (forbidden by Rule 3.5) | Pure TypeScript covariant `.default()` schema inference across `H.flow`, `H.loop`, and `H.lane` | Approved (`Rule 3.5`) |
+| Full-stack DSL & adapter orchestration (`engineering-harness` & `reconciliation-harness`) | `@metaharness/{core,lockfile,sqlite,postgres,fs,markdown,node,git,claude,openai,gemini,github,slack,stripe,netsuite}` | `workspace:*` (`MIT`) | Re-implementing adapter logic inside `packages/integration` (forbidden by Rule 3.4 & Rule 3.5) | Composes all 15 workspace packages via `createExecutorRegistry` and `createRuntime`; cleans up real SQLite DBs, Git worktrees, and subprocesses in `try / finally` and `afterEach` | Approved (`Rule 3.5`) |
+| Reference harness schema definitions (`workItem`, `workReceipt`, `evaluationResult`, `discrepancyItem`, `settlementReceipt`) | `zod` (re-exported via `@metaharness/core` & direct `zod` dependency) | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validation (forbidden by Rule 3.5) | Pure TypeScript covariant `.default()` schema inference across `M.flow`, `M.loop`, and `M.lane` | Approved (`Rule 3.5`) |
 | Temporary E2E monorepo & bare Git remote test fixtures | `node:fs/promises` (`mkdtemp`, `rm`), `node:path`, `node:os`, `node:child_process` (`execFile`) | Built-in Node.js `>=22` (`MIT`) | In-memory fake filesystems or mocked Git CLI (forbidden by `CODING_GUIDELINES.md` Rule 6.2) | Real local Git repositories, CoW worktrees, and SQLite ledger databases cleaned up deterministically in `afterEach` | Approved (`Rule 3.5`) |
 
 ---
@@ -29,7 +29,7 @@
 | Normative Source | Section & Exact Line Range | Grounded Scope in `M4` |
 | :--- | :--- | :--- |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1–§4 (`lines 1–3180`) | All declarative AST invariants, runtime execution protocols (§3.1–§3.10), and peer adapter specifications (§4.1–§4.5). |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 (`lines 3182–3324`) | Non-Coding Financial Harness (`reconciliationFlow`, `manualEscalationAgent`, `CustomDomainASTRegistry` declaration merging with `@harness-dsl/stripe` and `@harness-dsl/netsuite` over Tier-1 `IsolationScope` `capabilityTier: 'scope'`). |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §5 (`lines 3182–3324`) | Non-Coding Financial Harness (`reconciliationFlow`, `manualEscalationAgent`, `CustomDomainASTRegistry` declaration merging with `@metaharness/stripe` and `@metaharness/netsuite` over Tier-1 `IsolationScope` `capabilityTier: 'scope'`). |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §1–§5 (`lines 1–173`) | Operational Invariants 1–5 (`Role-Scoped Prefix Groups`, `Dynamic Work-Graph Mutation`, `Chained Guard Clauses`, `Two-Temperature Persistence`, `Deduplicated Evidence-Based Lesson Loop`) and Truth-Maintenance Protocols 1–3 (`Existing Test Lease Adjudication`, `Upward Architectural Interrupts`, `Speculative Tournament with Deferred Escalation`). |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §6 (`lines 176–1208`) | Complete Production Implementation (`engineering-harness.ts`): `workItem`, `workReceipt`, `evaluationResult`, `steerSignal`, `changeShippedSignal`, `prClosedUnmergedSignal`, `highLeverageLessonSignal`, `scopeTripwire`, `leaseRequest`, `contractViolation`, `normativeEscalation`, `repoTopology`, `repoPartitions`, `workspace`, `repoRules`, `repoLessons`, `dbMigrationSkill`, `uiVerificationSkill`, `engineeringPrefix`, `workerBasePolicy`, `fastPathPolicy`, `coordinatorPolicy`, `worker`, `evaluator`, `leaseAdjudicator`, `candidateArbiter`, `guardedWorker`, `verifiedWorkerLoop`, `coordinator`, `engineeringFlow`, `engineeringLane`, `appHarness`. |
 
@@ -52,7 +52,7 @@ Every file, class, method, and function in `packages/integration/src/**` and `pa
 | `src/engineering/delivery-and-flow.constants.ts` | `const` | `landChanges`, `checkExistingPr`, `publishPr`, `engineeringFlow` |
 | `src/engineering/engineering-lane-and-harness.constants.ts` | `const` | `issuesTracker`, `engineeringLane`, `appHarness` |
 | `src/engineering/create-engineering-harness-runtime.ts` | `function` | `createEngineeringHarnessRuntime` |
-| `src/financial/financial-domain-registry.ts` | `interface` | `declare module '@harness-dsl/core'` augmenting `CustomDomainASTRegistry` (including `effectMatcher: StripeMaxRefundMatcherNode` alongside `scope`, `guard`, `abortHook`, `tool`, and `check`) |
+| `src/financial/financial-domain-registry.ts` | `interface` | `declare module '@metaharness/core'` augmenting `CustomDomainASTRegistry` (including `effectMatcher: StripeMaxRefundMatcherNode` alongside `scope`, `guard`, `abortHook`, `tool`, and `check`) |
 | `src/financial/reconciliation-schemas.schema.ts` | `schema` | `discrepancyItem`, `DiscrepancyItem`, `settlementReceipt`, `SettlementReceipt` |
 | `src/financial/reconciliation-harness.constants.ts` | `const` | `highValueApprovalRequest`, `reconcileLimitExceeded`, `financeController`, `autoReconcilePolicy`, `manualReconcilePolicy`, `reconciliationAgent`, `manualEscalationAgent`, `reconciliationFlow` |
 | `src/financial/create-reconciliation-harness-runtime.ts` | `function` | `createReconciliationHarnessRuntime` |
@@ -68,7 +68,7 @@ Every file, class, method, and function in `packages/integration/src/**` and `pa
    - Unrelated or different-kind declarations (`interface`, `function`, `class`, `const`, `type`) must **never** live in the same file in `packages/integration/src/**` or `packages/integration/test/fixtures/**` (sole exception: `*.schema.ts` pairing Zod schemas with their `z.infer` types).
    - `src/financial/financial-domain-registry.ts` (`interface` augmentation), `src/financial/reconciliation-schemas.schema.ts` (`schema`), `src/financial/reconciliation-harness.constants.ts` (`const`), and `src/financial/create-reconciliation-harness-runtime.ts` (`function`) are strictly separated by entity kind; likewise `src/engineering/engineering-schemas.schema.ts` (`schema`), `src/engineering/*.constants.ts` (`const`), and `src/engineering/create-engineering-harness-runtime.ts` (`function`) never mix entity kinds, while dedicated 1:1 `*Params` / `*Options` interfaces for a function or class are co-located in that function or class file (`Rules 1.3, 1.6, 3.3`) and `*Handle` interfaces live in dedicated single-interface files (`Rule 1.2`).
 2. **JSDoc Anatomy & Tag Completeness (`Rules 2.1–2.4`)**:
-   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @harness-dsl/integration lint`.
+   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @metaharness/integration lint`.
 
 ### 4.1 Exact Reference Harness Fidelity & Coding Guidelines Compliance (`CODING_SAMPLE.md` §6, `SPEC.md` §5, `CODING_GUIDELINES.md` §§1–5)
 1. **Production Engineering Harness (`src/engineering/**`)**:
@@ -104,9 +104,9 @@ All end-to-end tests and fixtures (with single-entity-kind separation, single re
 Run from workspace root (plus the `IMPL_LOOP.md` `baseline_dirty` diff check against `<non_sibling_forbidden_dirs_excluding_upstream_patches>`):
 
 ```bash
-pnpm --filter @harness-dsl/integration lint
-pnpm --filter @harness-dsl/integration typecheck
-pnpm --filter @harness-dsl/integration test -- --reporter=verbose
+pnpm --filter @metaharness/integration lint
+pnpm --filter @metaharness/integration typecheck
+pnpm --filter @metaharness/integration test -- --reporter=verbose
 pnpm -r lint
 pnpm -r typecheck
 pnpm -r test -- --reporter=verbose

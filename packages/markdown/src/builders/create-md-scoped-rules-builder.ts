@@ -1,4 +1,4 @@
-import type { ScopedRule } from '@harness-dsl/core';
+import type { ScopedRule } from '@metaharness/core';
 import { createMdFrontmatterBuilder } from './create-md-frontmatter-builder.js';
 import type { MdFrontmatterSourceBuilder } from './md-frontmatter-source-builder.js';
 

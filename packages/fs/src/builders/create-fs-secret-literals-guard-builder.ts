@@ -1,4 +1,4 @@
-import type { FsSecretLiteralsGuardNode } from '@harness-dsl/core';
+import type { FsSecretLiteralsGuardNode } from '@metaharness/core';
 
 /**
  * Compiles a passive `FsSecretLiteralsGuardNode` (`fs:secret-literals`) for `fs.secretLiterals(patterns)`.

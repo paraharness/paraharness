@@ -1,4 +1,4 @@
-import type { EnvRef } from '@harness-dsl/core';
+import type { EnvRef } from '@metaharness/core';
 import PQueue from 'p-queue';
 import { Pool } from 'pg';
 import type { PostgresPoolFactory } from '../postgres-pool-factory.js';
@@ -69,7 +69,7 @@ export function resolvePostgresClient(
 ): PostgresQueryClient {
   const resolvedUri = resolveEnv(uri) ?? (typeof uri === 'string' ? uri : undefined);
   if (resolvedUri === undefined || resolvedUri.trim().length === 0) {
-    const label = typeof uri === 'string' ? uri : `H.env('${uri.key}')`;
+    const label = typeof uri === 'string' ? uri : `M.env('${uri.key}')`;
     throw new Error(
       `Cannot resolve PostgreSQL connection URI for '${label}': environment variable or URI is empty.`,
     );

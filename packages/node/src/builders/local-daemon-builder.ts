@@ -4,7 +4,7 @@ import type {
   MaybeBuilder,
   NodeRunnerNode,
   z,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 
 /**
  * Runtime context supplied to `local.daemon` `.start()`, `.stopCommand()`, and `.interact()` command factories.

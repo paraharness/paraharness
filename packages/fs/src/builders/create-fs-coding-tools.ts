@@ -7,7 +7,7 @@ import {
   type FsWriteToolNode,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   buildFsEditToolNode,
   buildFsGlobToolNode,

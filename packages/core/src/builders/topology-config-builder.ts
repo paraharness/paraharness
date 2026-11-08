@@ -5,7 +5,7 @@ import type { TopologyPartitionConstraint } from '../ast/topology-node.js';
 import type { TopologyCommitOverlayBuilderInput } from './topology-commit-overlay-builder-input.js';
 
 /**
- * Fluent builder for relational system topologies (`H.topology(id)`), extending `TopologyBuilder<TPartition>`.
+ * Fluent builder for relational system topologies (`M.topology(id)`), extending `TopologyBuilder<TPartition>`.
  *
  * Binds the backing `TopologyStoreASTNode`, statically validates the partition dependency
  * DAG via `.partitions(...)`, and configures signal-driven overlay commits.

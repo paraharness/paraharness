@@ -2,7 +2,7 @@ import type {
   InterruptedStepBootRecord,
   RecordStepStartInput,
   RecordStepTransitionInput,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { PgRunRow } from './pg-run-row.js';
 import type { PgStepRow } from './pg-step-row.js';

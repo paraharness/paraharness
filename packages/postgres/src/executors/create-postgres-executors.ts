@@ -11,7 +11,7 @@ import type {
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
   TopologyStore,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { Pool } from 'pg';
 import { resolvePostgresClient } from '../ddl/internal/resolve-postgres-client.js';
 import type { PostgresPoolFactory } from '../ddl/postgres-pool-factory.js';
@@ -22,14 +22,14 @@ import { PostgresTopologyStore } from '../stores/postgres-topology-store.js';
 import { executePostgresGlobalRulesSource } from './postgres-rules-source-executor.js';
 
 /**
- * Creates a `RuntimeExecutorRegistrySlice` registering all `@harness-dsl/postgres` storage and source executors.
+ * Creates a `RuntimeExecutorRegistrySlice` registering all `@metaharness/postgres` storage and source executors.
  *
  * Binds `'postgres:ledger'`, `'postgres:topology'`, `'postgres:lessons'`, and `'postgres:global-rules'`
  * with late-bound `ctx.resolveEnv(node.uri)` resolution against `poolOrClient` or `pg.Pool`.
  *
  * @param {PostgresPoolFactory | PostgresQueryClient | Pool} [poolOrClient] - Optional pool factory, query client, or `pg.Pool`.
  *
- * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@harness-dsl/postgres`.
+ * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@metaharness/postgres`.
  */
 export function createPostgresExecutors(
   poolOrClient?: PostgresPoolFactory | PostgresQueryClient | Pool,

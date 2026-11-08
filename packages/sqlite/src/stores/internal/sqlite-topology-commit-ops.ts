@@ -1,4 +1,4 @@
-import type { CommitRunOverlayResult } from '@harness-dsl/core';
+import type { CommitRunOverlayResult } from '@metaharness/core';
 import type Database from 'better-sqlite3';
 import {
   collectCommittedSqliteRunIds,

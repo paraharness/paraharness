@@ -1,4 +1,4 @@
-import type { HarnessRuntimeController } from '@harness-dsl/core';
+import type { HarnessRuntimeController } from '@metaharness/core';
 
 /**
  * Acknowledges an inbound Slack Socket Mode slash command and forwards JSON signal payloads to `controller.emitSignal`.

@@ -3,7 +3,7 @@ import type {
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
   ToolEffect,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { StripeMaxRefundGuardNode } from '../../nodes/stripe-max-refund-guard-node.js';
 import { evaluateStripeMaxRefundMatcher } from './evaluate-stripe-max-refund-matcher.js';
 

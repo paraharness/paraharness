@@ -17,7 +17,7 @@ import { createGitSnapshotAndResetBuilder } from './create-git-snapshot-and-rese
 import type { GitNamespace } from './git-namespace-contract.js';
 
 /**
- * Frozen `git` DSL builder and receipt schema namespace (`@harness-dsl/git`).
+ * Frozen `git` DSL builder and receipt schema namespace (`@metaharness/git`).
  */
 export const git: GitNamespace = Object.freeze<GitNamespace>({
   ScopeReceiptSchema: GitScopeReceiptSchema,

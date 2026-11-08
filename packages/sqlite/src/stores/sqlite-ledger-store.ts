@@ -10,7 +10,7 @@ import type {
   RunTerminalReceiptRecord,
   SuspendedForkRecord,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type Database from 'better-sqlite3';
 import PQueue from 'p-queue';
 import { openSqliteConnection } from '../ddl/internal/open-sqlite-connection.js';
@@ -51,7 +51,7 @@ export interface UpdateContinuationStackOptions {
 }
 
 /**
- * WAL-mode SQLite implementation of the `@harness-dsl/core` `LedgerStore` runtime port.
+ * WAL-mode SQLite implementation of the `@metaharness/core` `LedgerStore` runtime port.
  *
  * Persists flow runs, step continuation stacks, wire-frame chains, dynamic lane DAG mutations,
  * and suspended fork records inside transactional SQLite tables serialized via `p-queue`.

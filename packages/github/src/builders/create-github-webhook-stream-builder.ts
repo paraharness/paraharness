@@ -1,4 +1,4 @@
-import type { GithubWebhookStreamNode } from '@harness-dsl/core';
+import type { GithubWebhookStreamNode } from '@metaharness/core';
 import type { GithubWebhookEvent } from '../executors/github-webhook-event.js';
 import type { GithubWebhookStreamOptions } from './github-webhook-stream-options.js';
 import {

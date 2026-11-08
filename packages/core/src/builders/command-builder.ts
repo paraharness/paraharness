@@ -4,7 +4,7 @@ import type { CommandNode } from '../ast/command-node.js';
 import type { ExecutionContext } from '../ports/execution-context.js';
 
 /**
- * Fluent builder for a deterministic TypeScript step command (`H.command(id)`).
+ * Fluent builder for a deterministic TypeScript step command (`M.command(id)`).
  *
  * Configures input and output Zod validation schemas, optional active partition
  * extraction, and the passive asynchronous step callback.

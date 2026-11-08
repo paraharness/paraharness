@@ -4,7 +4,7 @@ import type { HumanNode } from './human-node.js';
 /**
  * Passive AST node representing a role-aliased bidirectional human decision target with a bound output schema (`human.withName(alias).output(schema)`).
  *
- * Used by `H.lane.maxCostUsd` and structured human approval gates where the human channel
+ * Used by `M.lane.maxCostUsd` and structured human approval gates where the human channel
  * must validate its response against a specific Zod schema `outputSchema`.
  *
  * @template TResponse Validated human decision response type.

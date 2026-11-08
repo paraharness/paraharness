@@ -1,4 +1,4 @@
-import type { LocalCommandUnrepeatableConfig, z } from '@harness-dsl/core';
+import type { LocalCommandUnrepeatableConfig, z } from '@metaharness/core';
 import type { LocalCommandBuilderState } from './local-command-builder-state.js';
 
 /**

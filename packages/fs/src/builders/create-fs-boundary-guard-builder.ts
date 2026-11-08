@@ -1,4 +1,4 @@
-import type { FsBoundaryGuardNode, FsPartitionMapNode } from '@harness-dsl/core';
+import type { FsBoundaryGuardNode, FsPartitionMapNode } from '@metaharness/core';
 
 /**
  * Compiles a passive `FsBoundaryGuardNode` (`fs:boundary-guard`) for `fs.boundaryGuard(partitionMap)`.

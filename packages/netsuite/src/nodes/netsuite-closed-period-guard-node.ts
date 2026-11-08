@@ -1,4 +1,4 @@
-import type { BasePolicyGuardASTNode } from '@harness-dsl/core';
+import type { BasePolicyGuardASTNode } from '@metaharness/core';
 
 /**
  * Passive policy guard AST node forbidding journal postings into closed accounting periods (`netsuite.forbidClosedPeriodPosting`).

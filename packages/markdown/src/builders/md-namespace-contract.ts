@@ -1,9 +1,9 @@
-import type { GlobalRule, MarkdownFrontmatterSourceNode, ScopedRule, SkillNode } from '@harness-dsl/core';
+import type { GlobalRule, MarkdownFrontmatterSourceNode, ScopedRule, SkillNode } from '@metaharness/core';
 import type { MdFrontmatterSourceBuilder } from './md-frontmatter-source-builder.js';
 import type { MdSectionSourceBuilder } from './md-section-source-builder.js';
 
 /**
- * Public builder namespace contract for `@harness-dsl/markdown` (`md.*`).
+ * Public builder namespace contract for `@metaharness/markdown` (`md.*`).
  *
  * Exposes pure, side-effect-free builders compiling Markdown files and globs into passive
  * `MarkdownFrontmatterSourceNode` and `MarkdownSectionSourceNode` AST descriptors.
@@ -24,7 +24,7 @@ export interface MdNamespace {
    * Loads a single `ScopedRule` record from a Markdown file at `path`.
    *
    * Translates YAML frontmatter `globs: string[]` into a passive `FsGlobMatcherNode` (`mode: 'write'`)
-   * without importing `@harness-dsl/fs` and validates the rule with `ScopedRuleSchema`.
+   * without importing `@metaharness/fs` and validates the rule with `ScopedRuleSchema`.
    *
    * @param {string} path - Host-root-relative path to the scoped rule Markdown file.
    *
@@ -45,7 +45,7 @@ export interface MdNamespace {
   scopedRules(glob: string): MdFrontmatterSourceBuilder<readonly ScopedRule[]>;
 
   /**
-   * Loads a single `SkillNode` definition from a Markdown file at `path` for `H.skill(md.skill(path))`.
+   * Loads a single `SkillNode` definition from a Markdown file at `path` for `M.skill(md.skill(path))`.
    *
    * Extracts `id`, `description`, optional `partitions`/`globs` trigger predicates, and Markdown body instructions.
    *
@@ -60,7 +60,7 @@ export interface MdNamespace {
   /**
    * Loads `SkillNode[]` definitions from all Markdown files matching `glob`.
    *
-   * Allows mounting procedural skill bundles directly via `H.agent(...).skills(md.skills(glob))`.
+   * Allows mounting procedural skill bundles directly via `M.agent(...).skills(md.skills(glob))`.
    *
    * @template THandle Runtime handle type of the active isolation scope.
    *

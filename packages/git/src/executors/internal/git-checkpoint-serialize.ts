@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitCowWorktreeNode, GitWorktreeHandle } from '@harness-dsl/core';
+import type { GitCowWorktreeNode, GitWorktreeHandle } from '@metaharness/core';
 import type { GitCheckpointPayload } from '../git-checkpoint-payload.js';
 import { stageCheckpointTreeAndOversizedBlobs } from './checkpoint-staging-and-integrity.js';
 import {

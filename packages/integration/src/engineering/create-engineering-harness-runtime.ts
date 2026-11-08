@@ -2,7 +2,7 @@ import {
   createRuntime,
   type HarnessRuntime,
   type HarnessRuntimeOptions,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { createAllIntegrationExecutorsRegistry } from '../internal/create-all-integration-executors-registry.js';
 import { appHarness } from './engineering-lane-and-harness.constants.js';
 

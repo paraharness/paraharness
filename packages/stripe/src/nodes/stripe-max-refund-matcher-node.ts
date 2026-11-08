@@ -1,4 +1,4 @@
-import type { BaseEffectMatcherASTNode } from '@harness-dsl/core';
+import type { BaseEffectMatcherASTNode } from '@metaharness/core';
 
 /**
  * Passive capability lease effect matcher AST node covering Stripe refunds up to `maxRefundUsd` (`stripe.allowRefundUpToUsd`).

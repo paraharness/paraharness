@@ -3,11 +3,11 @@ import type { IncomingMessage } from 'node:http';
 import { Webhooks } from '@octokit/webhooks';
 import { describe, expect, it } from 'vitest';
 import {
-  H,
+  M,
   createExecutorRegistry,
   type EnvRef,
   type RuntimeDriverContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   GithubIssuesTrackerAdapter,
   GithubWebhookStreamSource,
@@ -45,7 +45,7 @@ function createPrematureCloseRequest(): IncomingMessage {
   }) as IncomingMessage;
 }
 
-describe('@harness-dsl/github Octokit pagination and Webhooks verification', () => {
+describe('@metaharness/github Octokit pagination and Webhooks verification', () => {
   it('paginates open issues across 100-item pages and filters out pull_request entries', async () => {
     const trackerNode = github.issues({
       repo: 'acme/app',
@@ -103,7 +103,7 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
     const streamNode = github.webhookStream({
       repo: 'acme/app',
       port: 0,
-      secret: H.env('GH_WEBHOOK_SECRET'),
+      secret: M.env('GH_WEBHOOK_SECRET'),
       events: ['pull_request.closed'],
     });
     const source = new GithubWebhookStreamSource(
@@ -135,7 +135,7 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
     const streamNode = github.webhookStream({
       repo: 'acme/app',
       port: 0,
-      secret: H.env('GH_WEBHOOK_SECRET'),
+      secret: M.env('GH_WEBHOOK_SECRET'),
       events: ['pull_request.closed'],
     });
     const received: unknown[] = [];
@@ -175,7 +175,7 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
     const streamNode = github.webhookStream({
       repo: 'acme/app',
       port: 0,
-      secret: H.env('GH_WEBHOOK_SECRET'),
+      secret: M.env('GH_WEBHOOK_SECRET'),
       events: ['pull_request.closed'],
     });
     const source = new GithubWebhookStreamSource(

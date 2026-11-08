@@ -19,7 +19,7 @@ export interface PrecedingCompletedToolResult {
 
 /**
  * Context passed to `ModelDriver.prepareFork()` when initializing a downward child fork,
- * speculative branch, or cross-model `H.loop` retry escalation.
+ * speculative branch, or cross-model `M.loop` retry escalation.
  *
  * Supplies the parent wire frame chain, fork point message ID, history mode, compiled prefix,
  * and assistant turn-batch pairing metadata.
@@ -35,7 +35,7 @@ export interface ForkContext {
   readonly wirePrefix?: CompiledWirePrefix;
   /** Optional canonical `roleKey` of the target actor. */
   readonly roleKey?: string;
-  /** Optional `[ROLE_AND_SCOPE_CONTEXT]` text (omitted on same-actor `H.loop` cross-model escalations). */
+  /** Optional `[ROLE_AND_SCOPE_CONTEXT]` text (omitted on same-actor `M.loop` cross-model escalations). */
   readonly childRoleContextFrameText?: string;
   /** Optional `callId` of the `.fork()` tool call when branching mid-assistant-turn in `'clone-transcript'` mode. */
   readonly forkCallId?: string;

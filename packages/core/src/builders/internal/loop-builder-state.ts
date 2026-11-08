@@ -20,7 +20,7 @@ export interface LoopBuilderState<
   THandle = unknown,
   TActStepId extends string = string,
 > {
-  /** Unique loop identifier passed to `H.loop(id)`. */
+  /** Unique loop identifier passed to `M.loop(id)`. */
   readonly id: string;
   /** Canonical role key inherited from the inner `.act()` actor. */
   readonly roleKey: string;

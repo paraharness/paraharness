@@ -1,4 +1,4 @@
-import type { AstBuilder, GithubCreateOrUpdatePrNode, z } from '@harness-dsl/core';
+import type { AstBuilder, GithubCreateOrUpdatePrNode, z } from '@metaharness/core';
 
 /**
  * Fluent builder for a `GithubCreateOrUpdatePrNode` domain step (`github.createOrUpdatePr`).

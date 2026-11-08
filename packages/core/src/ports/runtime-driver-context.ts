@@ -14,7 +14,7 @@ export interface RuntimeDriverContext {
   readonly registry: RuntimeExecutorRegistry;
 
   /**
-   * Resolves a literal string or symbolic `H.env(key)` reference against the runtime environment map.
+   * Resolves a literal string or symbolic `M.env(key)` reference against the runtime environment map.
    *
    * Evaluates symbolic environment references strictly at leaf driver invocation time without reading `process.env` directly.
    *

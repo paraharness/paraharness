@@ -7,7 +7,7 @@ import type { PoolSelectorFn } from '../ast/pool-strategy.types.js';
 import type { PoolStrategyBuilder } from './pool-strategy-builder.js';
 
 /**
- * Fluent builder for capacity and model pools (`H.pool(id)`).
+ * Fluent builder for capacity and model pools (`M.pool(id)`).
  *
  * Aggregates ordered candidate items (`AccountSeatASTNode` or `ModelASTNode`) with a
  * selection strategy and optional fallback item.

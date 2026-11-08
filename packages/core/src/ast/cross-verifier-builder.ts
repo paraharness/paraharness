@@ -6,7 +6,7 @@ import type { CrossVerifierASTNode } from './domain-ast.types.js';
  * Fluent builder contract for cross-candidate verification primitives (`git.patchEquivalence`, `git.publicSurfaceCrossTester`).
  *
  * Exposes `id` and `reportSchema` directly on the builder instance so downstream `.speculate()` arbiter
- * schemas (`H.SpeculationInputSchema(..., crossTester.reportSchema)`) can reference `reportSchema` without calling `.toAST()`.
+ * schemas (`M.SpeculationInputSchema(..., crossTester.reportSchema)`) can reference `reportSchema` without calling `.toAST()`.
  *
  * @template THandle      Isolation scope runtime handle type.
  * @template TReceipt     Inspected scope receipt record type.

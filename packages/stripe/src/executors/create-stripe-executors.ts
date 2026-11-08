@@ -3,7 +3,7 @@ import type {
   PolicyGuardEvaluationResult,
   RuntimeExecutorRegistrySlice,
   ToolEffect,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import type { StripeMaxRefundGuardNode } from '../nodes/stripe-max-refund-guard-node.js';
 import type { StripeMaxRefundMatcherNode } from '../nodes/stripe-max-refund-matcher-node.js';
 import '../nodes/stripe-registry-augmentation.js';
@@ -16,14 +16,14 @@ import type { StripeGateway } from './stripe-gateway.js';
 import type { StripeSdkClientLike } from './stripe-sdk-client-like.js';
 
 /**
- * Creates a `RuntimeExecutorRegistrySlice` registering all `@harness-dsl/stripe` executors and drivers.
+ * Creates a `RuntimeExecutorRegistrySlice` registering all `@metaharness/stripe` executors and drivers.
  *
  * Registers `tools['stripe:read-tool']`, `policyGuards['stripe:max-refund-guard']`, and
  * `effectMatchers['stripe:max-refund-matcher']`, backed by `gatewayOrClient` (or `defaultStripeGateway`).
  *
  * @param {StripeGateway | StripeSdkClientLike | string} [gatewayOrClient=defaultStripeGateway] - Stripe gateway, SDK client, or API key.
  *
- * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@harness-dsl/stripe`.
+ * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@metaharness/stripe`.
  */
 export function createStripeExecutors(
   gatewayOrClient: StripeGateway | StripeSdkClientLike | string = defaultStripeGateway,

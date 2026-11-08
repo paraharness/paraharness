@@ -3,7 +3,7 @@ import {
   BudgetApprovalSchema,
   type CustomDomainAST,
   GlobalRuleSchema,
-  H,
+  M,
   type IsolationScopeASTNode,
   ResumeForkInputSchema,
   ScopedRuleSchema,
@@ -23,7 +23,7 @@ import {
 
 describe('AST extraction, symbolic EnvRef, and CustomDomainASTRegistry merging', () => {
   it('extracts passive AST nodes from both builders and raw AST objects', () => {
-    const signalBuilder = H.signal('pr-merged').payload(z.object({ prNumber: z.number() }));
+    const signalBuilder = M.signal('pr-merged').payload(z.object({ prNumber: z.number() }));
     const fromBuilder = extractAST(signalBuilder);
     const fromNode = extractAST(fromBuilder);
 
@@ -36,9 +36,9 @@ describe('AST extraction, symbolic EnvRef, and CustomDomainASTRegistry merging',
     expect(Object.isFrozen(fromBuilder)).toBe(true);
   });
 
-  it('creates symbolic EnvRef descriptors via H.env(key) without reading process.env', () => {
+  it('creates symbolic EnvRef descriptors via M.env(key) without reading process.env', () => {
     const secretKey = 'HARNESS_TEST_UNSET_SECRET_KEY_991';
-    const envRef = H.env(secretKey);
+    const envRef = M.env(secretKey);
 
     expect(envRef).toEqual({
       type: 'harness:env-ref',
@@ -47,12 +47,12 @@ describe('AST extraction, symbolic EnvRef, and CustomDomainASTRegistry merging',
     expect(Object.isFrozen(envRef)).toBe(true);
   });
 
-  it('rejects empty or whitespace-only H.env(key) identifiers', () => {
-    expect(() => H.env('')).toThrowError(
-      "H.env requires a non-empty string identifier (received '').",
+  it('rejects empty or whitespace-only M.env(key) identifiers', () => {
+    expect(() => M.env('')).toThrowError(
+      "M.env requires a non-empty string identifier (received '').",
     );
-    expect(() => H.env('   ')).toThrowError(
-      "H.env requires a non-empty string identifier (received '   ').",
+    expect(() => M.env('   ')).toThrowError(
+      "M.env requires a non-empty string identifier (received '   ').",
     );
   });
 

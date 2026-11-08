@@ -5,7 +5,7 @@ import type {
   StepExecutionContext,
   ToolDriver,
   ToolExecutionResult,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { resolveWorktreeEnvAndCwd } from './internal/process-group-lifecycle.js';
 import { runStreamingCheckSubprocess } from './internal/run-streaming-check-subprocess.js';
 

@@ -1,7 +1,7 @@
-import { H } from '@harness-dsl/core';
-import { fs } from '@harness-dsl/fs';
-import { md } from '@harness-dsl/markdown';
-import { sqlite } from '@harness-dsl/sqlite';
+import { M } from '@metaharness/core';
+import { fs } from '@metaharness/fs';
+import { md } from '@metaharness/markdown';
+import { sqlite } from '@metaharness/sqlite';
 import { workItem } from './engineering-schemas.schema.js';
 import { mapHighLeverageLessonSignalPayload } from './internal/map-high-leverage-lesson-signal-payload.js';
 import {
@@ -39,7 +39,7 @@ export const forbidDropColumnCheck = fs.regexCheck('forbid-drop-column', {
  *
  * Compiles global invariants into Slot 1 of `engineeringPrefix` and activates scoped boundary/migration checks on matching partitions and effects.
  */
-export const repoRules = H.rules('repo-rules')
+export const repoRules = M.rules('repo-rules')
   .global(
     {
       id: 'no-non-null-assertions',
@@ -50,14 +50,14 @@ export const repoRules = H.rules('repo-rules')
   )
   .scoped(
     md.scopedRules('.harness/rules/scoped/**/*.md'),
-    H.scopedRule('api-orm-boundary')
+    M.scopedRule('api-orm-boundary')
       .when({
         partitions: ['api'],
         effects: fs.matchGlobs(['packages/api/**/*.ts']),
       })
       .directive(fs.text('.harness/rules/api-orm-boundary.md'))
       .enforceBeforeStop(forbidDrizzleInApiCheck),
-    H.scopedRule(md.scopedRule('.harness/rules/db-migrations.md'))
+    M.scopedRule(md.scopedRule('.harness/rules/db-migrations.md'))
       .enforceBeforeStop(forbidDropColumnCheck),
   );
 
@@ -67,7 +67,7 @@ export const repoRules = H.rules('repo-rules')
  * Queries lessons by work item title and description, distills failure-to-pass trajectories with `sonnet`,
  * scores with sliding-window partition boosts and epoch decay, retires low-performing lessons, and emits `highLeverageLessonSignal`.
  */
-export const repoLessons = H.lessons('repo-lessons')
+export const repoLessons = M.lessons('repo-lessons')
   .store(
     fs.jsonlLessonStore({
       definitionsDir: '.harness/lessons',
@@ -105,7 +105,7 @@ export const repoLessons = H.lessons('repo-lessons')
  *
  * Holds the unlocked tool and ephemeral PostgreSQL service daemon until the agent completes or exits its fork.
  */
-export const dbMigrationSkill = H.skill(md.skill('.harness/skills/db-migrations/SKILL.md'))
+export const dbMigrationSkill = M.skill(md.skill('.harness/skills/db-migrations/SKILL.md'))
   .unlocksTools(drizzleGenerate.asTool())
   .unlocksServices(localPostgres)
   .lease('until-completed-or-fork-exit');
@@ -115,7 +115,7 @@ export const dbMigrationSkill = H.skill(md.skill('.harness/skills/db-migrations/
  *
  * Mounts headless browser and CDP REPL tools until the agent completes or exits its fork.
  */
-export const uiVerificationSkill = H.skill('ui-verification')
+export const uiVerificationSkill = M.skill('ui-verification')
   .when({
     partitions: ['web'],
     effects: fs.matchGlobs(['packages/web/src/**/*.tsx']),
@@ -138,7 +138,7 @@ export const sharedProceduralSkills = md.skills('.harness/skills/shared/*.md');
  * Uses `'role-scoped'` tools mode so each actor role caches its own clean toolset without orchestration tool bloat,
  * while keeping mutable `repoTopology` in Slot 2 so in-run contract updates never invalidate byte 0 of Slot 1.
  */
-export const engineeringPrefix = H.prefixGroup('engineering-prefix')
+export const engineeringPrefix = M.prefixGroup('engineering-prefix')
   .toolsMode('role-scoped')
   .sharedGrounding(
     fs.text('PRODUCT_SPEC.md'),

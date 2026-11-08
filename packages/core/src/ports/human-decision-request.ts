@@ -14,7 +14,7 @@ export interface HumanDecisionRequest<TRequest = unknown, TResponse = unknown> {
   readonly runId: string;
   /** Deterministic request identifier for idempotency and cancellation tracking. */
   readonly requestId: string;
-  /** Identifier of the `H.human` role targeted by this decision request. */
+  /** Identifier of the `M.human` role targeted by this decision request. */
   readonly humanId: string;
   /** Structured decision brief payload presented to the human operator. */
   readonly payload: TRequest;

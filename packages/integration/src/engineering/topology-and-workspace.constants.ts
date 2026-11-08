@@ -1,8 +1,8 @@
-import { H } from '@harness-dsl/core';
-import { fs } from '@harness-dsl/fs';
-import { git } from '@harness-dsl/git';
-import { local } from '@harness-dsl/node';
-import { sqlite } from '@harness-dsl/sqlite';
+import { M } from '@metaharness/core';
+import { fs } from '@metaharness/fs';
+import { git } from '@metaharness/git';
+import { local } from '@metaharness/node';
+import { sqlite } from '@metaharness/sqlite';
 import { runner, verifySuite } from './pools-and-services.constants.js';
 import { changeShippedSignal, prClosedUnmergedSignal } from './signals-and-interrupts.constants.js';
 
@@ -12,7 +12,7 @@ import { changeShippedSignal, prClosedUnmergedSignal } from './signals-and-inter
  * Declares `db` -> `api` -> `web` dependency edges, commits sealed run overlays to global base state when
  * `changeShippedSignal` arrives on `'main'`, and discards overlays when `prClosedUnmergedSignal` fires.
  */
-export const repoTopology = H.topology('app-topology')
+export const repoTopology = M.topology('app-topology')
   .store(sqlite.topologyStore('.harness/state.sqlite'))
   .partitions({
     db: {},

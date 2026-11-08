@@ -4,7 +4,7 @@ import {
   type LocalStreamCheckNode,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { compileLocalStreamCheckNode } from './internal/compile-local-stream-check-node.js';
 import { compileLocalStreamCheckToolBuilder } from './internal/compile-local-stream-check-tool-builder.js';
 import { compileStreamCheckCircuitBreaker } from './internal/compile-stream-check-circuit-breaker.js';

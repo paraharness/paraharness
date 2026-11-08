@@ -2,7 +2,7 @@ import {
   z,
   type AstBuilder,
   type LocalCommandToolNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { compileLocalCommandNode } from './compile-local-command-node.js';
 import type { LocalCommandBuilderState } from './local-command-builder-state.js';
 

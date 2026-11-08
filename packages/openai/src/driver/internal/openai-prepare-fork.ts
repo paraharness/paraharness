@@ -1,4 +1,4 @@
-import type { ForkContext, PrepareForkTarget, WireFrameRecord } from '@harness-dsl/core';
+import type { ForkContext, PrepareForkTarget, WireFrameRecord } from '@metaharness/core';
 import { buildOpenAiPairedForkToolFrame } from './build-openai-paired-fork-tool-frame.js';
 import { buildOpenAiUserFrame } from './build-openai-user-frame.js';
 import { formatOpenAiForkPromptText } from './format-openai-fork-prompt-text.js';

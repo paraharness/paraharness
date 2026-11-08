@@ -32,9 +32,9 @@ export const CONFLICT_END_REGEX = /^>{7} /;
  */
 export const HARNESS_GIT_IDENTITY_ENV: Readonly<Record<string, string>> = Object.freeze({
   GIT_AUTHOR_NAME: 'MetaHarness Runtime',
-  GIT_AUTHOR_EMAIL: 'runtime@harness-dsl.local',
+  GIT_AUTHOR_EMAIL: 'runtime@metaharness.local',
   GIT_COMMITTER_NAME: 'MetaHarness Runtime',
-  GIT_COMMITTER_EMAIL: 'runtime@harness-dsl.local',
+  GIT_COMMITTER_EMAIL: 'runtime@metaharness.local',
   GIT_AUTHOR_DATE: '1700000000 +0000',
   GIT_COMMITTER_DATE: '1700000000 +0000',
 });

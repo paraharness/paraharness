@@ -1,4 +1,4 @@
-import type { ContinuationFrame } from '@harness-dsl/core';
+import type { ContinuationFrame } from '@metaharness/core';
 
 /**
  * Parameter object for `updateContinuationStackInPg`.

@@ -2,7 +2,7 @@ import type {
   ClaudeAccountSeatNode,
   ClaudeModelNode,
   RuntimeDriverContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { ANTHROPIC_API_VERSION } from '../default-claude-http-transport.constants.js';
 import type { ClaudeSeatAuth } from './claude-seat-auth.js';
 import { extractOAuthTokenFromConfigDir } from './extract-oauth-token-from-config-dir.js';

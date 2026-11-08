@@ -1,4 +1,4 @@
-import type { AstBuilder, GitDiscardBranchNode } from '@harness-dsl/core';
+import type { AstBuilder, GitDiscardBranchNode } from '@metaharness/core';
 
 /**
  * Creates a fluent `AstBuilder<GitDiscardBranchNode>` (`git.resetWorktree()`).

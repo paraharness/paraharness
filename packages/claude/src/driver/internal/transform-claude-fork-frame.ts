@@ -1,4 +1,4 @@
-import type { CanonicalMessage, CanonicalToolResult, WireFrameRecord } from '@harness-dsl/core';
+import type { CanonicalMessage, CanonicalToolResult, WireFrameRecord } from '@metaharness/core';
 import { projectCanonicalToAnthropicMessage } from './project-canonical-to-anthropic-message.js';
 import { decodeFrameToAnthropicMessage } from './decode-frame-to-anthropic-message.js';
 

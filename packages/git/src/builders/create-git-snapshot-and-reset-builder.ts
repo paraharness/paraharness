@@ -1,4 +1,4 @@
-import type { AstBuilder, GitSnapshotAndResetNode } from '@harness-dsl/core';
+import type { AstBuilder, GitSnapshotAndResetNode } from '@metaharness/core';
 import { GitAbortMetaSchema } from '../schemas/git-receipts.schema.js';
 
 /**

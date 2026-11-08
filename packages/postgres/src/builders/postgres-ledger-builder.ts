@@ -1,4 +1,4 @@
-import type { AstBuilder, PostgresLedgerNode } from '@harness-dsl/core';
+import type { AstBuilder, PostgresLedgerNode } from '@metaharness/core';
 import type { CompactionConfigBuilder } from './compaction-config-builder.js';
 
 /**

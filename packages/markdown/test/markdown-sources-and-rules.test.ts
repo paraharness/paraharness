@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { H, type ResolutionContext, extractAST } from '@harness-dsl/core';
+import { M, type ResolutionContext, extractAST } from '@metaharness/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   executeMarkdownFrontmatterSource,
@@ -33,7 +33,7 @@ async function writeTempMarkdownFiles(
   }
 }
 
-describe('@harness-dsl/markdown builders, parser, and executors', () => {
+describe('@metaharness/markdown builders, parser, and executors', () => {
   const tempDirs: string[] = [];
 
   afterEach(async () => {
@@ -228,11 +228,11 @@ describe('@harness-dsl/markdown builders, parser, and executors', () => {
     expect(multiScopedArtifact.content[0]?.id).toBe('api-handlers');
     expect(multiScopedArtifact.content[1]?.id).toBe('db-migrations');
 
-    const rulesAst = H.rules('repo-rules')
+    const rulesAst = M.rules('repo-rules')
       .global(md.globalRules(`${rootDir}/rules/global/*.md`))
       .scoped(
         md.scopedRules(`${rootDir}/rules/scoped/*.md`),
-        H.scopedRule(md.scopedRule(`${rootDir}/rules/scoped/db-migrations.md`)),
+        M.scopedRule(md.scopedRule(`${rootDir}/rules/scoped/db-migrations.md`)),
       )
       .toAST();
     expect(rulesAst.globalRules).toHaveLength(1);

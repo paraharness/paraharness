@@ -4,7 +4,7 @@ import type { PoolSelectorFn } from '../ast/pool-strategy.types.js';
 import type { EscalateOnRetryStrategyBuilder } from './escalate-on-retry-strategy-builder.js';
 
 /**
- * Fluent configurator passed to `H.pool(id).strategy(($) => ...)`.
+ * Fluent configurator passed to `M.pool(id).strategy(($) => ...)`.
  *
  * Exposes `.escalateOnRetry()` and `.custom(selector)` strategy builders for model
  * and capacity pools.

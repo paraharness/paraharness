@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { LessonOutcome, LessonRecord } from '@harness-dsl/core';
+import type { LessonOutcome, LessonRecord } from '@metaharness/core';
 import type { FsLessonDefinitionRecord } from './fs-lesson-definition-record.js';
 import {
   atomicWriteJsonFile,

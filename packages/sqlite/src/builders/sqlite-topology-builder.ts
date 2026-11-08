@@ -1,4 +1,4 @@
-import type { AstBuilder, SqliteTopologyNode } from '@harness-dsl/core';
+import type { AstBuilder, SqliteTopologyNode } from '@metaharness/core';
 
 /**
  * Fluent builder for a passive `SqliteTopologyNode` (`sqlite.topologyStore(uri)`).

@@ -1,4 +1,4 @@
-import type { CanonicalToolCall } from '@harness-dsl/core';
+import type { CanonicalToolCall } from '@metaharness/core';
 import type { ExtractedAnthropicContentBlocks } from './extracted-anthropic-content-blocks.js';
 
 /**

@@ -1,6 +1,6 @@
 import { lstat, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitCowWorktreeNode, GitWorktreeHandle } from '@harness-dsl/core';
+import type { GitCowWorktreeNode, GitWorktreeHandle } from '@metaharness/core';
 import type { HarnessMetaRecord } from '../../schemas/git-receipts.schema.js';
 import {
   cloneNodeModulesTree,

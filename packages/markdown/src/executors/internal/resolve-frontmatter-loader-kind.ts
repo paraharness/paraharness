@@ -1,4 +1,4 @@
-import type { MarkdownFrontmatterSourceNode } from '@harness-dsl/core';
+import type { MarkdownFrontmatterSourceNode } from '@metaharness/core';
 
 /**
  * Infers the effective loader `kind` from `node.kind` or `node.id` prefix.

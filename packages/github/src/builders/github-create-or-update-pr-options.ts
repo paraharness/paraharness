@@ -1,4 +1,4 @@
-import type { BivariantCallback, EnvRef, z } from '@harness-dsl/core';
+import type { BivariantCallback, EnvRef, z } from '@metaharness/core';
 
 /**
  * Configuration options for the GitHub pull-request step builder (`github.createOrUpdatePr`).
@@ -11,7 +11,7 @@ import type { BivariantCallback, EnvRef, z } from '@harness-dsl/core';
 export interface GithubCreateOrUpdatePrOptions<TIn = unknown> {
   /** GitHub repository slug in `owner/repo` format. */
   readonly repo: string;
-  /** GitHub API token or symbolic `H.env(...)` reference. */
+  /** GitHub API token or symbolic `M.env(...)` reference. */
   readonly token: string | EnvRef;
   /** Synchronous projection deriving the source feature branch name from `TIn`. */
   readonly branch: BivariantCallback<[input: TIn], string>;

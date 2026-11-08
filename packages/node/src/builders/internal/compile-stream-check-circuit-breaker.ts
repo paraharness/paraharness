@@ -1,4 +1,4 @@
-import type { LocalStreamCheckCircuitBreakerConfig } from '@harness-dsl/core';
+import type { LocalStreamCheckCircuitBreakerConfig } from '@metaharness/core';
 import type { LocalStreamCheckCircuitBreakerOptions } from '../local-stream-check-builder.js';
 
 /**

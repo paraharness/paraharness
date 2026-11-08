@@ -1,4 +1,4 @@
-import type { BaseCheckASTNode, GitWorktreeHandle, MaybeBuilder } from '@harness-dsl/core';
+import type { BaseCheckASTNode, GitWorktreeHandle, MaybeBuilder } from '@metaharness/core';
 
 /**
  * Options for configuring branch landing reconciliation via `GitCowWorktreeBuilder.reconcileStrategy()`.

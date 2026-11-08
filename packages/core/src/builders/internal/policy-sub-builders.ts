@@ -56,7 +56,7 @@ export function rekeyPolicyGuardClauses(
 }
 
 /**
- * Creates a `PolicyLimitExceededBuilder` for `H.policy(id).onLimitExceeded($limit => ...)`.
+ * Creates a `PolicyLimitExceededBuilder` for `M.policy(id).onLimitExceeded($limit => ...)`.
  *
  * Captures the mandatory flush interrupt and optional abort hook invoked when
  * a policy resource budget ceiling is breached.
@@ -97,7 +97,7 @@ export function createPolicyLimitExceededBuilder<THandle>(
 }
 
 /**
- * Creates a `PolicyGuardClausePendingBuilder` for `H.policy(id).guard(...guards)`.
+ * Creates a `PolicyGuardClausePendingBuilder` for `M.policy(id).guard(...guards)`.
  *
  * Compiles `.onViolation('deny-with-error', ...)` or `.onViolation('raise-interrupt', ...)`
  * into a frozen `PolicyGuardClauseNode` and appends it to the owning `PolicyBuilder`.

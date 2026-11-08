@@ -1,4 +1,4 @@
-import type { FsGlobSourceNode } from '@harness-dsl/core';
+import type { FsGlobSourceNode } from '@metaharness/core';
 
 /**
  * Compiles a passive `FsGlobSourceNode` (`fs:glob-source`) for `fs.glob(globPattern)`.

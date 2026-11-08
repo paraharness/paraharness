@@ -5,7 +5,7 @@ import type { ScopedRuleNode } from '../ast/scoped-rule-node.types.js';
 import type { GlobalRule, ScopedRule } from '../schemas/core-rules.schema.js';
 
 /**
- * Fluent builder for rule registries (`H.rules(id)`).
+ * Fluent builder for rule registries (`M.rules(id)`).
  *
  * Aggregates always-active `GlobalRule` entries (pinned in `[GLOBAL_RULES]`) and
  * partition- or effect-activated `ScopedRuleNode` entries.

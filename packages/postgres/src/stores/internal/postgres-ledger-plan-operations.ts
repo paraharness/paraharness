@@ -1,4 +1,4 @@
-import type { MutateLanePlanRequest } from '@harness-dsl/core';
+import type { MutateLanePlanRequest } from '@metaharness/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 
 /**

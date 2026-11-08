@@ -1,4 +1,4 @@
-import type { CanonicalMessage, WireFrameRecord } from '@harness-dsl/core';
+import type { CanonicalMessage, WireFrameRecord } from '@metaharness/core';
 import { projectCanonicalToOpenAiWire } from './project-canonical-to-openai-wire.js';
 
 /**

@@ -1,4 +1,4 @@
-import { z } from '@harness-dsl/core';
+import { z } from '@metaharness/core';
 import type { StripeReadToolNode } from '../nodes/stripe-read-tool-node.js';
 
 /**

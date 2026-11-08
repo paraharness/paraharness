@@ -1,10 +1,10 @@
-import type { FsGlobMatcherNode, ScopePredicate } from '@harness-dsl/core';
+import type { FsGlobMatcherNode, ScopePredicate } from '@metaharness/core';
 
 /**
  * Translates YAML frontmatter `partitions` and `globs` into a passive `ScopePredicate` record.
  *
  * Emits a passive `FsGlobMatcherNode` (`type: 'fs:match-globs'`, `mode: 'write'`) with a deterministic `id`
- * whenever frontmatter `globs` is non-empty without importing `@harness-dsl/fs`.
+ * whenever frontmatter `globs` is non-empty without importing `@metaharness/fs`.
  *
  * @param {Readonly<Record<string, unknown>>} frontmatter - Parsed YAML frontmatter key-value record.
  *

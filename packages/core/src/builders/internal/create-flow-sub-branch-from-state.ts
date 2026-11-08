@@ -65,7 +65,7 @@ export function createFlowSubBranchFromState<
         TStepId
       >,
     ) {
-      assertNonEmptyIdentifier('H.flow.branch.step', id);
+      assertNonEmptyIdentifier('M.flow.branch.step', id);
       const baseConfig = createFlowStepConfigFromState<
         TFlowIn,
         ExtractStepInput<TStep>,

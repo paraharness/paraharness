@@ -3,7 +3,7 @@ import type {
   CanonicalMessage,
   CanonicalToolResult,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { projectCanonicalToAnthropicMessage } from './project-canonical-to-anthropic-message.js';
 
 /**

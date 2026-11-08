@@ -1,12 +1,12 @@
 import { SocketModeClient } from '@slack/socket-mode';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  H,
+  M,
   createExecutorRegistry,
   z,
   type HarnessRuntimeController,
   type RuntimeDriverContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   SlackApproverAdapter,
   SlackNotifierAdapter,
@@ -34,13 +34,13 @@ function createTestDriverContext(
   };
 }
 
-describe('@harness-dsl/slack adapter', () => {
+describe('@metaharness/slack adapter', () => {
   describe('slack.bot bidirectional HumanAdapter and ControlPlaneAdapter', () => {
     it('compiles SlackApproverNode with interactionMode bidirectional and dispatches notify()', async () => {
       const botNode = slack.bot({
-        appToken: H.env('SLACK_APP_TOKEN'),
-        botToken: H.env('SLACK_BOT_TOKEN'),
-        channel: H.env('SLACK_CHANNEL_ID'),
+        appToken: M.env('SLACK_APP_TOKEN'),
+        botToken: M.env('SLACK_BOT_TOKEN'),
+        channel: M.env('SLACK_CHANNEL_ID'),
       });
       expect(botNode).toEqual({
         type: 'slack:approver',
@@ -209,7 +209,7 @@ describe('@harness-dsl/slack adapter', () => {
 
     it('connects Socket Mode control plane via start(controller) and emits external signals', async () => {
       const botNode = slack.bot({
-        appToken: H.env('SLACK_APP_TOKEN'),
+        appToken: M.env('SLACK_APP_TOKEN'),
         botToken: 'xoxb-literal',
         channel: 'C999',
       });
@@ -422,7 +422,7 @@ describe('@harness-dsl/slack adapter', () => {
 
   describe('slack.webhook notify-only SlackNotifierAdapter', () => {
     it('compiles SlackNotifierNode with interactionMode notify-only, delivers webhook alerts, and rejects requestDecision', async () => {
-      const notifierNode = slack.webhook(H.env('SLACK_WEBHOOK_URL'));
+      const notifierNode = slack.webhook(M.env('SLACK_WEBHOOK_URL'));
       expect(notifierNode).toEqual({
         type: 'slack:notifier',
         interactionMode: 'notify-only',

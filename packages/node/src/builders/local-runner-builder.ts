@@ -1,10 +1,10 @@
-import type { AstBuilder, NodeRunnerNode } from '@harness-dsl/core';
+import type { AstBuilder, NodeRunnerNode } from '@metaharness/core';
 
 /**
  * Fluent builder and passive descriptor for a local OS subprocess runner pool (`local.runner`).
  *
  * Implements both `AstBuilder<NodeRunnerNode>` and `NodeRunnerNode` so it can be passed directly
- * to `H.harness().pools(...)`, `local.command().runner(...)`, `local.streamCheck().runner(...)`,
+ * to `M.harness().pools(...)`, `local.command().runner(...)`, `local.streamCheck().runner(...)`,
  * and `local.daemon().runner(...)`.
  */
 export interface LocalRunnerBuilder extends AstBuilder<NodeRunnerNode>, NodeRunnerNode {

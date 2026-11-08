@@ -5,7 +5,7 @@ import { FsJsonlLessonStore, fs } from '../src/index.js';
 import type { TempFsWorkspaceHandle } from './fixtures/temp-fs-workspace-handle.js';
 import { createTempFsWorkspace } from './fixtures/temp-fs-workspace.js';
 
-describe('@harness-dsl/fs FsJsonlLessonStore', () => {
+describe('@metaharness/fs FsJsonlLessonStore', () => {
   const workspaces: TempFsWorkspaceHandle[] = [];
 
   afterEach(async () => {

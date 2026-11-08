@@ -3,7 +3,7 @@ import type {
   GitWorktreeHandle,
   MaybeBuilder,
   z,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 
 /**
  * Configuration options for `git.mergeQueue(id, options)` (`createGitMergeQueueBuilder`).

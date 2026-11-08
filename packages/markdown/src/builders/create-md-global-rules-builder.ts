@@ -1,4 +1,4 @@
-import type { GlobalRule } from '@harness-dsl/core';
+import type { GlobalRule } from '@metaharness/core';
 import { createMdFrontmatterBuilder } from './create-md-frontmatter-builder.js';
 import type { MdFrontmatterSourceBuilder } from './md-frontmatter-source-builder.js';
 

@@ -1,4 +1,4 @@
-import type { CompactionConfigNode, EnvRef, PostgresLedgerNode } from '@harness-dsl/core';
+import type { CompactionConfigNode, EnvRef, PostgresLedgerNode } from '@metaharness/core';
 import type { CompactionConfigBuilder } from './compaction-config-builder.js';
 import { createCompactionConfigBuilder } from './create-compaction-config-builder.js';
 import type { PostgresLedgerBuilder } from './postgres-ledger-builder.js';
@@ -9,7 +9,7 @@ import type { PostgresLedgerBuilder } from './postgres-ledger-builder.js';
  * Stores the literal connection URI or symbolic `EnvRef` and optional `CompactionConfigNode`
  * in an immutable closure that compiles to a frozen `PostgresLedgerNode`.
  *
- * @param {string | EnvRef}                  uri          - PostgreSQL connection URI or symbolic `H.env(...)` reference.
+ * @param {string | EnvRef}                  uri          - PostgreSQL connection URI or symbolic `M.env(...)` reference.
  * @param {CompactionConfigNode | undefined} [compaction] - Optional pre-compiled compaction configuration.
  *
  * @returns {PostgresLedgerBuilder} Immutable builder for `PostgresLedgerNode`.

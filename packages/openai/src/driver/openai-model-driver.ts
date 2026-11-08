@@ -8,7 +8,7 @@ import type {
   PrepareForkTarget,
   RuntimeDriverContext,
   WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import {
   OPENAI_RESPONSES_ENDPOINT,
   defaultOpenAiHttpTransport,
@@ -24,7 +24,7 @@ import { resolveOpenAiSeatAuth } from './internal/resolve-openai-seat-auth.js';
 import type { OpenAiHttpTransport } from './openai-http-transport.js';
 
 /**
- * Runtime `ModelDriver` implementation for the OpenAI `/v1/responses` HTTP protocol (`@harness-dsl/openai`).
+ * Runtime `ModelDriver` implementation for the OpenAI `/v1/responses` HTTP protocol (`@metaharness/openai`).
  *
  * Supports native `text.format` JSON-schema structured output, `previous_response_id` server-side branching,
  * automatic cross-seat failover stripping of account-bound `previous_response_id`, item IDs (`rs_...`, `fc_...`, `msg_...`),

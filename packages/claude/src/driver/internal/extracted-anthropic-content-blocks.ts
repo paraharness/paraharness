@@ -1,4 +1,4 @@
-import type { CanonicalToolCall } from '@harness-dsl/core';
+import type { CanonicalToolCall } from '@metaharness/core';
 
 /**
  * Extracted content blocks, visible text, and canonical tool calls from an Anthropic `/v1/messages` response.

@@ -1,4 +1,4 @@
-export type { OpenAiAccountSeatNode, OpenAiModelNode } from '@harness-dsl/core';
+export type { OpenAiAccountSeatNode, OpenAiModelNode } from '@metaharness/core';
 export { createOpenAiAccountSeatBuilder } from './builders/create-openai-account-seat-builder.js';
 export { createOpenAiModelBuilder } from './builders/create-openai-model-builder.js';
 export type { OpenAiAccountSeatBuilder } from './builders/openai-account-seat-builder.js';

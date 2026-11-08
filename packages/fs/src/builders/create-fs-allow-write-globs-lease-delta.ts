@@ -1,4 +1,4 @@
-import type { LeaseDelta } from '@harness-dsl/core';
+import type { LeaseDelta } from '@metaharness/core';
 import { createFsGlobMatcherBuilder } from './create-fs-glob-matcher-builder.js';
 
 /**

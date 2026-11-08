@@ -1,4 +1,4 @@
-import type { CanonicalMessage, WireFrameRecord } from '@harness-dsl/core';
+import type { CanonicalMessage, WireFrameRecord } from '@metaharness/core';
 import type { PgWireFrameRow } from './pg-wire-frame-row.js';
 
 /**

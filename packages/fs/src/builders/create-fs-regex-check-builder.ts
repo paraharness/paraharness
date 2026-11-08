@@ -1,4 +1,4 @@
-import type { FsRegexCheckNode } from '@harness-dsl/core';
+import type { FsRegexCheckNode } from '@metaharness/core';
 
 /**
  * Configuration options for `fs.regexCheck(id, options)`.

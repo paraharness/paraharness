@@ -6,7 +6,7 @@ import type {
   MarkdownSectionSourceNode,
   ResolutionContext,
   ResolvedSourceArtifact,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import picomatch from 'picomatch';
 import { buildMarkdownDomainItem } from '../parser/internal/build-markdown-domain-item.js';
 import {

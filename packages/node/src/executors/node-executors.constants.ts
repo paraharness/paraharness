@@ -1,5 +1,5 @@
-import type { RuntimeExecutorRegistrySlice } from '@harness-dsl/core';
+import type { RuntimeExecutorRegistrySlice } from '@metaharness/core';
 import { createNodeExecutors } from './create-node-executors.js';
 
-/** Default frozen `RuntimeExecutorRegistrySlice` instance for `@harness-dsl/node`. */
+/** Default frozen `RuntimeExecutorRegistrySlice` instance for `@metaharness/node`. */
 export const nodeExecutors: RuntimeExecutorRegistrySlice = createNodeExecutors();

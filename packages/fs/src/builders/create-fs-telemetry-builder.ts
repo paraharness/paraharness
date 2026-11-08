@@ -1,4 +1,4 @@
-import type { FsTelemetryCollectorNode } from '@harness-dsl/core';
+import type { FsTelemetryCollectorNode } from '@metaharness/core';
 import { FsTelemetryMetricsSchema } from './internal/fs-tool-input.schema.js';
 
 /**

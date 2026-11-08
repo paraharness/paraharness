@@ -1,4 +1,4 @@
-import type { WireFrameRecord } from '@harness-dsl/core';
+import type { WireFrameRecord } from '@metaharness/core';
 
 /**
  * Clones a parent `WireFrameRecord[]` chain for a `'clone-transcript'` downward fork (`M4-integration.md` §5).

@@ -18,7 +18,7 @@ import type {
 import type { FlowStepConfigBuilder } from './flow-step-config-builder.js';
 
 /**
- * Fluent builder for a declarative multi-step workflow (`H.flow(id)`).
+ * Fluent builder for a declarative multi-step workflow (`M.flow(id)`).
  *
  * Threads `THandle`, `TReceipt`, `TCustomMetrics`, `TStepIds`, and `TStepOutputs`
  * across sequential `.step()` and conditional `.branch()` declarations while enforcing

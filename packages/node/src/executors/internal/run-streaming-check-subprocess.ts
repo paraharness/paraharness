@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import type {
   CheckEvaluationResult,
   LocalStreamCheckCircuitBreakerConfig,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { extractCircuitBreakerExcerpt } from './extract-circuit-breaker-excerpt.js';
 import { hasCapturedGraceLines } from './has-captured-grace-lines.js';
 import {

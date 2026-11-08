@@ -134,12 +134,12 @@ export function createLaneFromState<TIn = unknown, TStepIds extends string = str
     agingMinutes: (minutes: number): LaneBuilder<TIn, TStepIds> =>
       createLaneFromState<TIn, TStepIds>({ ...state, agingMinutes: minutes }),
     waitFor: (depsMapper: (input: TIn) => readonly string[], onAbandonedState: string): LaneBuilder<TIn, TStepIds> => {
-      assertNonEmptyIdentifier('H.lane.waitFor', onAbandonedState);
+      assertNonEmptyIdentifier('M.lane.waitFor', onAbandonedState);
       return createLaneFromState<TIn, TStepIds>({ ...state, waitFor: { depsMapper, onAbandonedState } });
     },
     maxCostUsd: (limitUsd: number, approver: MaybeBuilder<ScopedHumanTargetNode<BudgetApproval>>): LaneBuilder<TIn, TStepIds> => {
       const approverNode = extractAST(approver);
-      validateBidirectionalHumanChannel(approverNode.human, 'H.lane.maxCostUsd()');
+      validateBidirectionalHumanChannel(approverNode.human, 'M.lane.maxCostUsd()');
       return createLaneFromState<TIn, TStepIds>({ ...state, maxCostUsd: { limitUsd, approver: approverNode } });
     },
     retry: (configure: ($r: LaneRetryBuilder) => LaneRetryBuilder): LaneBuilder<TIn, TStepIds> => {

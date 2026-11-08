@@ -1,4 +1,4 @@
-import type { CanonicalMessage, WireFrameRecord } from '@harness-dsl/core';
+import type { CanonicalMessage, WireFrameRecord } from '@metaharness/core';
 import { projectCanonicalToGeminiContent } from './project-canonical-to-gemini-content.js';
 
 /**

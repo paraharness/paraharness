@@ -1,4 +1,4 @@
-import type { ContinuationFrame, InterruptedStepBootRecord } from '@harness-dsl/core';
+import type { ContinuationFrame, InterruptedStepBootRecord } from '@metaharness/core';
 import type { PgRunRow } from './pg-run-row.js';
 import type { PgStepRow } from './pg-step-row.js';
 

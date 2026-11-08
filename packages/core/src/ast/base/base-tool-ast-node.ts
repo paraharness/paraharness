@@ -4,7 +4,7 @@ import type { BivariantCallback } from '../ast-foundation.types.js';
 /**
  * Domain-agnostic base AST node contract for agent-invocable tools (`ToolASTNode`).
  *
- * Declares `effectTracking` (`'declared'` vs `'subprocess-post-flight'`) so `H.flow` can statically
+ * Declares `effectTracking` (`'declared'` vs `'subprocess-post-flight'`) so `M.flow` can statically
  * verify whether an active policy guard requires a `CheckpointableScope` for post-flight diffing.
  *
  * @template TType     String-literal discriminant of the tool node.

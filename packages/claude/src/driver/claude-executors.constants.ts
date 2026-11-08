@@ -1,5 +1,5 @@
-import type { RuntimeExecutorRegistrySlice } from '@harness-dsl/core';
+import type { RuntimeExecutorRegistrySlice } from '@metaharness/core';
 import { createClaudeExecutors } from './create-claude-executors.js';
 
-/** Default `RuntimeExecutorRegistrySlice` for `@harness-dsl/claude` (`models['claude:model']`). */
+/** Default `RuntimeExecutorRegistrySlice` for `@metaharness/claude` (`models['claude:model']`). */
 export const claudeExecutors: RuntimeExecutorRegistrySlice = createClaudeExecutors();

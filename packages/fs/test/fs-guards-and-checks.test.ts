@@ -1,13 +1,13 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  H,
+  M,
   type PolicyGuardEvaluationInput,
   type QuotaTripwireEvaluationInput,
   type StepExecutionContext,
   type ToolEffect,
   createExecutorRegistry,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   type FsToolEffect,
@@ -104,7 +104,7 @@ function createStepContext(
   });
 }
 
-describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', () => {
+describe('@metaharness/fs guards, matchers, checks, tripwires, and telemetry', () => {
   const workspaces: TempFsWorkspaceHandle[] = [];
 
   afterEach(async () => {
@@ -115,7 +115,7 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
   });
 
   it('builds partitionMap, inPartition predicate, and boundaryGuard blocking unleased boundary writes', () => {
-    const topology = H.topology('repo-topology')
+    const topology = M.topology('repo-topology')
       .store({ type: 'sqlite:topology', uri: ':memory:' })
       .partitions({
         db: { dependsOn: [] },
@@ -225,7 +225,7 @@ describe('@harness-dsl/fs guards, matchers, checks, tripwires, and telemetry', (
   });
 
   it('enforces protect, readOnly, allowOnly, requireReadBeforeWrite, scopedWrite, and secretLiterals guards', () => {
-    const topology = H.topology('t2')
+    const topology = M.topology('t2')
       .store({ type: 'sqlite:topology', uri: ':memory:' })
       .partitions({
         db: { dependsOn: [] },

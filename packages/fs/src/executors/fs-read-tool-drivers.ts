@@ -6,7 +6,7 @@ import type {
   ToolDriver,
   ToolEffect,
   ToolExecutionResult,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { createFsReadEffect } from './internal/create-fs-read-effect.js';
 import { enumerateWorkspaceFilesSync } from './internal/enumerate-workspace-files-sync.js';
 import { extractWorktreeRootAndBaseRef } from './internal/extract-worktree-root-and-base-ref.js';

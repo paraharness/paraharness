@@ -1,4 +1,4 @@
-import type { FsTextSourceNode } from '@harness-dsl/core';
+import type { FsTextSourceNode } from '@metaharness/core';
 
 /**
  * Compiles a passive `FsTextSourceNode` (`fs:text-source`) for `fs.text(filePath)`.

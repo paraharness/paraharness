@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitWorktreeHandle, ToolEffect } from '@harness-dsl/core';
+import type { GitWorktreeHandle, ToolEffect } from '@metaharness/core';
 import type { ComputeWorktreeStatusOptions } from './compute-worktree-status-options.js';
 import {
   compileWorktreeExcludeMatcher,

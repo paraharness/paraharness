@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { H, createExecutorRegistry } from '@harness-dsl/core';
-import type { AgentContinuationFrame, ResolutionContext, RuntimeDriverContext, SuspendedForkRecord, WireFrameRecord } from '@harness-dsl/core';
+import { M, createExecutorRegistry } from '@metaharness/core';
+import type { AgentContinuationFrame, ResolutionContext, RuntimeDriverContext, SuspendedForkRecord, WireFrameRecord } from '@metaharness/core';
 import { adaptPgPoolToQueryClient, normalizePostgresClient } from '../src/ddl/internal/normalize-postgres-client.js';
 import {
   PostgresLedgerStore, PostgresLessonStore, PostgresTopologyStore, type PostgresQueryClient, type PostgresQueryResult,
@@ -33,7 +33,7 @@ function createSampleWireFrame(
   };
 }
 
-describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, and global-rules executor', () => {
+describe('@metaharness/postgres builders, late-bound EnvRef resolution, stores, and global-rules executor', () => {
   let pgClient: PglitePoolFactory;
   let ledgerStore: PostgresLedgerStore;
   let topologyStore: PostgresTopologyStore;
@@ -54,9 +54,9 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     await pgClient.close();
   });
 
-  it('builds frozen Postgres AST nodes with H.env(DATABASE_URL) and validates compaction and SQL identifiers', () => {
-    const dbUrlEnv = H.env('DATABASE_URL');
-    const mergedSig = H.signal('github:pr.merged', z.object({ prKey: z.string() })).toAST();
+  it('builds frozen Postgres AST nodes with M.env(DATABASE_URL) and validates compaction and SQL identifiers', () => {
+    const dbUrlEnv = M.env('DATABASE_URL');
+    const mergedSig = M.signal('github:pr.merged', z.object({ prKey: z.string() })).toAST();
     const ledgerAst = postgres
       .ledger(dbUrlEnv)
       .compactWhen(($c) =>
@@ -102,7 +102,7 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     expect(postgresExecutors.sources?.['postgres:global-rules']).toBeTypeOf('function');
   });
 
-  it('resolves H.env(DATABASE_URL) at runtime for postgres:global-rules and store factories', async () => {
+  it('resolves M.env(DATABASE_URL) at runtime for postgres:global-rules and store factories', async () => {
     await pgClient.query('CREATE TABLE pg_global_rules (id TEXT PRIMARY KEY, directive TEXT NOT NULL);');
     await pgClient.query('INSERT INTO pg_global_rules (id, directive) VALUES ($1, $2)', ['rule-2', 'Release scope locks in finally.']);
     await pgClient.query('INSERT INTO pg_global_rules (id, directive) VALUES ($1, $2)', ['rule-1', 'Never read .env directly.']);
@@ -127,7 +127,7 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
 
     const rulesExecutor = slice.sources?.['postgres:global-rules'];
     if (rulesExecutor === undefined) throw new Error('Missing postgres:global-rules executor');
-    const rulesNode = postgres.globalRules(H.env('DATABASE_URL'), { table: 'pg_global_rules' }).toAST();
+    const rulesNode = postgres.globalRules(M.env('DATABASE_URL'), { table: 'pg_global_rules' }).toAST();
     const artifact = await rulesExecutor(rulesNode, undefined, resolutionCtx);
     const expectedRules = [
       { id: 'rule-1', directive: 'Never read .env directly.' },
@@ -144,9 +144,9 @@ describe('@harness-dsl/postgres builders, late-bound EnvRef resolution, stores, 
     if (ledgerFactory === undefined || topologyFactory === undefined || lessonFactory === undefined) {
       throw new Error('Missing postgres store factories');
     }
-    const resolvedLedger = await ledgerFactory(postgres.ledger(H.env('DATABASE_URL')).toAST(), driverCtx);
-    const resolvedTopology = await topologyFactory(postgres.topologyStore(H.env('DATABASE_URL')).toAST(), driverCtx);
-    const resolvedLessons = await lessonFactory(postgres.lessonStore(H.env('DATABASE_URL')).toAST(), driverCtx);
+    const resolvedLedger = await ledgerFactory(postgres.ledger(M.env('DATABASE_URL')).toAST(), driverCtx);
+    const resolvedTopology = await topologyFactory(postgres.topologyStore(M.env('DATABASE_URL')).toAST(), driverCtx);
+    const resolvedLessons = await lessonFactory(postgres.lessonStore(M.env('DATABASE_URL')).toAST(), driverCtx);
 
     const createdRun = await resolvedLedger.createOrResumeRun({
       runId: 'run-factory-1',

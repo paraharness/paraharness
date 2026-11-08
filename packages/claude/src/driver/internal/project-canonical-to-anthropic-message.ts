@@ -1,4 +1,4 @@
-import type { CanonicalMessage, CanonicalToolResult } from '@harness-dsl/core';
+import type { CanonicalMessage, CanonicalToolResult } from '@metaharness/core';
 
 /**
  * Projects a single `CanonicalToolResult` into an Anthropic `tool_result` content block.

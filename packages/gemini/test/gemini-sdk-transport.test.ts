@@ -1,4 +1,4 @@
-import { H, type RuntimeExecutorRegistry } from '@harness-dsl/core';
+import { M, type RuntimeExecutorRegistry } from '@metaharness/core';
 import { describe, expect, it } from 'vitest';
 import {
   GeminiModelDriver,
@@ -40,7 +40,7 @@ async function withMockedFetch<T>(
   }
 }
 
-describe('@harness-dsl/gemini official @google/genai SDK transport and HTTP status handling', () => {
+describe('@metaharness/gemini official @google/genai SDK transport and HTTP status handling', () => {
   it('dispatches defaultGeminiHttpTransport requests through the official @google/genai GoogleGenAI client', async () => {
     const capturedCalls: Array<{
       readonly url: string;
@@ -83,7 +83,7 @@ describe('@harness-dsl/gemini official @google/genai SDK transport and HTTP stat
         );
       },
       async () => {
-        const seat = gemini.account('sdk-seat').apiKey(H.env('GEMINI_API_KEY')).toAST();
+        const seat = gemini.account('sdk-seat').apiKey(M.env('GEMINI_API_KEY')).toAST();
         const modelNode = gemini.model('geminiPro', { id: 'gemini-3.1-pro' }).toAST();
         const driver = new GeminiModelDriver(defaultGeminiHttpTransport, modelNode, {
           registry: {} as RuntimeExecutorRegistry,

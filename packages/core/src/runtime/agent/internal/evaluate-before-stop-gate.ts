@@ -108,7 +108,7 @@ export async function recordFailedBeforeStopGate<TIn, TOut, THandle>(
 /**
  * Attributes `violated`, `gate_rejected_recovered`, and `clean_pass` lesson outcomes and triggers `.onGateRecovery()` distillation (`SPEC.md` §3.4.3).
  *
- * Buffers contrastive gate recoveries on `session.agentFrame.bufferedGateRecoveries` when running inside an `H.loop` iteration.
+ * Buffers contrastive gate recoveries on `session.agentFrame.bufferedGateRecoveries` when running inside an `M.loop` iteration.
  *
  * @template TIn     Validated agent input payload type.
  * @template TOut    Validated agent output payload type.

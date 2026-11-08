@@ -4,7 +4,7 @@ import type { ASTNode } from './ast-node.js';
 import type { ServiceASTNode, ToolASTNode } from './domain-ast.types.js';
 
 /**
- * Inline `SkillNode` variant whose `description` and `instructions` are configured directly on `H.skill(id)`.
+ * Inline `SkillNode` variant whose `description` and `instructions` are configured directly on `M.skill(id)`.
  *
  * Unlocks `unlockedTools` and `unlockedServices` when activated via `activateSkill({ skillId })`.
  *

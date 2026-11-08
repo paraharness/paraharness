@@ -1,4 +1,4 @@
-import type { EnvRef } from '@harness-dsl/core';
+import type { EnvRef } from '@metaharness/core';
 
 /**
  * Parameters for resolving static and symbolic `EnvRef` environment bindings into a target dictionary.
@@ -44,7 +44,7 @@ export function resolveConfiguredEnvVars(params: ResolveConfiguredEnvVarsParams)
     const resolved = params.resolveEnv(rawVal);
     if (isEnvRefDescriptor(rawVal) && (resolved === undefined || resolved.length === 0)) {
       throw new Error(
-        `Required environment variable '${rawVal.key}' referenced by H.env('${rawVal.key}') is not set.`,
+        `Required environment variable '${rawVal.key}' referenced by M.env('${rawVal.key}') is not set.`,
       );
     }
     params.targetEnv[key] = resolved ?? '';

@@ -39,7 +39,7 @@ function normalizeCommandBuilderState<TIn = unknown, TOut = unknown, THandle = u
 }
 
 /**
- * Creates a fluent `CommandBuilder` for `H.command(id)` or `H.command(id, options)`.
+ * Creates a fluent `CommandBuilder` for `M.command(id)` or `M.command(id, options)`.
  *
  * Supports both progressive fluent chaining (`.input()`, `.output()`, `.partitions()`, `.run()`)
  * and one-shot configuration via `CommandConfigOptions`, compiling into a deeply frozen `CommandNode`.
@@ -57,7 +57,7 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
   id: string,
   optionsOrState?: CommandConfigOptions<TIn, TOut, THandle> | CreateCommandBuilderState<TIn, TOut, THandle>,
 ): CommandBuilder<TIn, TOut, THandle> {
-  assertNonEmptyIdentifier('H.command', id);
+  assertNonEmptyIdentifier('M.command', id);
   const state = normalizeCommandBuilderState(optionsOrState);
 
   return Object.freeze<CommandBuilder<TIn, TOut, THandle>>({

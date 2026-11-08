@@ -4,7 +4,7 @@ import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js'
 import type { SignalPayloadBuilder as ConfigurableSignalBuilder } from './signal-payload-builder.js';
 
 /**
- * Creates a copy-on-write immutable `ConfigurableSignalBuilder` for `H.signal(id)`.
+ * Creates a copy-on-write immutable `ConfigurableSignalBuilder` for `M.signal(id)`.
  *
  * Defaults the signal payload schema to `z.unknown()` when `schema` is omitted and
  * returns a frozen builder supporting `.payload(nextSchema)` and `.toAST()`.
@@ -20,7 +20,7 @@ export function createSignalBuilder<TPayload = unknown>(
   id: string,
   schema?: z.ZodType<TPayload>,
 ): ConfigurableSignalBuilder<TPayload> {
-  assertNonEmptyIdentifier('H.signal', id);
+  assertNonEmptyIdentifier('M.signal', id);
   const resolvedSchema = (schema ?? z.unknown()) as z.ZodType<TPayload>;
   const compiledNode: SignalNode<TPayload> = deepFreeze<SignalNode<TPayload>>({
     type: 'harness:signal',

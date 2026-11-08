@@ -6,7 +6,7 @@ import {
   type LocalCommandNode,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { compileLocalCommandCheckBuilder } from './internal/compile-local-command-check-builder.js';
 import { compileLocalCommandNode } from './internal/compile-local-command-node.js';
 import { compileLocalCommandToolBuilder } from './internal/compile-local-command-tool-builder.js';

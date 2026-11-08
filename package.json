@@ -1,5 +1,5 @@
 {
-  "name": "wg-monorepo",
+  "name": "metaharness",
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@10.34.9",

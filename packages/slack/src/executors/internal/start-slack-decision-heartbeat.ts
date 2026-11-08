@@ -1,4 +1,4 @@
-import type { HumanDecisionRequest } from '@harness-dsl/core';
+import type { HumanDecisionRequest } from '@metaharness/core';
 import type { SlackTransport } from '../slack-transport.js';
 import type { SlackDecisionMessageTarget } from './slack-decision-message-target.js';
 

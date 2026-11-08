@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { type FileLockOptions, withFileLock } from '@harness-dsl/lockfile';
+import { type FileLockOptions, withFileLock } from '@metaharness/lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import type { FsLessonDefinitionRecord } from './fs-lesson-definition-record.js';
 import type { FsLessonStatsEntry } from './fs-lesson-stats-entry.js';
 
 /**
- * Acquires an exclusive advisory lockfile via `@harness-dsl/lockfile` and executes `work`.
+ * Acquires an exclusive advisory lockfile via `@metaharness/lockfile` and executes `work`.
  *
  * Ensures cross-process and in-process serialization on `lockFilePath` with heartbeat
  * and stale-lock reclamation (`SPEC.md` §4.3).

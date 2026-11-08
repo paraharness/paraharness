@@ -51,7 +51,7 @@ function normalizeTopologyCommitOverlay<TOnSig = unknown, TDiscardSig = unknown>
 }
 
 /**
- * Creates a fluent `ConfigurableTopologyBuilder` for `H.topology(id)`.
+ * Creates a fluent `ConfigurableTopologyBuilder` for `M.topology(id)`.
  *
  * Validates the partition dependency DAG at `.partitions(...)` call time and exposes
  * `.dependentsOf(partitionId)` and `.affectedBy(partitionId)` graph queries.
@@ -67,7 +67,7 @@ export function createTopologyBuilder<TPartition extends string = string>(
   id: string,
   options?: CreateTopologyBuilderOptions<TPartition>,
 ): ConfigurableTopologyBuilder<TPartition> {
-  assertNonEmptyIdentifier('H.topology', id);
+  assertNonEmptyIdentifier('M.topology', id);
   const ensurePartitions = (): Readonly<Record<TPartition, TopologyPartitionConstraint<TPartition>>> => {
     if (options?.partitions === undefined) {
       throw new Error(`Topology '${id}' is missing required .partitions(...) configuration.`);

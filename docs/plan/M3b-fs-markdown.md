@@ -1,9 +1,9 @@
-# Milestone M3b — `@harness-dsl/fs` & `@harness-dsl/markdown` Filesystem & Markdown Adapters
+# Milestone M3b — `@metaharness/fs` & `@metaharness/markdown` Filesystem & Markdown Adapters
 
 ## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
 - **Milestone**: `M3b` (Wave 2 — Parallel Adapter Fan-Out `c`, depends on `M1`)
-- **Packages**: `@harness-dsl/fs` (`packages/fs`) and `@harness-dsl/markdown` (`packages/markdown`)
+- **Packages**: `@metaharness/fs` (`packages/fs`) and `@metaharness/markdown` (`packages/markdown`)
 - **`owned_dirs`**:
   - `packages/fs/src/**`
   - `packages/fs/test/**`
@@ -14,20 +14,20 @@
   - `packages/{sqlite,postgres,node,git,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@harness-dsl/fs` and `@harness-dsl/markdown` must have **zero runtime or type imports** from each other or from any other M3 adapter package. `@harness-dsl/fs` depends exclusively on `@harness-dsl/core` (`workspace:*`), `@harness-dsl/lockfile` (`workspace:*`), `tinyglobby`, `picomatch`, `write-file-atomic`, `minisearch`, `p-queue`, `zod`, and Node built-ins; `@harness-dsl/markdown` depends exclusively on `@harness-dsl/core` (`workspace:*`), `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, `yaml`, `tinyglobby`, `picomatch`, `zod`, and Node built-ins.
+  - `@metaharness/fs` and `@metaharness/markdown` must have **zero runtime or type imports** from each other or from any other M3 adapter package. `@metaharness/fs` depends exclusively on `@metaharness/core` (`workspace:*`), `@metaharness/lockfile` (`workspace:*`), `tinyglobby`, `picomatch`, `write-file-atomic`, `minisearch`, `p-queue`, `zod`, and Node built-ins; `@metaharness/markdown` depends exclusively on `@metaharness/core` (`workspace:*`), `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, `yaml`, `tinyglobby`, `picomatch`, `zod`, and Node built-ins.
 
 ### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
 
 | Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| Cross-process & in-process advisory file locking (`fs.jsonlLessonStore`) | `@harness-dsl/lockfile` (`withFileLock`, backed by `p-queue` `^9.1.0` + `open(..., 'wx')`) | `workspace:*` (`MIT`) | `proper-lockfile` (unmaintained since 2020); copy-pasting lock helpers across `packages/fs` and `packages/git` (forbidden by `CLAUDE.MD` #2 Step 4) | Shared standalone `packages/lockfile` workspace package built in `M1`; `.unref()`ed heartbeat and deterministic `try / finally` unlock | Approved (`Rule 3.5`) |
+| Cross-process & in-process advisory file locking (`fs.jsonlLessonStore`) | `@metaharness/lockfile` (`withFileLock`, backed by `p-queue` `^9.1.0` + `open(..., 'wx')`) | `workspace:*` (`MIT`) | `proper-lockfile` (unmaintained since 2020); copy-pasting lock helpers across `packages/fs` and `packages/git` (forbidden by `CLAUDE.MD` #2 Step 4) | Shared standalone `packages/lockfile` workspace package built in `M1`; `.unref()`ed heartbeat and deterministic `try / finally` unlock | Approved (`Rule 3.5`) |
 | Crash-safe atomic file writes (`fs.jsonlLessonStore` stats & definitions) | `write-file-atomic` (`+ @types/write-file-atomic`) | `^8.0.0` (npm `8.0.0`, `ISC`, `0` deprecated, `0` CVEs) | Hand-rolled `.tmp.${pid}` + `fsync` + `rename` helper (forbidden by Rule 3.5) | Pure Node `fs` atomic temp-file write + `fsync` + `rename` with automatic cleanup on failure | Approved (`Rule 3.5`) |
 | Fast recursive filesystem globbing (`fs:glob`, `fs.glob`, `md.globalRules`, `md.scopedRules`, `md.skills`) | `tinyglobby` (`glob`) | `^0.2.17` (npm `0.2.17`, `MIT`, `0` deprecated, `0` CVEs) | `fast-glob` (heavier transitive dependency tree), hand-rolled recursive `readdir` walker (forbidden by Rule 3.5) | Lightweight `fdir` + `picomatch` engine; always pass explicit `cwd` (worktree or host root) and `dot: true` | Approved (`Rule 3.5`) |
 | Pre-compiled glob path matching (`fs.matchGlobs`, `fs.protect`, `fs.writeGuard`, `fs.boundaryGuard`) | `picomatch` (`+ @types/picomatch`) | `^4.0.3` (npm `4.0.7`, `MIT`, `0` deprecated, `0` CVEs) | `minimatch` (slower regex compilation), hand-rolled glob-to-regex converter (forbidden by Rule 3.5) | Pre-compile matchers once at guard/matcher registration (`Rule 4.4`), never inside per-file loops | Approved (`Rule 3.5`) |
 | BM25 lesson recall (`FsJsonlLessonStore.queryCandidates`) | `minisearch` (`MiniSearch`) | `^7.2.0` (npm `7.2.0`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled token/trigram BM25 scorer (forbidden by Rule 3.5) | Pure JS BM25 scoring normalized to $R(L, Q) \in [0, 1]$ | Approved (`Rule 3.5`) |
 | In-process serialization (`FsJsonlLessonStore`) | `p-queue` (`new PQueue({ concurrency: 1 })`) | `^9.1.0` (`9.3.5` locked in `pnpm-lock.yaml`; npm `10.0.0` — pinned to `^9.1.0` / `9.3.5` for Node `>=22.0.0` engine compatibility and `PQueue` `idle`/`next` event semantics without mutating locked workspace manifests, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled promise queue (forbidden by Rule 3.5) | Queued-wait-only `AbortSignal` handling (`docs/lessons/BUILDER.md`) | Approved (`Rule 3.5`) |
 | Markdown AST & frontmatter parsing / serialization (`md.frontmatter`, `md.section`, `md.globalRules`, `md.scopedRules`, `md.skills`) | `mdast-util-from-markdown` (`^2.1.0`), `mdast-util-to-markdown` (`^2.2.3`), `mdast-util-frontmatter` (`^2.0.1`), `micromark-extension-frontmatter` (`^2.0.0`) | `MIT` (`0` deprecated, `0` CVEs) | `gray-matter` (uses unmaintained `js-yaml` v3 and lacks AST heading-section extraction), hand-rolled regex Markdown/heading parser (forbidden by Rule 3.5) | Pure JS CommonMark + YAML frontmatter AST parser/serializer; extracts exact heading subtree for `md.section` without false-matching headings inside fenced code blocks | Approved (`Rule 3.5`) |
-| YAML frontmatter parsing (`@harness-dsl/markdown`) | `yaml` (`parse`) | `^2.9.1` (npm `2.9.1`, `ISC`, `0` deprecated, `0` CVEs) | `js-yaml` (slower release cadence), hand-rolled YAML key-value splitter (forbidden by Rule 3.5) | Pure JS YAML 1.2 compliant parser with zero external dependencies | Approved (`Rule 3.5`) |
+| YAML frontmatter parsing (`@metaharness/markdown`) | `yaml` (`parse`) | `^2.9.1` (npm `2.9.1`, `ISC`, `0` deprecated, `0` CVEs) | `js-yaml` (slower release cadence), hand-rolled YAML key-value splitter (forbidden by Rule 3.5) | Pure JS YAML 1.2 compliant parser with zero external dependencies | Approved (`Rule 3.5`) |
 | Schema validation (`GlobalRuleSchema`, `ScopedRuleSchema`, tool args) | `zod` | `^4.6.7` (npm `4.6.7`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled validation (forbidden by Rule 3.5) | Pure TypeScript runtime validation | Approved (`Rule 3.5`) |
 
 ---
@@ -39,10 +39,10 @@
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`FsReadToolNode`, `FsEditToolNode`, `FsWriteToolNode`, `FsGlobToolNode`, `FsGrepToolNode`, `FsTextSourceNode`, `FsGlobSourceNode`, `FsGlobMatcherNode`, `FsPartitionMapNode`, `FsBoundaryGuardNode`, `FsWriteGuardNode`, `FsProtectGuardNode`, `FsReadOnlyGuardNode`, `FsAllowOnlyGuardNode`, `FsRequireReadBeforeWriteGuardNode`, `FsScopedWriteGuardNode`, `FsSecretLiteralsGuardNode`, `FsQuotaTripwireNode`, `FsTelemetryCollectorNode`, `FsRegexCheckNode`, `FsJsonlLessonStoreNode`, `MarkdownFrontmatterSourceNode`, `MarkdownSectionSourceNode`) and Invariant 5 (control-plane paths resolved against immutable host repository root). |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2–§2.4 (`lines 682–1438`) | `BaseToolASTNode`, `BaseCheckASTNode`, `BasePolicyGuardASTNode`, `BaseQuotaTripwireASTNode`, `BaseTelemetryCollectorASTNode`, `BaseSourceASTNode`, `BaseLessonStoreASTNode`, `BaseEffectMatcherASTNode`, `ToolEffect`, `LeaseDelta`, `ToolDriver`, `ResolutionContext`, `StepExecutionContext`, `RuntimeExecutorRegistrySlice`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.7 (`lines 2039–2086`) | `LessonStore`, `LessonRecord`, `LessonOutcome` implemented by `fs.jsonlLessonStore`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1–§3.4.3 (`lines 2206–2285`) | `GlobalRuleSchema`, `ScopedRuleSchema`, `ScopePredicateSchema` (`when.partitions` and `when.effects`), `md.globalRules`, `md.scopedRule`, `md.scopedRules` (translating YAML frontmatter `globs: string[]` into passive `FsGlobMatcherNode` descriptors `{ type: 'fs:match-globs', id: 'fs:match-globs:...', globs, mode: 'write' }` without importing `@harness-dsl/fs`), `md.skill`, `md.skills`, `md.frontmatter`, `md.section`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1–§3.4.3 (`lines 2206–2285`) | `GlobalRuleSchema`, `ScopedRuleSchema`, `ScopePredicateSchema` (`when.partitions` and `when.effects`), `md.globalRules`, `md.scopedRule`, `md.scopedRules` (translating YAML frontmatter `globs: string[]` into passive `FsGlobMatcherNode` descriptors `{ type: 'fs:match-globs', id: 'fs:match-globs:...', globs, mode: 'write' }` without importing `@metaharness/fs`), `md.skill`, `md.skills`, `md.frontmatter`, `md.section`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.5 (`lines 2286–2323`) | Chained policy guard evaluation, `LeaseDelta` matching (`fs.allowWriteGlobs` matching both exact normalized file paths and glob patterns), `onlyExistingAtBaseRef` checking `existingPathsAtBaseRef`, and `proposedContent` checking. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.3 (`lines 2790–2898`) | Complete `@harness-dsl/fs` specification: `FsToolEffect`, `fs.text`, `fs.glob`, `fs.matchGlobs`, `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`, `fs.writeGuard`, `fs.protect`, `fs.readOnly`, `fs.allowOnly`, `fs.requireReadBeforeWrite`, `fs.scopedWrite`, `fs.secretLiterals`, `fs.allowWriteGlobs`, `fs.maxFilesMutated`, `fs.telemetry`, `fs.regexCheck`, `fs.jsonlLessonStore`, `fs.codingTools(runner)`, `fs.readOnlyTools(runner)`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3086–3096, 3175`) | `MarkdownFrontmatterSourceNode`, `MarkdownSectionSourceNode`, and `@harness-dsl/markdown` builder contracts. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.3 (`lines 2790–2898`) | Complete `@metaharness/fs` specification: `FsToolEffect`, `fs.text`, `fs.glob`, `fs.matchGlobs`, `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`, `fs.writeGuard`, `fs.protect`, `fs.readOnly`, `fs.allowOnly`, `fs.requireReadBeforeWrite`, `fs.scopedWrite`, `fs.secretLiterals`, `fs.allowWriteGlobs`, `fs.maxFilesMutated`, `fs.telemetry`, `fs.regexCheck`, `fs.jsonlLessonStore`, `fs.codingTools(runner)`, `fs.readOnlyTools(runner)`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3086–3096, 3175`) | `MarkdownFrontmatterSourceNode`, `MarkdownSectionSourceNode`, and `@metaharness/markdown` builder contracts. |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §2 (`lines 21–101`), §3.1 (`lines 106–115`), §6 (`lines 181, 184, 477–490, 535–709, 727, 743, 762, 780, 809–823, 854, 968, 1035`) | All `fs.*` and `md.*` invocations in `engineering-harness.ts`. |
 
 ---
@@ -51,7 +51,7 @@
 
 Every file, class, method, and function in `packages/fs/src/**`, `packages/markdown/src/**`, and `test/fixtures/**` adheres to [`docs/CODING_GUIDELINES.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_GUIDELINES.md) §§1–5: each file, class, method, and function has **one clear responsibility at one uniform level of abstraction** (Rules 1.1–1.8 & 3.1–3.4), single-kind entity files per Rule 1.1, 1 root `interface` per file plus reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces per Rule 1.2, 1 `class` per file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rule 1.3, 1 builder factory function per `create-*.ts` file with optional co-located dedicated 1:1 `*Params`/`*Options` interfaces per Rules 1.6 & 3.3, pure `src/index.ts` barrels, complete `/** ... */` JSDoc on every declaration per Rules 2.1–2.3, and zero inline/non-JSDoc comments per Rule 2.4. Orchestrators and store methods only sequence high-level phase calls and lifecycle boundaries (`try / finally`), delegating path jailing, glob compilation, atomic I/O, BM25 scoring, and Markdown AST parsing to focused `internal/` functions. Builders are free and expected to extract additional focused `internal/` phase, predicate, and projection helper files beyond the baseline §3 tables whenever responsibilities separate, while preserving all planned public exports.
 
-### 3.1 `packages/fs` (`@harness-dsl/fs`)
+### 3.1 `packages/fs` (`@metaharness/fs`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
@@ -87,12 +87,12 @@ Every file, class, method, and function in `packages/fs/src/**`, `packages/markd
 | `src/executors/fs-glob-effect-matcher.ts` | `function` | `evaluateFsGlobEffectMatcher` |
 | `src/executors/fs-check-tripwire-and-telemetry.ts` | `function` | `executeFsRegexCheck`, `evaluateFsQuotaTripwire`, `collectFsTelemetry` |
 | `src/stores/fs-jsonl-lesson-store.ts` | `class` | `FsJsonlLessonStore` (implementing `LessonStore`) |
-| `src/stores/internal/fs-lesson-lock-and-atomic-io.ts` | `function` | `withLessonFileLock`, `atomicWriteJsonFile`, `readLessonStatsFile` (delegating to `@harness-dsl/lockfile` `withFileLock` and `write-file-atomic`) |
+| `src/stores/internal/fs-lesson-lock-and-atomic-io.ts` | `function` | `withLessonFileLock`, `atomicWriteJsonFile`, `readLessonStatsFile` (delegating to `@metaharness/lockfile` `withFileLock` and `write-file-atomic`) |
 | `src/executors/create-fs-executors.ts` | `function` | `createFsExecutors` |
 | `src/executors/fs-executors.constants.ts` | `const` | `fsExecutors: RuntimeExecutorRegistrySlice` |
-| `src/index.ts` | `barrel` | Pure explicit re-exports of `fs`, `FsNamespace`, `fsExecutors`, `createFsExecutors`, `FsJsonlLessonStore`, `FsToolEffect`, `FsWriteGuardOptions`, `FsRegexCheckOptions`, `FsJsonlLessonStoreOptions`, all `createFs*` builder factories, and all `Fs*Node` AST types from `@harness-dsl/core` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `fs`, `FsNamespace`, `fsExecutors`, `createFsExecutors`, `FsJsonlLessonStore`, `FsToolEffect`, `FsWriteGuardOptions`, `FsRegexCheckOptions`, `FsJsonlLessonStoreOptions`, all `createFs*` builder factories, and all `Fs*Node` AST types from `@metaharness/core` |
 
-### 3.2 `packages/markdown` (`@harness-dsl/markdown`)
+### 3.2 `packages/markdown` (`@metaharness/markdown`)
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
@@ -125,10 +125,10 @@ Every file, class, method, and function in `packages/fs/src/**`, `packages/markd
    - Each root `interface` (`*-builder.ts`, `*-namespace-contract.ts`, `fs-tool-effect.ts`, `parsed-markdown-document.ts`) lives in its own single-interface file (with reachable `TSPropertySignature` / `TSMethodSignature` sub-interfaces sharing that file per Rule 1.2).
    - Dedicated 1:1 `*Params` / `*Options` interfaces (`FsWriteGuardOptions`, `FsRegexCheckOptions`, `FsJsonlLessonStoreOptions`) are co-located in their consuming function file (`Rules 1.6 & 3.3`). Every builder factory function (`create-*.ts`) gets its own focused file (`Rule 1.6`); `FsJsonlLessonStore` gets its own single-class file; every `const` (`fs`, `md`, `fsExecutors`, `markdownExecutors`) lives in its own `const`-only file.
 2. **JSDoc Anatomy & Approved Library Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
-   - In `@harness-dsl/fs`, use `@harness-dsl/lockfile` (`withFileLock`), `tinyglobby` (directory globbing), `picomatch` (pre-compiled glob matchers), `write-file-atomic` (atomic JSON/JSONL writes), `minisearch` (BM25 lesson recall), and `p-queue`. In `@harness-dsl/markdown`, use `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, `yaml`, `tinyglobby`, and `picomatch`.
-   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown lint`.
+   - In `@metaharness/fs`, use `@metaharness/lockfile` (`withFileLock`), `tinyglobby` (directory globbing), `picomatch` (pre-compiled glob matchers), `write-file-atomic` (atomic JSON/JSONL writes), `minisearch` (BM25 lesson recall), and `p-queue`. In `@metaharness/markdown`, use `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, `yaml`, `tinyglobby`, and `picomatch`.
+   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @metaharness/fs --filter @metaharness/markdown lint`.
 
-### 4.1 `@harness-dsl/fs` Tools, `FsToolEffect`, and Workspace Path Jail (`SPEC.md` §4.3 lines 2887–2898)
+### 4.1 `@metaharness/fs` Tools, `FsToolEffect`, and Workspace Path Jail (`SPEC.md` §4.3 lines 2887–2898)
 1. **`fs.codingTools(runner)` & `fs.readOnlyTools(runner)`**:
    - `fs.codingTools(runner)` returns the 5-tuple `[FsReadToolNode, FsEditToolNode, FsWriteToolNode, FsGlobToolNode, FsGrepToolNode]` (`readonly type: 'fs:read' | 'fs:edit' | 'fs:write' | 'fs:glob' | 'fs:grep'`, `readonly effectTracking: 'declared'`, `name: 'read_file' | 'edit_file' | 'write_file' | 'glob_files' | 'grep_files'`).
    - `fs.readOnlyTools(runner)` returns `[FsReadToolNode, FsGlobToolNode, FsGrepToolNode]`.
@@ -138,7 +138,7 @@ Every file, class, method, and function in `packages/fs/src/**`, `packages/markd
    - Read tools (`fs:read`, `fs:glob`, `fs:grep`) emit `{ kind: 'fs:effect', mutatesScope: false, attributes: { mode: 'read', paths } }`.
    - Write/edit tools (`fs:write`, `fs:edit`) emit `{ kind: 'fs:effect', mutatesScope: true, attributes: { mode: 'write', paths, existingPathsAtBaseRef, proposedContent } }`, where `existingPathsAtBaseRef` is populated via `git cat-file -e <baseRef>:<path>` when `scopeHandle` has a `baseRef`, and `proposedContent` maps each target path to its proposed post-edit UTF-8 text.
 
-### 4.2 `@harness-dsl/fs` Sources, Partition Maps, Guards, Lease Deltas, Checks, Tripwires & Telemetry (`SPEC.md` §4.3 lines 2888–2896)
+### 4.2 `@metaharness/fs` Sources, Partition Maps, Guards, Lease Deltas, Checks, Tripwires & Telemetry (`SPEC.md` §4.3 lines 2888–2896)
 1. **`fs.text(filePath)` & `fs.glob(globPattern)`**:
    - Compile to `FsTextSourceNode` (`'fs:text-source'`) and `FsGlobSourceNode` (`'fs:glob-source'`).
    - Control-plane definitions (when `ctx.scopeHandle` is omitted) resolve against the host repository root; when `ctx.scopeHandle` is provided (for in-run `updatedGroundingDiffs`), resolve against `scopeHandle.worktreePath`. Return `{ content, digest }` where `digest` is SHA-256 hex.
@@ -162,14 +162,14 @@ Every file, class, method, and function in `packages/fs/src/**`, `packages/markd
 - Resolves `definitionsDir`, `statsPath`, and `lockFile` against the immutable host repository root (never an ephemeral worktree).
 - Writes immutable `<definitionsDir>/<lessonId>.json` (`{ id, partition, directive, epochAtCreation, createdByRunId }`) once on `admit()` via `write-file-atomic`.
 - Stores mutable telemetry counters (`recentOutcomes`, `totalCleanPasses`, `totalViolated`, `epochAtCreation` overrides from `syncCreationEpochsForRuns`, `signalLastEmittedAt` from `markSignalEmitted`, and `retired: boolean` from `retire`) in `statsPath`, and scores `queryCandidates` via `minisearch` BM25 normalized to $R(L, Q) \in [0, 1]$.
-- Synchronizes access with `@harness-dsl/lockfile` (`withFileLock` on `lockFile` backed by `p-queue` `concurrency: 1` and cross-process atomic `open(lockPath, 'wx')` + `.unref()`ed `utimes` heartbeat + dead-PID/stale reclamation) and commits `statsPath` via `write-file-atomic`.
+- Synchronizes access with `@metaharness/lockfile` (`withFileLock` on `lockFile` backed by `p-queue` `concurrency: 1` and cross-process atomic `open(lockPath, 'wx')` + `.unref()`ed `utimes` heartbeat + dead-PID/stale reclamation) and commits `statsPath` via `write-file-atomic`.
 
-### 4.4 `@harness-dsl/markdown` (`md.*` & `markdownExecutors`, `SPEC.md` §3.4 & §4.5 & `CODING_GUIDELINES.md` Rule 3.5)
+### 4.4 `@metaharness/markdown` (`md.*` & `markdownExecutors`, `SPEC.md` §3.4 & §4.5 & `CODING_GUIDELINES.md` Rule 3.5)
 - `md.globalRules(glob)`, `md.scopedRule(path)`, `md.scopedRules(glob)`, `md.skill(path)`, `md.skills(glob)`, `md.frontmatter(pathOrGlob)`, and `md.section(path, heading)` compile to passive `MarkdownFrontmatterSourceNode` (`'markdown:frontmatter'`) and `MarkdownSectionSourceNode` (`'markdown:section'`).
 - `md.globalRules`, `md.scopedRule`, `md.scopedRules`, `md.skill`, `md.skills`, and `md.frontmatter` set both `kind: 'global-rules' | 'scoped-rule' | 'scoped-rules' | 'skill' | 'skills' | 'frontmatter'` and `id: "md:${kind}:${pathOrGlob}"` on `MarkdownFrontmatterSourceNode<T>` so `executeMarkdownFrontmatterSource` dispatches deterministically on `node.kind` (with fallback to `node.id` prefix).
 - Parses Markdown AST and YAML frontmatter via `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, and `yaml`, and resolves globs via `tinyglobby` (`Rule 3.5`).
 - Always resolves control-plane rule and skill paths against the host repository root (`SPEC.md` Invariant 5).
-- Translates frontmatter `globs: string[]` on scoped rules and skills into passive `{ type: 'fs:match-globs', id: 'fs:match-globs:...', globs, mode: 'write' }` descriptors without importing `@harness-dsl/fs` (`SPEC.md` §3.4.1 line 2240).
+- Translates frontmatter `globs: string[]` on scoped rules and skills into passive `{ type: 'fs:match-globs', id: 'fs:match-globs:...', globs, mode: 'write' }` descriptors without importing `@metaharness/fs` (`SPEC.md` §3.4.1 line 2240).
 
 ---
 
@@ -183,7 +183,7 @@ All `test/fixtures/**` files strictly obey single-entity-kind file separation, s
 | `packages/fs/test/fixtures/temp-fs-workspace.ts` | `fixture (function)` | Single-`function` helper (`createTempFsWorkspace`, with optional co-located dedicated `TempFsWorkspaceOptions` interface per Rule 1.6) creating real temporary directories and git-initialized workspaces with symlinks and baseline commits. |
 | `packages/fs/test/fs-tools-and-sources.test.ts` | `test` | Verifies `fs.codingTools` and `fs.readOnlyTools` (`read_file`, `edit_file`, `write_file`, `glob_files` via `tinyglobby`, `grep_files`), `realpath` symlink escape blocking, `**/node_modules/**` write denial, `describeEffects` (`existingPathsAtBaseRef` and `proposedContent`), and `fs.text` / `fs.glob` host-root vs worktree resolution. |
 | `packages/fs/test/fs-guards-and-checks.test.ts` | `test` | Verifies `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`, `fs.writeGuard` (including `onlyExistingAtBaseRef: true` allowing new test files while blocking existing test edits), `fs.allowWriteGlobs` (`grantedMatchers` with deterministic `id` matching bracketed literal paths `app/users/[id]/page.test.tsx` and globs), `fs.protect`, `fs.readOnly`, `fs.allowOnly`, `fs.requireReadBeforeWrite`, `fs.scopedWrite`, `fs.secretLiterals`, `fs.maxFilesMutated`, `fs.telemetry`, and `fs.regexCheck` (evaluating only mutated files). |
-| `packages/fs/test/fs-jsonl-lesson-store.test.ts` | `test` | Verifies `FsJsonlLessonStore`: host-root path resolution, immutable `<definitionsDir>/<lessonId>.json` creation, atomic `statsPath` writes via `@harness-dsl/lockfile` + `write-file-atomic` under concurrent `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire`, and `queryCandidates` `minisearch` BM25 relevance scoring. |
+| `packages/fs/test/fs-jsonl-lesson-store.test.ts` | `test` | Verifies `FsJsonlLessonStore`: host-root path resolution, immutable `<definitionsDir>/<lessonId>.json` creation, atomic `statsPath` writes via `@metaharness/lockfile` + `write-file-atomic` under concurrent `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, `retire`, and `queryCandidates` `minisearch` BM25 relevance scoring. |
 | `packages/markdown/test/markdown-sources-and-rules.test.ts` | `test` | Verifies `md.globalRules`, `md.scopedRule`, `md.scopedRules`, `md.skill`, `md.skills`, `md.frontmatter`, and `md.section`: `node.kind` and `id: "md:${kind}:${pathOrGlob}"` discriminator dispatch, `mdast-util-*` + `yaml` frontmatter parsing, translation of frontmatter `globs` into passive `fs:match-globs` descriptors with deterministic `id`, `GlobalRuleSchema` / `ScopedRuleSchema` validation, AST heading section extraction (ignoring `#` inside fenced code blocks), and SHA-256 digest computation. |
 
 ---
@@ -193,8 +193,8 @@ All `test/fixtures/**` files strictly obey single-entity-kind file separation, s
 Run from workspace root (plus the `IMPL_LOOP.md` `baseline_dirty` diff check against `<non_sibling_forbidden_dirs_excluding_upstream_patches>`):
 
 ```bash
-pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown lint
-pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown typecheck
-pnpm --filter @harness-dsl/fs --filter @harness-dsl/markdown test -- --reporter=verbose
+pnpm --filter @metaharness/fs --filter @metaharness/markdown lint
+pnpm --filter @metaharness/fs --filter @metaharness/markdown typecheck
+pnpm --filter @metaharness/fs --filter @metaharness/markdown test -- --reporter=verbose
 test -z "$(git status --porcelain -- docs .agents .claude package.json tsconfig.base.json vitest.config.ts)"
 ```

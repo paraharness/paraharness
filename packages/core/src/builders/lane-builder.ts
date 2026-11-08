@@ -16,7 +16,7 @@ import type { LaneSignalHandlerBuilder } from './lane-signal-handler-builder.js'
 import type { LaneTrackerConfigBuilder as LaneTrackerBuilder } from './lane-tracker-config-builder.js';
 
 /**
- * Fluent builder for a concurrent work execution lane (`H.lane(id)`).
+ * Fluent builder for a concurrent work execution lane (`M.lane(id)`).
  *
  * Configures work-item schema validation, deduplication keys, external tracker polling,
  * flow execution, concurrency and priority aging, prerequisites, cost ceilings, and signal rewinds.

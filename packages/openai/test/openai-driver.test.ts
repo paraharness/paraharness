@@ -1,12 +1,12 @@
 import {
-  H,
+  M,
   z,
   type BaseIsolationScopeASTNode,
   type CompiledWirePrefix,
   type RuntimeDriverContext,
   type RuntimeExecutorRegistry,
   type WireFrameRecord,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { describe, expect, it } from 'vitest';
 import {
   OpenAiModelDriver,
@@ -51,9 +51,9 @@ function createSampleWirePrefix(): CompiledWirePrefix {
   });
 }
 
-describe('@harness-dsl/openai builders and AST invariants', () => {
+describe('@metaharness/openai builders and AST invariants', () => {
   it('compiles passive OpenAiAccountSeatNode and OpenAiModelNode without import or build I/O', () => {
-    const apiSeat = openai.account('seat-a').apiKey(H.env('OPENAI_API_KEY_A')).toAST();
+    const apiSeat = openai.account('seat-a').apiKey(M.env('OPENAI_API_KEY_A')).toAST();
     const cliSeat = openai.cliAccount('codex-b').configDir('~/.codex-b').toAST();
     expect(apiSeat).toEqual({
       type: 'openai:account-seat',
@@ -68,7 +68,7 @@ describe('@harness-dsl/openai builders and AST invariants', () => {
       apiKey: undefined,
     });
 
-    const pool = H.pool('openai-seats').with(apiSeat, cliSeat).strategy('round-robin');
+    const pool = M.pool('openai-seats').with(apiSeat, cliSeat).strategy('round-robin');
     const gpt5 = openai.model('gpt5', { id: 'gpt-5', effort: 'medium' }).accountPool(pool).toAST();
     const o3 = openai.model('o3', { id: 'o3' }).effort('high').pool(pool).toAST();
 
@@ -86,10 +86,10 @@ describe('@harness-dsl/openai builders and AST invariants', () => {
   });
 });
 
-describe('@harness-dsl/openai invokeTurn, prepareFork, cross-seat failover stripping, and appendToolResultNotes', () => {
+describe('@metaharness/openai invokeTurn, prepareFork, cross-seat failover stripping, and appendToolResultNotes', () => {
   it('enforces text.format JSON schema, preserves tools on toolChoice none, and strips server IDs and encrypted_content on cross-seat failover', async () => {
-    const seatA = openai.account('seat-a').apiKey(H.env('OPENAI_API_KEY_A')).toAST();
-    const seatB = openai.account('seat-b').apiKey(H.env('OPENAI_API_KEY_B')).toAST();
+    const seatA = openai.account('seat-a').apiKey(M.env('OPENAI_API_KEY_A')).toAST();
+    const seatB = openai.account('seat-b').apiKey(M.env('OPENAI_API_KEY_B')).toAST();
     const modelNode = openai.model('gpt5', { id: 'gpt-5' }).toAST();
     const transport = new RecordedOpenAiTransport([
       {

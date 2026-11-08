@@ -3,7 +3,7 @@ export type {
   SqliteLessonsNode,
   SqliteRulesSourceNode,
   SqliteTopologyNode,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 export type {
   CompactionConfigBuilder,
   CompactionSignalTriggerOptions,

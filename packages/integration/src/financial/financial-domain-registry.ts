@@ -4,16 +4,16 @@ import type {
   NetSuiteDraftScopeNode,
   NetSuiteJournalToolNode,
   NetSuiteRollbackAbortHookNode,
-} from '@harness-dsl/netsuite';
+} from '@metaharness/netsuite';
 import type {
   StripeMaxRefundGuardNode,
   StripeMaxRefundMatcherNode,
   StripeReadToolNode,
-} from '@harness-dsl/stripe';
+} from '@metaharness/stripe';
 
-declare module '@harness-dsl/core' {
+declare module '@metaharness/core' {
   /**
-   * Open declaration-merged registry augmenting `@harness-dsl/core` with financial domain AST nodes (`SPEC.md` §5).
+   * Open declaration-merged registry augmenting `@metaharness/core` with financial domain AST nodes (`SPEC.md` §5).
    *
    * Registers Tier-1 `NetSuiteDraftScopeNode` (`capabilityTier: 'scope'`), policy guards, rollback abort hooks,
    * Stripe and NetSuite tools, balance-zero checks, and `StripeMaxRefundMatcherNode` effect matchers.

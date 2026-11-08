@@ -1,4 +1,4 @@
-import type { AstBuilder, MarkdownSectionSourceNode } from '@harness-dsl/core';
+import type { AstBuilder, MarkdownSectionSourceNode } from '@metaharness/core';
 
 /**
  * Fluent builder and passive AST descriptor for Markdown heading section sources (`md.section`).

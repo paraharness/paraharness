@@ -1,4 +1,4 @@
-import type { FsProtectGuardNode } from '@harness-dsl/core';
+import type { FsProtectGuardNode } from '@metaharness/core';
 
 /**
  * Compiles a passive `FsProtectGuardNode` (`fs:protect`) for `fs.protect(globs)`.

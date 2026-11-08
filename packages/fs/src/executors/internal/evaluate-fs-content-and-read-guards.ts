@@ -3,7 +3,7 @@ import type {
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
   StepExecutionContext,
-} from '@harness-dsl/core';
+} from '@metaharness/core';
 import { collectReadPathsFromEffects } from './collect-read-paths-from-effects.js';
 import { compileSecretPatterns } from './compile-secret-patterns.js';
 import { createEffectBaseRefPathLookup } from './create-effect-base-ref-path-lookup.js';

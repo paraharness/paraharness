@@ -1,4 +1,4 @@
-import type { EnvRef } from '@harness-dsl/core';
+import type { EnvRef } from '@metaharness/core';
 
 /**
  * Resolves a GitHub secret or token string from a literal value or symbolic `EnvRef`.

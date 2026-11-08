@@ -21,7 +21,7 @@ import type {
 } from './policy-builder.js';
 
 /**
- * Creates a fluent `PolicyBuilder` for `H.policy(id)`.
+ * Creates a fluent `PolicyBuilder` for `M.policy(id)`.
  *
  * Assigns deterministic guard clause identifiers `"${id}:clause:${i}"` and supports
  * `.extend(newId)` inheritance with re-keyed clause identifiers.
@@ -37,7 +37,7 @@ export function createPolicyBuilder<THandle = unknown>(
   id: string,
   options?: CreatePolicyBuilderOptions<THandle>,
 ): PolicyBuilder<THandle> {
-  assertNonEmptyIdentifier('H.policy', id);
+  assertNonEmptyIdentifier('M.policy', id);
   const currentClauses = options?.clauses ?? Object.freeze([]);
   const currentTripwires = options?.tripwires ?? Object.freeze([]);
 
@@ -67,7 +67,7 @@ export function createPolicyBuilder<THandle = unknown>(
       return createPolicyBuilder<THandle>(id, { ...options, onLimitExceeded: built });
     },
     extend(newId: string): PolicyBuilder<THandle> {
-      assertNonEmptyIdentifier('H.policy.extend', newId);
+      assertNonEmptyIdentifier('M.policy.extend', newId);
       return createPolicyBuilder<THandle>(newId, {
         ...options,
         clauses: rekeyPolicyGuardClauses(newId, currentClauses),
