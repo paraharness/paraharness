@@ -1,18 +1,18 @@
-import type { ModelTurnUsage } from '@harness-dsl/core';
+import type { ModelUsageMetrics } from '@harness-dsl/core';
 
 /**
- * Computes normalized `ModelTurnUsage` metrics from a Gemini `generateContent` JSON payload.
+ * Computes normalized `ModelUsageMetrics` from a Gemini `generateContent` JSON payload.
  *
  * Extracts `promptTokenCount`, `cachedContentTokenCount`, `candidatesTokenCount`, and `costUsd`
  * (falling back to standard token-rate estimation when `costUsd` is absent).
  *
  * @param {Readonly<Record<string, unknown>>} responseBody - Raw JSON object returned by `generateContent`.
  *
- * @returns {ModelTurnUsage} Frozen token and USD cost usage breakdown for the turn.
+ * @returns {ModelUsageMetrics} Frozen token and USD cost usage breakdown for the turn.
  */
 export function computeGeminiTurnUsage(
   responseBody: Readonly<Record<string, unknown>>,
-): ModelTurnUsage {
+): ModelUsageMetrics {
   const usageRaw = (responseBody['usageMetadata'] ?? {}) as Readonly<Record<string, unknown>>;
   const inputTokens =
     typeof usageRaw['promptTokenCount'] === 'number' ? usageRaw['promptTokenCount'] : 0;
@@ -26,7 +26,7 @@ export function computeGeminiTurnUsage(
     typeof usageRaw['costUsd'] === 'number'
       ? usageRaw['costUsd']
       : (inputTokens * 0.00125 + outputTokens * 0.005) / 1_000;
-  return Object.freeze<ModelTurnUsage>({
+  return Object.freeze<ModelUsageMetrics>({
     inputTokens,
     cachedInputTokens,
     outputTokens,

@@ -61,6 +61,8 @@ Every file, class, method, and function in `packages/{claude,openai,gemini}/src/
 | `src/driver/create-claude-executors.ts` | `function` | `createClaudeExecutors` |
 | `src/driver/claude-executors.constants.ts` | `const` | `claudeExecutors: RuntimeExecutorRegistrySlice` |
 | `src/index.ts` | `barrel` | Pure explicit re-exports of `claude`, `ClaudeNamespace`, `claudeExecutors`, `createClaudeExecutors`, `ClaudeModelDriver`, `ClaudeAccountSeatBuilder`, `ClaudeModelBuilder`, `ClaudeModelOptions`, `createClaudeAccountSeatBuilder`, `createClaudeModelBuilder`, `ClaudeHttpTransport`, `defaultClaudeHttpTransport`, `ClaudeAccountSeatNode`, `ClaudeModelNode` |
+| `test/claude-driver.test.ts` | `test` | Deterministic unit tests for `claude.*` builders, `ClaudeModelDriver`, `prepareFork`, and `appendToolResultNotes` |
+| `test/claude-sdk-transport.test.ts` | `test` | Deterministic unit tests for `defaultClaudeHttpTransport` (`@anthropic-ai/sdk`) and HTTP `502`/`429` status handling before JSON parsing |
 
 ### 3.2 `packages/openai` (`@harness-dsl/openai`)
 
@@ -80,6 +82,8 @@ Every file, class, method, and function in `packages/{claude,openai,gemini}/src/
 | `src/driver/create-openai-executors.ts` | `function` | `createOpenAiExecutors` |
 | `src/driver/openai-executors.constants.ts` | `const` | `openaiExecutors: RuntimeExecutorRegistrySlice` |
 | `src/index.ts` | `barrel` | Pure explicit re-exports of `openai`, `OpenAiNamespace`, `openaiExecutors`, `createOpenAiExecutors`, `OpenAiModelDriver`, `OpenAiAccountSeatBuilder`, `OpenAiModelBuilder`, `OpenAiModelOptions`, `createOpenAiAccountSeatBuilder`, `createOpenAiModelBuilder`, `OpenAiHttpTransport`, `defaultOpenAiHttpTransport`, `OpenAiAccountSeatNode`, `OpenAiModelNode` |
+| `test/openai-driver.test.ts` | `test` | Deterministic unit tests for `openai.*` builders, `OpenAiModelDriver`, `prepareFork`, and `appendToolResultNotes` |
+| `test/openai-sdk-transport.test.ts` | `test` | Deterministic unit tests for `defaultOpenAiHttpTransport` (`openai` SDK) and HTTP `502`/`429` status handling before JSON parsing |
 
 ### 3.3 `packages/gemini` (`@harness-dsl/gemini`)
 
@@ -99,6 +103,8 @@ Every file, class, method, and function in `packages/{claude,openai,gemini}/src/
 | `src/driver/create-gemini-executors.ts` | `function` | `createGeminiExecutors` |
 | `src/driver/gemini-executors.constants.ts` | `const` | `geminiExecutors: RuntimeExecutorRegistrySlice` |
 | `src/index.ts` | `barrel` | Pure explicit re-exports of `gemini`, `GeminiNamespace`, `geminiExecutors`, `createGeminiExecutors`, `GeminiModelDriver`, `GeminiAccountSeatBuilder`, `GeminiModelBuilder`, `GeminiModelOptions`, `createGeminiAccountSeatBuilder`, `createGeminiModelBuilder`, `GeminiHttpTransport`, `defaultGeminiHttpTransport`, `GeminiAccountSeatNode`, `GeminiModelNode` |
+| `test/gemini-driver.test.ts` | `test` | Deterministic unit tests for `gemini.*` builders, `GeminiModelDriver`, `prepareFork`, and `appendToolResultNotes` |
+| `test/gemini-sdk-transport.test.ts` | `test` | Deterministic unit tests for `defaultGeminiHttpTransport` (`@google/genai` SDK) and HTTP `502`/`429` status handling before JSON parsing |
 
 ---
 
@@ -153,10 +159,13 @@ All `test/fixtures/**` files strictly obey single-entity-kind file separation (1
 | :--- | :--- | :--- |
 | `packages/claude/test/fixtures/recorded-claude-transport.ts` | `fixture (class)` | Single `class` (`RecordedClaudeTransport`) implementing `ClaudeHttpTransport`, capturing Anthropic `/v1/messages` payloads and returning scripted wire frames (including `thinking` + `signature` and `429` rate-limit responses). |
 | `packages/claude/test/claude-driver.test.ts` | `test` | Verifies `claude.*` builders, `claude.cliAccount(id).configDir(path)` OAuth credential extraction vs `.apiKey(envRef)` fallback, `invokeTurn` (`output_config.format` JSON schema, `toolChoice: 'none'` preserving `wireToolSchemas`, `thinking` signature preservation), `prepareFork` (`'shared-prefix-only'`, `'clone-transcript'` with `substituteTombstones: false` vs `true` omitting empty text blocks, and full-turn `(1..k)` `tool_result` pairing), and `appendToolResultNotes` across `'tool'` and `'user'` frames. |
+| `packages/claude/test/claude-sdk-transport.test.ts` | `test` | Verifies `defaultClaudeHttpTransport` dispatches requests through the official `@anthropic-ai/sdk` client and verifies HTTP `502` and `429` status handling (`retry-after` $\to$ `resetAtMs`) before JSON parsing across `defaultClaudeHttpTransport` and `RecordedClaudeTransport`. |
 | `packages/openai/test/fixtures/recorded-openai-transport.ts` | `fixture (class)` | Single `class` (`RecordedOpenAiTransport`) implementing `OpenAiHttpTransport` for OpenAI Responses API (`previous_response_id`, `rs_`/`fc_`/`msg_` IDs, `encrypted_content`). |
 | `packages/openai/test/openai-driver.test.ts` | `test` | Verifies `openai.*` builders, `invokeTurn`, `prepareFork` (full-turn `(1..k)` `function_call_output` pairing, stripping `previous_response_id`, server item IDs, and `encrypted_content` on `substituteTombstones: true` and cross-seat failover), and `appendToolResultNotes`. |
+| `packages/openai/test/openai-sdk-transport.test.ts` | `test` | Verifies `defaultOpenAiHttpTransport` dispatches requests through the official `openai` SDK client and verifies HTTP `502` and `429` status handling (`retry-after` $\to$ `resetAtMs`) before JSON parsing across `defaultOpenAiHttpTransport` and `RecordedOpenAiTransport`. |
 | `packages/gemini/test/fixtures/recorded-gemini-transport.ts` | `fixture (class)` | Single `class` (`RecordedGeminiTransport`) implementing `GeminiHttpTransport` for Gemini `/v1beta/models/{model}:generateContent` (`thought`, `thoughtSignature`, `functionCall`, `functionResponse`). |
 | `packages/gemini/test/gemini-driver.test.ts` | `test` | Verifies `gemini.*` builders, `invokeTurn` (`systemInstruction`, `functionDeclarations`, `thinkingConfig`, `responseJsonSchema`, `functionCallingConfig`, strict `user`/`model` role alternation, and `functionResponse` `{ error: content }` on `isError: true` vs `{ result: content }` on `isError: false`), `prepareFork` (preserving vs stripping `thought`/`thoughtSignature` and full-turn `(1..k)` `functionResponse` pairing), and `appendToolResultNotes`. |
+| `packages/gemini/test/gemini-sdk-transport.test.ts` | `test` | Verifies `defaultGeminiHttpTransport` dispatches requests through the official `@google/genai` `GoogleGenAI` client and verifies HTTP `502` and `429` status handling (`retry-after` $\to$ `resetAtMs`) before JSON parsing across `defaultGeminiHttpTransport` and `RecordedGeminiTransport`. |
 
 ---
 

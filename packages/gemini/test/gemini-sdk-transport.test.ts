@@ -4,8 +4,8 @@ import {
   GeminiModelDriver,
   defaultGeminiHttpTransport,
   gemini,
-  type GeminiHttpTransport,
 } from '../src/index.js';
+import { RecordedGeminiTransport } from './fixtures/recorded-gemini-transport.js';
 
 function extractFetchUrl(input: string | URL | Request): string {
   if (typeof input === 'string') {
@@ -17,6 +17,29 @@ function extractFetchUrl(input: string | URL | Request): string {
   return input.url;
 }
 
+/**
+ * Temporarily replaces `globalThis.fetch` with `mockFetch` for the duration of `work` and restores the original `fetch` in `finally`.
+ *
+ * @template T Result type returned by `work`.
+ *
+ * @param {(input: string | URL | Request, init?: RequestInit) => Promise<Response>} mockFetch - Mock fetch implementation.
+ * @param {() => Promise<T>} work - Async test body executed while `globalThis.fetch` is mocked.
+ *
+ * @returns {Promise<T>} Result of `work`.
+ */
+async function withMockedFetch<T>(
+  mockFetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
+  work: () => Promise<T>,
+): Promise<T> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockFetch;
+  try {
+    return await work();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 describe('@harness-dsl/gemini official @google/genai SDK transport and HTTP status handling', () => {
   it('dispatches defaultGeminiHttpTransport requests through the official @google/genai GoogleGenAI client', async () => {
     const capturedCalls: Array<{
@@ -24,141 +47,138 @@ describe('@harness-dsl/gemini official @google/genai SDK transport and HTTP stat
       readonly headers: Headers;
       readonly body: Readonly<Record<string, unknown>>;
     }> = [];
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (
-      input: string | URL | Request,
-      init?: RequestInit,
-    ): Promise<Response> => {
-      const url = extractFetchUrl(input);
-      const headers = new Headers(init?.headers);
-      const rawBody = typeof init?.body === 'string' ? init.body : '{}';
-      capturedCalls.push({
-        url,
-        headers,
-        body: JSON.parse(rawBody) as Readonly<Record<string, unknown>>,
-      });
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            candidates: [
-              {
-                content: {
-                  role: 'model',
-                  parts: [
-                    { text: 'Thinking via SDK', thought: true, thoughtSignature: 'sig-sdk-1' },
-                    { text: 'Gemini SDK response ok' },
-                  ],
+
+    await withMockedFetch(
+      (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const url = extractFetchUrl(input);
+        const headers = new Headers(init?.headers);
+        const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+        capturedCalls.push({
+          url,
+          headers,
+          body: JSON.parse(rawBody) as Readonly<Record<string, unknown>>,
+        });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    role: 'model',
+                    parts: [
+                      { text: 'Thinking via SDK', thought: true, thoughtSignature: 'sig-sdk-1' },
+                      { text: 'Gemini SDK response ok' },
+                    ],
+                  },
                 },
+              ],
+              usageMetadata: {
+                promptTokenCount: 20,
+                candidatesTokenCount: 8,
+                cachedContentTokenCount: 5,
               },
-            ],
-            usageMetadata: {
-              promptTokenCount: 20,
-              candidatesTokenCount: 8,
-              cachedContentTokenCount: 5,
-            },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      },
+      async () => {
+        const seat = gemini.account('sdk-seat').apiKey(H.env('GEMINI_API_KEY')).toAST();
+        const modelNode = gemini.model('geminiPro', { id: 'gemini-3.1-pro' }).toAST();
+        const driver = new GeminiModelDriver(defaultGeminiHttpTransport, modelNode, {
+          registry: {} as RuntimeExecutorRegistry,
+          resolveEnv: () => 'AIza-gemini-sdk-01',
+          getRunner: () => {
+            throw new Error('Unused');
+          },
+        });
+
+        const turnResult = await driver.invokeTurn({
+          modelId: 'gemini-3.1-pro',
+          accountConfig: seat,
+          history: [],
+        });
+
+        expect(turnResult.canonical.visibleText).toBe('Gemini SDK response ok');
+        expect(capturedCalls).toHaveLength(1);
+        expect(capturedCalls[0]?.url).toBe(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent',
+        );
+        expect(capturedCalls[0]?.headers.get('x-goog-api-client')).toContain('google-genai-sdk/');
+        expect(capturedCalls[0]?.headers.get('x-goog-api-key')).toBe('AIza-gemini-sdk-01');
+      },
+    );
+  });
+
+  it('rejects non-JSON HTTP 502 responses via defaultGeminiHttpTransport before JSON parsing', async () => {
+    await withMockedFetch(
+      (): Promise<Response> =>
+        Promise.resolve(
+          new Response('<html><body>502 Bad Gateway</body></html>', {
+            status: 502,
+            headers: { 'content-type': 'text/html' },
           }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
         ),
-      );
-    };
-
-    try {
-      const seat = gemini.account('sdk-seat').apiKey(H.env('GEMINI_API_KEY')).toAST();
-      const modelNode = gemini.model('geminiPro', { id: 'gemini-3.1-pro' }).toAST();
-      const driver = new GeminiModelDriver(defaultGeminiHttpTransport, modelNode, {
-        registry: {} as RuntimeExecutorRegistry,
-        resolveEnv: () => 'AIza-gemini-sdk-01',
-        getRunner: () => {
-          throw new Error('Unused');
-        },
-      });
-
-      const turnResult = await driver.invokeTurn({
-        modelId: 'gemini-3.1-pro',
-        accountConfig: seat,
-        history: [],
-      });
-
-      expect(turnResult.canonical.visibleText).toBe('Gemini SDK response ok');
-      expect(capturedCalls).toHaveLength(1);
-      expect(capturedCalls[0]?.url).toBe(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent',
-      );
-      expect(capturedCalls[0]?.headers.get('x-goog-api-client')).toContain('google-genai-sdk/');
-      expect(capturedCalls[0]?.headers.get('x-goog-api-key')).toBe('AIza-gemini-sdk-01');
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+      async () => {
+        const driver = new GeminiModelDriver(defaultGeminiHttpTransport);
+        await expect(
+          driver.invokeTurn({ modelId: 'gemini-3.1-pro', history: [] }),
+        ).rejects.toSatisfy((err: unknown) => {
+          const errorObj = err as {
+            readonly name?: string;
+            readonly status?: number;
+            readonly message?: string;
+          };
+          return (
+            errorObj.name !== 'SyntaxError' &&
+            errorObj.status === 502 &&
+            (errorObj.message?.includes('502') ?? false)
+          );
+        });
+      },
+    );
   });
 
-  it('checks HTTP status before JSON parsing on non-JSON 502 and 429 responses via defaultGeminiHttpTransport', async () => {
-    const originalFetch = globalThis.fetch;
-    const queuedResponses: Response[] = [
-      new Response('<html><body>502 Bad Gateway</body></html>', {
+  it('rejects non-JSON HTTP 429 responses via defaultGeminiHttpTransport with parsed resetAtMs', async () => {
+    await withMockedFetch(
+      (): Promise<Response> =>
+        Promise.resolve(
+          new Response('Resource exhausted (plain text)', {
+            status: 429,
+            headers: { 'content-type': 'text/plain', 'retry-after': '18' },
+          }),
+        ),
+      async () => {
+        const driver = new GeminiModelDriver(defaultGeminiHttpTransport);
+        const beforeMs = Date.now();
+        await expect(
+          driver.invokeTurn({ modelId: 'gemini-3.1-pro', history: [] }),
+        ).rejects.toSatisfy((err: unknown) => {
+          const errorObj = err as {
+            readonly name?: string;
+            readonly status?: number;
+            readonly resetAtMs?: number;
+          };
+          return (
+            errorObj.name !== 'SyntaxError' &&
+            errorObj.status === 429 &&
+            typeof errorObj.resetAtMs === 'number' &&
+            errorObj.resetAtMs >= beforeMs + 17_000 &&
+            errorObj.resetAtMs <= Date.now() + 21_000
+          );
+        });
+      },
+    );
+  });
+
+  it('rejects HTTP 502 responses from RecordedGeminiTransport before JSON.parse(bodyText)', async () => {
+    const transport = new RecordedGeminiTransport([
+      {
         status: 502,
-        headers: { 'content-type': 'text/html' },
-      }),
-      new Response('Resource exhausted (plain text)', {
-        status: 429,
-        headers: { 'content-type': 'text/plain', 'retry-after': '18' },
-      }),
-    ];
-    globalThis.fetch = (): Promise<Response> => {
-      const nextResponse = queuedResponses.shift();
-      if (nextResponse === undefined) {
-        return Promise.reject(new Error('Queued fetch responses exhausted.'));
-      }
-      return Promise.resolve(nextResponse);
-    };
-
-    try {
-      const driver = new GeminiModelDriver(defaultGeminiHttpTransport);
-      await expect(
-        driver.invokeTurn({ modelId: 'gemini-3.1-pro', history: [] }),
-      ).rejects.toSatisfy((err: unknown) => {
-        const errorObj = err as {
-          readonly name?: string;
-          readonly status?: number;
-          readonly message?: string;
-        };
-        return (
-          errorObj.name !== 'SyntaxError' &&
-          errorObj.status === 502 &&
-          (errorObj.message?.includes('502') ?? false)
-        );
-      });
-
-      const beforeMs = Date.now();
-      await expect(
-        driver.invokeTurn({ modelId: 'gemini-3.1-pro', history: [] }),
-      ).rejects.toSatisfy((err: unknown) => {
-        const errorObj = err as {
-          readonly name?: string;
-          readonly status?: number;
-          readonly resetAtMs?: number;
-        };
-        return (
-          errorObj.name !== 'SyntaxError' &&
-          errorObj.status === 429 &&
-          typeof errorObj.resetAtMs === 'number' &&
-          errorObj.resetAtMs >= beforeMs + 17_000 &&
-          errorObj.resetAtMs <= Date.now() + 21_000
-        );
-      });
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  it('checks HTTP status before JSON.parse(bodyText) on custom GeminiHttpTransport responses', async () => {
-    const customTransport: GeminiHttpTransport = {
-      sendGenerateContentRequest: () =>
-        Promise.resolve({
-          status: 502,
-          bodyText: '502 Bad Gateway',
-        }),
-    };
-    const driver = new GeminiModelDriver(customTransport);
+        bodyText: '502 Bad Gateway',
+      },
+    ]);
+    const driver = new GeminiModelDriver(transport);
     await expect(
       driver.invokeTurn({ modelId: 'gemini-3.1-pro', history: [] }),
     ).rejects.toSatisfy((err: unknown) => {
@@ -173,19 +193,20 @@ describe('@harness-dsl/gemini official @google/genai SDK transport and HTTP stat
         (errorObj.message?.includes('502 Bad Gateway') ?? false)
       );
     });
+  });
 
-    const customRateLimitTransport: GeminiHttpTransport = {
-      sendGenerateContentRequest: () =>
-        Promise.resolve({
-          status: 429,
-          bodyText: 'Too Many Requests',
-          headers: { 'retry-after': '30' },
-        }),
-    };
-    const rateLimitedDriver = new GeminiModelDriver(customRateLimitTransport);
+  it('rejects HTTP 429 responses from RecordedGeminiTransport with parsed resetAtMs', async () => {
+    const transport = new RecordedGeminiTransport([
+      {
+        status: 429,
+        bodyText: 'Too Many Requests',
+        headers: { 'retry-after': '30' },
+      },
+    ]);
+    const driver = new GeminiModelDriver(transport);
     const beforeMs = Date.now();
     await expect(
-      rateLimitedDriver.invokeTurn({ modelId: 'gemini-3.1-pro', history: [] }),
+      driver.invokeTurn({ modelId: 'gemini-3.1-pro', history: [] }),
     ).rejects.toSatisfy((err: unknown) => {
       const errorObj = err as { readonly status?: number; readonly resetAtMs?: number };
       return (

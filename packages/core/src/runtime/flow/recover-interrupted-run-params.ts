@@ -1,5 +1,5 @@
 import type { FlowNode } from '../../ast/flow-node.js';
-import type { InterruptedStepRecord } from '../../ports/interrupted-step-record.js';
+import type { InterruptedStepBootRecord } from '../../ports/interrupted-step-boot-record.js';
 import type { FlowExecutionContext } from './flow-execution-context.js';
 
 /**
@@ -13,7 +13,7 @@ import type { FlowExecutionContext } from './flow-execution-context.js';
  */
 export interface RecoverInterruptedRunParams<TIn = unknown, THandle = unknown> {
   /** Non-terminal step boot record loaded from `LedgerStore.getInterruptedStepsOnBoot()`. */
-  readonly bootRecord: InterruptedStepRecord;
+  readonly bootRecord: InterruptedStepBootRecord;
   /** Bound `FlowNode` definition for the run's lane. */
   readonly flow: FlowNode<TIn, THandle>;
   /** Active flow execution context configured for the recovered run. */

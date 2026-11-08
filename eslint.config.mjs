@@ -1,6 +1,62 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import jsdocPlugin from 'eslint-plugin-jsdoc';
+
+/**
+ * Process-wide cache of normalized absolute file paths imported or re-exported across `packages/**`.
+ */
+const WORKSPACE_IMPORT_CACHE = {
+  initialized: false,
+  referencedFiles: new Set(),
+};
+
+/**
+ * Recursively collects all `.ts` file paths under `dirPath` into `outFiles`.
+ *
+ * Normalizes path separators to forward slashes so lookups are platform-independent.
+ *
+ * @param {string}   dirPath  - Directory path to traverse recursively.
+ * @param {string[]} outFiles - Accumulator array receiving normalized absolute `.ts` file paths.
+ *
+ * @returns {void}
+ */
+function collectPackageTypeScriptFiles(dirPath, outFiles) {
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) collectPackageTypeScriptFiles(fullPath, outFiles);
+    else if (entry.isFile() && entry.name.endsWith('.ts')) outFiles.push(fullPath.replace(/\\/g, '/'));
+  }
+}
+
+/**
+ * Returns the cached set of normalized absolute `.ts` file paths referenced by any import or re-export across `packages/**`.
+ *
+ * Scans all `packages/**` TypeScript files once per lint process and resolves relative `.js`/`.ts` specifiers.
+ *
+ * @returns {Set<string>} Set of normalized absolute `.ts` file paths imported or re-exported in the workspace.
+ */
+function getWorkspaceReferencedFiles() {
+  if (WORKSPACE_IMPORT_CACHE.initialized) return WORKSPACE_IMPORT_CACHE.referencedFiles;
+  WORKSPACE_IMPORT_CACHE.initialized = true;
+  const packagesDir = path.join(import.meta.dirname, 'packages');
+  const allFiles = [];
+  collectPackageTypeScriptFiles(packagesDir, allFiles);
+  const specifierPattern = /(?:from|import)\s*['"](\.[^'"]+)['"]/g;
+  for (const filePath of allFiles) {
+    const sourceText = readFileSync(filePath, 'utf8');
+    for (const match of sourceText.matchAll(specifierPattern)) {
+      const rawSpecifier = match[1];
+      if (!rawSpecifier) continue;
+      const resolvedPath = path
+        .resolve(path.dirname(filePath), rawSpecifier.replace(/\.js$/, '.ts'))
+        .replace(/\\/g, '/');
+      WORKSPACE_IMPORT_CACHE.referencedFiles.add(resolvedPath);
+    }
+  }
+  return WORKSPACE_IMPORT_CACHE.referencedFiles;
+}
 
 /**
  * Classifies a top-level AST declaration into one of the five canonical file entity kinds.
@@ -261,12 +317,31 @@ export default [
               };
             },
           },
+          'no-dead-files': {
+            create(context) {
+              const filename = context.filename.replace(/\\/g, '/');
+              if (!/\/packages\/[^/]+\/src\/.+\.ts$/.test(filename)) return {};
+              if (/\/packages\/[^/]+\/src\/(?:runtime\/)?index\.ts$/.test(filename)) return {};
+              return {
+                Program(program) {
+                  const referencedFiles = getWorkspaceReferencedFiles();
+                  if (!referencedFiles.has(filename)) {
+                    context.report({
+                      node: program,
+                      message: `Unreferenced source file '${filename.split('/packages/').pop() ?? filename}' is not imported or re-exported by any file in 'packages/**' (Rule 1.7 & Rule 3.4).`,
+                    });
+                  }
+                },
+              };
+            },
+          },
         },
       },
     },
     rules: {
       'harness/no-inline-comments': 'error',
       'harness/file-separation': 'error',
+      'harness/no-dead-files': 'error',
       'max-statements-per-line': ['error', { max: 1 }],
       'one-var': ['error', 'never'],
       '@typescript-eslint/no-explicit-any': 'error',

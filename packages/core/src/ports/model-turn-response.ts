@@ -5,7 +5,7 @@ import type { CanonicalMessage } from './canonical-message.js';
  *
  * Tracks non-cached input tokens, prefix-cached input tokens, output/reasoning tokens, and USD cost.
  */
-export interface ModelTurnUsage {
+export interface ModelUsageMetrics {
   /** Number of non-cached input tokens billed for the turn. */
   readonly inputTokens: number;
   /** Number of prefix-cached input tokens read during the turn. */
@@ -14,16 +14,6 @@ export interface ModelTurnUsage {
   readonly outputTokens: number;
   /** Total monetary cost in USD for the turn. */
   readonly costUsd: number;
-}
-
-/**
- * Token usage and cost metrics returned by a single `ModelDriver.invokeTurn()` call.
- *
- * Alias interface extending `ModelTurnUsage` for step and loop telemetry accumulation.
- */
-export interface ModelUsageMetrics extends ModelTurnUsage {
-  /** Number of non-cached input tokens billed for the turn. */
-  readonly inputTokens: number;
 }
 
 /**

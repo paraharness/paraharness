@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   H,
   createExecutorRegistry,
+  type EnvRef,
   type RuntimeDriverContext,
 } from '@harness-dsl/core';
 import {
@@ -23,16 +24,25 @@ function createDriverContext(
   const registry = createExecutorRegistry(createGithubExecutors(transport));
   return {
     registry,
-    resolveEnv(value) {
+    resolveEnv(value: EnvRef | string): string | undefined {
       if (typeof value === 'string') {
         return value;
       }
       return env[value.key];
     },
-    getRunner() {
+    getRunner(): never {
       throw new Error('RunnerDriver not used in github tests.');
     },
   };
+}
+
+function createPrematureCloseRequest(): IncomingMessage {
+  return Object.assign(new EventEmitter(), {
+    complete: false,
+    pause(this: IncomingMessage): IncomingMessage {
+      return this;
+    },
+  }) as IncomingMessage;
 }
 
 describe('@harness-dsl/github Octokit pagination and Webhooks verification', () => {
@@ -51,7 +61,10 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
         body: `Body ${i}`,
         labels: ['agent-ready'],
         state: 'open',
-        ...(i % 2 === 0 ? { pull_request: { url: `https://api.github.com/pulls/${i}` } } : {}),
+        pull_request:
+          i % 2 === 0
+            ? { url: 'https://api.github.com/repos/org/repo/pulls/1' }
+            : undefined,
       });
     }
     const page2: Array<Record<string, unknown>> = [
@@ -85,27 +98,19 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
     expect(transport.calls).toHaveLength(2);
   });
 
-  it('verifies signatures via @octokit/webhooks, rejects oversized >10MB bodies with HTTP 413, and handles onEvent 500 errors', async () => {
+  it('rejects oversized webhook payloads with HTTP 413', async () => {
     const secret = 'whsec_octokit_test';
-    const webhooks = new Webhooks({ secret });
     const streamNode = github.webhookStream({
       repo: 'acme/app',
       port: 0,
       secret: H.env('GH_WEBHOOK_SECRET'),
       events: ['pull_request.closed'],
     });
-    let shouldFailHandler = false;
-    const received: unknown[] = [];
     const source = new GithubWebhookStreamSource(
       streamNode,
       createDriverContext({ GH_WEBHOOK_SECRET: secret }),
     );
-    const sub = await source.subscribe(async (ev) => {
-      if (shouldFailHandler) {
-        throw new Error('Downstream event processor failed');
-      }
-      received.push(ev);
-    });
+    const sub = await source.subscribe(async () => {});
 
     try {
       const url = `http://127.0.0.1:${source.getBoundPort()}/webhooks/github`;
@@ -119,7 +124,31 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
         body: oversizedBody,
       });
       expect(tooLargeRes.status).toBe(413);
+    } finally {
+      await sub.close();
+    }
+  });
 
+  it('delivers valid HMAC-signed webhook payloads with HTTP 200', async () => {
+    const secret = 'whsec_octokit_test';
+    const webhooks = new Webhooks({ secret });
+    const streamNode = github.webhookStream({
+      repo: 'acme/app',
+      port: 0,
+      secret: H.env('GH_WEBHOOK_SECRET'),
+      events: ['pull_request.closed'],
+    });
+    const received: unknown[] = [];
+    const source = new GithubWebhookStreamSource(
+      streamNode,
+      createDriverContext({ GH_WEBHOOK_SECRET: secret }),
+    );
+    const sub = await source.subscribe(async (ev) => {
+      received.push(ev);
+    });
+
+    try {
+      const url = `http://127.0.0.1:${source.getBoundPort()}/webhooks/github`;
       const payload = { action: 'closed', repository: { full_name: 'acme/app' } };
       const rawBody = JSON.stringify(payload);
       const sig = await webhooks.sign(rawBody);
@@ -135,8 +164,34 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
       });
       expect(okRes.status).toBe(200);
       expect(received).toEqual([payload]);
+    } finally {
+      await sub.close();
+    }
+  });
 
-      shouldFailHandler = true;
+  it('returns HTTP 500 when the downstream onEvent callback rejects', async () => {
+    const secret = 'whsec_octokit_test';
+    const webhooks = new Webhooks({ secret });
+    const streamNode = github.webhookStream({
+      repo: 'acme/app',
+      port: 0,
+      secret: H.env('GH_WEBHOOK_SECRET'),
+      events: ['pull_request.closed'],
+    });
+    const source = new GithubWebhookStreamSource(
+      streamNode,
+      createDriverContext({ GH_WEBHOOK_SECRET: secret }),
+    );
+    const sub = await source.subscribe(async () => {
+      throw new Error('Downstream event processor failed');
+    });
+
+    try {
+      const url = `http://127.0.0.1:${source.getBoundPort()}/webhooks/github`;
+      const payload = { action: 'closed', repository: { full_name: 'acme/app' } };
+      const rawBody = JSON.stringify(payload);
+      const sig = await webhooks.sign(rawBody);
+
       const errRes = await fetch(url, {
         method: 'POST',
         headers: {
@@ -156,13 +211,8 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
     }
   });
 
-  it('detaches readHttpRequestBody listeners on settle, rejects premature close, and rejects duplicate subscribe() (VF-3)', async () => {
-    const fakeReq = Object.assign(new EventEmitter(), {
-      complete: false,
-      pause() {
-        return this;
-      },
-    }) as IncomingMessage;
+  it('detaches stream listeners on premature request close', async () => {
+    const fakeReq = createPrematureCloseRequest();
 
     const bodyPromise = readHttpRequestBody(fakeReq, 64);
     expect(fakeReq.listenerCount('data')).toBe(1);
@@ -178,7 +228,9 @@ describe('@harness-dsl/github Octokit pagination and Webhooks verification', () 
     expect(fakeReq.listenerCount('end')).toBe(0);
     expect(fakeReq.listenerCount('error')).toBe(0);
     expect(fakeReq.listenerCount('close')).toBe(0);
+  });
 
+  it('rejects duplicate subscribe() calls while a server is already active', async () => {
     const streamNode = github.webhookStream({
       repo: 'acme/app',
       port: 0,

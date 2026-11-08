@@ -1,18 +1,18 @@
-import type { ModelTurnUsage } from '@harness-dsl/core';
+import type { ModelUsageMetrics } from '@harness-dsl/core';
 
 /**
- * Computes normalized `ModelTurnUsage` metrics from an OpenAI `/v1/responses` JSON payload.
+ * Computes normalized `ModelUsageMetrics` from an OpenAI `/v1/responses` JSON payload.
  *
  * Extracts `input_tokens`, `input_tokens_details.cached_tokens`, `output_tokens`, and `cost_usd`
  * (falling back to standard token-rate estimation when `cost_usd` is absent).
  *
  * @param {Readonly<Record<string, unknown>>} responseBody - Raw JSON object returned by `/v1/responses`.
  *
- * @returns {ModelTurnUsage} Frozen token and USD cost usage breakdown for the turn.
+ * @returns {ModelUsageMetrics} Frozen token and USD cost usage breakdown for the turn.
  */
 export function computeOpenAiTurnUsage(
   responseBody: Readonly<Record<string, unknown>>,
-): ModelTurnUsage {
+): ModelUsageMetrics {
   const usageRaw = (responseBody['usage'] ?? {}) as Readonly<Record<string, unknown>>;
   const inputTokens =
     typeof usageRaw['input_tokens'] === 'number' ? usageRaw['input_tokens'] : 0;
@@ -25,7 +25,7 @@ export function computeOpenAiTurnUsage(
     typeof usageRaw['cost_usd'] === 'number'
       ? usageRaw['cost_usd']
       : (inputTokens * 0.0025 + outputTokens * 0.01) / 1_000;
-  return Object.freeze<ModelTurnUsage>({
+  return Object.freeze<ModelUsageMetrics>({
     inputTokens,
     cachedInputTokens,
     outputTokens,
