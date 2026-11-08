@@ -1,5 +1,5 @@
 {
-  "name": "@metaharness/fs",
+  "name": "@paraharness/fs",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,8 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@metaharness/core": "workspace:*",
-    "@metaharness/lockfile": "workspace:*",
+    "@paraharness/core": "workspace:*",
+    "@paraharness/lockfile": "workspace:*",
     "minisearch": "^7.2.0",
     "p-queue": "^9.1.0",
     "picomatch": "^4.0.3",

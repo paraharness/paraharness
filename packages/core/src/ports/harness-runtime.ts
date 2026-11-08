@@ -1,7 +1,7 @@
 import type { HarnessRuntimeController } from './harness-runtime-controller.js';
 
 /**
- * Lifecycle handle for an instantiated MetaHarness runtime engine.
+ * Lifecycle handle for an instantiated ParaHarness runtime engine.
  *
  * Manages background tracker polling, event stream subscriptions, crash recovery, and control-plane servers.
  */

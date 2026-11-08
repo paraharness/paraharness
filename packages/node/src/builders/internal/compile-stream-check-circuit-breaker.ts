@@ -1,4 +1,4 @@
-import type { LocalStreamCheckCircuitBreakerConfig } from '@metaharness/core';
+import type { LocalStreamCheckCircuitBreakerConfig } from '@paraharness/core';
 import type { LocalStreamCheckCircuitBreakerOptions } from '../local-stream-check-builder.js';
 
 /**

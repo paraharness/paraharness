@@ -18,7 +18,7 @@ import { executeDefaultForkOrTournamentChild } from './run-single-fork-call.js';
 /**
  * Rolls back an evaluator-raised upward interrupt to `.act()` at `preservedActLeafMessageId` (`SPEC.md` §3.7.2).
  *
- * Ensures that when `resumeFork` resumes a child `M.loop` whose `.evaluate()` raised an interrupt,
+ * Ensures that when `resumeFork` resumes a child `P.loop` whose `.evaluate()` raised an interrupt,
  * the write-capable `.act()` worker resumes from its preserved completion leaf rather than the read-only evaluator.
  *
  * @param {readonly ContinuationFrame[]}    stack       - Child continuation stack at the moment the interrupt was raised.

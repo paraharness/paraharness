@@ -7,7 +7,7 @@ import type {
   GitPublicSurfaceCrossTesterNode,
   GitWorktreeHandle,
   StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { init, parse } from 'es-module-lexer';
 import picomatch from 'picomatch';
 import { gitCheckpointRestore } from './git-checkpoint-restore.js';

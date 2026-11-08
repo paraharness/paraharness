@@ -5,7 +5,7 @@ import type {
   GitReconcileStrategyConfig,
   GitWorktreeHandle,
   MaybeBuilder,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Dirty-index checkpointing configuration accepted by `GitCowWorktreeBuilder.checkpointPolicy()`.

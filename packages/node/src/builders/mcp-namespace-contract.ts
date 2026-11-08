@@ -3,7 +3,7 @@ import type {
   NodeHttpControlPlaneNode,
   NodeMcpSseNode,
   NodeMcpStdioNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Configuration options for exposing a local HTTP or MCP SSE control-plane server (`mcp.server` / `local.mcpSse`).
@@ -16,10 +16,10 @@ export interface McpServerOptions {
 }
 
 /**
- * Public `mcp.*` DSL builder namespace exported by `@metaharness/node`.
+ * Public `mcp.*` DSL builder namespace exported by `@paraharness/node`.
  *
  * Exposes Model Context Protocol (MCP) and HTTP control-plane builders (`mcp.server`,
- * `mcp.stdio`, `mcp.sse`) for mounting on `M.harness().expose(...)`.
+ * `mcp.stdio`, `mcp.sse`) for mounting on `P.harness().expose(...)`.
  */
 export interface McpNamespace {
   /**

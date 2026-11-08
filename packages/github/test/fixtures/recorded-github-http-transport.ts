@@ -5,7 +5,7 @@ import type {
 import type { RecordedGithubCall } from './recorded-github-call.js';
 
 /**
- * Deterministic in-memory `GithubHttpTransport` test double for `@metaharness/github` unit tests.
+ * Deterministic in-memory `GithubHttpTransport` test double for `@paraharness/github` unit tests.
  *
  * Records all outbound REST API calls in invocation order and dispatches canned responses
  * registered by `(method, path)` key.

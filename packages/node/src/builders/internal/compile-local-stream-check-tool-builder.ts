@@ -2,7 +2,7 @@ import {
   z,
   type AstBuilder,
   type LocalStreamCheckToolNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { compileLocalStreamCheckNode } from './compile-local-stream-check-node.js';
 import type { LocalStreamCheckBuilderState } from './local-stream-check-builder-state.js';
 

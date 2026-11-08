@@ -1,4 +1,4 @@
-import type { ForkContext, PrepareForkTarget, WireFrameRecord } from '@metaharness/core';
+import type { ForkContext, PrepareForkTarget, WireFrameRecord } from '@paraharness/core';
 import { buildClaudePairedForkToolFrame } from './build-claude-paired-fork-tool-frame.js';
 import { buildClaudeUserFrame } from './build-claude-user-frame.js';
 import { formatClaudeForkPromptText } from './format-claude-fork-prompt-text.js';

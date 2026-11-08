@@ -3,7 +3,7 @@ import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 import type { LaneBuilder } from './lane-builder.js';
 
 /**
- * Creates a fluent `LaneBuilder` for `M.lane(id)`.
+ * Creates a fluent `LaneBuilder` for `P.lane(id)`.
  *
  * Validates that `id` is a non-empty identifier and initializes an immutable
  * `LaneBuilder` with default `concurrency: 1` and `priority: 'normal'`.
@@ -13,7 +13,7 @@ import type { LaneBuilder } from './lane-builder.js';
  * @returns {LaneBuilder<unknown, string>} Frozen `LaneBuilder` instance.
  */
 export function createLaneBuilder(id: string): LaneBuilder<unknown, string> {
-  assertNonEmptyIdentifier('M.lane', id);
+  assertNonEmptyIdentifier('P.lane', id);
   return createLaneFromState({
     id,
     concurrency: 1,

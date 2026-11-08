@@ -6,7 +6,7 @@ import type {
   PolicyGuardEvaluationResult,
   StepExecutionContext,
   ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { extractEffectBinaryName } from './internal/extract-effect-binary-name.js';
 import { isBinaryInAllowlist } from './internal/is-binary-in-allowlist.js';
 import { isNetworkToolEffect } from './internal/is-network-tool-effect.js';

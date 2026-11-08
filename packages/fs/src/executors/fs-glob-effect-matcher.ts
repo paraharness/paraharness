@@ -2,7 +2,7 @@ import type {
   FsGlobMatcherNode,
   StepExecutionContext,
   ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { compileGlobOrExactMatcher } from './internal/compile-glob-or-exact-matcher.js';
 
 /**

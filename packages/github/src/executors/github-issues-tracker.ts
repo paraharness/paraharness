@@ -2,7 +2,7 @@ import type {
   GithubIssuesTrackerNode,
   RuntimeDriverContext,
   TrackerAdapter,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { defaultGithubHttpTransport } from './default-github-http-transport.constants.js';
 import type { GithubHttpTransport } from './github-http-transport.js';
 import type { GithubIssueRecord } from './github-issue-record.js';

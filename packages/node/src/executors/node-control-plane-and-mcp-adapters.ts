@@ -6,7 +6,7 @@ import type {
   NodeMcpSseNode,
   NodeMcpStdioNode,
   RuntimeDriverContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { buildControlPlaneMcpServer } from './internal/build-control-plane-mcp-server.js';
 import { connectStdioControlPlaneTransport } from './internal/connect-stdio-control-plane-transport.js';
 import { startHttpControlPlaneServer } from './internal/start-http-control-plane-server.js';

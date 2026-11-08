@@ -3,7 +3,7 @@ import type { GeminiHttpResponse } from '../../src/driver/gemini-http-response.j
 import type { GeminiHttpTransport } from '../../src/driver/gemini-http-transport.js';
 
 /**
- * Deterministic in-memory fake `GeminiHttpTransport` for unit testing `@metaharness/gemini`.
+ * Deterministic in-memory fake `GeminiHttpTransport` for unit testing `@paraharness/gemini`.
  *
  * Captures every outgoing `GeminiHttpRequest` in order and replays queued `GeminiHttpResponse`
  * fixtures without performing network I/O.

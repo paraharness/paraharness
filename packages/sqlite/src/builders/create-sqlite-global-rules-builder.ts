@@ -1,4 +1,4 @@
-import type { SqliteRulesSourceNode } from '@metaharness/core';
+import type { SqliteRulesSourceNode } from '@paraharness/core';
 import { assertValidSqlIdentifier } from '../ddl/internal/open-sqlite-connection.js';
 import type { SqliteGlobalRulesBuilder } from './sqlite-global-rules-builder.js';
 import type { SqliteGlobalRulesOptions } from './sqlite-namespace-contract.js';

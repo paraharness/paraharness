@@ -36,7 +36,7 @@ export function buildScopedRuleFromState(
     : sourceNode !== undefined
       ? resolveSourceRuleId(sourceNode)
       : 'sourced-scoped-rule';
-  assertNonEmptyIdentifier('M.scopedRule', resolvedId);
+  assertNonEmptyIdentifier('P.scopedRule', resolvedId);
   const currentChecks: readonly CheckASTNode<unknown>[] =
     options?.enforceBeforeStopChecks ?? Object.freeze([]);
 

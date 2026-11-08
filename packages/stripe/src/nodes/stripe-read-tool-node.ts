@@ -1,4 +1,4 @@
-import type { BaseToolASTNode } from '@metaharness/core';
+import type { BaseToolASTNode } from '@paraharness/core';
 
 /**
  * Passive AST node representing a Stripe billing tool (`stripe.readTools()`).

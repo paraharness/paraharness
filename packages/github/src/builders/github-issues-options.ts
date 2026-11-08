@@ -1,4 +1,4 @@
-import type { EnvRef } from '@metaharness/core';
+import type { EnvRef } from '@paraharness/core';
 
 /**
  * Configuration options for the GitHub Issues tracker builder (`github.issues`).
@@ -9,7 +9,7 @@ import type { EnvRef } from '@metaharness/core';
 export interface GithubIssuesOptions {
   /** GitHub repository slug in `owner/repo` format. */
   readonly repo: string;
-  /** GitHub API personal access token or symbolic `M.env(...)` reference. */
+  /** GitHub API personal access token or symbolic `P.env(...)` reference. */
   readonly token: string | EnvRef;
   /** Optional list of issue label names used to filter polled issues. */
   readonly labels?: readonly string[];

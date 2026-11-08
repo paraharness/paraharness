@@ -2,7 +2,7 @@ import type { InlineSkillNode } from './inline-skill-node.js';
 import type { SourcedSkillNode } from './sourced-skill-node.js';
 
 /**
- * Passive AST node representing an on-demand procedural skill (`M.skill(...)`).
+ * Passive AST node representing an on-demand procedural skill (`P.skill(...)`).
  *
  * @template THandle Runtime handle type of the active isolation scope.
  */

@@ -1,4 +1,4 @@
-import type { ContinuationFrame, InterruptedStepBootRecord } from '@metaharness/core';
+import type { ContinuationFrame, InterruptedStepBootRecord } from '@paraharness/core';
 import type { SqliteRunRow } from './sqlite-run-row.js';
 import type { SqliteStepRow } from './sqlite-step-row.js';
 

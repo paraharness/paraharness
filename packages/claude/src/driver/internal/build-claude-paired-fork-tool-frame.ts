@@ -4,7 +4,7 @@ import type {
   ForkContext,
   PrecedingCompletedToolResult,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { projectCanonicalToAnthropicMessage } from './project-canonical-to-anthropic-message.js';
 import { formatClaudeForkPromptText } from './format-claude-fork-prompt-text.js';
 

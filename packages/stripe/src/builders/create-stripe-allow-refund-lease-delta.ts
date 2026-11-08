@@ -1,4 +1,4 @@
-import type { LeaseDelta } from '@metaharness/core';
+import type { LeaseDelta } from '@paraharness/core';
 import type { StripeMaxRefundMatcherNode } from '../nodes/stripe-max-refund-matcher-node.js';
 import '../nodes/stripe-registry-augmentation.js';
 

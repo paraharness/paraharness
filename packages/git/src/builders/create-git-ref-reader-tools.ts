@@ -4,7 +4,7 @@ import {
   type GitWorktreeHandle,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   DiffRefsInputSchema,
   ListRefFilesInputSchema,

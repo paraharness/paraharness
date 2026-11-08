@@ -5,7 +5,7 @@ import { getStepRuntimeInternals } from './get-step-runtime-internals.js';
 /**
  * Projects final or suspended agent continuation state into `_runtime.childOutcomeSink` and quiesces step-scoped services (`SPEC.md` §3.4.2 & §3.7.2).
  *
- * Invoked in `executeAgent`'s `finally` block so enclosing `M.loop`, `.fork()`, and `.speculate()` handlers
+ * Invoked in `executeAgent`'s `finally` block so enclosing `P.loop`, `.fork()`, and `.speculate()` handlers
  * receive the latest `agentFrame`, `leafMessageId`, `accumulatedLessonOutcomes`, and `suspendedAtCallId`.
  *
  * @template TIn     Validated agent input payload type.

@@ -1,4 +1,4 @@
-import type { FsTextSourceNode } from '@metaharness/core';
+import type { FsTextSourceNode } from '@paraharness/core';
 
 /**
  * Compiles a passive `FsTextSourceNode` (`fs:text-source`) for `fs.text(filePath)`.

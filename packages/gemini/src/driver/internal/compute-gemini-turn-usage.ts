@@ -1,4 +1,4 @@
-import type { ModelUsageMetrics } from '@metaharness/core';
+import type { ModelUsageMetrics } from '@paraharness/core';
 
 /**
  * Computes normalized `ModelUsageMetrics` from a Gemini `generateContent` JSON payload.

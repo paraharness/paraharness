@@ -24,7 +24,7 @@ import type { PoolManager } from '../pools/pool-manager.js';
 import type { ServiceSessionRegistry } from '../services/service-session-registry.js';
 
 /**
- * Mutable session state passed across `M.agent` turn-loop phase functions (`Rule 3.1` — zero closure state machines).
+ * Mutable session state passed across `P.agent` turn-loop phase functions (`Rule 3.1` — zero closure state machines).
  *
  * Encapsulates the passive `AgentNode`, validated input, current `AgentContinuationFrame`, outer continuation
  * frames, pre-indexed tool/skill/rule tables, runtime managers, and stores.

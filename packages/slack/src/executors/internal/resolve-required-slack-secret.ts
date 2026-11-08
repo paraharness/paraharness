@@ -1,4 +1,4 @@
-import type { EnvRef } from '@metaharness/core';
+import type { EnvRef } from '@paraharness/core';
 
 /**
  * Resolves a required Slack credential or channel identifier from a literal string or symbolic `EnvRef`.

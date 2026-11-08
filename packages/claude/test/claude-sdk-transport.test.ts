@@ -1,4 +1,4 @@
-import { M, type RuntimeExecutorRegistry } from '@metaharness/core';
+import { P, type RuntimeExecutorRegistry } from '@paraharness/core';
 import { describe, expect, it } from 'vitest';
 import {
   ClaudeModelDriver,
@@ -40,7 +40,7 @@ async function withMockedFetch<T>(
   }
 }
 
-describe('@metaharness/claude official @anthropic-ai/sdk transport and HTTP status handling', () => {
+describe('@paraharness/claude official @anthropic-ai/sdk transport and HTTP status handling', () => {
   it('dispatches defaultClaudeHttpTransport requests through the official @anthropic-ai/sdk client', async () => {
     const capturedCalls: Array<{
       readonly url: string;
@@ -72,7 +72,7 @@ describe('@metaharness/claude official @anthropic-ai/sdk transport and HTTP stat
         );
       },
       async () => {
-        const seat = claude.account('sdk-seat').apiKey(M.env('ANTHROPIC_API_KEY')).toAST();
+        const seat = claude.account('sdk-seat').apiKey(P.env('ANTHROPIC_API_KEY')).toAST();
         const modelNode = claude.model('sonnet', { id: 'claude-sonnet-4-6' }).toAST();
         const driver = new ClaudeModelDriver(defaultClaudeHttpTransport, modelNode, {
           registry: {} as RuntimeExecutorRegistry,

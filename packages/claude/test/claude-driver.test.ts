@@ -2,14 +2,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  M,
+  P,
   z,
   type BaseIsolationScopeASTNode,
   type CompiledWirePrefix,
   type RuntimeDriverContext,
   type RuntimeExecutorRegistry,
   type WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { describe, expect, it } from 'vitest';
 import { ClaudeModelDriver, claude, claudeExecutors, createClaudeExecutors } from '../src/index.js';
 import { RecordedClaudeTransport } from './fixtures/recorded-claude-transport.js';
@@ -49,10 +49,10 @@ function createSampleWirePrefix(): CompiledWirePrefix {
   });
 }
 
-describe('@metaharness/claude builders and AST invariants', () => {
+describe('@paraharness/claude builders and AST invariants', () => {
   it('compiles passive ClaudeAccountSeatNode and ClaudeModelNode without import or build I/O', () => {
     const cliSeat = claude.cliAccount('sub-a').configDir('~/.claude-a').toAST();
-    const apiSeat = claude.account('api-fallback').apiKey(M.env('ANTHROPIC_API_KEY')).toAST();
+    const apiSeat = claude.account('api-fallback').apiKey(P.env('ANTHROPIC_API_KEY')).toAST();
     expect(cliSeat).toEqual({
       type: 'claude:account-seat',
       id: 'sub-a',
@@ -66,7 +66,7 @@ describe('@metaharness/claude builders and AST invariants', () => {
       apiKey: { type: 'harness:env-ref', key: 'ANTHROPIC_API_KEY' },
     });
 
-    const pool = M.pool('claude-accounts').with(cliSeat).strategy('soonest-reset').fallback(apiSeat);
+    const pool = P.pool('claude-accounts').with(cliSeat).strategy('soonest-reset').fallback(apiSeat);
     const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6', effort: 'medium' }).accountPool(pool).toAST();
     const opus = claude.model('opus', { id: 'claude-opus-4-6' }).effort('high').pool(pool).toAST();
 
@@ -95,7 +95,7 @@ describe('@metaharness/claude builders and AST invariants', () => {
       const fallbackSeat = claude
         .cliAccount('sub-missing')
         .configDir(join(tempDir, 'non-existent-subdir'))
-        .apiKey(M.env('ANTHROPIC_API_KEY'))
+        .apiKey(P.env('ANTHROPIC_API_KEY'))
         .toAST();
       const modelNode = claude.model('sonnet', { id: 'claude-sonnet-4-6' }).toAST();
       const transport = new RecordedClaudeTransport([
@@ -119,7 +119,7 @@ describe('@metaharness/claude builders and AST invariants', () => {
   });
 });
 
-describe('@metaharness/claude invokeTurn, prepareFork, and appendToolResultNotes', () => {
+describe('@paraharness/claude invokeTurn, prepareFork, and appendToolResultNotes', () => {
   it('enforces output_config.format JSON schema, preserves wireToolSchemas on toolChoice none, and preserves thinking signatures', async () => {
     const transport = new RecordedClaudeTransport([
       {

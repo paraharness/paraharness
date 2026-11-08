@@ -1,4 +1,4 @@
-import type { MarkdownSectionSourceNode } from '@metaharness/core';
+import type { MarkdownSectionSourceNode } from '@paraharness/core';
 import type { MdSectionSourceBuilder } from './md-section-source-builder.js';
 
 /**

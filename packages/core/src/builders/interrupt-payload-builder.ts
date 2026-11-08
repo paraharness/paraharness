@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import type { InterruptBuilder } from '../ast/interrupt-builder.js';
 
 /**
- * Fluent builder returned by `M.interrupt(id)` with `.payload(schema)` configuration and direct AST property access.
+ * Fluent builder returned by `P.interrupt(id)` with `.payload(schema)` configuration and direct AST property access.
  *
  * Extends `InterruptBuilder<TPayload>` so the builder can be passed directly wherever an
  * `InterruptNode<TPayload>` or `AstBuilder<InterruptNode<TPayload>>` is expected.

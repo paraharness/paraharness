@@ -7,7 +7,7 @@ import {
   type FsWriteToolNode,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   buildFsEditToolNode,
   buildFsGlobToolNode,

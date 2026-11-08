@@ -5,7 +5,7 @@ import type { HumanNode } from '../ast/human-node.js';
 import type { ScopedHumanNameBuilder } from './scoped-human-name-builder.js';
 
 /**
- * Fluent builder for external human authorities and notification channels (`M.human(id)`).
+ * Fluent builder for external human authorities and notification channels (`P.human(id)`).
  *
  * Tracks the channel interaction mode (`'bidirectional' | 'notify-only'`) at the type
  * level so `.ask()`, `.escalate()`, and `.maxCostUsd()` reject notify-only channels.

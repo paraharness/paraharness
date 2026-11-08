@@ -3,7 +3,7 @@ import type {
   ToolDriver,
   ToolEffect,
   ToolExecutionResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { NetSuiteJournalLineEntry } from '../../nodes/netsuite-draft-handle.js';
 import type { NetSuiteJournalToolNode } from '../../nodes/netsuite-journal-tool-node.js';
 import { isNetSuiteDraftHandle } from './is-netsuite-draft-handle.js';

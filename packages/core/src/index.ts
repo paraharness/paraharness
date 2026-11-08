@@ -189,8 +189,8 @@ export type { SpeculateCapabilityBuilder } from './builders/speculate-capability
 export type { StreamBuilder } from './builders/stream-builder.js';
 export type { TopologyCommitOverlayBuilderInput } from './builders/topology-commit-overlay-builder-input.js';
 export type { TopologyConfigBuilder, TopologyConfigBuilder as ConfigurableTopologyBuilder } from './builders/topology-config-builder.js';
-export type { MNamespace, MNamespace as HarnessNamespace } from './m-namespace-contract.js';
-export { M } from './m-namespace.js';
+export type { PNamespace, PNamespace as HarnessNamespace } from './p-namespace-contract.js';
+export { P } from './p-namespace.js';
 export {
   type AbortHookExecutionInput, type ActiveRunSummary, type ActiveTurnPauseState, type AdjudicationPauseState,
   type AgentContinuationFrame, type AgentPauseState, type AppendToolResultNotesOptions,

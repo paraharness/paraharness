@@ -1,4 +1,4 @@
-import type { WireFrameRecord } from '@metaharness/core';
+import type { WireFrameRecord } from '@paraharness/core';
 import { projectCanonicalToOpenAiWire } from './project-canonical-to-openai-wire.js';
 
 /**

@@ -1,4 +1,4 @@
-import type { CanonicalMessage, CanonicalToolResult } from '@metaharness/core';
+import type { CanonicalMessage, CanonicalToolResult } from '@paraharness/core';
 
 /**
  * Projects a single `CanonicalToolResult` into an Anthropic `tool_result` content block.

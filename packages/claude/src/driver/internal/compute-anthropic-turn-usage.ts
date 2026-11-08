@@ -1,4 +1,4 @@
-import type { ModelTurnResponse } from '@metaharness/core';
+import type { ModelTurnResponse } from '@paraharness/core';
 
 /**
  * Extracts token usage and USD cost metrics from an Anthropic `/v1/messages` response payload.

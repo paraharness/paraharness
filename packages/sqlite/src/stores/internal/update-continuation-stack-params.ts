@@ -1,4 +1,4 @@
-import type { ContinuationFrame } from '@metaharness/core';
+import type { ContinuationFrame } from '@paraharness/core';
 
 /**
  * Parameter object for `updateContinuationStackInSqlite`.

@@ -1,4 +1,4 @@
-import type { ClaudeAccountSeatNode, EnvRef } from '@metaharness/core';
+import type { ClaudeAccountSeatNode, EnvRef } from '@paraharness/core';
 import type { ClaudeAccountSeatBuilder } from './claude-account-seat-builder.js';
 
 /**

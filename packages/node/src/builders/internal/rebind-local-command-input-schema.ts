@@ -1,4 +1,4 @@
-import type { LocalCommandUnrepeatableConfig, z } from '@metaharness/core';
+import type { LocalCommandUnrepeatableConfig, z } from '@paraharness/core';
 import type { LocalCommandBuilderState } from './local-command-builder-state.js';
 
 /**

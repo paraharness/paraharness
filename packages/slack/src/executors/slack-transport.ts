@@ -1,4 +1,4 @@
-import type { ControlPlaneHandle, HarnessRuntimeController } from '@metaharness/core';
+import type { ControlPlaneHandle, HarnessRuntimeController } from '@paraharness/core';
 
 /**
  * Receipt returned by `SlackTransport.postMessage(...)` containing the Slack message timestamp.

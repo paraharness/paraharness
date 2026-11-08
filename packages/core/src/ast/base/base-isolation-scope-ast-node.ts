@@ -7,7 +7,7 @@ import type { ScopeCapabilityTier } from './base-domain-ast.types.js';
  * Domain-agnostic base AST node contract for isolation scopes (`IsolationScopeASTNode`).
  *
  * Carries static capability tier metadata (`capabilityTier`, `supportsCheckpoints`, `supportsBranching`)
- * inspected by `M.flow` at build time without duck-typing runtime driver methods.
+ * inspected by `P.flow` at build time without duck-typing runtime driver methods.
  *
  * @template TType    String-literal discriminant of the isolation scope node.
  * @template THandle  Runtime scope handle type acquired by the scope driver.

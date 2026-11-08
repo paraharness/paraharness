@@ -1,4 +1,4 @@
-import type { CanonicalToolCall } from '@metaharness/core';
+import type { CanonicalToolCall } from '@paraharness/core';
 
 /**
  * Extracted candidate parts, visible text, and canonical tool calls from a Gemini `generateContent` payload.

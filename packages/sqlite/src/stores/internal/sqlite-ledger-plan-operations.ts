@@ -1,4 +1,4 @@
-import type { MutateLanePlanRequest } from '@metaharness/core';
+import type { MutateLanePlanRequest } from '@paraharness/core';
 import type Database from 'better-sqlite3';
 
 /**

@@ -1,4 +1,4 @@
-import type { AstBuilder, GitDiscardBranchNode } from '@metaharness/core';
+import type { AstBuilder, GitDiscardBranchNode } from '@paraharness/core';
 
 /**
  * Creates a fluent `AstBuilder<GitDiscardBranchNode>` (`git.discardBranch()`).

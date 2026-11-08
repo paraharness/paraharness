@@ -1,7 +1,7 @@
 import type {
   FsJsonlLessonStoreNode,
   RuntimeExecutorRegistrySlice,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { FsJsonlLessonStore } from '../stores/fs-jsonl-lesson-store.js';
 import {
   collectFsTelemetry,
@@ -36,12 +36,12 @@ import {
 } from './fs-write-tool-drivers.js';
 
 /**
- * Creates a fresh `RuntimeExecutorRegistrySlice` registering all `@metaharness/fs` runtime executors and drivers.
+ * Creates a fresh `RuntimeExecutorRegistrySlice` registering all `@paraharness/fs` runtime executors and drivers.
  *
  * Registers `sources`, `checks`, `policyGuards`, `quotaTripwires`, `telemetryCollectors`,
- * `effectMatchers`, `tools`, and `lessons` for `@metaharness/fs` AST nodes (`SPEC.md` §4.3).
+ * `effectMatchers`, `tools`, and `lessons` for `@paraharness/fs` AST nodes (`SPEC.md` §4.3).
  *
- * @returns {RuntimeExecutorRegistrySlice} Deeply frozen executor registry slice for `@metaharness/fs`.
+ * @returns {RuntimeExecutorRegistrySlice} Deeply frozen executor registry slice for `@paraharness/fs`.
  */
 export function createFsExecutors(): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({

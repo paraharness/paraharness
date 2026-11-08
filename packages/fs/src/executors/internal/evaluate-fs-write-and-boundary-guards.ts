@@ -5,7 +5,7 @@ import type {
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
   StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { compileGlobOrExactMatcher } from './compile-glob-or-exact-matcher.js';
 import { createEffectBaseRefPathLookup } from './create-effect-base-ref-path-lookup.js';
 import { CACHED_BOUNDARY_GUARD_MATCHERS } from './glob-matcher-cache.constants.js';

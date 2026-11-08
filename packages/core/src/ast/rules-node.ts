@@ -3,7 +3,7 @@ import type { SourceValue } from './ast-foundation.types.js';
 import type { ScopedRuleNode } from './scoped-rule-node.types.js';
 
 /**
- * Passive AST node representing a rule registry (`M.rules(id)`) combining always-on global rules and conditional scoped rules.
+ * Passive AST node representing a rule registry (`P.rules(id)`) combining always-on global rules and conditional scoped rules.
  *
  * Pins `globalRules` in the static system prompt (or Turn-0 context when absent from `prefixGroup`)
  * and dynamically evaluates `scopedRules` against active partitions and tool effects.

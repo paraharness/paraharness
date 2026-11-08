@@ -3,7 +3,7 @@ import type { BaseControlPlaneASTNode } from '../base/base-control-plane-ast-nod
 /**
  * Passive AST node exposing a local HTTP control-plane endpoint (`local.httpControlPlane`).
  *
- * Listens on `port` when mounted via `M.harness.exposeControlPlane(...)` to serve JSON-RPC/HTTP
+ * Listens on `port` when mounted via `P.harness.exposeControlPlane(...)` to serve JSON-RPC/HTTP
  * control-plane commands and live run telemetry.
  */
 export interface NodeHttpControlPlaneNode extends BaseControlPlaneASTNode<'node:http-control-plane'> {

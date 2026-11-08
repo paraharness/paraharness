@@ -12,8 +12,8 @@ import {
   symlink,
 } from 'node:fs/promises';
 import path from 'node:path';
-import type { ASTNode, GitCowWorktreeNode } from '@metaharness/core';
-import { withFileLock } from '@metaharness/lockfile';
+import type { ASTNode, GitCowWorktreeNode } from '@paraharness/core';
+import { withFileLock } from '@paraharness/lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import {
   compileWorktreeExcludeMatcher,

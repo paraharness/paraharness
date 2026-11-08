@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import type { SignalBuilder } from '../ast/signal-builder.js';
 
 /**
- * Fluent builder returned by `M.signal(id)` with `.payload(schema)` configuration and direct AST property access.
+ * Fluent builder returned by `P.signal(id)` with `.payload(schema)` configuration and direct AST property access.
  *
  * Extends `SignalBuilder<TPayload>` so the builder can be passed directly wherever a
  * `SignalNode<TPayload>` or `AstBuilder<SignalNode<TPayload>>` is expected.

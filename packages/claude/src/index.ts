@@ -1,4 +1,4 @@
-export type { ClaudeAccountSeatNode, ClaudeModelNode } from '@metaharness/core';
+export type { ClaudeAccountSeatNode, ClaudeModelNode } from '@paraharness/core';
 export type { ClaudeAccountSeatBuilder } from './builders/claude-account-seat-builder.js';
 export type { ClaudeModelBuilder } from './builders/claude-model-builder.js';
 export type { ClaudeModelOptions } from './builders/claude-model-options.js';

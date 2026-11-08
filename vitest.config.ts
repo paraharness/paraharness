@@ -23,11 +23,11 @@ const packages = [
 ] as const;
 
 const alias: Record<string, string> = {
-  '@metaharness/core/runtime': path.resolve(rootDir, 'packages/core/src/runtime/index.ts'),
+  '@paraharness/core/runtime': path.resolve(rootDir, 'packages/core/src/runtime/index.ts'),
 };
 
 for (const pkg of packages) {
-  alias[`@metaharness/${pkg}`] = path.resolve(rootDir, `packages/${pkg}/src/index.ts`);
+  alias[`@paraharness/${pkg}`] = path.resolve(rootDir, `packages/${pkg}/src/index.ts`);
 }
 
 export default defineConfig({

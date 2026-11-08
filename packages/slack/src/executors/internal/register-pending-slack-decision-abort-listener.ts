@@ -1,4 +1,4 @@
-import type { HumanDecisionRequest } from '@metaharness/core';
+import type { HumanDecisionRequest } from '@paraharness/core';
 import type { SlackTransport } from '../slack-transport.js';
 import { cleanupPendingSlackDecision } from './cleanup-pending-slack-decision.js';
 import type { PendingSlackDecisionEntry } from './pending-slack-decision-entry.js';

@@ -1,9 +1,9 @@
-import type { AstBuilder, EnvRef, GeminiAccountSeatNode } from '@metaharness/core';
+import type { AstBuilder, EnvRef, GeminiAccountSeatNode } from '@paraharness/core';
 
 /**
  * Fluent builder for constructing a passive `GeminiAccountSeatNode` (`type: 'gemini:account-seat'`).
  *
- * Configures either a Google Gemini API key seat resolved late via `M.env(key)` or a CLI/ADC
+ * Configures either a Google Gemini API key seat resolved late via `P.env(key)` or a CLI/ADC
  * seat backed by `configDir` without import-time I/O.
  */
 export interface GeminiAccountSeatBuilder extends AstBuilder<GeminiAccountSeatNode> {
@@ -24,7 +24,7 @@ export interface GeminiAccountSeatBuilder extends AstBuilder<GeminiAccountSeatNo
   configDir(path: string): GeminiAccountSeatBuilder;
 
   /**
-   * Binds a literal API key or symbolic `M.env(key)` reference for Gemini API authentication.
+   * Binds a literal API key or symbolic `P.env(key)` reference for Gemini API authentication.
    *
    * Returns a new immutable builder instance that resolves the key only at leaf turn invocation time.
    *

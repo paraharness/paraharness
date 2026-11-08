@@ -1,4 +1,4 @@
-import type { CheckEvaluationResult, StepExecutionContext } from '@metaharness/core';
+import type { CheckEvaluationResult, StepExecutionContext } from '@paraharness/core';
 import type { NetSuiteBalanceZeroCheckNode } from '../../nodes/netsuite-balance-zero-check-node.js';
 import { computeNetSuiteJournalTotals } from './compute-netsuite-journal-totals.js';
 import { isNetSuiteDraftHandle } from './is-netsuite-draft-handle.js';

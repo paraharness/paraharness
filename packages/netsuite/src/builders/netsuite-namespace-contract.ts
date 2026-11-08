@@ -5,7 +5,7 @@ import type { NetSuiteJournalToolNode } from '../nodes/netsuite-journal-tool-nod
 import type { NetSuiteRollbackAbortHookNode } from '../nodes/netsuite-rollback-abort-hook-node.js';
 
 /**
- * Declarative builder namespace contract for `@metaharness/netsuite` (`netsuite.*`).
+ * Declarative builder namespace contract for `@paraharness/netsuite` (`netsuite.*`).
  *
  * Provides pure AST factory methods for Tier-1 NetSuite draft journal isolation scopes,
  * closed-period policy guards, journal tools, zero-balance checks, and rollback abort hooks.

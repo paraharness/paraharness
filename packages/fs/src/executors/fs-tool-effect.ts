@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@metaharness/core';
+import type { ToolEffect } from '@paraharness/core';
 
 /**
  * Structured filesystem attributes attached to an `FsToolEffect` descriptor.
@@ -19,7 +19,7 @@ export interface FsToolEffectAttributes extends Readonly<Record<string, unknown>
 }
 
 /**
- * Domain-specific `ToolEffect` emitted by `@metaharness/fs` tools and workspace diffs (`SPEC.md` §4.3).
+ * Domain-specific `ToolEffect` emitted by `@paraharness/fs` tools and workspace diffs (`SPEC.md` §4.3).
  *
  * Sets `kind: 'fs:effect'` and `mutatesScope: true` on write mutations so `ScopeLockManager`,
  * policy guards, quota tripwires, and telemetry collectors can inspect filesystem operations.

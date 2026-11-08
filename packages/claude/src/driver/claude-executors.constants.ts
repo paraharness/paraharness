@@ -1,5 +1,5 @@
-import type { RuntimeExecutorRegistrySlice } from '@metaharness/core';
+import type { RuntimeExecutorRegistrySlice } from '@paraharness/core';
 import { createClaudeExecutors } from './create-claude-executors.js';
 
-/** Default `RuntimeExecutorRegistrySlice` for `@metaharness/claude` (`models['claude:model']`). */
+/** Default `RuntimeExecutorRegistrySlice` for `@paraharness/claude` (`models['claude:model']`). */
 export const claudeExecutors: RuntimeExecutorRegistrySlice = createClaudeExecutors();

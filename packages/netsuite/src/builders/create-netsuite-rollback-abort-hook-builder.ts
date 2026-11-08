@@ -1,4 +1,4 @@
-import { z } from '@metaharness/core';
+import { z } from '@paraharness/core';
 import type { NetSuiteRollbackAbortHookNode } from '../nodes/netsuite-rollback-abort-hook-node.js';
 import '../nodes/netsuite-registry-augmentation.js';
 

@@ -1,10 +1,10 @@
 import type {
   CompactionSignalTrigger,
   CompactionTerminalExitTrigger,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
- * Internal immutable state snapshot for `createCompactionConfigBuilder` in `@metaharness/postgres`.
+ * Internal immutable state snapshot for `createCompactionConfigBuilder` in `@paraharness/postgres`.
  *
  * Holds the accumulated signal triggers, terminal exit triggers, and failed-run retention window.
  */

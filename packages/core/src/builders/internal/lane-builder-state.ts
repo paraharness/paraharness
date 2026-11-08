@@ -19,7 +19,7 @@ import type {
  * @template TStepIds Union of literal step and branch identifiers in the bound `FlowNode`.
  */
 export interface LaneBuilderState<TIn = unknown, TStepIds extends string = string> {
-  /** Unique lane identifier passed to `M.lane(id)`. */
+  /** Unique lane identifier passed to `P.lane(id)`. */
   readonly id: string;
   /** Zod schema validating work items entering the lane. */
   readonly inputSchema?: z.ZodType<TIn>;

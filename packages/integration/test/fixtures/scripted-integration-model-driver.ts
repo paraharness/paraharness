@@ -8,7 +8,7 @@ import type {
   ModelTurnResponse,
   PrepareForkTarget,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { appendNotesToWireFrame } from './internal/append-notes-to-wire-frame.js';
 import { cloneForkWireFrames } from './internal/clone-fork-wire-frames.js';
 

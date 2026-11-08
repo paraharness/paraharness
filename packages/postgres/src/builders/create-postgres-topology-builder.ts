@@ -1,4 +1,4 @@
-import type { EnvRef, PostgresTopologyNode } from '@metaharness/core';
+import type { EnvRef, PostgresTopologyNode } from '@paraharness/core';
 import type { PostgresTopologyBuilder } from './postgres-topology-builder.js';
 
 /**
@@ -7,7 +7,7 @@ import type { PostgresTopologyBuilder } from './postgres-topology-builder.js';
  * Produces an immutable builder whose `.toAST()` method returns a frozen `PostgresTopologyNode`
  * carrying the supplied connection URI or symbolic `EnvRef`.
  *
- * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `M.env(...)` reference.
+ * @param {string | EnvRef} uri - PostgreSQL connection URI or symbolic `P.env(...)` reference.
  *
  * @returns {PostgresTopologyBuilder} Immutable builder for `PostgresTopologyNode`.
  */

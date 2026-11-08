@@ -1,9 +1,9 @@
-import type { AstBuilder, EnvRef, OpenAiAccountSeatNode } from '@metaharness/core';
+import type { AstBuilder, EnvRef, OpenAiAccountSeatNode } from '@paraharness/core';
 
 /**
  * Fluent builder for constructing a passive `OpenAiAccountSeatNode` (`type: 'openai:account-seat'`).
  *
- * Configures either an OpenAI API key seat resolved late via `M.env(key)` or a Codex CLI
+ * Configures either an OpenAI API key seat resolved late via `P.env(key)` or a Codex CLI
  * subscription seat backed by `configDir` without import-time I/O.
  */
 export interface OpenAiAccountSeatBuilder extends AstBuilder<OpenAiAccountSeatNode> {
@@ -24,7 +24,7 @@ export interface OpenAiAccountSeatBuilder extends AstBuilder<OpenAiAccountSeatNo
   configDir(path: string): OpenAiAccountSeatBuilder;
 
   /**
-   * Binds a literal API key or symbolic `M.env(key)` reference for OpenAI Responses API authentication.
+   * Binds a literal API key or symbolic `P.env(key)` reference for OpenAI Responses API authentication.
    *
    * Returns a new immutable builder instance that resolves the key only at leaf turn invocation time.
    *

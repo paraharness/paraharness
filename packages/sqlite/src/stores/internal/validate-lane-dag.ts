@@ -1,5 +1,5 @@
 import { Graph, alg } from '@dagrejs/graphlib';
-import type { MutateLanePlanRequest } from '@metaharness/core';
+import type { MutateLanePlanRequest } from '@paraharness/core';
 
 /**
  * Persisted lane item row shape passed to `buildChainedLaneDependencies`.

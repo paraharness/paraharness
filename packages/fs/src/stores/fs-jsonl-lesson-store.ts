@@ -4,7 +4,7 @@ import type {
   LessonOutcome,
   LessonRecord,
   LessonStore,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import PQueue from 'p-queue';
 import {
   admitLessonToStore,
@@ -61,7 +61,7 @@ export interface FsRecordOutcomeParams {
  * Resolves `definitionsDir`, `statsPath`, and `lockFile` against the immutable host repository
  * root (Invariant 5), writes immutable `<definitionsDir>/<lessonId>.json` definition files on
  * `admit()`, and updates mutable telemetry counters in `statsPath` under a `PQueue({ concurrency: 1 })`
- * queue combined with `@metaharness/lockfile` and `write-file-atomic`.
+ * queue combined with `@paraharness/lockfile` and `write-file-atomic`.
  */
 export class FsJsonlLessonStore implements LessonStore {
   /** Absolute host-root directory path storing immutable `<lessonId>.json` definitions. */

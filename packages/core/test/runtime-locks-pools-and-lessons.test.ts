@@ -2,7 +2,7 @@ import { createTwoFilesPatch } from 'diff';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  M, type LessonDistillationBuilder, type LessonRecord, type LessonRetirementBuilder,
+  P, type LessonDistillationBuilder, type LessonRecord, type LessonRetirementBuilder,
   type LessonScoringBuilder, type LessonSignalTriggerBuilder, PoolManager,
   type PoolStrategyConfigurator, ScopeLockManager, type SourcedScopedRuleNode,
   type SourcedSkillNode, StepContinuationQueue, buildRoleAndScopeContextFrame,
@@ -151,7 +151,7 @@ describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation'
     const seatA = makeSeat('seat-a');
     const seatB = makeSeat('seat-b');
     const fallbackSeat = makeSeat('seat-fallback');
-    const seatPool = M.pool<ClaudeAccountSeatNode>('seats').with(seatA, seatB).strategy('round-robin').fallback(fallbackSeat).toAST();
+    const seatPool = P.pool<ClaudeAccountSeatNode>('seats').with(seatA, seatB).strategy('round-robin').fallback(fallbackSeat).toAST();
 
     expect(poolManager.selectSeat(seatPool, 'run-1', 1_000).id).toBe('seat-a');
     expect(poolManager.selectSeat(seatPool, 'run-1', 1_100).id).toBe('seat-a');
@@ -168,7 +168,7 @@ describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation'
     const haiku = makeModel('claude-haiku', 'haiku');
     const sonnet = makeModel('claude-sonnet', 'sonnet');
     const opus = makeModel('claude-opus', 'opus');
-    const modelPool = M.pool<ClaudeModelNode>('models')
+    const modelPool = P.pool<ClaudeModelNode>('models')
       .with(haiku, sonnet, opus)
       .strategy(($s: PoolStrategyConfigurator<ClaudeModelNode>) => $s.escalateOnRetry().minSuccessRate(0.75).minSamples(4))
       .toAST();
@@ -184,7 +184,7 @@ describe('PoolManager run-sticky seats, HTTP 429 failover, and model escalation'
   });
 });
 
-describe('M.prefixGroup compilation, in-run grounding diffs, and toolsMode', () => {
+describe('P.prefixGroup compilation, in-run grounding diffs, and toolsMode', () => {
   it('pins systemPromptText at byte 0, computes unified in-run grounding diffs via diff, and honours role-scoped vs union toolsMode', async () => {
     const registry = createExecutorRegistry({
       sources: {
@@ -194,17 +194,17 @@ describe('M.prefixGroup compilation, in-run grounding diffs, and toolsMode', () 
         },
       },
     });
-    const roleScopedGroup = M.prefixGroup('pg-role')
+    const roleScopedGroup = P.prefixGroup('pg-role')
       .sharedGrounding(makeSource('src:arch', 'ARCH_V1\nSHARED_LINE'), makeSource('src:stable', 'STABLE_DOC'))
       .sharedInstructions(makeSource('src:inst', 'SHARED_INSTRUCTIONS'))
-      .sharedRules(M.rules('r-global').global({ id: 'rule-1', directive: 'Never force push' }))
+      .sharedRules(P.rules('r-global').global({ id: 'rule-1', directive: 'Never force push' }))
       .toolsMode('role-scoped')
       .toAST();
-    const unionGroup = M.prefixGroup('pg-union').sharedGrounding(makeSource('src:arch', 'ARCH_V1\nSHARED_LINE')).toolsMode('union').toAST();
-    const readerAgent = M.agent('reader').model(makeModel('sonnet')).prefixGroup(roleScopedGroup).tools(SAMPLE_DECLARED_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
-    const writerAgent = M.agent('writer').model(makeModel('sonnet')).prefixGroup(roleScopedGroup).tools(SAMPLE_EXTRA_COMPARE_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
-    const unionReader = M.agent('u-reader').model(makeModel('sonnet')).prefixGroup(unionGroup).tools(SAMPLE_DECLARED_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
-    const unionWriter = M.agent('u-writer').model(makeModel('sonnet')).prefixGroup(unionGroup).tools(SAMPLE_EXTRA_COMPARE_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
+    const unionGroup = P.prefixGroup('pg-union').sharedGrounding(makeSource('src:arch', 'ARCH_V1\nSHARED_LINE')).toolsMode('union').toAST();
+    const readerAgent = P.agent('reader').model(makeModel('sonnet')).prefixGroup(roleScopedGroup).tools(SAMPLE_DECLARED_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
+    const writerAgent = P.agent('writer').model(makeModel('sonnet')).prefixGroup(roleScopedGroup).tools(SAMPLE_EXTRA_COMPARE_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
+    const unionReader = P.agent('u-reader').model(makeModel('sonnet')).prefixGroup(unionGroup).tools(SAMPLE_DECLARED_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
+    const unionWriter = P.agent('u-writer').model(makeModel('sonnet')).prefixGroup(unionGroup).tools(SAMPLE_EXTRA_COMPARE_TOOL_NODE).input(z.unknown()).output(z.string()).toAST();
 
     const resolutionContext = Object.freeze({ runId: 'run-1', activePartitions: Object.freeze(['core']), observedEffects: Object.freeze([]), resolveEnv: () => '' });
     const compiled = await compileRunWirePrefixes({
@@ -241,9 +241,9 @@ describe('M.prefixGroup compilation, in-run grounding diffs, and toolsMode', () 
   });
 });
 
-describe('M.lessons scoring, retirement, outcome deduplication, _harnessMeta, distillation, and signals', () => {
+describe('P.lessons scoring, retirement, outcome deduplication, _harnessMeta, distillation, and signals', () => {
   it('computes exact Score(L, Q) math and enforces 3-way disjunction retirement including 0/0 protection and gate_rejected_recovered eviction', () => {
-    const lessonsNode = M.lessons('lessons-1')
+    const lessonsNode = P.lessons('lessons-1')
       .store(SAMPLE_LESSON_STORE_NODE)
       .scoring(($s: LessonScoringBuilder) =>
         $s.slidingWindowInjections(6).partitionMatchBoost(0.5).decayOnPartitionEpochChange(0.8).recall({ maxItems: 5, minScore: 0.2 }),
@@ -283,9 +283,9 @@ describe('M.lessons scoring, retirement, outcome deduplication, _harnessMeta, di
     expect(mergeLessonOutcomePrecedence('gate_rejected_unrecovered', 'violated')).toBe('violated');
     expect(mergeLessonOutcomePrecedence('violated', 'clean_pass')).toBe('violated');
 
-    const promoteSig = M.signal('sig:promote', z.object({ id: z.string(), directive: z.string() }));
+    const promoteSig = P.signal('sig:promote', z.object({ id: z.string(), directive: z.string() }));
     const distillerModel = makeModel('distiller-sonnet');
-    const lessonsBuilder = M.lessons<{ readonly task: string }>('lessons-main')
+    const lessonsBuilder = P.lessons<{ readonly task: string }>('lessons-main')
       .store(SAMPLE_LESSON_STORE_NODE)
       .queryFrom(z.object({ task: z.string() }), (inp: { readonly task: string }) => `custom-query:${inp.task}`)
       .scoring(($s: LessonScoringBuilder) => $s.recall({ maxItems: 5, minScore: 0.1 }))
@@ -373,9 +373,9 @@ describe('M.lessons scoring, retirement, outcome deduplication, _harnessMeta, di
       source: makeSource('src:rule', 'SOURCED_RULE_DIRECTIVE'), enforceBeforeStopChecks: Object.freeze([]),
     });
 
-    const evalAgent = M.agent<string>('eval-agent')
+    const evalAgent = P.agent<string>('eval-agent')
       .model(distillerModel).grounding(makeSource('src:actor-g', 'ACTOR_GROUNDING_TEXT')).instructions(makeSource('src:actor-i', 'ACTOR_INSTRUCTION_TEXT'))
-      .skills(sourcedSkill).rules(M.rules('sourced-rules').scoped(sourcedRule)).lessons(lessonsBuilder, { recordOutcomes: false })
+      .skills(sourcedSkill).rules(P.rules('sourced-rules').scoped(sourcedRule)).lessons(lessonsBuilder, { recordOutcomes: false })
       .input(z.object({ task: z.string() })).output(z.object({ approved: z.boolean() })).toAST();
 
     const batchesBeforeEval = lessonStore.recordedBatches.length;
@@ -390,9 +390,9 @@ describe('M.lessons scoring, retirement, outcome deduplication, _harnessMeta, di
     expect(turn0Text).toContain('SOURCED_RULE_DIRECTIVE');
 
     const seenEvalOutputs: Array<Record<string, unknown>> = [];
-    const loopActor = M.agent<string>('loop-actor').model(distillerModel).input(z.object({ task: z.string() })).output(z.object({ patch: z.string() }));
-    const loopEvaluator = M.agent<string>('loop-eval').model(distillerModel).input(z.object({ patch: z.string() })).output(z.object({ passed: z.boolean(), feedback: z.string() }));
-    const loopNode = M.loop<string>('distill-loop')
+    const loopActor = P.agent<string>('loop-actor').model(distillerModel).input(z.object({ task: z.string() })).output(z.object({ patch: z.string() }));
+    const loopEvaluator = P.agent<string>('loop-eval').model(distillerModel).input(z.object({ patch: z.string() })).output(z.object({ passed: z.boolean(), feedback: z.string() }));
+    const loopNode = P.loop<string>('distill-loop')
       .input(z.object({ task: z.string() })).output(z.object({ patch: z.string() })).maxIterations(2)
       .distillLessonsInto(lessonsBuilder)
       .act('act-step', loopActor)

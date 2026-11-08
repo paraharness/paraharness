@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitWorktreeHandle } from '@metaharness/core';
+import type { GitWorktreeHandle } from '@paraharness/core';
 import type { HarnessMetaRecord } from '../../schemas/git-receipts.schema.js';
 import type {
   GitCheckpointPayload,

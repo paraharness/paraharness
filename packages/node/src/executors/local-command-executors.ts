@@ -6,7 +6,7 @@ import type {
   StepExecutionContext,
   ToolDriver,
   ToolExecutionResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { formatCommandToolContent } from './internal/format-command-tool-content.js';
 import { parseCommandStdout } from './internal/parse-command-stdout.js';
 import { resolveWorktreeEnvAndCwd } from './internal/process-group-lifecycle.js';

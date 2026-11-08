@@ -1,4 +1,4 @@
-import type { SqliteTopologyNode } from '@metaharness/core';
+import type { SqliteTopologyNode } from '@paraharness/core';
 import type { SqliteTopologyBuilder } from './sqlite-topology-builder.js';
 
 /**

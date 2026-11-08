@@ -2,7 +2,7 @@ import type { SourceValue } from './ast-foundation.types.js';
 import type { RulesNode } from './rules-node.js';
 
 /**
- * Passive AST node representing a shared KV-cache prompt prefix group (`M.prefixGroup(id)`).
+ * Passive AST node representing a shared KV-cache prompt prefix group (`P.prefixGroup(id)`).
  *
  * Pins shared grounding files, shared instructions, and global rules in declaration order so all participating
  * actors transmit a byte-identical wire `system` prompt alongside role-scoped or union wire `tools`.

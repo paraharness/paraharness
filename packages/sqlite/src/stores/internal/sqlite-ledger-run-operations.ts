@@ -1,4 +1,4 @@
-import type { CreateOrResumeRunInput, CreateOrResumeRunResult } from '@metaharness/core';
+import type { CreateOrResumeRunInput, CreateOrResumeRunResult } from '@paraharness/core';
 import type Database from 'better-sqlite3';
 import type { SqliteRunRow } from './sqlite-run-row.js';
 

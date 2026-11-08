@@ -15,7 +15,7 @@ export type {
   GitSnapshotAndResetNode,
   GitSyncReceipt,
   GitWorktreeHandle,
-} from '@metaharness/core';
+} from '@paraharness/core';
 export { createGitCandidateComparisonTools } from './builders/create-git-candidate-comparison-tools.js';
 export { createGitCommitAndPushBuilder } from './builders/create-git-commit-and-push-builder.js';
 export { createGitCowWorktreeBuilder } from './builders/create-git-cow-worktree-builder.js';

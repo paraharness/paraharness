@@ -1,5 +1,5 @@
 /**
- * Runtime adapter port for external issue or ticket trackers (`@metaharness/github`).
+ * Runtime adapter port for external issue or ticket trackers (`@paraharness/github`).
  *
  * Resolved from `TrackerASTNode` via `RuntimeExecutorRegistry.trackers[node.type]`.
  *

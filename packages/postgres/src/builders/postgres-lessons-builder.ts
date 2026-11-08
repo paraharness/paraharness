@@ -1,4 +1,4 @@
-import type { AstBuilder, PostgresLessonsNode } from '@metaharness/core';
+import type { AstBuilder, PostgresLessonsNode } from '@paraharness/core';
 
 /**
  * Fluent builder for a passive `PostgresLessonsNode` (`postgres:lessons`) AST node.

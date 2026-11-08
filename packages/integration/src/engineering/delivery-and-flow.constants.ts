@@ -1,7 +1,7 @@
-import { M, z } from '@metaharness/core';
-import { fs } from '@metaharness/fs';
-import { git } from '@metaharness/git';
-import { local } from '@metaharness/node';
+import { P, z } from '@paraharness/core';
+import { fs } from '@paraharness/fs';
+import { git } from '@paraharness/git';
+import { local } from '@paraharness/node';
 import { coordinator } from './coordinator.constants.js';
 import {
   deliveryInputSchema,
@@ -24,7 +24,7 @@ import { verifiedWorkerLoop } from './worker-and-evaluators.constants.js';
 /**
  * Git commit-and-push delivery step (`land-changes`) pushing accepted work to `fix/<ref>` (`CODING_SAMPLE.md` §6.9).
  *
- * Commits staged changes with message `<ref>: <title>` and pushes the branch using symbolic `M.env('GITHUB_TOKEN')`.
+ * Commits staged changes with message `<ref>: <title>` and pushes the branch using symbolic `P.env('GITHUB_TOKEN')`.
  */
 export const landChanges = git
   .commitAndPush('land-changes', {
@@ -33,7 +33,7 @@ export const landChanges = git
   })
   .input(deliveryInputSchema)
   .runner(runner)
-  .env({ GH_TOKEN: M.env('GITHUB_TOKEN') });
+  .env({ GH_TOKEN: P.env('GITHUB_TOKEN') });
 
 /**
  * Idempotency probe command (`check-existing-pr`) checking whether an open or merged PR already exists for `fix/<ref>` (`CODING_SAMPLE.md` §6.9).
@@ -46,7 +46,7 @@ export const checkExistingPr = local
   .output(z.boolean())
   .runner(runner)
   .stdin('closed')
-  .env({ GH_TOKEN: M.env('GITHUB_TOKEN') })
+  .env({ GH_TOKEN: P.env('GITHUB_TOKEN') })
   .argv(({ item }) => [
     'sh',
     '-c',
@@ -65,7 +65,7 @@ export const publishPr = local
   .input(deliveryInputSchema)
   .runner(runner)
   .stdin('closed')
-  .env({ GH_TOKEN: M.env('GITHUB_TOKEN') })
+  .env({ GH_TOKEN: P.env('GITHUB_TOKEN') })
   .argv(({ item, receipt, scopeReceipt }) => [
     'gh', 'pr', 'create',
     '--base', scopeReceipt.baseBranch,
@@ -82,7 +82,7 @@ export const publishPr = local
  * (promoting to `coordinator` on `contractViolation`), and `'auto'` items to the evaluated fast path
  * (`verifiedWorkerLoop.withPolicy(fastPathPolicy)`), followed by `landChanges` and `publishPr`.
  */
-export const engineeringFlow = M.flow('adaptive-engineering')
+export const engineeringFlow = P.flow('adaptive-engineering')
   .input(workItem)
   .scope(workspace)
   .telemetry(fs.telemetry())

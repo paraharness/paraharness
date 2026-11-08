@@ -5,7 +5,7 @@ import type {
   LocalStreamCheckToolNode,
   MaybeBuilder,
   NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Configuration options for a rolling-window regex circuit breaker on `local.streamCheck`.

@@ -604,15 +604,15 @@ export function computeSha256Hex(s: string): string { return createHash('sha256'
 
 ### Rule 3.5 — Library-First Mandate (Zero Hand-Rolled Commodity Utilities)
 - Choose an Owner-approved library over hand-rolled commodity infrastructure (`CLAUDE.MD` #2). Hand-rolling commodity parsers, graph traversals, diffs, search indices, queues, globs, atomic writes, process-tree killers, port probers, or vendor HTTP wire clients is a Defect Gate violation:
-  - **`@metaharness/lockfile`**: `p-queue` (`concurrency: 1` per-path serialization) + atomic `open(lockPath, 'wx')`, `.unref()`ed `utimes` heartbeat, and dead-PID / stale-`mtime` reclamation.
-  - **`@metaharness/core`**: `zod` v4 (`z.toJSONSchema()` for `zodToJsonSchema`), `@dagrejs/graphlib` (`Graph`, `alg.findCycles`, `alg.preorder` for topology/prerequisite DAGs), `diff` (`createTwoFilesPatch` for grounding diffs), `p-queue` (`concurrency: 1` for `StepContinuationQueue` & `ScopeLockManager`), `p-limit` (bounded fork/speculate concurrency).
-  - **`@metaharness/sqlite` & `@metaharness/postgres`**: `better-sqlite3` (`sqlite`), `pg` (`Pool` in `postgres` + `@electric-sql/pglite` in tests), `@dagrejs/graphlib`, `node-diff3` (`diff3Merge` for 3-way contract overlay merges), `minisearch` (BM25 lesson recall), `p-queue`.
-  - **`@metaharness/fs`**: `@metaharness/lockfile` (`withFileLock`), `tinyglobby` (globbing), `picomatch` (pre-compiled path matchers), `write-file-atomic` (atomic writes), `minisearch` (BM25 JSONL lesson recall), `p-queue`.
-  - **`@metaharness/markdown`**: `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, `yaml` (frontmatter YAML), `tinyglobby`, `picomatch`.
-  - **`@metaharness/node`**: `node-pty` (PTY daemons), `@modelcontextprotocol/sdk` (MCP stdio/SSE control-plane), `pidtree` + `fkill` (process-tree teardown), `get-port` (ephemeral ports), `wait-on` (TCP readiness), `p-queue`, `p-limit`.
-  - **`@metaharness/git`**: `@metaharness/lockfile` (`withFileLock`), `es-module-lexer` (`publicSurfaceCrossTester` export extraction), `write-file-atomic` (`harness-meta.json`), `picomatch`, `p-queue`.
-  - **`@metaharness/claude`, `@metaharness/openai`, `@metaharness/gemini`**: `@anthropic-ai/sdk`, `openai`, `@google/genai`.
-  - **`@metaharness/github`, `@metaharness/slack`, `@metaharness/stripe`, `@metaharness/netsuite`**: `@octokit/rest` + `@octokit/webhooks`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook`, `stripe`, `big.js` (exact decimal math).
+  - **`@paraharness/lockfile`**: `p-queue` (`concurrency: 1` per-path serialization) + atomic `open(lockPath, 'wx')`, `.unref()`ed `utimes` heartbeat, and dead-PID / stale-`mtime` reclamation.
+  - **`@paraharness/core`**: `zod` v4 (`z.toJSONSchema()` for `zodToJsonSchema`), `@dagrejs/graphlib` (`Graph`, `alg.findCycles`, `alg.preorder` for topology/prerequisite DAGs), `diff` (`createTwoFilesPatch` for grounding diffs), `p-queue` (`concurrency: 1` for `StepContinuationQueue` & `ScopeLockManager`), `p-limit` (bounded fork/speculate concurrency).
+  - **`@paraharness/sqlite` & `@paraharness/postgres`**: `better-sqlite3` (`sqlite`), `pg` (`Pool` in `postgres` + `@electric-sql/pglite` in tests), `@dagrejs/graphlib`, `node-diff3` (`diff3Merge` for 3-way contract overlay merges), `minisearch` (BM25 lesson recall), `p-queue`.
+  - **`@paraharness/fs`**: `@paraharness/lockfile` (`withFileLock`), `tinyglobby` (globbing), `picomatch` (pre-compiled path matchers), `write-file-atomic` (atomic writes), `minisearch` (BM25 JSONL lesson recall), `p-queue`.
+  - **`@paraharness/markdown`**: `mdast-util-from-markdown`, `mdast-util-to-markdown`, `mdast-util-frontmatter`, `micromark-extension-frontmatter`, `yaml` (frontmatter YAML), `tinyglobby`, `picomatch`.
+  - **`@paraharness/node`**: `node-pty` (PTY daemons), `@modelcontextprotocol/sdk` (MCP stdio/SSE control-plane), `pidtree` + `fkill` (process-tree teardown), `get-port` (ephemeral ports), `wait-on` (TCP readiness), `p-queue`, `p-limit`.
+  - **`@paraharness/git`**: `@paraharness/lockfile` (`withFileLock`), `es-module-lexer` (`publicSurfaceCrossTester` export extraction), `write-file-atomic` (`harness-meta.json`), `picomatch`, `p-queue`.
+  - **`@paraharness/claude`, `@paraharness/openai`, `@paraharness/gemini`**: `@anthropic-ai/sdk`, `openai`, `@google/genai`.
+  - **`@paraharness/github`, `@paraharness/slack`, `@paraharness/stripe`, `@paraharness/netsuite`**: `@octokit/rest` + `@octokit/webhooks`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook`, `stripe`, `big.js` (exact decimal math).
 
 ---
 
@@ -749,7 +749,7 @@ export function getFirstBranchOutput<TOut>(branches: readonly BranchOutcome<TOut
 ```
 
 ### Rule 5.2 — Zero Import-Time Side Effects & Symbolic `EnvRef` Resolution
-- Importing any module (`src/**`, `test/fixtures/**`) must perform **zero I/O**, spawn zero subprocesses, open zero connections, and mutate zero global state (CLI scripts in `.agents/hooks/**` and `scripts/**` may execute their entrypoint per Rule 1.1). Builders and AST nodes must never read `.env` or `process.env[key]` at declaration time; represent secrets symbolically via `M.env('KEY')` (`EnvRef`) and resolve them exclusively inside leaf adapter execution.
+- Importing any module (`src/**`, `test/fixtures/**`) must perform **zero I/O**, spawn zero subprocesses, open zero connections, and mutate zero global state (CLI scripts in `.agents/hooks/**` and `scripts/**` may execute their entrypoint per Rule 1.1). Builders and AST nodes must never read `.env` or `process.env[key]` at declaration time; represent secrets symbolically via `P.env('KEY')` (`EnvRef`) and resolve them exclusively inside leaf adapter execution.
 
 **DON'T:**
 ```ts
@@ -761,7 +761,7 @@ export function createOpenAiDriver(model: string): ModelDriverNode { return { ty
 ```ts
 export function resolveEnvRef(ref: EnvRef, env: Readonly<Record<string, string | undefined>>): string {
   const val = env[ref.key];
-  if (val === undefined || val.length === 0) throw new Error(`Missing env '${ref.key}' referenced by M.env('${ref.key}').`);
+  if (val === undefined || val.length === 0) throw new Error(`Missing env '${ref.key}' referenced by P.env('${ref.key}').`);
   return val;
 }
 ```

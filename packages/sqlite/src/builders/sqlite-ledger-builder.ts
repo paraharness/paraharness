@@ -1,4 +1,4 @@
-import type { AstBuilder, SqliteLedgerNode } from '@metaharness/core';
+import type { AstBuilder, SqliteLedgerNode } from '@paraharness/core';
 import type { CompactionConfigBuilder } from './compaction-config-builder.js';
 
 /**

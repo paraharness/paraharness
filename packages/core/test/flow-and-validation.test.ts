@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BudgetApprovalSchema, type GitAbortMeta, type GitScopeReceipt, type GitWorktreeHandle, M,
+  BudgetApprovalSchema, type GitAbortMeta, type GitScopeReceipt, type GitWorktreeHandle, P,
   type LaneBuilder, type LeaseDelta, type LoopBuilder, SpeculationInputSchema,
   type UniversalStepTelemetry, z,
 } from '../src/index.js';
@@ -20,20 +20,20 @@ const FlowInputSchema = z.object({
   retryReason: z.string().optional(),
 });
 const StepOutputSchema = z.object({ prUrl: z.string(), commits: z.number().default(1) });
-const LeaseRequestInterrupt = M.interrupt('lease-req').payload(z.object({ partition: z.string(), glob: z.string() }));
-const EscalationInterrupt = M.interrupt('normative-esc').payload(z.object({ question: z.string() }));
-const RewindSignal = M.signal('ci-failed').payload(z.object({ runId: z.string(), failureLog: z.string() }));
+const LeaseRequestInterrupt = P.interrupt('lease-req').payload(z.object({ partition: z.string(), glob: z.string() }));
+const EscalationInterrupt = P.interrupt('normative-esc').payload(z.object({ question: z.string() }));
+const RewindSignal = P.signal('ci-failed').payload(z.object({ runId: z.string(), failureLog: z.string() }));
 
-describe('M.flow, M.lane, and M.harness end-to-end compilation and generic inference', () => {
-  it('propagates TReceipt, TCustomMetrics, TAbortMeta, and TStepOutputs across M.flow, M.lane, and M.harness', () => {
-    const bidirectionalHuman = M.human('tech-lead').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+describe('P.flow, P.lane, and P.harness end-to-end compilation and generic inference', () => {
+  it('propagates TReceipt, TCustomMetrics, TAbortMeta, and TStepOutputs across P.flow, P.lane, and P.harness', () => {
+    const bidirectionalHuman = P.human('tech-lead').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
     const budgetHuman = bidirectionalHuman.withName('budget-owner').output(BudgetApprovalSchema);
-    const baseWorker = M.agent<GitWorktreeHandle>('worker')
+    const baseWorker = P.agent<GitWorktreeHandle>('worker')
       .model(SAMPLE_MODEL_NODE)
       .tools(SAMPLE_DECLARED_TOOL_NODE)
       .input(FlowInputSchema)
       .output(StepOutputSchema);
-    const adjudicator = M.agent<GitWorktreeHandle>('lease-adjudicator')
+    const adjudicator = P.agent<GitWorktreeHandle>('lease-adjudicator')
       .model(SAMPLE_MODEL_NODE)
       .input(z.object({ partition: z.string(), glob: z.string() }))
       .output(z.object({ grant: z.boolean(), rationale: z.string() }));
@@ -49,12 +49,12 @@ describe('M.flow, M.lane, and M.harness end-to-end compilation and generic infer
       SAMPLE_SCOPE_RECEIPT_SCHEMA,
       SAMPLE_CROSS_REPORT_SCHEMA,
     );
-    const arbiterAgent = M.agent<GitWorktreeHandle>('arbiter')
+    const arbiterAgent = P.agent<GitWorktreeHandle>('arbiter')
       .model(SAMPLE_MODEL_NODE)
       .input(arbiterInputSchema)
       .output(arbiterVerdictSchema);
 
-    const orchestrator = M.agent<GitWorktreeHandle>('orchestrator')
+    const orchestrator = P.agent<GitWorktreeHandle>('orchestrator')
       .model(SAMPLE_MODEL_NODE)
       .input(FlowInputSchema)
       .output(StepOutputSchema)
@@ -124,7 +124,7 @@ describe('M.flow, M.lane, and M.harness end-to-end compilation and generic infer
         $ci.pauseSiblingForksInPartitions(() => ['db']).suspendAndReturnToParent(),
       );
 
-    const flow = M.flow('engineering-flow')
+    const flow = P.flow('engineering-flow')
       .input(FlowInputSchema)
       .scope(SAMPLE_TIER3_SCOPE_NODE)
       .telemetry(SAMPLE_TELEMETRY_COLLECTOR_NODE)
@@ -189,7 +189,7 @@ describe('M.flow, M.lane, and M.harness end-to-end compilation and generic infer
       )
       .exit('pr-opened');
 
-    const lane = M.lane('default-lane')
+    const lane = P.lane('default-lane')
       .input(FlowInputSchema)
       .key((item: z.output<typeof FlowInputSchema>) => item.id)
       .tracker(SAMPLE_TRACKER_NODE, ($t) =>
@@ -221,7 +221,7 @@ describe('M.flow, M.lane, and M.harness end-to-end compilation and generic infer
           .rewindTo('execute-work'),
       );
 
-    const harnessNode = M.harness('meta-harness').ledger(SAMPLE_LEDGER_NODE).pools(SAMPLE_RUNNER_NODE).lanes(lane).toAST();
+    const harnessNode = P.harness('meta-harness').ledger(SAMPLE_LEDGER_NODE).pools(SAMPLE_RUNNER_NODE).lanes(lane).toAST();
     expect(Object.isFrozen(harnessNode)).toBe(true);
     expect(harnessNode.lanes[0]?.tracker?.stateMappings).toEqual({
       queued: 'queued',
@@ -236,7 +236,7 @@ describe('M.flow, M.lane, and M.harness end-to-end compilation and generic infer
 
 describe('Static build-time validation rejections', () => {
   const SimpleSchema = z.object({ id: z.string() });
-  const SimpleAgent = M.agent('simple-agent').model(SAMPLE_MODEL_NODE).input(SimpleSchema).output(SimpleSchema);
+  const SimpleAgent = P.agent('simple-agent').model(SAMPLE_MODEL_NODE).input(SimpleSchema).output(SimpleSchema);
 
   it('rejects .fork(), .speculate(), and .mutatePlan() on Tier-1 or Tier-2 non-branchable scopes', () => {
     const forkingAgent = SimpleAgent.capabilities(($c) =>
@@ -259,12 +259,12 @@ describe('Static build-time validation rejections', () => {
 
     for (const actor of [forkingAgent, speculatingAgent, mutatingAgent]) {
       expect(() =>
-        M.flow('tier1-branch-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('run', actor).exit('done').toAST(),
+        P.flow('tier1-branch-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('run', actor).exit('done').toAST(),
       ).toThrowError(
         "Flow 'tier1-branch-flow' scope 'sample:tier1-scope' has capabilityTier 'scope', but actor 'simple-agent' declares branching capabilities (.fork, .speculate, or .mutatePlan) requiring capabilityTier 'branchable'.",
       );
       expect(() =>
-        M.flow('tier2-branch-flow').input(SimpleSchema).scope(SAMPLE_TIER2_SCOPE_NODE).step('run', actor).exit('done').toAST(),
+        P.flow('tier2-branch-flow').input(SimpleSchema).scope(SAMPLE_TIER2_SCOPE_NODE).step('run', actor).exit('done').toAST(),
       ).toThrowError(
         "Flow 'tier2-branch-flow' scope 'sample:tier2-scope' has capabilityTier 'checkpointable', but actor 'simple-agent' declares branching capabilities (.fork, .speculate, or .mutatePlan) requiring capabilityTier 'branchable'.",
       );
@@ -272,8 +272,8 @@ describe('Static build-time validation rejections', () => {
   });
 
   it('rejects subprocess-post-flight tools under policy guards and unhooked .replaceWith() on Tier-1 scopes', () => {
-    const guardedPolicy = M.policy<GitWorktreeHandle>('guarded').guard(SAMPLE_GUARD_NODE).onViolation('deny-with-error');
-    const postFlightAgent = M.agent<GitWorktreeHandle>('post-flight-agent')
+    const guardedPolicy = P.policy<GitWorktreeHandle>('guarded').guard(SAMPLE_GUARD_NODE).onViolation('deny-with-error');
+    const postFlightAgent = P.agent<GitWorktreeHandle>('post-flight-agent')
       .model(SAMPLE_MODEL_NODE)
       .policy(guardedPolicy)
       .tools(SAMPLE_POST_FLIGHT_SUBPROCESS_TOOL_NODE)
@@ -281,12 +281,12 @@ describe('Static build-time validation rejections', () => {
       .output(SimpleSchema);
 
     expect(() =>
-      M.flow('tier1-postflight-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('run', postFlightAgent).exit('done').toAST(),
+      P.flow('tier1-postflight-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('run', postFlightAgent).exit('done').toAST(),
     ).toThrowError(
       "Flow 'tier1-postflight-flow' scope 'sample:tier1-scope' has capabilityTier 'scope', but actor 'post-flight-agent' mounts subprocess-post-flight tool 'shell_exec' under policy 'guarded' requiring capabilityTier 'checkpointable' or 'branchable'.",
     );
     expect(() =>
-      M.flow('tier1-replace-flow')
+      P.flow('tier1-replace-flow')
         .input(SimpleSchema)
         .scope(SAMPLE_TIER1_SCOPE_NODE)
         .step('run', SimpleAgent, ($s) =>
@@ -298,18 +298,18 @@ describe('Static build-time validation rejections', () => {
       "Flow 'tier1-replace-flow' step 'run' configures .replaceWith() on interrupt 'normative-esc' without .onAbort() on a Tier-1 'scope' (sample:tier1-scope); bind .onAbort() or use a 'checkpointable' or 'branchable' scope.",
     );
 
-    const abortHookPolicy = M.policy('adj-abort-policy').onAbort(SAMPLE_ABORT_HOOK_NODE);
-    const hookedAdjudicator = M.agent('hooked-adjudicator')
+    const abortHookPolicy = P.policy('adj-abort-policy').onAbort(SAMPLE_ABORT_HOOK_NODE);
+    const hookedAdjudicator = P.agent('hooked-adjudicator')
       .model(SAMPLE_MODEL_NODE)
       .policy(abortHookPolicy)
       .input(z.object({ question: z.string() }))
       .output(z.object({ verdict: z.string() }));
-    const unhookedAdjudicator = M.agent('unhooked-adjudicator')
+    const unhookedAdjudicator = P.agent('unhooked-adjudicator')
       .model(SAMPLE_MODEL_NODE)
       .input(z.object({ question: z.string() }))
       .output(z.object({ verdict: z.string() }));
 
-    const nestedHookedFlow = M.flow('tier1-nested-hooked-replace')
+    const nestedHookedFlow = P.flow('tier1-nested-hooked-replace')
       .input(SimpleSchema)
       .scope(SAMPLE_TIER1_SCOPE_NODE)
       .step('run', SimpleAgent, ($s) =>
@@ -327,7 +327,7 @@ describe('Static build-time validation rejections', () => {
     expect(nestedHookedFlow.id).toBe('tier1-nested-hooked-replace');
 
     expect(() =>
-      M.flow('tier1-nested-unhooked-replace')
+      P.flow('tier1-nested-unhooked-replace')
         .input(SimpleSchema)
         .scope(SAMPLE_TIER1_SCOPE_NODE)
         .step('run', SimpleAgent, ($s) =>
@@ -348,7 +348,7 @@ describe('Static build-time validation rejections', () => {
   });
 
   it('rejects clone-transcript forks across distinct roleKeys when prefixGroup uses role-scoped toolsMode', () => {
-    const roleScopedPrefix = M.prefixGroup('role-scoped-group').toolsMode('role-scoped');
+    const roleScopedPrefix = P.prefixGroup('role-scoped-group').toolsMode('role-scoped');
     const childWithExtraTools = SimpleAgent.withTools(SAMPLE_EXTRA_COMPARE_TOOL_NODE);
 
     expect(() =>
@@ -364,10 +364,10 @@ describe('Static build-time validation rejections', () => {
     );
   });
 
-  it('rejects notify-only human channels on .ask(), .escalate(), human.withName().output(), and M.lane.maxCostUsd()', () => {
-    const notifyOnlyHuman = M.human('pager').notify(SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE);
+  it('rejects notify-only human channels on .ask(), .escalate(), human.withName().output(), and P.lane.maxCostUsd()', () => {
+    const notifyOnlyHuman = P.human('pager').notify(SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE);
     expect(() => notifyOnlyHuman.withName('approver').output(BudgetApprovalSchema)).toThrowError(
-      "Invalid human channel on 'pager' in M.human.withName().output(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
+      "Invalid human channel on 'pager' in P.human.withName().output(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
     );
     expect(() =>
       SimpleAgent.onInterrupt(EscalationInterrupt, ($i) => $i.ask(notifyOnlyHuman, BudgetApprovalSchema).resumeWith(() => 'ok')),
@@ -380,37 +380,37 @@ describe('Static build-time validation rejections', () => {
       "Invalid human channel on 'pager' in .escalate(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
     );
     expect(() =>
-      M.lane('bad-cost-lane').maxCostUsd(25, notifyOnlyHuman.withName('ops').output(BudgetApprovalSchema)),
+      P.lane('bad-cost-lane').maxCostUsd(25, notifyOnlyHuman.withName('ops').output(BudgetApprovalSchema)),
     ).toThrowError(
-      "Invalid human channel on 'pager' in M.human.withName().output(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
+      "Invalid human channel on 'pager' in P.human.withName().output(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
     );
   });
 
   it('rejects incomplete FlowBranchBuilder, ChildInterruptBuilder, LoopBuilder.returnOutputFrom(), and LaneBuilder.rewindTo()', () => {
     expect(() =>
-      M.flow('empty-when')
+      P.flow('empty-when')
         .input(SimpleSchema)
         .scope(SAMPLE_TIER1_SCOPE_NODE)
         .branch('b', ($b) => $b.output(SimpleSchema).when(() => true, ($sub) => $sub).otherwise(($sub) => $sub.step('s', SimpleAgent))),
     ).toThrowError("Flow branch 'b' .when() sub-branch must declare at least one step.");
 
     expect(() =>
-      M.flow('empty-otherwise')
+      P.flow('empty-otherwise')
         .input(SimpleSchema)
         .scope(SAMPLE_TIER1_SCOPE_NODE)
         .branch('b', ($b) => $b.output(SimpleSchema).when(() => true, ($sub) => $sub.step('s', SimpleAgent)).otherwise(($sub) => $sub)),
     ).toThrowError("Flow branch 'b' .otherwise() sub-branch must declare at least one step.");
 
     expect(() =>
-      M.flow('incomplete-branch').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).branch('b', ($b) => $b.output(SimpleSchema)),
+      P.flow('incomplete-branch').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).branch('b', ($b) => $b.output(SimpleSchema)),
     ).toThrowError("Flow branch 'b' requires at least one .when(...) case and an .otherwise(...) fallback.");
 
     expect(() =>
       SimpleAgent.onChildInterrupt(EscalationInterrupt, ($ci) => $ci.pauseSiblingForksInPartitions(() => ['db'])),
     ).toThrowError("Child interrupt handler for 'normative-esc' requires .suspendAndReturnToParent().");
 
-    const evaluator = M.agent('eval').model(SAMPLE_MODEL_NODE).input(SimpleSchema).output(z.object({ ok: z.boolean() }));
-    const untypedLoop: LoopBuilder<{ readonly id: string }, { readonly id: string }, unknown, string> = M.loop('bad-loop')
+    const evaluator = P.agent('eval').model(SAMPLE_MODEL_NODE).input(SimpleSchema).output(z.object({ ok: z.boolean() }));
+    const untypedLoop: LoopBuilder<{ readonly id: string }, { readonly id: string }, unknown, string> = P.loop('bad-loop')
       .input(SimpleSchema)
       .output(SimpleSchema)
       .act('act-step', SimpleAgent)
@@ -423,8 +423,8 @@ describe('Static build-time validation rejections', () => {
       "Loop 'bad-loop' returnOutputFrom('wrong-step') must match the .act() step ID ('act-step').",
     );
 
-    const validFlow = M.flow('valid-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('step-one', SimpleAgent).exit('done');
-    const untypedLane: LaneBuilder<{ readonly id: string }, string> = M.lane('bad-rewind-lane')
+    const validFlow = P.flow('valid-flow').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).step('step-one', SimpleAgent).exit('done');
+    const untypedLane: LaneBuilder<{ readonly id: string }, string> = P.lane('bad-rewind-lane')
       .input(SimpleSchema)
       .key((item: { readonly id: string }) => item.id)
       .runs(validFlow);
@@ -434,7 +434,7 @@ describe('Static build-time validation rejections', () => {
       "Lane 'bad-rewind-lane' signal handler on 'ci-failed' rewinds to unknown step ID 'non-existent-step' not present in flow 'valid-flow'.",
     );
 
-    const outOfOrderFlow = M.flow('out-of-order-flow')
+    const outOfOrderFlow = P.flow('out-of-order-flow')
       .step('step-one', SimpleAgent)
       .input(SimpleSchema)
       .scope(SAMPLE_TIER1_SCOPE_NODE)
@@ -442,7 +442,7 @@ describe('Static build-time validation rejections', () => {
       .toAST();
     expect(outOfOrderFlow.nodes.map((n) => n.id)).toEqual(['step-one']);
 
-    const outOfOrderLane = M.lane('out-of-order-lane')
+    const outOfOrderLane = P.lane('out-of-order-lane')
       .key(() => 'item-1')
       .waitFor(() => ['dep-1'], 'abandoned')
       .onSignal(RewindSignal, ($s) => $s.update((cur: unknown) => cur).rewindTo('step-one'))
@@ -454,7 +454,7 @@ describe('Static build-time validation rejections', () => {
     expect(outOfOrderLane.flow.id).toBe('out-of-order-flow');
 
     expect(() =>
-      M.lane('out-of-order-bad-rewind')
+      P.lane('out-of-order-bad-rewind')
         .onSignal(RewindSignal, ($s) => $s.update((cur: unknown) => cur).rewindTo('non-existent-step'))
         .runs(validFlow),
     ).toThrowError(

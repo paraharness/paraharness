@@ -1,4 +1,4 @@
-import type { EnvRef, PostgresRulesSourceNode } from '@metaharness/core';
+import type { EnvRef, PostgresRulesSourceNode } from '@paraharness/core';
 import { assertValidPostgresIdentifier } from '../ddl/internal/resolve-postgres-client.js';
 import type { PostgresGlobalRulesBuilder } from './postgres-global-rules-builder.js';
 import type { PostgresGlobalRulesOptions } from './postgres-namespace-contract.js';
@@ -9,7 +9,7 @@ import type { PostgresGlobalRulesOptions } from './postgres-namespace-contract.j
  * Validates `options.table` against strict SQL identifier rules (`^[A-Za-z_][A-Za-z0-9_]*$`)
  * immediately at declaration time without opening a PostgreSQL connection.
  *
- * @param {string | EnvRef}            uri     - PostgreSQL connection URI or symbolic `M.env(...)` reference.
+ * @param {string | EnvRef}            uri     - PostgreSQL connection URI or symbolic `P.env(...)` reference.
  * @param {PostgresGlobalRulesOptions} options - Options specifying the target global rules table name.
  *
  * @returns {PostgresGlobalRulesBuilder} Immutable builder for `PostgresRulesSourceNode`.

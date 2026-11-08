@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { DistilledLessonCandidate } from '../ports/distilled-lesson-candidate.js';
 
 /**
- * Zod schema validating a human budget approval response (`M.lane.maxCostUsd`).
+ * Zod schema validating a human budget approval response (`P.lane.maxCostUsd`).
  */
 export const BudgetApprovalSchema = z.object({
   approved: z.boolean(),

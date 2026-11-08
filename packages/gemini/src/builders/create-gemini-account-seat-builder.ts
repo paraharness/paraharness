@@ -1,4 +1,4 @@
-import type { EnvRef, GeminiAccountSeatNode } from '@metaharness/core';
+import type { EnvRef, GeminiAccountSeatNode } from '@paraharness/core';
 import type { GeminiAccountSeatBuilder } from './gemini-account-seat-builder.js';
 
 /**

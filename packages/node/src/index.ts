@@ -15,7 +15,7 @@ export type {
   NodeMcpSseNode,
   NodeMcpStdioNode,
   NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 export { createAllowBinariesBuilder } from './builders/create-allow-binaries-builder.js';
 export { createDenyNetworkBuilder } from './builders/create-deny-network-builder.js';
 export { createLocalCommandBuilder } from './builders/create-local-command-builder.js';

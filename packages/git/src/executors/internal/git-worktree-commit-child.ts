@@ -2,7 +2,7 @@ import type {
   GitScopeReceipt,
   GitWorktreeHandle,
   ReconcileResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { GitScopeReceiptSchema } from '../../schemas/git-receipts.schema.js';
 import { gitCheckpointStatusMap } from './git-checkpoint-status-map.js';
 import { runGitCommand } from './git-cli-runner.js';

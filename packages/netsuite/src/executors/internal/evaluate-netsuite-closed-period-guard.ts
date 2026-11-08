@@ -2,7 +2,7 @@ import type {
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
   ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { NetSuiteClosedPeriodGuardNode } from '../../nodes/netsuite-closed-period-guard-node.js';
 
 /**

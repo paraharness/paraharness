@@ -2,12 +2,12 @@ import { createHmac } from 'node:crypto';
 import { Octokit } from '@octokit/rest';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  M,
+  P,
   createExecutorRegistry,
   z,
   type RuntimeDriverContext,
   type StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   GithubIssuesTrackerAdapter,
   GithubWebhookStreamSource,
@@ -57,12 +57,12 @@ function createTestStepContext(
   };
 }
 
-describe('@metaharness/github adapter', () => {
+describe('@paraharness/github adapter', () => {
   describe('github.issues builder and GithubIssuesTrackerAdapter', () => {
     it('compiles passive GithubIssuesTrackerNode and polls/updates issue labels using resolved EnvRef', async () => {
       const trackerNode = github.issues({
         repo: 'acme/app',
-        token: M.env('GITHUB_TOKEN'),
+        token: P.env('GITHUB_TOKEN'),
         labels: ['agent-ready', 'partition:api'],
       });
 
@@ -139,7 +139,7 @@ describe('@metaharness/github adapter', () => {
     it('rejects missing GITHUB_TOKEN environment variable at poll time', async () => {
       const trackerNode = github.issues({
         repo: 'acme/app',
-        token: M.env('MISSING_GH_TOKEN'),
+        token: P.env('MISSING_GH_TOKEN'),
       });
       const transport = new RecordedGithubHttpTransport();
       const ctx = createTestDriverContext({}, transport);
@@ -219,7 +219,7 @@ describe('@metaharness/github adapter', () => {
     it('applies default port 3000 and path /webhooks/github on AST node', () => {
       const streamNode = github.webhookStream({
         repo: 'acme/app',
-        secret: M.env('GH_WEBHOOK_SECRET'),
+        secret: P.env('GH_WEBHOOK_SECRET'),
         events: ['pull_request.closed'],
       });
 
@@ -239,7 +239,7 @@ describe('@metaharness/github adapter', () => {
         repo: 'acme/app',
         port: 0,
         path: '/webhooks/github',
-        secret: M.env('GH_WEBHOOK_SECRET'),
+        secret: P.env('GH_WEBHOOK_SECRET'),
         events: ['pull_request.closed'],
       });
 
@@ -351,7 +351,7 @@ describe('@metaharness/github adapter', () => {
       const prStepNode = github
         .createOrUpdatePr('open-or-update-pr', {
           repo: 'acme/app',
-          token: M.env('GITHUB_TOKEN'),
+          token: P.env('GITHUB_TOKEN'),
           branch: (item: z.infer<typeof prInputSchema>) => `fix/${item.ref}`,
           baseBranch: (item: z.infer<typeof prInputSchema>) => item.targetBase,
           title: (item: z.infer<typeof prInputSchema>) => item.title,

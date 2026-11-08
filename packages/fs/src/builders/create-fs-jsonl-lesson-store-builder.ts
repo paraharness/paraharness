@@ -1,4 +1,4 @@
-import type { FsJsonlLessonStoreNode } from '@metaharness/core';
+import type { FsJsonlLessonStoreNode } from '@paraharness/core';
 
 /**
  * Configuration options for `fs.jsonlLessonStore(options)`.

@@ -1,11 +1,11 @@
-import type { AstBuilder, NodeHttpControlPlaneNode } from '@metaharness/core';
+import type { AstBuilder, NodeHttpControlPlaneNode } from '@paraharness/core';
 import type { McpServerOptions } from './mcp-namespace-contract.js';
 
 /**
  * Creates an HTTP / MCP control-plane builder and passive AST node (`mcp.server({ port })`).
  *
  * Compiles to a frozen `NodeHttpControlPlaneNode` (`type: 'node:http-control-plane'`) bound
- * to `options.port` when exposed on `M.harness().expose(...)`.
+ * to `options.port` when exposed on `P.harness().expose(...)`.
  *
  * @param {McpServerOptions} options - Control-plane port configuration.
  *

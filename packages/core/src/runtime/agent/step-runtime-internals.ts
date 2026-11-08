@@ -19,7 +19,7 @@ import type { ServiceSessionRegistry } from '../services/service-session-registr
 /**
  * Mutable sink receiving a child agent or loop step's final continuation stack, leaf message ID, and lesson outcomes (`SPEC.md` §3.7.2 & §3.8).
  *
- * Read by parent `.fork()`, `.speculate()`, and `M.loop` orchestrators in `finally` blocks.
+ * Read by parent `.fork()`, `.speculate()`, and `P.loop` orchestrators in `finally` blocks.
  */
 export interface StepRuntimeChildOutcomeSink {
   /** Final or suspended continuation stack produced by the child step. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BudgetApprovalSchema, type ExecutionContext, type GitScopeReceipt, type GitWorktreeHandle, M,
+  BudgetApprovalSchema, type ExecutionContext, type GitScopeReceipt, type GitWorktreeHandle, P,
   type InterruptBuilder, type LessonDistillationBuilder, type LessonRecord, type LessonRetirementBuilder,
   type LessonScoringBuilder, type LessonSignalTriggerBuilder, type MarkdownFrontmatterSourceNode,
   type PolicyLimitExceededBuilder, type PolicyViolation, type PoolCandidateState,
@@ -14,11 +14,11 @@ import {
   SAMPLE_STREAM_SOURCE_NODE, SAMPLE_TOPOLOGY_STORE_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 
-describe('M.topology DAG validation and graph queries', () => {
-  const prMergedSignal = M.signal('pr-merged').payload(z.object({ runId: z.string(), prNumber: z.number() }));
+describe('P.topology DAG validation and graph queries', () => {
+  const prMergedSignal = P.signal('pr-merged').payload(z.object({ runId: z.string(), prNumber: z.number() }));
 
   it('compiles a valid topology DAG and computes dependentsOf and affectedBy', () => {
-    const repoTopology = M.topology('repo-contracts')
+    const repoTopology = P.topology('repo-contracts')
       .store(SAMPLE_TOPOLOGY_STORE_NODE)
       .partitions({
         db: { dependsOn: [] },
@@ -43,17 +43,17 @@ describe('M.topology DAG validation and graph queries', () => {
     expect(affectedBy(ast, 'db')).toEqual(['db', 'api', 'web']);
   });
 
-  it('rejects unknown dependencies, self-cycles, and multi-node cycles in M.topology', () => {
+  it('rejects unknown dependencies, self-cycles, and multi-node cycles in P.topology', () => {
     expect(() =>
-      M.topology('unknown-dep').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions<string>({ db: { dependsOn: ['missing'] } }),
+      P.topology('unknown-dep').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions<string>({ db: { dependsOn: ['missing'] } }),
     ).toThrowError("Topology 'unknown-dep' partition 'db' depends on unknown partition 'missing'.");
 
     expect(() =>
-      M.topology('self-cycle').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ db: { dependsOn: ['db'] } }),
+      P.topology('self-cycle').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ db: { dependsOn: ['db'] } }),
     ).toThrowError("Topology 'self-cycle' contains a self-dependency cycle on partition 'db' (db -> db).");
 
     expect(() =>
-      M.topology('multi-cycle')
+      P.topology('multi-cycle')
         .store(SAMPLE_TOPOLOGY_STORE_NODE)
         .partitions({ db: { dependsOn: ['web'] }, api: { dependsOn: ['db'] }, web: { dependsOn: ['api'] } }),
     ).toThrowError("Topology 'multi-cycle' contains a dependency cycle: db -> web -> api -> db.");
@@ -63,18 +63,18 @@ describe('M.topology DAG validation and graph queries', () => {
 describe('Primitive and context builders (signal, interrupt, stream, pool, prefixGroup, rules, skill, lessons, policy, human, command)', () => {
   it('maintains copy-on-write immutability and deep-freeze across signal, interrupt, stream, and pool builders', () => {
     const defaultPayloadSchema = z.object({ ok: z.boolean().default(true) });
-    const directSignal: SignalBuilder<{ readonly ok: boolean }> = M.signal('sig-default', defaultPayloadSchema);
-    const directInterrupt: InterruptBuilder<{ readonly ok: boolean }> = M.interrupt('intr-default', defaultPayloadSchema);
+    const directSignal: SignalBuilder<{ readonly ok: boolean }> = P.signal('sig-default', defaultPayloadSchema);
+    const directInterrupt: InterruptBuilder<{ readonly ok: boolean }> = P.interrupt('intr-default', defaultPayloadSchema);
     expect(directSignal.toAST().schema.parse({})).toEqual({ ok: true });
     expect(directInterrupt.toAST().schema.parse({})).toEqual({ ok: true });
 
-    const baseSignal = M.signal('base-sig');
+    const baseSignal = P.signal('base-sig');
     const typedSignal = baseSignal.payload(defaultPayloadSchema);
     expect(baseSignal.toAST()).not.toBe(typedSignal.toAST());
     expect(typedSignal.id).toBe('base-sig');
     expect(typedSignal.type).toBe('harness:signal');
 
-    const streamNode = M.stream('gh-webhooks')
+    const streamNode = P.stream('gh-webhooks')
       .source(SAMPLE_STREAM_SOURCE_NODE)
       .filter((ev: { readonly prNumber: number; readonly merged: boolean }) => ev.merged)
       .emitSignal(typedSignal, (ev: { readonly prNumber: number; readonly merged: boolean }) => ({ ok: ev.prNumber > 0 }))
@@ -92,15 +92,15 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
     ): typeof SAMPLE_MODEL_NODE | undefined =>
       candidates.find((c) => c.rateLimitedUntilMs === undefined)?.item;
 
-    const poolSoonest = M.pool('models-soonest').with(SAMPLE_MODEL_NODE).strategy('soonest-reset').fallback(SAMPLE_MODEL_NODE).toAST();
-    const poolRoundRobin = M.pool('models-rr').with(SAMPLE_MODEL_NODE).strategy('round-robin').toAST();
-    const poolLeastUsed = M.pool('models-lu').with(SAMPLE_MODEL_NODE).strategy('least-used').toAST();
-    const poolEscalate = M.pool('models-esc')
+    const poolSoonest = P.pool('models-soonest').with(SAMPLE_MODEL_NODE).strategy('soonest-reset').fallback(SAMPLE_MODEL_NODE).toAST();
+    const poolRoundRobin = P.pool('models-rr').with(SAMPLE_MODEL_NODE).strategy('round-robin').toAST();
+    const poolLeastUsed = P.pool('models-lu').with(SAMPLE_MODEL_NODE).strategy('least-used').toAST();
+    const poolEscalate = P.pool('models-esc')
       .with(SAMPLE_MODEL_NODE)
       .strategy(($s: PoolStrategyConfigurator<typeof SAMPLE_MODEL_NODE>) => $s.escalateOnRetry().minSuccessRate(0.8).minSamples(5))
       .toAST();
-    const poolCustom = M.pool('models-custom').with(SAMPLE_MODEL_NODE).strategy(customSelector).toAST();
-    const poolOneArgCustom = M.pool('models-one-arg').with(SAMPLE_MODEL_NODE).strategy(oneArgSelector).toAST();
+    const poolCustom = P.pool('models-custom').with(SAMPLE_MODEL_NODE).strategy(customSelector).toAST();
+    const poolOneArgCustom = P.pool('models-one-arg').with(SAMPLE_MODEL_NODE).strategy(oneArgSelector).toAST();
 
     expect(poolSoonest.strategy.strategyKind).toBe('soonest-reset');
     expect(poolRoundRobin.strategy.strategyKind).toBe('round-robin');
@@ -120,7 +120,7 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
   });
 
   it('builds prefixGroup, rules, scopedRule, skill, lessons, policy (.extend), human, and command AST nodes including sourced rules/skills', () => {
-    const prefixNode = M.prefixGroup('shared-prefix')
+    const prefixNode = P.prefixGroup('shared-prefix')
       .toolsMode('union')
       .sharedGrounding('Follow repository safety rules.')
       .sharedInstructions('Never skip tests.')
@@ -128,7 +128,7 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
     expect(prefixNode.toolsMode).toBe('union');
     expect(prefixNode.sharedGrounding.length).toBe(1);
 
-    const scopedRule = M.scopedRule('db-check')
+    const scopedRule = P.scopedRule('db-check')
       .when({ partitions: ['db'] })
       .directive('Keep schema migrations additive.')
       .enforceBeforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE);
@@ -137,17 +137,17 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
       id: 'md-db-rule',
       pathOrGlob: '.harness/rules/db.md',
     };
-    const sourcedScopedRule = M.scopedRule(mdRuleSource).enforceBeforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE).toAST();
+    const sourcedScopedRule = P.scopedRule(mdRuleSource).enforceBeforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE).toAST();
     expect(sourcedScopedRule.id).toBe('.harness/rules/db.md');
 
-    const rulesNode = M.rules('repo-rules')
+    const rulesNode = P.rules('repo-rules')
       .global({ id: 'g1', directive: 'Write deterministic tests.' })
       .scoped(scopedRule, sourcedScopedRule)
       .toAST();
     expect(rulesNode.globalRules.length).toBe(1);
     expect(rulesNode.scopedRules.length).toBe(2);
 
-    const skillNode = M.skill('git-conflict-skill')
+    const skillNode = P.skill('git-conflict-skill')
       .when({ partitions: ['db'] })
       .description('Resolve git rebase conflicts.')
       .instructions('Inspect conflict markers and run tests.')
@@ -161,11 +161,11 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
       id: 'md-git-skill',
       pathOrGlob: '.harness/skills/git/SKILL.md',
     };
-    const sourcedSkillNode = M.skill(mdSkillSource).unlocksTools(SAMPLE_DECLARED_TOOL_NODE).toAST();
+    const sourcedSkillNode = P.skill(mdSkillSource).unlocksTools(SAMPLE_DECLARED_TOOL_NODE).toAST();
     expect(sourcedSkillNode.id).toBe('.harness/skills/git/SKILL.md');
 
-    const promoSignal = M.signal('promote-lesson').payload(z.object({ lessonId: z.string() }));
-    const lessonsNode = M.lessons('empirical-lessons')
+    const promoSignal = P.signal('promote-lesson').payload(z.object({ lessonId: z.string() }));
+    const lessonsNode = P.lessons('empirical-lessons')
       .store(SAMPLE_LESSON_STORE_NODE)
       .queryFrom(
         z.object({ title: z.string().default('default-title') }),
@@ -187,8 +187,8 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
     expect(lessonsNode.scoring.slidingWindowInjections).toBe(20);
     expect(lessonsNode.emitSignalTriggers.length).toBe(1);
 
-    const limitInterrupt = M.interrupt('limit-hit').payload(z.object({ reason: z.string() }));
-    const basePolicy = M.policy<GitWorktreeHandle>('base-policy')
+    const limitInterrupt = P.interrupt('limit-hit').payload(z.object({ reason: z.string() }));
+    const basePolicy = P.policy<GitWorktreeHandle>('base-policy')
       .guard(SAMPLE_GUARD_NODE)
       .onViolation('deny-with-error', (v: PolicyViolation) => `Blocked: ${v.violationSummary}`)
       .maxTurns(25)
@@ -208,20 +208,20 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
     expect(extendedPolicy.clauses.length).toBe(2);
     expect(extendedPolicy.clauses[0]?.id).toBe('extended-policy:clause:0');
 
-    const humanBuilder = M.human('oncall-approver').keepAliveSeconds(30).notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const humanBuilder = P.human('oncall-approver').keepAliveSeconds(30).notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
     const scopedHuman = humanBuilder.withName('budget-approver').output(BudgetApprovalSchema).toAST();
     expect(scopedHuman.alias).toBe('budget-approver');
 
     const cmdInputSchema = z.object({ count: z.number().default(1) });
     const cmdOutputSchema = z.object({ doubled: z.number() });
-    const directCommand = M.command('direct-cmd', {
+    const directCommand = P.command('direct-cmd', {
       input: cmdInputSchema,
       output: cmdOutputSchema,
       extractPartitions: () => ['db'],
       fn: async (input: { readonly count: number }, _ctx: ExecutionContext<GitWorktreeHandle>) => ({ doubled: input.count * 2 }),
     }).toAST();
 
-    const fluentCommand = M.command('fluent-cmd')
+    const fluentCommand = P.command('fluent-cmd')
       .input(cmdInputSchema)
       .output(cmdOutputSchema)
       .partitions(() => ['api'])
@@ -234,19 +234,19 @@ describe('Primitive and context builders (signal, interrupt, stream, pool, prefi
   });
 });
 
-describe('M.agent, M.loop, canonical roleKey derivation, and createExecutorRegistry', () => {
+describe('P.agent, P.loop, canonical roleKey derivation, and createExecutorRegistry', () => {
   const actorInSchema = z.object({ issueId: z.string(), partitions: z.array(z.string()).default(['db']) });
   const actorOutSchema = z.object({ summary: z.string(), filesChanged: z.number().default(1) });
   const evalInSchema = z.object({ summary: z.string(), scopeReceipt: SAMPLE_SCOPE_RECEIPT_SCHEMA });
   const evalOutSchema = z.object({ passed: z.boolean(), feedback: z.string().default('') });
-  const escalateIntr = M.interrupt('escalate-intr').payload(z.object({ question: z.string() }));
+  const escalateIntr = P.interrupt('escalate-intr').payload(z.object({ question: z.string() }));
 
   it('derives order-independent canonical roleKey on .withTools(), preserves .onInterrupt() on .withPolicy(), and validates canSpawnTasks bounds', () => {
-    const basePolicy = M.policy<GitWorktreeHandle>('actor-policy').maxTurns(10);
-    const replacementPolicy = M.policy<GitWorktreeHandle>('replacement-policy').maxTurns(20);
-    const human = M.human('reviewer').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const basePolicy = P.policy<GitWorktreeHandle>('actor-policy').maxTurns(10);
+    const replacementPolicy = P.policy<GitWorktreeHandle>('replacement-policy').maxTurns(20);
+    const human = P.human('reviewer').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
 
-    const baseCoder = M.agent<GitWorktreeHandle>('coder')
+    const baseCoder = P.agent<GitWorktreeHandle>('coder')
       .model(SAMPLE_MODEL_NODE)
       .policy(basePolicy)
       .tools(SAMPLE_DECLARED_TOOL_NODE)
@@ -275,8 +275,8 @@ describe('M.agent, M.loop, canonical roleKey derivation, and createExecutorRegis
     expect(policyClone.policy?.id).toBe('replacement-policy');
     expect(policyClone.onInterruptHandlers.length).toBe(1);
 
-    const evaluator = M.agent<GitWorktreeHandle>('evaluator').model(SAMPLE_MODEL_NODE).input(evalInSchema).output(evalOutSchema);
-    const refineLoop = M.loop<GitWorktreeHandle>('refine-loop')
+    const evaluator = P.agent<GitWorktreeHandle>('evaluator').model(SAMPLE_MODEL_NODE).input(evalInSchema).output(evalOutSchema);
+    const refineLoop = P.loop<GitWorktreeHandle>('refine-loop')
       .input(actorInSchema)
       .output(actorOutSchema)
       .maxIterations(3)
@@ -299,7 +299,7 @@ describe('M.agent, M.loop, canonical roleKey derivation, and createExecutorRegis
     expect(loopWithPolicy.actStep.actor.policy?.id).toBe('replacement-policy');
     expect(loopWithPolicy.actStep.actor.onInterruptHandlers.length).toBe(1);
 
-    const outOfOrderAgent = M.agent<GitWorktreeHandle>('out-of-order-coder')
+    const outOfOrderAgent = P.agent<GitWorktreeHandle>('out-of-order-coder')
       .model(SAMPLE_MODEL_NODE)
       .partitions(() => ['db'])
       .onInterrupt(escalateIntr, ($i) => $i.ask(human, z.object({ answer: z.string() })).resumeWith((d: { readonly answer: string }) => d.answer))
@@ -311,7 +311,7 @@ describe('M.agent, M.loop, canonical roleKey derivation, and createExecutorRegis
     expect(outOfOrderAgent.capabilities?.mutatePlan?.canAddDependencies).toBe(true);
     expect(outOfOrderAgent.extractPartitions?.({ issueId: '1', partitions: ['db'] })).toEqual(['db']);
 
-    const outOfOrderLoop = M.loop<GitWorktreeHandle>('out-of-order-loop')
+    const outOfOrderLoop = P.loop<GitWorktreeHandle>('out-of-order-loop')
       .partitions(() => ['api'])
       .act('code', baseCoder)
       .evaluate('review', evaluator, {

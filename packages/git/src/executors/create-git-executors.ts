@@ -18,7 +18,7 @@ import type {
   RuntimeExecutorRegistrySlice,
   StepExecutionContext,
   ToolDriver,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   executeGitCommitAndPushStep,
   executeGitMergeQueueStep,
@@ -38,13 +38,13 @@ import {
 } from './git-hooks-and-checks.js';
 
 /**
- * Constructs a fresh `RuntimeExecutorRegistrySlice` registering all `@metaharness/git` scope, step, check, hook, cross-verifier, and tool executors.
+ * Constructs a fresh `RuntimeExecutorRegistrySlice` registering all `@paraharness/git` scope, step, check, hook, cross-verifier, and tool executors.
  *
  * Mounts `git:cow-worktree`, `git:commit-and-push`, `git:merge-queue`, `git:clean-working-tree`,
  * `git:snapshot-and-reset`, `git:keep-worktree`, `git:discard-branch`, `git:public-surface-cross-tester`,
  * `git:patch-equivalence`, `git:ref-reader-tool`, and `git:candidate-comparison-tool`.
  *
- * @returns {RuntimeExecutorRegistrySlice} Frozen registry slice for `@metaharness/git`.
+ * @returns {RuntimeExecutorRegistrySlice} Frozen registry slice for `@paraharness/git`.
  */
 export function createGitExecutors(): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({

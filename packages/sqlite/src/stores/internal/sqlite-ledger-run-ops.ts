@@ -2,7 +2,7 @@ import type {
   CreateOrResumeRunInput,
   CreateOrResumeRunResult,
   RunTerminalReceiptRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type Database from 'better-sqlite3';
 import type { RecordTerminalReceiptParams } from './record-terminal-receipt-params.js';
 import {

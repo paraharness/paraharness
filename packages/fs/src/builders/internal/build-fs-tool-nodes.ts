@@ -5,7 +5,7 @@ import type {
   FsReadToolNode,
   FsWriteToolNode,
   NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   FsEditToolInputSchema,
   FsGlobToolInputSchema,

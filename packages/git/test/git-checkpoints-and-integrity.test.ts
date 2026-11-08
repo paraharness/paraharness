@@ -1,6 +1,6 @@
 import { lstat, mkdir, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { ASTNode } from '@metaharness/core';
+import type { ASTNode } from '@paraharness/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   GitAbortMetaSchema,

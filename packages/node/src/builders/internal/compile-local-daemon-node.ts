@@ -1,7 +1,7 @@
 import type {
   LocalServiceNode,
   ServiceToolSchemaDescriptor,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { LocalDaemonBuilderState } from './local-daemon-builder-state.js';
 
 /**

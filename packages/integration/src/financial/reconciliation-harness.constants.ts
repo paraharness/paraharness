@@ -1,7 +1,7 @@
-import { M, z } from '@metaharness/core';
-import { netsuite } from '@metaharness/netsuite';
-import { slack } from '@metaharness/slack';
-import { stripe } from '@metaharness/stripe';
+import { P, z } from '@paraharness/core';
+import { netsuite } from '@paraharness/netsuite';
+import { slack } from '@paraharness/slack';
+import { stripe } from '@paraharness/stripe';
 import { opus } from '../engineering/pools-and-services.constants.js';
 import './financial-domain-registry.js';
 import {
@@ -15,7 +15,7 @@ import {
  * Carries the `proposedJournalId`, `amountUsd`, and `reason` while holding the NetSuite draft journal open
  * in `PendingToolBatch` until `financeController` adjudicates.
  */
-export const highValueApprovalRequest = M.interrupt('high-value-approval').payload(
+export const highValueApprovalRequest = P.interrupt('high-value-approval').payload(
   z.object({ proposedJournalId: z.string(), amountUsd: z.number(), reason: z.string() }),
 );
 
@@ -24,7 +24,7 @@ export const highValueApprovalRequest = M.interrupt('high-value-approval').paylo
  *
  * Triggers `netsuite.rollbackDraftJournal()` and replaces `reconciliationAgent` with `manualEscalationAgent`.
  */
-export const reconcileLimitExceeded = M.interrupt('reconcile-limit-exceeded').payload(
+export const reconcileLimitExceeded = P.interrupt('reconcile-limit-exceeded').payload(
   z.object({ summary: z.string() }),
 );
 
@@ -33,13 +33,13 @@ export const reconcileLimitExceeded = M.interrupt('reconcile-limit-exceeded').pa
  *
  * Adjudicates `highValueApprovalRequest` interrupts and optionally elevates the refund lease up to $10,000.
  */
-export const financeController = M.human('finance-controller')
+export const financeController = P.human('finance-controller')
   .keepAliveSeconds(60)
   .notify(
     slack.bot({
-      appToken: M.env('FINANCE_SLACK_APP_TOKEN'),
-      botToken: M.env('FINANCE_SLACK_BOT_TOKEN'),
-      channel: M.env('FINANCE_SLACK_CHANNEL_ID'),
+      appToken: P.env('FINANCE_SLACK_APP_TOKEN'),
+      botToken: P.env('FINANCE_SLACK_BOT_TOKEN'),
+      channel: P.env('FINANCE_SLACK_CHANNEL_ID'),
     }),
   );
 
@@ -49,7 +49,7 @@ export const financeController = M.human('finance-controller')
  * Clause 1 unconditionally denies closed-period NetSuite postings in-band; Clause 2 raises `highValueApprovalRequest`
  * on Stripe refunds exceeding $500; turn exhaustion (6 turns) flushes `reconcileLimitExceeded` and rolls back the draft journal.
  */
-export const autoReconcilePolicy = M.policy('auto-reconcile-bounds')
+export const autoReconcilePolicy = P.policy('auto-reconcile-bounds')
   .guard(netsuite.forbidClosedPeriodPosting())
   .onViolation('deny-with-error')
   .guard(stripe.maxRefundGuardUsd(500))
@@ -69,7 +69,7 @@ export const autoReconcilePolicy = M.policy('auto-reconcile-bounds')
  *
  * Enforces `netsuite.forbidClosedPeriodPosting()` and rolls back the draft journal on abort without the $500 automated refund cap.
  */
-export const manualReconcilePolicy = M.policy('manual-reconcile-bounds')
+export const manualReconcilePolicy = P.policy('manual-reconcile-bounds')
   .guard(netsuite.forbidClosedPeriodPosting())
   .onViolation('deny-with-error')
   .maxTurns(15)
@@ -80,7 +80,7 @@ export const manualReconcilePolicy = M.policy('manual-reconcile-bounds')
  *
  * Uses `stripe.readTools()` and `netsuite.journalTools()` and verifies zero journal balance via `netsuite.balanceZeroCheck()` before stopping.
  */
-export const reconciliationAgent = M.agent('reconciler')
+export const reconciliationAgent = P.agent('reconciler')
   .model(opus)
   .policy(autoReconcilePolicy)
   .tools(stripe.readTools(), netsuite.journalTools())
@@ -95,7 +95,7 @@ export const reconciliationAgent = M.agent('reconciler')
  *
  * Receives the original `discrepancyItem` extended with `priorFailureSummary` and completes reconciliation under `manualReconcilePolicy`.
  */
-export const manualEscalationAgent = M.agent('manual-reconcile-escalator')
+export const manualEscalationAgent = P.agent('manual-reconcile-escalator')
   .model(opus)
   .policy(manualReconcilePolicy)
   .tools(stripe.readTools(), netsuite.journalTools())
@@ -111,7 +111,7 @@ export const manualEscalationAgent = M.agent('manual-reconcile-escalator')
  * Executes `reconciliationAgent`, adjudicates `highValueApprovalRequest` with `financeController` (elevating the refund lease
  * to `stripe.allowRefundUpToUsd(10_000)` when approved), and replaces with `manualEscalationAgent` on `reconcileLimitExceeded`.
  */
-export const reconciliationFlow = M.flow('reconcile-discrepancy')
+export const reconciliationFlow = P.flow('reconcile-discrepancy')
   .input(discrepancyItem)
   .scope(netsuite.draftJournalScope())
   .step('attempt-reconcile', reconciliationAgent, ($s) =>

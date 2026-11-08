@@ -1,4 +1,4 @@
-import type { ForkContext, PrepareForkTarget, WireFrameRecord } from '@metaharness/core';
+import type { ForkContext, PrepareForkTarget, WireFrameRecord } from '@paraharness/core';
 import { buildGeminiPairedForkToolFrame } from './build-gemini-paired-fork-tool-frame.js';
 import { buildGeminiUserFrame } from './build-gemini-user-frame.js';
 import { formatGeminiForkPromptText } from './format-gemini-fork-prompt-text.js';

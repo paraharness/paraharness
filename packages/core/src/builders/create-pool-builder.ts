@@ -11,7 +11,7 @@ import type { PoolBuilder } from './pool-builder.js';
 import type { PoolStrategyBuilder as PoolStrategyConfigurator } from './pool-strategy-builder.js';
 
 /**
- * Creates a fluent `PoolBuilder` for `M.pool(id)`.
+ * Creates a fluent `PoolBuilder` for `P.pool(id)`.
  *
  * Defaults the selection strategy to `'round-robin'` and validates at `.toAST()` time
  * that at least one candidate item has been registered via `.with(...)`.
@@ -27,7 +27,7 @@ export function createPoolBuilder<TItem extends ASTNode = ASTNode>(
   id: string,
   options?: CreatePoolBuilderOptions<TItem>,
 ): PoolBuilder<TItem> {
-  assertNonEmptyIdentifier('M.pool', id);
+  assertNonEmptyIdentifier('P.pool', id);
   const items: readonly TItem[] = options?.items ?? Object.freeze([]);
   const strategy: PoolStrategyNode<TItem> =
     options?.strategy ??

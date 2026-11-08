@@ -11,14 +11,14 @@ import {
   type ModelTurnRequest,
   type ModelTurnResponse,
   type WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   NetSuiteDraftScopeDriver,
   netsuiteExecutors,
   type NetSuiteDraftHandle,
-} from '@metaharness/netsuite';
-import { SqliteLedgerStore, sqliteExecutors } from '@metaharness/sqlite';
-import { stripeExecutors } from '@metaharness/stripe';
+} from '@paraharness/netsuite';
+import { SqliteLedgerStore, sqliteExecutors } from '@paraharness/sqlite';
+import { stripeExecutors } from '@paraharness/stripe';
 import { describe, expect, it } from 'vitest';
 import {
   appHarness,

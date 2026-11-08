@@ -4,7 +4,7 @@ import {
   type GeminiModelNode,
   type MaybeBuilder,
   type PoolNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { GeminiModelBuilder } from './gemini-model-builder.js';
 import type { GeminiModelOptions } from './gemini-model-options.js';
 

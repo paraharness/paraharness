@@ -1,4 +1,4 @@
-import { z } from '@metaharness/core';
+import { z } from '@paraharness/core';
 
 /**
  * Zod input schema for `FsReadToolNode` (`fs:read` / `read_file`).

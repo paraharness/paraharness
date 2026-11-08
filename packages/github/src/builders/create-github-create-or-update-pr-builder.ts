@@ -1,4 +1,4 @@
-import { z, type BivariantCallback, type GithubCreateOrUpdatePrNode } from '@metaharness/core';
+import { z, type BivariantCallback, type GithubCreateOrUpdatePrNode } from '@paraharness/core';
 import type { GithubCreateOrUpdatePrBuilder } from './github-create-or-update-pr-builder.js';
 import type { GithubCreateOrUpdatePrOptions } from './github-create-or-update-pr-options.js';
 import { assertValidGithubPrBuilderOptions } from './internal/assert-valid-github-pr-builder-options.js';

@@ -1,4 +1,4 @@
-import type { AstBuilder, GitKeepWorktreeNode } from '@metaharness/core';
+import type { AstBuilder, GitKeepWorktreeNode } from '@paraharness/core';
 
 /**
  * Creates a fluent `AstBuilder<GitKeepWorktreeNode>` (`git.keepWorktree()`).

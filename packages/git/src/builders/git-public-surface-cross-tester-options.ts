@@ -2,7 +2,7 @@ import type {
   FsPartitionMapNode,
   MaybeBuilder,
   NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Configuration options for `git.publicSurfaceCrossTester(options)` (`createGitPublicSurfaceCrossTesterBuilder`).

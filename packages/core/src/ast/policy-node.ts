@@ -18,7 +18,7 @@ export interface PolicyLimitExceededConfig<THandle = unknown> {
 }
 
 /**
- * Passive AST node representing a capability and sandbox policy (`M.policy(id)`).
+ * Passive AST node representing a capability and sandbox policy (`P.policy(id)`).
  *
  * Governs pre-flight and post-flight tool guard evaluation, quantitative turn/cost/duration/tripwire
  * ceilings, and deterministic scope cleanup hooks.

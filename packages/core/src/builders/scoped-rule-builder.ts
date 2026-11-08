@@ -5,7 +5,7 @@ import type { ScopedRuleNode } from '../ast/scoped-rule-node.types.js';
 import type { ScopePredicateInput } from './scope-predicate-input.js';
 
 /**
- * Fluent builder for partition- or effect-scoped rules (`M.scopedRule(idOrSource)`).
+ * Fluent builder for partition- or effect-scoped rules (`P.scopedRule(idOrSource)`).
  *
  * Compiles inline or frontmatter-sourced scoped rules with `.when()` activation predicates,
  * `.directive()` prompt blocks, and optional `.enforceBeforeStop()` check gates.

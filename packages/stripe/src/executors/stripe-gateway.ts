@@ -27,7 +27,7 @@ export interface StripeStageRefundParams {
 /**
  * Pluggable runtime gateway abstraction for Stripe settlement queries and customer refund staging.
  *
- * Allows `@metaharness/stripe` tool executors to operate over either the official `stripe` SDK
+ * Allows `@paraharness/stripe` tool executors to operate over either the official `stripe` SDK
  * (`createStripeSdkGateway`) or `defaultStripeGateway` in offline unit and integration tests.
  */
 export interface StripeGateway {

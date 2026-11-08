@@ -1,4 +1,4 @@
-import type { SkillNode } from '@metaharness/core';
+import type { SkillNode } from '@paraharness/core';
 import { createMdFrontmatterBuilder } from './create-md-frontmatter-builder.js';
 import type { MdFrontmatterSourceBuilder } from './md-frontmatter-source-builder.js';
 
@@ -6,7 +6,7 @@ import type { MdFrontmatterSourceBuilder } from './md-frontmatter-source-builder
  * Builds a `MdFrontmatterSourceBuilder<readonly SkillNode<THandle>[]>` for `md.skills(glob)`.
  *
  * Configures `kind: 'skills'` and `id: "md:skills:${glob}"` so procedural skills matching `glob`
- * can be mounted directly via `M.agent(...).skills(md.skills(glob))`.
+ * can be mounted directly via `P.agent(...).skills(md.skills(glob))`.
  *
  * @template THandle Runtime handle type of the active isolation scope.
  *

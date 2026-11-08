@@ -5,7 +5,7 @@ import type {
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
   StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { defaultGithubHttpTransport } from './default-github-http-transport.constants.js';
 import type { GithubHttpTransport } from './github-http-transport.js';
 import type { GithubIssueRecord } from './github-issue-record.js';
@@ -14,14 +14,14 @@ import { GithubWebhookStreamSource } from './github-webhook-stream.js';
 import { executeGithubPrWithTransport } from './internal/execute-github-pr-with-transport.js';
 
 /**
- * Creates a `RuntimeExecutorRegistrySlice` registering all `@metaharness/github` runtime executors.
+ * Creates a `RuntimeExecutorRegistrySlice` registering all `@paraharness/github` runtime executors.
  *
  * Binds `trackers['github:issues']`, `streamSources['github:webhook-stream']`, and
  * `steps['github:create-or-update-pr']` using the supplied `transport`.
  *
  * @param {GithubHttpTransport} [transport=defaultGithubHttpTransport] - HTTP transport used for GitHub REST calls.
  *
- * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@metaharness/github`.
+ * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@paraharness/github`.
  */
 export function createGithubExecutors(
   transport: GithubHttpTransport = defaultGithubHttpTransport,

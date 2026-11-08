@@ -1,4 +1,4 @@
-import type { FsQuotaTripwireNode } from '@metaharness/core';
+import type { FsQuotaTripwireNode } from '@paraharness/core';
 
 /**
  * Compiles a passive `FsQuotaTripwireNode` (`fs:quota-tripwire`) for `fs.maxFilesMutated(count)`.

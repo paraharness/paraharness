@@ -32,7 +32,7 @@ export interface AgentLessonsMount {
 }
 
 /**
- * Passive AST node representing the universal LLM actor primitive (`M.agent(id)`).
+ * Passive AST node representing the universal LLM actor primitive (`P.agent(id)`).
  *
  * Contains zero execution methods and is dispatched at runtime via `executeStepNode` (`switch (node.type)`).
  *

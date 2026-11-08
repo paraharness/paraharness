@@ -5,7 +5,7 @@ import type { SignalNode } from '../ast/signal-node.js';
 import type { StreamNode } from '../ast/stream-node.js';
 
 /**
- * Fluent builder for inbound event streams (`M.stream(id)`).
+ * Fluent builder for inbound event streams (`P.stream(id)`).
  *
  * Connects an external `StreamSourceASTNode` through an optional synchronous filter
  * predicate to a typed `SignalNode` emission rule.

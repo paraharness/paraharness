@@ -1,4 +1,4 @@
-import type { SqliteLessonsNode } from '@metaharness/core';
+import type { SqliteLessonsNode } from '@paraharness/core';
 import type { SqliteLessonsBuilder } from './sqlite-lessons-builder.js';
 
 /**

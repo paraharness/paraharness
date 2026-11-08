@@ -1,4 +1,4 @@
-import type { GithubIssuesTrackerNode, GithubWebhookStreamNode } from '@metaharness/core';
+import type { GithubIssuesTrackerNode, GithubWebhookStreamNode } from '@paraharness/core';
 import type { GithubIssueRecord } from '../executors/github-issue-record.js';
 import type { GithubWebhookEvent } from '../executors/github-webhook-event.js';
 import type { GithubCreateOrUpdatePrBuilder } from './github-create-or-update-pr-builder.js';
@@ -7,7 +7,7 @@ import type { GithubIssuesOptions } from './github-issues-options.js';
 import type { GithubWebhookStreamOptions } from './github-webhook-stream-options.js';
 
 /**
- * Public DSL builder namespace for `@metaharness/github` (`github.*`).
+ * Public DSL builder namespace for `@paraharness/github` (`github.*`).
  *
  * Exposes declarative factories for GitHub Issues trackers (`github.issues`),
  * webhook event streams (`github.webhookStream`), and pull-request domain steps (`github.createOrUpdatePr`).

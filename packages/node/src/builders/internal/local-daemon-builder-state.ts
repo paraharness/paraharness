@@ -1,7 +1,7 @@
 import type {
   LocalServiceInteractionConfig,
   NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type {
   LocalDaemonCommandContext,
   LocalDaemonRegexDescriptor,

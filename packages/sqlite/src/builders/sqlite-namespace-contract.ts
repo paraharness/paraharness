@@ -16,7 +16,7 @@ export interface SqliteGlobalRulesOptions {
 }
 
 /**
- * Public builder namespace contract exported as `sqlite` from `@metaharness/sqlite`.
+ * Public builder namespace contract exported as `sqlite` from `@paraharness/sqlite`.
  *
  * Provides pure AST builder factories for SQLite-backed ledger, topology, lesson, and global rule stores.
  */

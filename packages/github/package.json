@@ -1,5 +1,5 @@
 {
-  "name": "@metaharness/github",
+  "name": "@paraharness/github",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@metaharness/core": "workspace:*",
+    "@paraharness/core": "workspace:*",
     "@octokit/rest": "^22.0.1",
     "@octokit/webhooks": "^14.2.0",
     "zod": "^4.6.7"

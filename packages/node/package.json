@@ -1,5 +1,5 @@
 {
-  "name": "@metaharness/node",
+  "name": "@paraharness/node",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@metaharness/core": "workspace:*",
+    "@paraharness/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "fkill": "^10.0.3",
     "get-port": "^7.2.0",

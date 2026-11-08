@@ -5,7 +5,7 @@ import type {
   MaybeBuilder,
   NodeRunnerNode,
   z,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Fluent builder for a retry-safe commit, rebase, and push domain step (`git.commitAndPush`).
@@ -44,7 +44,7 @@ export interface GitCommitAndPushBuilder<TIn = unknown>
   runner(runner: MaybeBuilder<NodeRunnerNode>): GitCommitAndPushBuilder<TIn>;
 
   /**
-   * Binds environment variables or symbolic `M.env(key)` references injected into git commands.
+   * Binds environment variables or symbolic `P.env(key)` references injected into git commands.
    *
    * Symbolic `EnvRef` values are preserved in the AST and resolved exclusively at runtime execution.
    *

@@ -1,5 +1,5 @@
 /**
- * Handle to an initialized temporary monorepo and Git workspace fixture for `@metaharness/integration` E2E tests.
+ * Handle to an initialized temporary monorepo and Git workspace fixture for `@paraharness/integration` E2E tests.
  *
  * Exposes paths to the temporary root directory, working Git repository (`packages/{db,api,web}`),
  * bare `origin` remote, SQLite ledger/topology store, and `gh` PR log file, along with a deterministic cleanup hook.

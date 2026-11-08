@@ -5,7 +5,7 @@ import type {
   ToolDriver,
   ToolEffect,
   ToolExecutionResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { describeFsEditEffects } from './internal/describe-fs-edit-effects.js';
 import { describeFsWriteEffects } from './internal/describe-fs-write-effects.js';
 import {

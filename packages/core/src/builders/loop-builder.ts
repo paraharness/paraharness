@@ -10,7 +10,7 @@ import type { ExtractEvalScopeReceipt } from './flow-extraction.types.js';
 import type { LoopEvaluateOptions } from './loop-evaluate-options.js';
 
 /**
- * Fluent builder for an iterative action-and-evaluation refinement loop (`M.loop(id)`).
+ * Fluent builder for an iterative action-and-evaluation refinement loop (`P.loop(id)`).
  *
  * Pairs a write-capable `.act(stepId, actor)` agent with a read-only adversarial
  * `.evaluate(stepId, evaluator, options)` agent and enforces `.returnOutputFrom(actStepId)`.

@@ -1,4 +1,4 @@
-import type { CanonicalMessage, WireFrameRecord } from '@metaharness/core';
+import type { CanonicalMessage, WireFrameRecord } from '@paraharness/core';
 import { projectCanonicalToAnthropicMessage } from './project-canonical-to-anthropic-message.js';
 
 /**

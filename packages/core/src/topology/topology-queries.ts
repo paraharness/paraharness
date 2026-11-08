@@ -11,7 +11,7 @@ import { computeTransitiveDependents } from './internal/validate-topology-dag.js
  *
  * @template TPartition Literal string union of partition identifiers in `topology`.
  *
- * @param {MaybeBuilder<TopologyNode<TPartition>>} topology    - Compiled `TopologyNode` or `M.topology(...)` builder.
+ * @param {MaybeBuilder<TopologyNode<TPartition>>} topology    - Compiled `TopologyNode` or `P.topology(...)` builder.
  * @param {TPartition}                             partitionId - Source partition identifier to query.
  *
  * @returns {readonly TPartition[]} Frozen array of strict transitive dependent partition IDs.
@@ -33,7 +33,7 @@ export function dependentsOf<TPartition extends string = string>(
  *
  * @template TPartition Literal string union of partition identifiers in `topology`.
  *
- * @param {MaybeBuilder<TopologyNode<TPartition>>} topology    - Compiled `TopologyNode` or `M.topology(...)` builder.
+ * @param {MaybeBuilder<TopologyNode<TPartition>>} topology    - Compiled `TopologyNode` or `P.topology(...)` builder.
  * @param {TPartition}                             partitionId - Source partition identifier to query.
  *
  * @returns {readonly TPartition[]} Frozen array starting with `partitionId` followed by its strict transitive dependents.

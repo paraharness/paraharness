@@ -3,7 +3,7 @@ import { createFlowFromState } from './internal/create-flow-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 
 /**
- * Creates a fluent `FlowBuilder` for `M.flow(id)`.
+ * Creates a fluent `FlowBuilder` for `P.flow(id)`.
  *
  * Validates that `id` is a non-empty identifier and initializes an immutable
  * `FlowBuilder` with an empty step and branch node sequence.
@@ -15,7 +15,7 @@ import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 export function createFlowBuilder(
   id: string,
 ): FlowBuilder<unknown, unknown, never, unknown, Record<string, unknown>, Record<string, never>> {
-  assertNonEmptyIdentifier('M.flow', id);
+  assertNonEmptyIdentifier('P.flow', id);
   return createFlowFromState({
     id,
     nodes: [],

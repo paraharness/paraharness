@@ -1,6 +1,6 @@
-import { M } from '@metaharness/core';
-import { fs } from '@metaharness/fs';
-import { git } from '@metaharness/git';
+import { P } from '@paraharness/core';
+import { fs } from '@paraharness/fs';
+import { git } from '@paraharness/git';
 import {
   forkRequestSchema,
   ownerDecisionSchema,
@@ -42,7 +42,7 @@ import {
  * via `mutatePlan`, escalates exogenous trade-offs via `normativeEscalation`, and handles upward `contractViolation`
  * interrupts across affected sibling forks.
  */
-export const coordinator = M.agent('coordinator')
+export const coordinator = P.agent('coordinator')
   .prefixGroup(engineeringPrefix)
   .model(opus)
   .topology(repoTopology)

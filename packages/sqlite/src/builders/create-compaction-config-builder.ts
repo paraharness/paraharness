@@ -5,7 +5,7 @@ import {
   type MaybeBuilder,
   type SignalNode,
   extractAST,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type {
   CompactionConfigBuilder,
   CompactionSignalTriggerOptions,

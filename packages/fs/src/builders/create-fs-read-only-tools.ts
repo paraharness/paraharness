@@ -5,7 +5,7 @@ import {
   type FsReadToolNode,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   buildFsGlobToolNode,
   buildFsGrepToolNode,

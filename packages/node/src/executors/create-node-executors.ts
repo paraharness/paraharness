@@ -5,7 +5,7 @@ import type {
   NodeRunnerNode,
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   createLocalCommandToolDriver,
   executeLocalCommandCheck,
@@ -31,13 +31,13 @@ import {
 import { NodeRunnerDriver } from './node-runner-driver.js';
 
 /**
- * Creates a `RuntimeExecutorRegistrySlice` registering all `@metaharness/node` executors and drivers.
+ * Creates a `RuntimeExecutorRegistrySlice` registering all `@paraharness/node` executors and drivers.
  *
  * Binds `node:command`, `node:command-check`, `node:command-tool`, `node:stream-check`,
  * `node:stream-check-tool`, `node:service`, `node:service-tool`, `node:allow-binaries`,
  * `node:deny-network`, `node:runner`, `node:http-control-plane`, `node:mcp-stdio`, and `node:mcp-sse`.
  *
- * @returns {RuntimeExecutorRegistrySlice} Frozen registry slice for `@metaharness/node`.
+ * @returns {RuntimeExecutorRegistrySlice} Frozen registry slice for `@paraharness/node`.
  */
 export function createNodeExecutors(): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({

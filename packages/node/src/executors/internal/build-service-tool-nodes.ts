@@ -1,4 +1,4 @@
-import type { LocalServiceNode, LocalServiceToolNode } from '@metaharness/core';
+import type { LocalServiceNode, LocalServiceToolNode } from '@paraharness/core';
 
 /**
  * Builds the `LocalServiceToolNode` descriptors for all `.interact()` tools on a `LocalServiceNode`.

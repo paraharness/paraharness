@@ -5,7 +5,7 @@ import {
   type GitCommitAndPushNode,
   type MaybeBuilder,
   type NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { GitCommitAndPushBuilder } from './git-commit-and-push-builder.js';
 import type { GitCommitAndPushOptions } from './git-commit-and-push-options.js';
 

@@ -3,7 +3,7 @@ import type { PoolNode } from '../pool-node.js';
 import type { GeminiAccountSeatNode } from './gemini-account-seat-node.js';
 
 /**
- * Passive AST node representing a Google Gemini model configuration (`@metaharness/gemini`).
+ * Passive AST node representing a Google Gemini model configuration (`@paraharness/gemini`).
  *
  * Dispatched via `RuntimeExecutorRegistry.models['gemini:model']` over `/v1beta/models/{model}:generateContent`.
  */

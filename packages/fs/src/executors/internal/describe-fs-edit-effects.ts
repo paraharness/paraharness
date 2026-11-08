@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import type { ToolEffect } from '@metaharness/core';
+import type { ToolEffect } from '@paraharness/core';
 import { checkPathsExistAtBaseRef } from './check-paths-exist-at-base-ref.js';
 import { createFsWriteEffect } from './create-fs-write-effect.js';
 import { resolveJailedWorktreePath } from './resolve-jailed-worktree-path.js';

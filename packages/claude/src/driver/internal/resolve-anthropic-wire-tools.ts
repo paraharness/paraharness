@@ -1,4 +1,4 @@
-import type { ModelTurnRequest, WireToolSchema } from '@metaharness/core';
+import type { ModelTurnRequest, WireToolSchema } from '@paraharness/core';
 
 /**
  * Resolves the wire tool schemas for `req` from `CompiledWirePrefix` or `req.wireToolSchemas`.

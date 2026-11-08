@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { ToolEffect } from '@metaharness/core';
+import type { ToolEffect } from '@paraharness/core';
 import { addMutatedPathsFromEffects } from './add-mutated-paths-from-effects.js';
 import { extractWorktreeRootAndBaseRef } from './extract-worktree-root-and-base-ref.js';
 

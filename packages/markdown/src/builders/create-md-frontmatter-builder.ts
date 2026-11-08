@@ -1,4 +1,4 @@
-import type { MarkdownFrontmatterSourceNode } from '@metaharness/core';
+import type { MarkdownFrontmatterSourceNode } from '@paraharness/core';
 import type { MdFrontmatterSourceBuilder } from './md-frontmatter-source-builder.js';
 
 /**

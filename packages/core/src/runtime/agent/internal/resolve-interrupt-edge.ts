@@ -262,7 +262,7 @@ export async function runAdjudicatorEdge<TIn, TOut, THandle>(
 /**
  * Matches a raised `(interruptId, rawPayload)` against the agent's `.onInterrupt()` edges and executes the matched handler (`SPEC.md` §3.5).
  *
- * Returns `status: 'unhandled'` when no local handler matches so enclosing `M.loop`, parent `.onChildInterrupt()`, or `M.flow` can intercept.
+ * Returns `status: 'unhandled'` when no local handler matches so enclosing `P.loop`, parent `.onChildInterrupt()`, or `P.flow` can intercept.
  *
  * @template TIn     Validated agent input payload type.
  * @template TOut    Validated agent output payload type.

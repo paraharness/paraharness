@@ -17,7 +17,7 @@ export interface RecalledLoopLessonRecord {
 }
 
 /**
- * Serialized continuation frame for an iterative `M.loop` execution (`kind: 'loop-frame'`).
+ * Serialized continuation frame for an iterative `P.loop` execution (`kind: 'loop-frame'`).
  *
  * Preserves cumulative telemetry, `.act()`-only tripwire counters, loop-scoped capability leases
  * (`grantedLoopLeases`), active skills, and deduplicated lesson outcome attribution across
@@ -52,11 +52,11 @@ export interface LoopContinuationFrame {
   readonly costUsd: number;
   /** Cumulative total elapsed duration in milliseconds across the loop. */
   readonly elapsedDurationMs: number;
-  /** Cumulative `.act()`-only LLM turns evaluated against the `.act()` actor's `M.policy.maxTurns`. */
+  /** Cumulative `.act()`-only LLM turns evaluated against the `.act()` actor's `P.policy.maxTurns`. */
   readonly actTurnsTaken: number;
-  /** Cumulative `.act()`-only USD cost evaluated against the `.act()` actor's `M.policy.maxCostUsd`. */
+  /** Cumulative `.act()`-only USD cost evaluated against the `.act()` actor's `P.policy.maxCostUsd`. */
   readonly actCostUsd: number;
-  /** Cumulative `.act()`-only elapsed duration in milliseconds evaluated against `M.policy.maxDurationSeconds`. */
+  /** Cumulative `.act()`-only elapsed duration in milliseconds evaluated against `P.policy.maxDurationSeconds`. */
   readonly actElapsedDurationMs: number;
   /** Loop-scoped capability leases inherited across all `.act()` iterations. */
   readonly grantedLoopLeases: readonly LeaseDelta[];

@@ -1,5 +1,5 @@
 import http from 'node:http';
-import type { ControlPlaneHandle, HarnessRuntimeController } from '@metaharness/core';
+import type { ControlPlaneHandle, HarnessRuntimeController } from '@paraharness/core';
 import {
   handleControlPlaneHttpRequest,
   type ControlPlaneSseSessionEntry,

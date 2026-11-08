@@ -97,7 +97,7 @@ export interface LaneSignalHandlerConfig<
 }
 
 /**
- * Passive AST node representing a concurrent work execution lane (`M.lane(id)`).
+ * Passive AST node representing a concurrent work execution lane (`P.lane(id)`).
  *
  * Schedules deduplicated work items through `flow` under priority aging, prerequisite DAG barriers,
  * USD budget ceilings, step retry policies, and live signal rewind handlers.

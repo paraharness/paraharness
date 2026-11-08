@@ -1,4 +1,4 @@
-import type { LocalCommandNode } from '@metaharness/core';
+import type { LocalCommandNode } from '@paraharness/core';
 import type { LocalCommandBuilderState } from './local-command-builder-state.js';
 
 /**

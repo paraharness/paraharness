@@ -19,7 +19,7 @@ function createDeferredLatch(): DeferredLatch {
   return { promise, resolve: resolveFn };
 }
 
-describe('@metaharness/lockfile — cross-process and in-process file locking', () => {
+describe('@paraharness/lockfile — cross-process and in-process file locking', () => {
   let tempDir = '';
 
   beforeEach(async () => {

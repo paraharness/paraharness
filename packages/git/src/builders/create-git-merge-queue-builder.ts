@@ -2,7 +2,7 @@ import {
   extractAST,
   z,
   type GitMergeQueueNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { GitMergeQueueBuilder } from './git-merge-queue-builder.js';
 import type { GitMergeQueueOptions } from './git-merge-queue-options.js';
 

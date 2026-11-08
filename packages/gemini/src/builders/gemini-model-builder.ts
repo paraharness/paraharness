@@ -4,13 +4,13 @@ import type {
   GeminiModelNode,
   MaybeBuilder,
   PoolNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Fluent builder for constructing a passive `GeminiModelNode` (`type: 'gemini:model'`).
  *
  * Binds a Google Gemini model identifier, optional thinking level (`effort`), and an optional
- * `M.pool` of `GeminiAccountSeatNode` seats with run-sticky seat affinity.
+ * `P.pool` of `GeminiAccountSeatNode` seats with run-sticky seat affinity.
  */
 export interface GeminiModelBuilder extends AstBuilder<GeminiModelNode> {
   /** Logical alias of the model within the harness definition. */
@@ -43,7 +43,7 @@ export interface GeminiModelBuilder extends AstBuilder<GeminiModelNode> {
   /**
    * Alias for `pool(pool)` attaching a capacity pool of `GeminiAccountSeatNode` seats.
    *
-   * Preserves API symmetry across `@metaharness/claude`, `@metaharness/openai`, and `@metaharness/gemini`.
+   * Preserves API symmetry across `@paraharness/claude`, `@paraharness/openai`, and `@paraharness/gemini`.
    *
    * @param {MaybeBuilder<PoolNode<GeminiAccountSeatNode>>} pool - Account seat pool node or builder.
    *

@@ -1,4 +1,4 @@
-import type { AstBuilder, GithubCreateOrUpdatePrNode, z } from '@metaharness/core';
+import type { AstBuilder, GithubCreateOrUpdatePrNode, z } from '@paraharness/core';
 
 /**
  * Fluent builder for a `GithubCreateOrUpdatePrNode` domain step (`github.createOrUpdatePr`).

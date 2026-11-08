@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { LessonOutcome, LessonRecord } from '@metaharness/core';
+import type { LessonOutcome, LessonRecord } from '@paraharness/core';
 import type Database from 'better-sqlite3';
 import type { AdmitLessonParams } from './admit-lesson-params.js';
 import { computeNormalizedRelevanceScores } from './compute-normalized-relevance.js';

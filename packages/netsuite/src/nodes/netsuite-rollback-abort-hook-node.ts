@@ -1,4 +1,4 @@
-import type { BaseAbortHookASTNode } from '@metaharness/core';
+import type { BaseAbortHookASTNode } from '@paraharness/core';
 import type { NetSuiteDraftHandle } from './netsuite-draft-handle.js';
 
 /**

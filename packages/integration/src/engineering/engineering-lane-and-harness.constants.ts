@@ -1,7 +1,7 @@
-import { M } from '@metaharness/core';
-import { git } from '@metaharness/git';
-import { github } from '@metaharness/github';
-import { mcp } from '@metaharness/node';
+import { P } from '@paraharness/core';
+import { git } from '@paraharness/git';
+import { github } from '@paraharness/github';
+import { mcp } from '@paraharness/node';
 import { engineeringFlow } from './delivery-and-flow.constants.js';
 import { workItem } from './engineering-schemas.schema.js';
 import { mapGithubIssueToWorkItem } from './internal/map-github-issue-to-work-item.js';
@@ -21,11 +21,11 @@ import {
 } from './signals-and-interrupts.constants.js';
 
 /**
- * GitHub issues tracker adapter (`acme/app`) authenticated via symbolic `M.env('GITHUB_TOKEN')` (`CODING_SAMPLE.md` §6.9).
+ * GitHub issues tracker adapter (`acme/app`) authenticated via symbolic `P.env('GITHUB_TOKEN')` (`CODING_SAMPLE.md` §6.9).
  *
  * Polls open issues and synchronizes lifecycle status labels for `engineeringLane`.
  */
-export const issuesTracker = github.issues({ repo: 'acme/app', token: M.env('GITHUB_TOKEN') });
+export const issuesTracker = github.issues({ repo: 'acme/app', token: P.env('GITHUB_TOKEN') });
 
 /**
  * Priority-aged, DAG-aware engineering work lane (`engineering`) executing `engineeringFlow` (`CODING_SAMPLE.md` §6.9).
@@ -33,7 +33,7 @@ export const issuesTracker = github.issues({ repo: 'acme/app', token: M.env('GIT
  * Polls `issuesTracker` every 60 seconds, maps `'agent-ready'` issues and `partition:*` labels into `workItem` inputs,
  * enforces concurrency 4 with dependency waiting, budget approval, retry backoff, and `steerSignal` worktree-preserving rewinds.
  */
-export const engineeringLane = M.lane('engineering')
+export const engineeringLane = P.lane('engineering')
   .input(workItem)
   .key((item) => item.ref)
   .tracker(issuesTracker, ($) =>
@@ -58,7 +58,7 @@ export const engineeringLane = M.lane('engineering')
     20,
     owner
       .withName('budget-approver')
-      .output(M.BudgetApprovalSchema),
+      .output(P.BudgetApprovalSchema),
   )
   .retry(($) => $.tries(2).exponential(5_000).orFail('exhausted'))
   .onSignal(steerSignal, ($) =>
@@ -81,7 +81,7 @@ export const engineeringLane = M.lane('engineering')
  * GitHub webhook event streams (`githubMergeStream`, `githubPrClosedStream`), `engineeringLane`,
  * `highLeverageLessonSignal` owner notifications, and MCP + Slack control planes.
  */
-export const appHarness = M.harness('acme-engineering')
+export const appHarness = P.harness('acme-engineering')
   .ledger(ledger)
   .pools(claudeAccounts, workerModels, runner)
   .streams(githubMergeStream, githubPrClosedStream)

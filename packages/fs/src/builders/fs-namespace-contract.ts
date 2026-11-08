@@ -26,13 +26,13 @@ import type {
   NodeRunnerNode,
   ScopePredicate,
   TopologyNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { FsJsonlLessonStoreOptions } from './create-fs-jsonl-lesson-store-builder.js';
 import type { FsRegexCheckOptions } from './create-fs-regex-check-builder.js';
 import type { FsWriteGuardOptions } from './create-fs-write-guard-builder.js';
 
 /**
- * Declarative builder namespace (`fs.*`) for `@metaharness/fs` sources, partition maps, guards, tools, and stores.
+ * Declarative builder namespace (`fs.*`) for `@paraharness/fs` sources, partition maps, guards, tools, and stores.
  *
  * Every method returns a passive, frozen AST node or serializable `LeaseDelta` / `ScopePredicate`
  * with zero import-time or declaration-time filesystem I/O.

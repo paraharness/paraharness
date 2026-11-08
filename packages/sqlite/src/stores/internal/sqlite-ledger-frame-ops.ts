@@ -1,4 +1,4 @@
-import type { WireFrameRecord } from '@metaharness/core';
+import type { WireFrameRecord } from '@paraharness/core';
 import type Database from 'better-sqlite3';
 import type { MarkFrameTombstoneParams } from './mark-frame-tombstone-params.js';
 import {

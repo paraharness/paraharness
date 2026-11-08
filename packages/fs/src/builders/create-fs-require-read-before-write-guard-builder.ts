@@ -1,4 +1,4 @@
-import type { FsRequireReadBeforeWriteGuardNode } from '@metaharness/core';
+import type { FsRequireReadBeforeWriteGuardNode } from '@paraharness/core';
 
 /**
  * Compiles a passive `FsRequireReadBeforeWriteGuardNode` (`fs:require-read-before-write`) for `fs.requireReadBeforeWrite()`.

@@ -4,7 +4,7 @@ import type { BivariantCallback } from '../ast-foundation.types.js';
  * Domain-agnostic base AST node contract for external work item trackers (`TrackerASTNode`).
  *
  * Resolved via `RuntimeExecutorRegistry.trackers[node.type]` into a `TrackerAdapter` polled
- * by `M.lane.tracker()`.
+ * by `P.lane.tracker()`.
  *
  * @template TType          String-literal discriminant of the tracker node.
  * @template TExternal      Raw external issue or ticket record type returned by `poll()`.

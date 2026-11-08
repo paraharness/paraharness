@@ -2,7 +2,7 @@ import type {
   OpenAiAccountSeatNode,
   OpenAiModelNode,
   RuntimeDriverContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { OpenAiSeatAuth } from './openai-seat-auth.js';
 
 /**

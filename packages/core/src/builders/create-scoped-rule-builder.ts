@@ -6,7 +6,7 @@ import { buildScopedRuleFromState } from './internal/build-scoped-rule-from-stat
 import type { ScopedRuleBuilder } from './scoped-rule-builder.js';
 
 /**
- * Creates a fluent `ScopedRuleBuilder` for `M.scopedRule(idOrSource)`.
+ * Creates a fluent `ScopedRuleBuilder` for `P.scopedRule(idOrSource)`.
  *
  * Delegates to `buildScopedRuleFromState` to support both inline scoped rules and
  * frontmatter-sourced scoped rule definitions.

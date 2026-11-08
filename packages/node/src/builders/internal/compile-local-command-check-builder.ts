@@ -2,7 +2,7 @@ import type {
   AstBuilder,
   LocalCommandCheckNode,
   LocalCommandNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Projects a compiled `LocalCommandNode` into a `LocalCommandCheckNode` builder and AST descriptor.

@@ -1,7 +1,7 @@
 import {
   createExecutorRegistry,
   evaluatePreFlightToolBatch,
-  M,
+  P,
   z,
   type ClaudeModelNode,
   type CustomDomainAST,
@@ -9,7 +9,7 @@ import {
   type StepExecutionContext,
   type ToolASTNode,
   type ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { describe, expect, it } from 'vitest';
 import {
   netsuite,
@@ -57,7 +57,7 @@ function createNetSuiteStepContext(scopeHandle: NetSuiteDraftHandle): {
   return { ctx, recordedEffects };
 }
 
-describe('@metaharness/netsuite adapter', () => {
+describe('@paraharness/netsuite adapter', () => {
   it('augments CustomDomainASTRegistry with scope:netsuite, guard:netsuite, abortHook:netsuite, tool:netsuite, and check:netsuite', () => {
     const scopeNode: CustomDomainAST<'scope'> = netsuite.draftJournalScope();
     const guardNode: CustomDomainAST<'guard'> = netsuite.forbidClosedPeriodPosting();
@@ -164,7 +164,7 @@ describe('@metaharness/netsuite adapter', () => {
       throw new Error('Expected netsuite_add_journal_line tool.');
     }
 
-    const policyNode = M.policy('netsuite-closed-period-policy')
+    const policyNode = P.policy('netsuite-closed-period-policy')
       .guard(netsuite.forbidClosedPeriodPosting())
       .onViolation('deny-with-error')
       .onAbort(netsuite.rollbackDraftJournal())
@@ -263,7 +263,7 @@ describe('@metaharness/netsuite adapter', () => {
     expect(handle.entries).toEqual([]);
   });
 
-  it('compiles a Tier-1 financial reconciliation M.flow with netsuite.draftJournalScope() and netsuite.rollbackDraftJournal()', () => {
+  it('compiles a Tier-1 financial reconciliation P.flow with netsuite.draftJournalScope() and netsuite.rollbackDraftJournal()', () => {
     const modelNode: ClaudeModelNode = {
       type: 'claude:model',
       vendor: 'anthropic',
@@ -272,17 +272,17 @@ describe('@metaharness/netsuite adapter', () => {
     };
     const discrepancySchema = z.object({ discrepancyId: z.string() });
     const receiptSchema = z.object({ journalEntryId: z.string() });
-    const reconcileLimitExceeded = M.interrupt('reconcile-limit-exceeded').payload(
+    const reconcileLimitExceeded = P.interrupt('reconcile-limit-exceeded').payload(
       z.object({ summary: z.string() }),
     );
-    const reconcileAgent = M.agent('reconciler')
+    const reconcileAgent = P.agent('reconciler')
       .model(modelNode)
       .tools(netsuite.journalTools())
       .beforeStop(netsuite.balanceZeroCheck())
       .input(discrepancySchema)
       .output(receiptSchema)
       .toAST();
-    const manualAgent = M.agent('manual-reconciler')
+    const manualAgent = P.agent('manual-reconciler')
       .model(modelNode)
       .tools(netsuite.journalTools())
       .beforeStop(netsuite.balanceZeroCheck())
@@ -290,7 +290,7 @@ describe('@metaharness/netsuite adapter', () => {
       .output(receiptSchema)
       .toAST();
 
-    const flowNode = M.flow('reconcile-discrepancy')
+    const flowNode = P.flow('reconcile-discrepancy')
       .input(discrepancySchema)
       .scope(netsuite.draftJournalScope())
       .step('attempt-reconcile', reconcileAgent, ($s) =>

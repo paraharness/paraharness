@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { M, z, type BaseCheckASTNode, type FsPartitionMapNode, type GitWorktreeHandle, type NodeRunnerNode, type StepExecutionContext } from '@metaharness/core';
+import { P, z, type BaseCheckASTNode, type FsPartitionMapNode, type GitWorktreeHandle, type NodeRunnerNode, type StepExecutionContext } from '@paraharness/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   GitCowWorktreeScopeDriver, createGitCandidateComparisonToolDrivers, createGitRefReaderToolDrivers,
@@ -327,7 +327,7 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       })
       .input(z.object({ branch: z.string() }))
       .runner(TEST_RUNNER)
-      .env({ CUSTOM_VAR: M.env('SECRET_TOKEN') })
+      .env({ CUSTOM_VAR: P.env('SECRET_TOKEN') })
       .toAST();
 
     const failCtx: StepExecutionContext<GitWorktreeHandle> = {

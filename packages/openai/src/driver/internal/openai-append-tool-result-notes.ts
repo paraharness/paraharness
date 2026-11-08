@@ -3,7 +3,7 @@ import type {
   CanonicalMessage,
   CanonicalToolResult,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { projectCanonicalToOpenAiWire } from './project-canonical-to-openai-wire.js';
 
 /**

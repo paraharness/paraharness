@@ -3,7 +3,7 @@ import type { RuntimeExecutorRegistry } from './runtime-executor-registry.js';
 /**
  * Partial slice of `RuntimeExecutorRegistry` exported by an individual domain adapter package.
  *
- * Allows each `@metaharness/*` adapter package to register only its own AST node executors
+ * Allows each `@paraharness/*` adapter package to register only its own AST node executors
  * and combine them via `createExecutorRegistry(...slices)`.
  */
 export interface RuntimeExecutorRegistrySlice {

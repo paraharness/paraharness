@@ -1,4 +1,4 @@
-import type { BaseCheckASTNode } from '@metaharness/core';
+import type { BaseCheckASTNode } from '@paraharness/core';
 import type { NetSuiteDraftHandle } from './netsuite-draft-handle.js';
 
 /**

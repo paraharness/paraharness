@@ -1,4 +1,4 @@
-import { z } from '@metaharness/core';
+import { z } from '@paraharness/core';
 
 /**
  * Zod schema validating a regional ledger discrepancy work item (`SPEC.md` §5).

@@ -1,4 +1,4 @@
-import type { AstBuilder, SqliteRulesSourceNode } from '@metaharness/core';
+import type { AstBuilder, SqliteRulesSourceNode } from '@paraharness/core';
 
 /**
  * Fluent builder for a passive `SqliteRulesSourceNode` (`sqlite.globalRules(uri, { table })`).

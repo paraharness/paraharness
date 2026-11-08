@@ -1,4 +1,4 @@
-import type { CompactionConfigNode, SqliteLedgerNode } from '@metaharness/core';
+import type { CompactionConfigNode, SqliteLedgerNode } from '@paraharness/core';
 import type { CompactionConfigBuilder } from './compaction-config-builder.js';
 import { createCompactionConfigBuilder } from './create-compaction-config-builder.js';
 import type { SqliteLedgerBuilder } from './sqlite-ledger-builder.js';

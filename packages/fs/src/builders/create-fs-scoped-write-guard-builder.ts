@@ -1,4 +1,4 @@
-import type { FsPartitionMapNode, FsScopedWriteGuardNode } from '@metaharness/core';
+import type { FsPartitionMapNode, FsScopedWriteGuardNode } from '@paraharness/core';
 
 /**
  * Compiles a passive `FsScopedWriteGuardNode` (`fs:scoped-write`) for `fs.scopedWrite(partitionMap)`.

@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { ToolExecutionResult } from '@metaharness/core';
+import type { ToolExecutionResult } from '@paraharness/core';
 import { resolveJailedWorktreePath } from './resolve-jailed-worktree-path.js';
 
 /**

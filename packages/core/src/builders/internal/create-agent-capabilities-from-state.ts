@@ -49,7 +49,7 @@ export function createAgentCapabilitiesFromState<TParentIn = unknown, THandle = 
       childExecutable: MaybeBuilder<AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>>,
       configure: ($f: ForkCapabilityBuilder<TParentIn, unknown, TChildIn, TChildOut, THandle>) => AstBuilder<ForkCapabilityNode<TParentIn, unknown, TChildIn, TChildOut, THandle>>,
     ) => {
-      assertNonEmptyIdentifier('M.agent.capabilities.fork', toolName);
+      assertNonEmptyIdentifier('P.agent.capabilities.fork', toolName);
       const forkNode = configure(
         createForkCapabilityFromState<TParentIn, unknown, TChildIn, TChildOut, THandle>({
           toolName,
@@ -66,7 +66,7 @@ export function createAgentCapabilitiesFromState<TParentIn = unknown, THandle = 
       toolName: string,
       configure: ($s: SpeculateCapabilityBuilder<TParentIn, unknown, unknown, unknown, THandle, unknown, unknown, unknown>) => AstBuilder<SpeculateCapabilityNode<TParentIn, unknown, unknown, unknown, THandle, unknown, unknown>>,
     ) => {
-      assertNonEmptyIdentifier('M.agent.capabilities.speculate', toolName);
+      assertNonEmptyIdentifier('P.agent.capabilities.speculate', toolName);
       const specNode = configure(createSpeculateFromState<TParentIn, unknown, unknown, unknown, THandle, unknown, unknown, unknown>({ toolName })).toAST();
       return createAgentCapabilitiesFromState({ forks, speculations: [...speculations, specNode], mutatePlan, escalations });
     },

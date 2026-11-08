@@ -21,7 +21,7 @@ export type {
   FsTextSourceNode,
   FsWriteGuardNode,
   FsWriteToolNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 export { createFsAllowOnlyGuardBuilder } from './builders/create-fs-allow-only-guard-builder.js';
 export { createFsAllowWriteGlobsLeaseDelta } from './builders/create-fs-allow-write-globs-lease-delta.js';
 export { createFsBoundaryGuardBuilder } from './builders/create-fs-boundary-guard-builder.js';

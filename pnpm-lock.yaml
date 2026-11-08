@@ -51,7 +51,7 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^1.6.0
         version: 1.6.0(zod@4.6.7)
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -98,10 +98,10 @@ importers:
 
   packages/fs:
     dependencies:
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
-      '@metaharness/lockfile':
+      '@paraharness/lockfile':
         specifier: workspace:*
         version: link:../lockfile
       minisearch:
@@ -144,7 +144,7 @@ importers:
       '@google/genai':
         specifier: ^3.0.0
         version: 3.0.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       zod:
@@ -163,10 +163,10 @@ importers:
 
   packages/git:
     dependencies:
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
-      '@metaharness/lockfile':
+      '@paraharness/lockfile':
         specifier: workspace:*
         version: link:../lockfile
       es-module-lexer:
@@ -203,15 +203,15 @@ importers:
 
   packages/github:
     dependencies:
-      '@metaharness/core':
-        specifier: workspace:*
-        version: link:../core
       '@octokit/rest':
         specifier: ^22.0.1
         version: 22.0.1
       '@octokit/webhooks':
         specifier: ^14.2.0
         version: 14.2.0
+      '@paraharness/core':
+        specifier: workspace:*
+        version: link:../core
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -228,49 +228,49 @@ importers:
 
   packages/integration:
     dependencies:
-      '@metaharness/claude':
+      '@paraharness/claude':
         specifier: workspace:*
         version: link:../claude
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
-      '@metaharness/fs':
+      '@paraharness/fs':
         specifier: workspace:*
         version: link:../fs
-      '@metaharness/gemini':
+      '@paraharness/gemini':
         specifier: workspace:*
         version: link:../gemini
-      '@metaharness/git':
+      '@paraharness/git':
         specifier: workspace:*
         version: link:../git
-      '@metaharness/github':
+      '@paraharness/github':
         specifier: workspace:*
         version: link:../github
-      '@metaharness/lockfile':
+      '@paraharness/lockfile':
         specifier: workspace:*
         version: link:../lockfile
-      '@metaharness/markdown':
+      '@paraharness/markdown':
         specifier: workspace:*
         version: link:../markdown
-      '@metaharness/netsuite':
+      '@paraharness/netsuite':
         specifier: workspace:*
         version: link:../netsuite
-      '@metaharness/node':
+      '@paraharness/node':
         specifier: workspace:*
         version: link:../node
-      '@metaharness/openai':
+      '@paraharness/openai':
         specifier: workspace:*
         version: link:../openai
-      '@metaharness/postgres':
+      '@paraharness/postgres':
         specifier: workspace:*
         version: link:../postgres
-      '@metaharness/slack':
+      '@paraharness/slack':
         specifier: workspace:*
         version: link:../slack
-      '@metaharness/sqlite':
+      '@paraharness/sqlite':
         specifier: workspace:*
         version: link:../sqlite
-      '@metaharness/stripe':
+      '@paraharness/stripe':
         specifier: workspace:*
         version: link:../stripe
       zod:
@@ -305,7 +305,7 @@ importers:
 
   packages/markdown:
     dependencies:
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       mdast-util-from-markdown:
@@ -348,7 +348,7 @@ importers:
 
   packages/netsuite:
     dependencies:
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       big.js:
@@ -373,12 +373,12 @@ importers:
 
   packages/node:
     dependencies:
-      '@metaharness/core':
-        specifier: workspace:*
-        version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)
+      '@paraharness/core':
+        specifier: workspace:*
+        version: link:../core
       fkill:
         specifier: ^10.0.3
         version: 10.0.3
@@ -419,7 +419,7 @@ importers:
 
   packages/openai:
     dependencies:
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       openai:
@@ -447,7 +447,7 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.15
         version: 0.5.15
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       minisearch:
@@ -487,7 +487,7 @@ importers:
 
   packages/slack:
     dependencies:
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       '@slack/socket-mode':
@@ -518,7 +518,7 @@ importers:
       '@dagrejs/graphlib':
         specifier: ^4.0.7
         version: 4.0.7
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       better-sqlite3:
@@ -552,7 +552,7 @@ importers:
 
   packages/stripe:
     dependencies:
-      '@metaharness/core':
+      '@paraharness/core':
         specifier: workspace:*
         version: link:../core
       stripe:

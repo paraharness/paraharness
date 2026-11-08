@@ -8,7 +8,7 @@ import { normalizeMaybeSource } from './internal/normalize-maybe-source.js';
 import type { PrefixGroupBuilder } from './prefix-group-builder.js';
 
 /**
- * Creates a fluent `PrefixGroupBuilder` for `M.prefixGroup(id)`.
+ * Creates a fluent `PrefixGroupBuilder` for `P.prefixGroup(id)`.
  *
  * Defaults `toolsMode` to `'role-scoped'` and accumulates `sharedGrounding`,
  * `sharedInstructions`, and `sharedRules` in declaration order.
@@ -22,7 +22,7 @@ export function createPrefixGroupBuilder(
   id: string,
   options?: CreatePrefixGroupBuilderOptions,
 ): PrefixGroupBuilder {
-  assertNonEmptyIdentifier('M.prefixGroup', id);
+  assertNonEmptyIdentifier('P.prefixGroup', id);
   const currentToolsMode = options?.toolsMode ?? 'role-scoped';
   const currentGrounding = options?.sharedGrounding ?? Object.freeze([]);
   const currentInstructions = options?.sharedInstructions ?? Object.freeze([]);

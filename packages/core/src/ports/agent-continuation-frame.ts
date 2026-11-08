@@ -4,7 +4,7 @@ import type { LessonOutcome } from './lesson-outcome.types.js';
 import type { ToolEffect } from './tool-effect.js';
 
 /**
- * Serialized continuation frame for an `M.agent` execution session (`kind: 'agent-frame'`).
+ * Serialized continuation frame for an `P.agent` execution session (`kind: 'agent-frame'`).
  *
  * Persisted inside `ContinuationFrame[]` stacks in `LedgerStore` and `SuspendedForkRecord`
  * to support deterministic crash recovery, sibling-interrupt suspension, and `resumeFork`.

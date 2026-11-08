@@ -1,4 +1,4 @@
-import { openSqliteConnection } from '@metaharness/sqlite';
+import { openSqliteConnection } from '@paraharness/sqlite';
 
 /**
  * Seeds the SQLite database at `sqlitePath` with the `owner_global_rules` table and initial owner rule row.

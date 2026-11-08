@@ -4,7 +4,7 @@ import type {
   ServiceSession,
   StepExecutionContext,
   ToolExecutionResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { LocalDaemonCommandContext } from '../../builders/local-daemon-builder.js';
 import { buildServiceToolNodes } from './build-service-tool-nodes.js';
 import { createPtyInteractionController } from './create-pty-interaction-controller.js';

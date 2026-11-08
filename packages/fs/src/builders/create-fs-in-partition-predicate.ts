@@ -1,4 +1,4 @@
-import type { FsPartitionMapNode, ScopePredicate } from '@metaharness/core';
+import type { FsPartitionMapNode, ScopePredicate } from '@paraharness/core';
 import { createFsGlobMatcherBuilder } from './create-fs-glob-matcher-builder.js';
 
 /**

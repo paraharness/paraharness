@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  M,
+  P,
   createExecutorRegistry,
   evaluatePreFlightToolBatch,
   z,
@@ -10,7 +10,7 @@ import {
   type StepExecutionContext,
   type ToolASTNode,
   type ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   createStripeExecutors,
   createStripeSdkGateway,
@@ -45,7 +45,7 @@ function createTestStepContext(): {
   return { ctx, recordedEffects };
 }
 
-describe('@metaharness/stripe adapter', () => {
+describe('@paraharness/stripe adapter', () => {
   it('resolves CustomDomainAST namespaced keys for tool:stripe, guard:stripe, and effectMatcher:stripe', () => {
     const [listTool, refundTool] = stripe.readTools();
     if (listTool === undefined || refundTool === undefined) {
@@ -139,11 +139,11 @@ describe('@metaharness/stripe adapter', () => {
   });
 
   it('evaluates stripe.maxRefundGuardUsd(500) pre-flight and honors stripe.allowRefundUpToUsd(10_000) LeaseDelta elevation', async () => {
-    const highValueApprovalRequest = M.interrupt('high-value-approval').payload(
+    const highValueApprovalRequest = P.interrupt('high-value-approval').payload(
       z.object({ proposedJournalId: z.string(), amountUsd: z.number(), reason: z.string() }),
     );
 
-    const policyNode = M.policy('auto-reconcile-bounds')
+    const policyNode = P.policy('auto-reconcile-bounds')
       .guard(stripe.maxRefundGuardUsd(500))
       .onViolation('raise-interrupt', highValueApprovalRequest, (violation) => ({
         proposedJournalId: String(violation.violatedEffects[0]?.attributes?.['journalId'] ?? 'draft'),

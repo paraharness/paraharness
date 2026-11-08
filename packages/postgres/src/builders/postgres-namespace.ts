@@ -5,7 +5,7 @@ import { createPostgresTopologyBuilder } from './create-postgres-topology-builde
 import type { PostgresNamespace } from './postgres-namespace-contract.js';
 
 /**
- * Frozen `postgres` builder namespace exported by `@metaharness/postgres`.
+ * Frozen `postgres` builder namespace exported by `@paraharness/postgres`.
  *
  * Exposes `postgres.ledger(uri)`, `postgres.topologyStore(uri)`, `postgres.lessonStore(uri)`,
  * and `postgres.globalRules(uri, { table })` for declarative harness composition.

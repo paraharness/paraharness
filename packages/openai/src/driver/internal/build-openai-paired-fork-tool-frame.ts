@@ -4,7 +4,7 @@ import type {
   ForkContext,
   PrecedingCompletedToolResult,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { formatOpenAiForkPromptText } from './format-openai-fork-prompt-text.js';
 import { projectCanonicalToOpenAiWire } from './project-canonical-to-openai-wire.js';
 

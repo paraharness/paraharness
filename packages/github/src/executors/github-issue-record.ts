@@ -1,7 +1,7 @@
 /**
  * Normalized GitHub issue record emitted by `GithubIssuesTrackerAdapter.poll()`.
  *
- * Provides typed issue metadata and normalized label strings consumed by `M.lane(...).tracker(...)`
+ * Provides typed issue metadata and normalized label strings consumed by `P.lane(...).tracker(...)`
  * projection callbacks.
  */
 export interface GithubIssueRecord {

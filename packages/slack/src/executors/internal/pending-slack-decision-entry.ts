@@ -1,4 +1,4 @@
-import type { z } from '@metaharness/core';
+import type { z } from '@paraharness/core';
 
 /**
  * In-flight interactive decision state tracked by `SlackApproverAdapter`.

@@ -1,7 +1,7 @@
 import type { HumanChannelASTNode } from './domain-ast.types.js';
 
 /**
- * Passive AST node representing an external human authority or notification target (`M.human(id)`).
+ * Passive AST node representing an external human authority or notification target (`P.human(id)`).
  *
  * Binds a logical human authority role identifier to either a bidirectional decision channel
  * or a one-way notification channel, along with an optional slot-yielding keep-alive window.

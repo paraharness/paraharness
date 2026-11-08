@@ -1,6 +1,6 @@
 import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitScopeReceipt, GitWorktreeHandle } from '@metaharness/core';
+import type { GitScopeReceipt, GitWorktreeHandle } from '@paraharness/core';
 import { listTreePaths } from './checkpoint-staging-and-integrity.js';
 import { gitCheckpointStatusMap } from './git-checkpoint-status-map.js';
 import {

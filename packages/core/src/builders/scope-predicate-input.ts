@@ -2,7 +2,7 @@ import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { EffectMatcherASTNode } from '../ast/domain-ast.types.js';
 
 /**
- * Input predicate shape accepted by `M.scopedRule(...).when(...)` and `M.skill(...).when(...)`.
+ * Input predicate shape accepted by `P.scopedRule(...).when(...)` and `P.skill(...).when(...)`.
  *
  * Combines optional pre-flight partition globs with an optional reactive post-call
  * `EffectMatcherASTNode` predicate.

@@ -1,4 +1,4 @@
-import type { GithubIssuesTrackerNode } from '@metaharness/core';
+import type { GithubIssuesTrackerNode } from '@paraharness/core';
 import type { GithubIssueRecord } from '../executors/github-issue-record.js';
 import type { GithubIssuesOptions } from './github-issues-options.js';
 

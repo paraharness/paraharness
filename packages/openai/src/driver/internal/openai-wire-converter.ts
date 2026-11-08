@@ -3,7 +3,7 @@ import {
   type CanonicalMessage,
   type ModelTurnRequest,
   type ModelTurnResponse,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { computeOpenAiTurnUsage } from './compute-openai-turn-usage.js';
 import { decodeHistoryToOpenAiResponsesInput } from './decode-history-to-openai-responses-input.js';
 import { extractOpenAiOutputItems } from './extract-openai-output-items.js';

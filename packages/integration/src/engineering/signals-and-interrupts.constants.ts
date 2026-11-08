@@ -1,4 +1,4 @@
-import { M, z } from '@metaharness/core';
+import { P, z } from '@paraharness/core';
 import { partitionEnum } from './engineering-schemas.schema.js';
 
 /**
@@ -7,7 +7,7 @@ import { partitionEnum } from './engineering-schemas.schema.js';
  * Triggers `engineeringLane` to update the active `workItem` description with the owner note,
  * promote `routingTier` to `'deep'`, and rewind the flow to `'execute-work'` while preserving the worktree.
  */
-export const steerSignal = M.signal('steer').payload(
+export const steerSignal = P.signal('steer').payload(
   z.object({ note: z.string() }),
 );
 
@@ -17,7 +17,7 @@ export const steerSignal = M.signal('steer').payload(
  * Correlates by `ref` and `baseBranch` to commit sealed `repoTopology` overlays, advance lesson creation epochs,
  * and schedule cold-tier ledger compaction after the configured grace period.
  */
-export const changeShippedSignal = M.signal('change-shipped').payload(
+export const changeShippedSignal = P.signal('change-shipped').payload(
   z.object({ ref: z.string(), mergeCommitSha: z.string(), baseBranch: z.string() }),
 );
 
@@ -26,7 +26,7 @@ export const changeShippedSignal = M.signal('change-shipped').payload(
  *
  * Correlates by `ref` to discard any uncommitted `repoTopology` contract overlay for the abandoned run.
  */
-export const prClosedUnmergedSignal = M.signal('pr-closed-unmerged').payload(
+export const prClosedUnmergedSignal = P.signal('pr-closed-unmerged').payload(
   z.object({ ref: z.string() }),
 );
 
@@ -35,7 +35,7 @@ export const prClosedUnmergedSignal = M.signal('pr-closed-unmerged').payload(
  *
  * Notifies `owner` via `appHarness.onSignal` so high-performing empirical lessons can be promoted to static `repoRules` or checks.
  */
-export const highLeverageLessonSignal = M.signal('high-leverage-lesson').payload(
+export const highLeverageLessonSignal = P.signal('high-leverage-lesson').payload(
   z.object({
     lessonId: z.string(),
     directive: z.string(),
@@ -51,7 +51,7 @@ export const highLeverageLessonSignal = M.signal('high-leverage-lesson').payload
  * Flushes structured reconnaissance (`reason`, `implicatedPartitions`, `findings`), snapshots the dirty worktree
  * to `refs/harness/aborted/<run-id>/<stepExecId>`, and promotes execution to `coordinator`.
  */
-export const scopeTripwire = M.interrupt('scope-exceeded').payload(
+export const scopeTripwire = P.interrupt('scope-exceeded').payload(
   z.object({
     reason: z.string(),
     implicatedPartitions: z.array(partitionEnum),
@@ -65,7 +65,7 @@ export const scopeTripwire = M.interrupt('scope-exceeded').payload(
  * Intercepts the blocked tool call inside `PendingToolBatch` and routes the requested paths and justification
  * to `leaseAdjudicator` without losing the worker's in-progress turn state.
  */
-export const leaseRequest = M.interrupt('lease-request').payload(
+export const leaseRequest = P.interrupt('lease-request').payload(
   z.object({
     requestedPaths: z.array(z.string()),
     justification: z.string(),
@@ -78,7 +78,7 @@ export const leaseRequest = M.interrupt('lease-request').payload(
  * Suspends the raising fork's continuation stack, pauses sibling forks in `repoTopology.affectedBy(partition)`,
  * and returns a structured `SUSPENDED_ON_INTERRUPT` tool result to `coordinator`.
  */
-export const contractViolation = M.interrupt('contract-violation').payload(
+export const contractViolation = P.interrupt('contract-violation').payload(
   z.object({
     partition: partitionEnum,
     brokenInvariant: z.string(),
@@ -93,7 +93,7 @@ export const contractViolation = M.interrupt('contract-violation').payload(
  * Parks automatically inside speculative tournaments (`PARKED_ON_ESCALATION`) unless `candidateArbiter`
  * explicitly unparks the branch, and pages `owner` when raised from a non-speculative execution path.
  */
-export const normativeEscalation = M.interrupt('normative-tradeoff').payload(
+export const normativeEscalation = P.interrupt('normative-tradeoff').payload(
   z.object({
     question: z.string(),
     options: z.array(

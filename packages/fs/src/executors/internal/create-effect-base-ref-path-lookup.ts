@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@metaharness/core';
+import type { ToolEffect } from '@paraharness/core';
 import { checkPathsExistAtBaseRef } from './check-paths-exist-at-base-ref.js';
 
 /**

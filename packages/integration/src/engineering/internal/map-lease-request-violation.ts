@@ -1,4 +1,4 @@
-import type { PolicyViolation } from '@metaharness/core';
+import type { PolicyViolation } from '@paraharness/core';
 
 /**
  * Extracts violated file paths and the violation summary from a pre-flight test-file `PolicyViolation` (`CODING_SAMPLE.md` §6.6).

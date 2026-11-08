@@ -2,7 +2,7 @@ import type {
   EnvRef,
   LocalStreamCheckCircuitBreakerConfig,
   NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Immutable internal state snapshot backing `LocalStreamCheckBuilder`.

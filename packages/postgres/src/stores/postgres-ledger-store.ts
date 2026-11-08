@@ -10,7 +10,7 @@ import type {
   RunTerminalReceiptRecord,
   SuspendedForkRecord,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import PQueue from 'p-queue';
 import type { Pool } from 'pg';
 import { normalizePostgresClient } from '../ddl/internal/normalize-postgres-client.js';
@@ -56,7 +56,7 @@ export interface UpdatePgContinuationStackOptions {
 }
 
 /**
- * PostgreSQL implementation of the `@metaharness/core` `LedgerStore` runtime port.
+ * PostgreSQL implementation of the `@paraharness/core` `LedgerStore` runtime port.
  *
  * Persists flow runs, step continuation stacks, wire-frame chains, dynamic lane DAG mutations,
  * and suspended fork records inside transactional PostgreSQL tables serialized via `p-queue`.

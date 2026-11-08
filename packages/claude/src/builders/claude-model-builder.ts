@@ -4,13 +4,13 @@ import type {
   ClaudeModelNode,
   MaybeBuilder,
   PoolNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Fluent builder for constructing a passive `ClaudeModelNode` (`type: 'claude:model'`).
  *
  * Binds an Anthropic model identifier, optional reasoning effort budget, and an optional
- * `M.pool` of `ClaudeAccountSeatNode` seats with run-sticky KV-cache affinity.
+ * `P.pool` of `ClaudeAccountSeatNode` seats with run-sticky KV-cache affinity.
  */
 export interface ClaudeModelBuilder extends AstBuilder<ClaudeModelNode> {
   /** Logical alias of the model within the harness definition. */
@@ -43,7 +43,7 @@ export interface ClaudeModelBuilder extends AstBuilder<ClaudeModelNode> {
   /**
    * Alias for `accountPool(pool)` attaching a capacity pool of `ClaudeAccountSeatNode` seats.
    *
-   * Preserves API symmetry across `@metaharness/claude`, `@metaharness/openai`, and `@metaharness/gemini`.
+   * Preserves API symmetry across `@paraharness/claude`, `@paraharness/openai`, and `@paraharness/gemini`.
    *
    * @param {MaybeBuilder<PoolNode<ClaudeAccountSeatNode>>} pool - Account seat pool node or builder.
    *

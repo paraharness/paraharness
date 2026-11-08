@@ -1,4 +1,4 @@
-import { z, type LocalServiceInteractionConfig } from '@metaharness/core';
+import { z, type LocalServiceInteractionConfig } from '@paraharness/core';
 import type {
   LocalDaemonInteractOptions,
   LocalDaemonRegexDescriptor,

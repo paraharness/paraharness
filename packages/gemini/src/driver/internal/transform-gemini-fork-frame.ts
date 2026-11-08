@@ -1,4 +1,4 @@
-import type { CanonicalMessage, CanonicalToolResult, WireFrameRecord } from '@metaharness/core';
+import type { CanonicalMessage, CanonicalToolResult, WireFrameRecord } from '@paraharness/core';
 import { projectCanonicalToGeminiContent } from './project-canonical-to-gemini-content.js';
 import { stripGeminiThoughtPartsAndSignatures } from './strip-gemini-thought-parts-and-signatures.js';
 import { tryDecodeGeminiWireContent } from './try-decode-gemini-wire-content.js';

@@ -1,4 +1,4 @@
-import type { LessonRecord } from '@metaharness/core';
+import type { LessonRecord } from '@paraharness/core';
 
 /**
  * Projects a high-performing `LessonRecord` into a validated `highLeverageLessonSignal` payload (`CODING_SAMPLE.md` §6.5).

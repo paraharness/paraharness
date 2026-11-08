@@ -14,7 +14,7 @@ export interface HarnessRuntimeController {
    *
    * @template TPayload Validated signal payload type.
    *
-   * @param {string}   signalId - Identifier of the `M.signal` definition to trigger.
+   * @param {string}   signalId - Identifier of the `P.signal` definition to trigger.
    * @param {TPayload} payload  - Signal payload to validate and route.
    *
    * @returns {Promise<void>} Resolves once the signal has been routed and processed.

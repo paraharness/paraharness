@@ -1,4 +1,4 @@
-import type { TopologyPartitionState } from '@metaharness/core';
+import type { TopologyPartitionState } from '@paraharness/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { PgOverlayStepMutationEntry } from './pg-overlay-step-mutation-entry.js';
 import type { PgTopologyBaseRow } from './pg-topology-base-row.js';

@@ -2,7 +2,7 @@ import type {
   OpenAiModelNode,
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { defaultOpenAiHttpTransport } from './default-openai-http-transport.constants.js';
 import type { OpenAiHttpTransport } from './openai-http-transport.js';
 import { OpenAiModelDriver } from './openai-model-driver.js';

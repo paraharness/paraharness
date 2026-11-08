@@ -3,7 +3,7 @@ import {
   type CanonicalMessage,
   type ModelTurnRequest,
   type ModelTurnResponse,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   CLAUDE_THINKING_BUDGETS,
   DEFAULT_CLAUDE_MAX_TOKENS,

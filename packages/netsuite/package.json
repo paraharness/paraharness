@@ -1,5 +1,5 @@
 {
-  "name": "@metaharness/netsuite",
+  "name": "@paraharness/netsuite",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@metaharness/core": "workspace:*",
+    "@paraharness/core": "workspace:*",
     "big.js": "^7.0.1",
     "zod": "^4.6.7"
   },

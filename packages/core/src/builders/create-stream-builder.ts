@@ -8,7 +8,7 @@ import { assertNonEmptyIdentifier, deepFreeze } from './internal/deep-freeze.js'
 import type { StreamBuilder } from './stream-builder.js';
 
 /**
- * Creates a fluent `StreamBuilder` for `M.stream(id)`.
+ * Creates a fluent `StreamBuilder` for `P.stream(id)`.
  *
  * Validates that `id` is non-empty and returns a copy-on-write immutable builder that
  * compiles into a deeply frozen `StreamNode`.
@@ -25,7 +25,7 @@ export function createStreamBuilder<TEvent = unknown, TPayload = unknown>(
   id: string,
   options?: CreateStreamBuilderOptions<TEvent, TPayload>,
 ): StreamBuilder<TEvent, TPayload> {
-  assertNonEmptyIdentifier('M.stream', id);
+  assertNonEmptyIdentifier('P.stream', id);
   return Object.freeze<StreamBuilder<TEvent, TPayload>>({
     id,
     source<TNextEvent>(

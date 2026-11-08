@@ -1,4 +1,4 @@
-import type { CanonicalToolCall } from '@metaharness/core';
+import type { CanonicalToolCall } from '@paraharness/core';
 import type { ExtractedOpenAiOutputItems } from './extracted-openai-output-items.js';
 
 /**

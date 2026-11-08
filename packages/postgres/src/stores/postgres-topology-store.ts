@@ -2,7 +2,7 @@ import type {
   CommitRunOverlayResult,
   TopologyPartitionState,
   TopologyStore,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import PQueue from 'p-queue';
 import type { Pool } from 'pg';
 import { normalizePostgresClient } from '../ddl/internal/normalize-postgres-client.js';
@@ -25,7 +25,7 @@ import {
 } from './internal/pg-topology-overlay-ops.js';
 
 /**
- * PostgreSQL implementation of the `@metaharness/core` `TopologyStore` runtime port.
+ * PostgreSQL implementation of the `@paraharness/core` `TopologyStore` runtime port.
  *
  * Provides run-isolated Copy-on-Write partition contract overlays, at-most-once per-run epoch
  * increments, stacked-PR `syncRunOverlays` baseline advancement, step/run-scoped rollbacks,

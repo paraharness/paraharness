@@ -1,7 +1,7 @@
 export type {
   MarkdownFrontmatterSourceNode,
   MarkdownSectionSourceNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 export { createMdFrontmatterBuilder } from './builders/create-md-frontmatter-builder.js';
 export { createMdGlobalRulesBuilder } from './builders/create-md-global-rules-builder.js';
 export { createMdScopedRuleBuilder } from './builders/create-md-scoped-rule-builder.js';

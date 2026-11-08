@@ -3,7 +3,7 @@ import type { PoolNode } from '../pool-node.js';
 import type { OpenAiAccountSeatNode } from './openai-account-seat-node.js';
 
 /**
- * Passive AST node representing an OpenAI Responses API model configuration (`@metaharness/openai`).
+ * Passive AST node representing an OpenAI Responses API model configuration (`@paraharness/openai`).
  *
  * Dispatched via `RuntimeExecutorRegistry.models['openai:model']`.
  */

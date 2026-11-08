@@ -10,10 +10,10 @@ import {
   type FlowExecutionContext,
   type GitWorktreeHandle,
   type ModelTurnResponse,
-} from '@metaharness/core';
-import { FsJsonlLessonStore } from '@metaharness/fs';
-import { git, GitCowWorktreeScopeDriver } from '@metaharness/git';
-import { SqliteLedgerStore, SqliteTopologyStore } from '@metaharness/sqlite';
+} from '@paraharness/core';
+import { FsJsonlLessonStore } from '@paraharness/fs';
+import { git, GitCowWorktreeScopeDriver } from '@paraharness/git';
+import { SqliteLedgerStore, SqliteTopologyStore } from '@paraharness/sqlite';
 import { describe, expect, it } from 'vitest';
 import {
   appHarness,

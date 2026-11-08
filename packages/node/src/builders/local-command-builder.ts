@@ -8,7 +8,7 @@ import type {
   MaybeBuilder,
   NodeRunnerNode,
   z,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Options for configuring an idempotency guard on `local.command().unrepeatable(preCheckCmd, options)`.

@@ -3,7 +3,7 @@ import { createGithubIssuesBuilder } from './create-github-issues-builder.js';
 import { createGithubWebhookStreamBuilder } from './create-github-webhook-stream-builder.js';
 import type { GithubNamespace } from './github-namespace-contract.js';
 
-/** Frozen `@metaharness/github` DSL namespace singleton (`github.issues`, `github.webhookStream`, `github.createOrUpdatePr`). */
+/** Frozen `@paraharness/github` DSL namespace singleton (`github.issues`, `github.webhookStream`, `github.createOrUpdatePr`). */
 export const github: GithubNamespace = Object.freeze<GithubNamespace>({
   issues: createGithubIssuesBuilder,
   webhookStream: createGithubWebhookStreamBuilder,

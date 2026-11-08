@@ -12,7 +12,7 @@ import type { ScopedHumanNameBuilder as ScopedHumanAliasBuilder } from './scoped
 import type { ScopedHumanTargetBuilder } from './scoped-human-target-builder.js';
 
 /**
- * Creates a `ScopedHumanAliasBuilder` for `M.human(id).withName(alias)`.
+ * Creates a `ScopedHumanAliasBuilder` for `P.human(id).withName(alias)`.
  *
  * Validates that the underlying `HumanNode` channel is `'bidirectional'` when `.output(schema)` is invoked.
  *
@@ -30,7 +30,7 @@ function createScopedHumanAliasBuilder<
     output<TResponse>(responseSchema: z.ZodType<TResponse>): ScopedHumanTargetBuilder<TResponse> {
       const bidirectionalHuman = validateBidirectionalHumanChannel(
         compileNode(),
-        'M.human.withName().output()',
+        'P.human.withName().output()',
       );
       const scopedNode = deepFreeze<ScopedHumanTargetNode<TResponse>>({
         type: 'harness:scoped-human',
@@ -51,7 +51,7 @@ function createScopedHumanAliasBuilder<
 }
 
 /**
- * Creates a fluent `HumanBuilder` for `M.human(id)`.
+ * Creates a fluent `HumanBuilder` for `P.human(id)`.
  *
  * Tracks the channel interaction mode (`'bidirectional' | 'notify-only'`) and validates
  * that `.withName(alias).output(schema)` is only called on bidirectional channels.
@@ -66,7 +66,7 @@ function createScopedHumanAliasBuilder<
 export function createHumanBuilder<
   TMode extends 'bidirectional' | 'notify-only' = 'bidirectional' | 'notify-only',
 >(id: string, options?: CreateHumanBuilderOptions<TMode>): HumanBuilder<TMode> {
-  assertNonEmptyIdentifier('M.human', id);
+  assertNonEmptyIdentifier('P.human', id);
   const compileNode = (): HumanNode<TMode> => {
     if (options?.channel === undefined) {
       throw new Error(`Human '${id}' is missing required .notify(channel) configuration.`);
@@ -96,7 +96,7 @@ export function createHumanBuilder<
       });
     },
     withName(alias: string): ScopedHumanAliasBuilder {
-      assertNonEmptyIdentifier('M.human.withName', alias);
+      assertNonEmptyIdentifier('P.human.withName', alias);
       return createScopedHumanAliasBuilder(alias, compileNode);
     },
     toAST(): HumanNode<TMode> {

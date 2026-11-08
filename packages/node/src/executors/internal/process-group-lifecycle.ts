@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
-import type { EnvRef } from '@metaharness/core';
+import type { EnvRef } from '@paraharness/core';
 import fkill from 'fkill';
 import pidtree from 'pidtree';
 import {

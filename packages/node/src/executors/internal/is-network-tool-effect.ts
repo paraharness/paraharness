@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@metaharness/core';
+import type { ToolEffect } from '@paraharness/core';
 
 /**
  * Determines whether a `ToolEffect` represents an outbound network operation.

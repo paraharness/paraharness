@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import BetterSqlite3 from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { M, createExecutorRegistry } from '@metaharness/core';
-import type { ResolutionContext, RuntimeDriverContext } from '@metaharness/core';
+import { P, createExecutorRegistry } from '@paraharness/core';
+import type { ResolutionContext, RuntimeDriverContext } from '@paraharness/core';
 import {
   SqliteLedgerStore,
   SqliteLessonStore,
@@ -62,7 +62,7 @@ describe('sqlite AST builders and global-rules source executor', () => {
   });
 
   it('builds frozen SqliteLedgerNode with compaction config and preserves immutability', () => {
-    const mergedSig = M.signal('github:pr.merged', z.object({ issueKey: z.string() })).toAST();
+    const mergedSig = P.signal('github:pr.merged', z.object({ issueKey: z.string() })).toAST();
     const baseBuilder = sqlite.ledger('.harness/state.sqlite');
     const configuredBuilder = baseBuilder.compactWhen(($c) =>
       $c

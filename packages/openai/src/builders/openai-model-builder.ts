@@ -4,13 +4,13 @@ import type {
   OpenAiAccountSeatNode,
   OpenAiModelNode,
   PoolNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Fluent builder for constructing a passive `OpenAiModelNode` (`type: 'openai:model'`).
  *
  * Binds an OpenAI model identifier, optional reasoning effort level, and an optional
- * `M.pool` of `OpenAiAccountSeatNode` seats with run-sticky seat affinity and cross-seat failover stripping.
+ * `P.pool` of `OpenAiAccountSeatNode` seats with run-sticky seat affinity and cross-seat failover stripping.
  */
 export interface OpenAiModelBuilder extends AstBuilder<OpenAiModelNode> {
   /** Logical alias of the model within the harness definition. */
@@ -43,7 +43,7 @@ export interface OpenAiModelBuilder extends AstBuilder<OpenAiModelNode> {
   /**
    * Alias for `accountPool(pool)` attaching a capacity pool of `OpenAiAccountSeatNode` seats.
    *
-   * Preserves API symmetry across `@metaharness/claude`, `@metaharness/openai`, and `@metaharness/gemini`.
+   * Preserves API symmetry across `@paraharness/claude`, `@paraharness/openai`, and `@paraharness/gemini`.
    *
    * @param {MaybeBuilder<PoolNode<OpenAiAccountSeatNode>>} pool - Account seat pool node or builder.
    *

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   type AgentContinuationFrame, BudgetApprovalSchema, type ControlPlaneAdapter,
-  DEFAULT_MAX_SEALED_AGE_HOURS, type FsGlobMatcherNode, type GitWorktreeHandle, M, LaneScheduler,
+  DEFAULT_MAX_SEALED_AGE_HOURS, type FsGlobMatcherNode, type GitWorktreeHandle, P, LaneScheduler,
   type LocalServiceNode, type LoopContinuationFrame, type NodeHttpControlPlaneNode,
   ServiceSessionRegistry, type StepExecutionContext, type StreamSource, type ToolEffect,
   type TrackerAdapter, createExecutorRegistry, createRuntime, executeAgent, executeLoop, z,
@@ -43,15 +43,15 @@ function makeTurn(visibleText: string, toolCalls: ReadonlyArray<{ id: string; na
   });
 }
 
-describe('M2 Runtime — M.rules & M.scopedRule (when.partitions, reactive when.effects, enforceBeforeStopChecks)', () => {
+describe('M2 Runtime — P.rules & P.scopedRule (when.partitions, reactive when.effects, enforceBeforeStopChecks)', () => {
   it('injects when.partitions at Turn 0, deduplicates reactive when.effects in completedResults across suspension, and runs enforceBeforeStopChecks iff rule is injected and mutatesScope is true', async () => {
     expect(DEFAULT_MAX_SEALED_AGE_HOURS).toBe(168);
-    const partRule = M.scopedRule('rule-part-db').when({ partitions: ['db'] }).directive('Partition DB rule directive.').enforceBeforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE);
-    const effectRule = M.scopedRule('rule-eff-write').when({ effects: WRITE_EFFECT_MATCHER }).directive('Reactive write rule directive.');
-    const rulesNode = M.rules('repo-rules').global({ id: 'g1', directive: 'Global rule.' }).scoped(partRule, effectRule);
+    const partRule = P.scopedRule('rule-part-db').when({ partitions: ['db'] }).directive('Partition DB rule directive.').enforceBeforeStop(SAMPLE_CLEAN_TREE_CHECK_NODE);
+    const effectRule = P.scopedRule('rule-eff-write').when({ effects: WRITE_EFFECT_MATCHER }).directive('Reactive write rule directive.');
+    const rulesNode = P.rules('repo-rules').global({ id: 'g1', directive: 'Global rule.' }).scoped(partRule, effectRule);
 
     const taskSchema = z.object({ id: z.string(), title: z.string() });
-    const agent = M.agent<GitWorktreeHandle>('ruled-agent')
+    const agent = P.agent<GitWorktreeHandle>('ruled-agent')
       .model(SAMPLE_MODEL_NODE).rules(rulesNode).tools(SAMPLE_DECLARED_TOOL_NODE).input(taskSchema).output(z.object({ done: z.boolean() }))
       .capabilities(($c) => $c.mutatePlan(($m) => $m.canSpawnTasks(taskSchema, { maxSpawnedPerRun: 2 })))
       .toAST();
@@ -137,14 +137,14 @@ describe('M2 Runtime — M.rules & M.scopedRule (when.partitions, reactive when.
   });
 });
 
-describe('M2 Runtime — M.stream, M.harness (.onSignal().notify, .expose) & M.lane.tracker stateMappings', () => {
+describe('M2 Runtime — P.stream, P.harness (.onSignal().notify, .expose) & P.lane.tracker stateMappings', () => {
   it('subscribes StreamSource with filterFn/mapPayload -> emitSignal -> .notify(), starts/closes ControlPlaneAdapter, and syncs TrackerAdapter across canonical stateMappings', async () => {
     const ledgerStore = new InMemoryLedgerStore();
     const humanAdapter = new ScriptedHumanAdapter();
-    const notifyHuman = M.human('ops-pager').notify<'bidirectional' | 'notify-only'>(SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE);
-    const budgetHuman = M.human('budget-owner').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE).withName('approver').output(BudgetApprovalSchema);
-    const webhookSig = M.signal('sig-webhook', z.object({ pr: z.number() }));
-    const stream = M.stream('pr-stream')
+    const notifyHuman = P.human('ops-pager').notify<'bidirectional' | 'notify-only'>(SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE);
+    const budgetHuman = P.human('budget-owner').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE).withName('approver').output(BudgetApprovalSchema);
+    const webhookSig = P.signal('sig-webhook', z.object({ pr: z.number() }));
+    const stream = P.stream('pr-stream')
       .source<unknown>(SAMPLE_STREAM_SOURCE_NODE)
       .filter((ev: unknown) => (ev as { readonly merged: boolean }).merged)
       .emitSignal(webhookSig, (ev: unknown) => ({ pr: (ev as { readonly prNumber: number }).prNumber }));
@@ -173,7 +173,7 @@ describe('M2 Runtime — M.stream, M.harness (.onSignal().notify, .expose) & M.l
 
     const itemSchema = z.object({ id: z.string(), title: z.string(), deps: z.array(z.string()).default([]), shouldFail: z.boolean().optional(), shouldSuspend: z.boolean().optional() });
     let capturedRunnerError = '';
-    const stepCmd = M.command('tracker-step', {
+    const stepCmd = P.command('tracker-step', {
       input: itemSchema, output: z.object({ ok: z.boolean() }),
       fn: async (input: z.output<typeof itemSchema>, ctx) => {
         try {
@@ -190,8 +190,8 @@ describe('M2 Runtime — M.stream, M.harness (.onSignal().notify, .expose) & M.l
         return { ok: true };
       },
     });
-    const flow = M.flow('tracker-flow').input(itemSchema).scope(SAMPLE_TIER3_SCOPE_NODE).step('s1', stepCmd).exit('pr-opened');
-    const lane = M.lane('tracker-lane')
+    const flow = P.flow('tracker-flow').input(itemSchema).scope(SAMPLE_TIER3_SCOPE_NODE).step('s1', stepCmd).exit('pr-opened');
+    const lane = P.lane('tracker-lane')
       .input(itemSchema).key((i: z.output<typeof itemSchema>) => i.id)
       .tracker(SAMPLE_TRACKER_NODE, ($t) =>
         $t.everySeconds(10)
@@ -215,7 +215,7 @@ describe('M2 Runtime — M.stream, M.harness (.onSignal().notify, .expose) & M.l
       trackers: { 'github:issues': () => trackerAdapter as never },
     });
 
-    const harness = M.harness('stream-harness')
+    const harness = P.harness('stream-harness')
       .ledger(SAMPLE_LEDGER_NODE).streams(stream.toAST()).lanes(lane)
       .onSignal(webhookSig, ($s) => $s.notify(notifyHuman.toAST(), (p: { readonly pr: number }) => `PR #${String(p.pr)} merged`)).expose(controlPlaneNode);
 
@@ -255,10 +255,10 @@ describe('M2 Runtime — M.stream, M.harness (.onSignal().notify, .expose) & M.l
   });
 });
 
-describe('M2 Runtime — Mixed-Turn Tool Batching & M.loop Step-Boundary Isolation', () => {
+describe('M2 Runtime — Mixed-Turn Tool Batching & P.loop Step-Boundary Isolation', () => {
   it('drains (1..m) regular tools, contiguous capability .fork() (m+1..p) with precedingCompletedResults & siblingForkCallIds, and trailing (p+1..k) tools into a single role: tool wire frame', async () => {
-    const childWorker = M.agent<GitWorktreeHandle>('mixed-child').model(SAMPLE_MODEL_NODE).input(z.object({ task: z.string() })).output(z.object({ childResult: z.string() }));
-    const parentAgent = M.agent<GitWorktreeHandle>('mixed-parent')
+    const childWorker = P.agent<GitWorktreeHandle>('mixed-child').model(SAMPLE_MODEL_NODE).input(z.object({ task: z.string() })).output(z.object({ childResult: z.string() }));
+    const parentAgent = P.agent<GitWorktreeHandle>('mixed-parent')
       .model(SAMPLE_MODEL_NODE).tools(SAMPLE_DECLARED_TOOL_NODE, SAMPLE_EXTRA_COMPARE_TOOL_NODE)
       .input(z.object({ goal: z.string() })).output(z.object({ summary: z.string() }))
       .capabilities(($c) =>
@@ -324,14 +324,14 @@ describe('M2 Runtime — Mixed-Turn Tool Batching & M.loop Step-Boundary Isolati
   });
 
   it('registers static Turn-0 skill/service tools, dispatches unlocked service tools, quiesces daemons on .act() -> .evaluate(), and counts quantitative tripwires strictly on .act() turns', async () => {
-    const actSkill = M.skill('act-skill').description('Act daemon skill').instructions('Use daemon').unlocksServices(SAMPLE_SERVICE_NODE);
-    const evalSkill = M.skill('eval-skill').description('Evaluator skill').instructions('Eval only').unlocksTools(SAMPLE_DECLARED_TOOL_NODE);
-    const strictActPolicy = M.policy<GitWorktreeHandle>('act-policy').maxTurns(3);
+    const actSkill = P.skill('act-skill').description('Act daemon skill').instructions('Use daemon').unlocksServices(SAMPLE_SERVICE_NODE);
+    const evalSkill = P.skill('eval-skill').description('Evaluator skill').instructions('Eval only').unlocksTools(SAMPLE_DECLARED_TOOL_NODE);
+    const strictActPolicy = P.policy<GitWorktreeHandle>('act-policy').maxTurns(3);
 
-    const actAgent = M.agent<GitWorktreeHandle>('loop-worker').model(SAMPLE_MODEL_NODE).policy(strictActPolicy).skills(actSkill).input(z.object({ id: z.string() })).output(z.object({ code: z.string() }));
-    const evalAgent = M.agent<GitWorktreeHandle>('loop-evaluator').model(SAMPLE_MODEL_NODE).skills(evalSkill).input(z.object({ code: z.string() })).output(z.object({ passed: z.boolean() }));
+    const actAgent = P.agent<GitWorktreeHandle>('loop-worker').model(SAMPLE_MODEL_NODE).policy(strictActPolicy).skills(actSkill).input(z.object({ id: z.string() })).output(z.object({ code: z.string() }));
+    const evalAgent = P.agent<GitWorktreeHandle>('loop-evaluator').model(SAMPLE_MODEL_NODE).skills(evalSkill).input(z.object({ code: z.string() })).output(z.object({ passed: z.boolean() }));
 
-    const loopNode = M.loop<GitWorktreeHandle>('isolated-loop')
+    const loopNode = P.loop<GitWorktreeHandle>('isolated-loop')
       .input(z.object({ id: z.string() })).output(z.object({ code: z.string() })).maxIterations(2).preserveActorSession(true)
       .act('act-step', actAgent)
       .evaluate('eval-step', evalAgent, {

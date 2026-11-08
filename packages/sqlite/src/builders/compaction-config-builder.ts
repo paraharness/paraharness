@@ -1,4 +1,4 @@
-import type { AstBuilder, CompactionConfigNode, MaybeBuilder, SignalNode } from '@metaharness/core';
+import type { AstBuilder, CompactionConfigNode, MaybeBuilder, SignalNode } from '@paraharness/core';
 
 /**
  * Options for configuring a signal-correlated ledger compaction trigger via `CompactionConfigBuilder.onSignal`.

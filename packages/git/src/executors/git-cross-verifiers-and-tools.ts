@@ -7,7 +7,7 @@ import type {
   GitWorktreeHandle,
   StepExecutionContext,
   ToolDriver,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { runGitCommand } from './internal/git-cli-runner.js';
 import { runPublicSurfaceCrossVerification } from './internal/git-cross-test-import-scanner.js';
 import {

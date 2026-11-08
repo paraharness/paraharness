@@ -6,7 +6,7 @@ import type {
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
   StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   evaluateFsReadBeforeWritePaths,
   evaluateFsSecretLiteralPaths,

@@ -3,7 +3,7 @@ import type {
   FsProtectGuardNode,
   PolicyGuardEvaluationInput,
   PolicyGuardEvaluationResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { compileGlobOrExactMatcher } from './compile-glob-or-exact-matcher.js';
 import { projectViolatedWriteEffects } from './project-violated-write-effects.js';
 

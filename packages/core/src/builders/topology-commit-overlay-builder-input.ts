@@ -2,7 +2,7 @@ import type { BivariantCallback, MaybeBuilder } from '../ast/ast-foundation.type
 import type { SignalNode } from '../ast/signal-node.js';
 
 /**
- * Builder input options for `M.topology(id).commitOverlayWhen(...)`, accepting `MaybeBuilder<SignalNode>` on signal triggers.
+ * Builder input options for `P.topology(id).commitOverlayWhen(...)`, accepting `MaybeBuilder<SignalNode>` on signal triggers.
  *
  * Configures signal-correlated commit and discard triggers for per-run copy-on-write
  * topology contract overlays along with an optional maximum sealed age TTL.

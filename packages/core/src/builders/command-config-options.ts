@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import type { ExecutionContext } from '../ports/execution-context.js';
 
 /**
- * Direct configuration object accepted by the 2-argument `M.command(id, options)` overload.
+ * Direct configuration object accepted by the 2-argument `P.command(id, options)` overload.
  *
  * Bundles the input Zod schema, output Zod schema, optional partition extractor, and
  * passive execution callback into a single options object.

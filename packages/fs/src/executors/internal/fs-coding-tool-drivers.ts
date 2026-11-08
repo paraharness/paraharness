@@ -5,7 +5,7 @@ import type {
   FsWriteToolNode,
   StepExecutionContext,
   ToolExecutionResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   type ExecuteFsEditOperationParams,
   executeFsEditOperation,

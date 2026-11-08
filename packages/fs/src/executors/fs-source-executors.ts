@@ -5,7 +5,7 @@ import type {
   FsTextSourceNode,
   ResolutionContext,
   ResolvedSourceArtifact,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { enumerateWorkspaceFiles } from './internal/enumerate-workspace-files.js';
 import { extractWorktreeRootAndBaseRef } from './internal/extract-worktree-root-and-base-ref.js';
 import { resolveJailedWorktreePath } from './internal/resolve-jailed-worktree-path.js';

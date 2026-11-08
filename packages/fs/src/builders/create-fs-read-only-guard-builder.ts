@@ -1,4 +1,4 @@
-import type { FsReadOnlyGuardNode } from '@metaharness/core';
+import type { FsReadOnlyGuardNode } from '@paraharness/core';
 
 /**
  * Compiles a passive `FsReadOnlyGuardNode` (`fs:read-only`) for `fs.readOnly()`.

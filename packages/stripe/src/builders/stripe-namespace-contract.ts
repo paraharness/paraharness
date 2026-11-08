@@ -1,10 +1,10 @@
-import type { LeaseDelta } from '@metaharness/core';
+import type { LeaseDelta } from '@paraharness/core';
 import type { StripeMaxRefundGuardNode } from '../nodes/stripe-max-refund-guard-node.js';
 import type { StripeReadToolNode } from '../nodes/stripe-read-tool-node.js';
 import '../nodes/stripe-registry-augmentation.js';
 
 /**
- * Public DSL builder namespace for `@metaharness/stripe` (`stripe.*`).
+ * Public DSL builder namespace for `@paraharness/stripe` (`stripe.*`).
  *
  * Provides declarative factories for Stripe billing tools (`stripe.readTools`),
  * pre-flight refund policy guards (`stripe.maxRefundGuardUsd`), and refund capability leases (`stripe.allowRefundUpToUsd`).

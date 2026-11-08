@@ -7,7 +7,7 @@ import type {
   StepExecutionContext,
   ToolDriver,
   ToolExecutionResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { bootLocalDaemonSession } from './internal/boot-local-daemon-session.js';
 import { resolveWorktreeEnvAndCwd } from './internal/process-group-lifecycle.js';
 

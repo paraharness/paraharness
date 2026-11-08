@@ -4,7 +4,7 @@ import type {
   OpenAiAccountSeatNode,
   PrepareForkTarget,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { decodeFrameToOpenAiWire } from './decode-frame-to-openai-wire.js';
 import { projectCanonicalToOpenAiWire } from './project-canonical-to-openai-wire.js';
 import { stripOpenAiServerItemIdsAndEncryptedContent } from './strip-openai-server-item-ids-and-encrypted-content.js';

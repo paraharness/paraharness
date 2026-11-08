@@ -1,6 +1,6 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitCowWorktreeNode, GitWorktreeHandle } from '@metaharness/core';
+import type { GitCowWorktreeNode, GitWorktreeHandle } from '@paraharness/core';
 import { hydrateWorktreeDependencies } from './cow-worktree-hydrator.js';
 import {
   runGitCommand,

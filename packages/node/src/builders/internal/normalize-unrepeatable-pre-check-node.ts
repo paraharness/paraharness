@@ -3,7 +3,7 @@ import {
   z,
   type LocalCommandNode,
   type MaybeBuilder,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Normalizes a typed pre-check command builder or node into `LocalCommandNode<unknown, boolean, THandle>`.

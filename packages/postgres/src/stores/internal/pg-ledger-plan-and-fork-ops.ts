@@ -1,4 +1,4 @@
-import type { MutateLanePlanRequest, SuspendedForkRecord } from '@metaharness/core';
+import type { MutateLanePlanRequest, SuspendedForkRecord } from '@paraharness/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { PgSuspendedForkRow } from './pg-suspended-fork-row.js';
 import {

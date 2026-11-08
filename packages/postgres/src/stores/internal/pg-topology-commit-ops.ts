@@ -1,4 +1,4 @@
-import type { CommitRunOverlayResult } from '@metaharness/core';
+import type { CommitRunOverlayResult } from '@paraharness/core';
 import type { PostgresQueryClient } from '../../ddl/postgres-query-client.js';
 import type { PgTopologyOverlayRow } from './pg-topology-overlay-row.js';
 import {

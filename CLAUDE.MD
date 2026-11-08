@@ -2,7 +2,7 @@
 
 Quality is the goal. Speed is the tool, and it never costs the goal. Do not rush into an action: take the request in, ask what is unclear, then act.
 
-You read this file first: every session and subagent loads it before anything else. MetaHarness (`@metaharness/*`) is a declarative pure-AST agent orchestration DSL and runtime specified in `docs/SPEC.md` and `docs/CODING_SAMPLE.md`. The owner decides product, design, legal, platform, stack, money, data, and anything irreversible; agents build, verify, and report. Your role's rules under `docs/rules/*.md` and the active loop under `docs/*_LOOP.md` define what you do.
+You read this file first: every session and subagent loads it before anything else. ParaHarness (`@paraharness/*`) is a declarative pure-AST agent orchestration DSL and runtime specified in `docs/SPEC.md` and `docs/CODING_SAMPLE.md`. The owner decides product, design, legal, platform, stack, money, data, and anything irreversible; agents build, verify, and report. Your role's rules under `docs/rules/*.md` and the active loop under `docs/*_LOOP.md` define what you do.
 
 ## How to work
 
@@ -16,7 +16,7 @@ You read this file first: every session and subagent loads it before anything el
 ## Rules that bind every role
 
 - **Never force push; never branch from an unmerged PR; merge, don't rebase.**
-- **Never read `.env`.** Secrets are represented symbolically via `M.env(key)` in AST definitions and resolved exclusively at leaf adapter invocation from explicitly injected environment maps (`docs/SPEC.md` §1.2, `docs/CODING_GUIDELINES.md` Rule 5.2). Never print any part of a secret or ask anyone to paste one, filter secrets out of a log in the command that reads it, and test a secret's shape only with a check that prints yes or no, because the transcript and logs are not private.
+- **Never read `.env`.** Secrets are represented symbolically via `P.env(key)` in AST definitions and resolved exclusively at leaf adapter invocation from explicitly injected environment maps (`docs/SPEC.md` §1.2, `docs/CODING_GUIDELINES.md` Rule 5.2). Never print any part of a secret or ask anyone to paste one, filter secrets out of a log in the command that reads it, and test a secret's shape only with a check that prints yes or no, because the transcript and logs are not private.
 - **Write no inline or non-JSDoc comments in any file we author** (`//`, `/* */` inside bodies or between statements, `#`, `<!-- -->` across code, tests, YAML, shell, and docs); keep a tool directive only where a tool strictly requires it, because inline commentary is noise every later reader pays for and belongs either in a named function or in declaration JSDoc.
 - **Write structured `/** ... */` JSDoc on every class, interface, method, function, and exported type or constant** per `docs/CODING_GUIDELINES.md` (summary, grounded description, `@template` and `@param {Type} name - Description`, `@returns`, `@throws`, `@note`, and `@example` where applicable), because every contract must be self-contained for readers and API doc generators.
 - **Check a fact in its source before you state or write it** (the time from `date -u`, the exact word a cited file holds, where a runner, secret, or setting is configured, every reader of a file you call unused), because a claim from memory, from a long session's sense of the clock, or from look-alike code names what is not there.

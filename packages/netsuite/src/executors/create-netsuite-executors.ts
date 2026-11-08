@@ -7,7 +7,7 @@ import type {
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
   StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { DraftJournalReceipt } from '../nodes/draft-journal-receipt.js';
 import type { NetSuiteBalanceZeroCheckNode } from '../nodes/netsuite-balance-zero-check-node.js';
 import type { NetSuiteClosedPeriodGuardNode } from '../nodes/netsuite-closed-period-guard-node.js';
@@ -22,13 +22,13 @@ import { executeNetSuiteRollbackAbortHook } from './internal/execute-netsuite-ro
 import { NetSuiteDraftScopeDriver } from './netsuite-draft-scope-driver.js';
 
 /**
- * Creates a `RuntimeExecutorRegistrySlice` registering `@metaharness/netsuite` scope, tool, policy guard, check, and abort hook executors.
+ * Creates a `RuntimeExecutorRegistrySlice` registering `@paraharness/netsuite` scope, tool, policy guard, check, and abort hook executors.
  *
  * Registers `'netsuite:draft-scope'` under `scopes`, `'netsuite:journal-tool'` under `tools`,
  * `'netsuite:closed-period-guard'` under `policyGuards`, `'netsuite:balance-zero-check'` under `checks`,
  * and `'netsuite:rollback-abort-hook'` under `abortHooks`.
  *
- * @returns {RuntimeExecutorRegistrySlice} Frozen runtime executor registry slice for `@metaharness/netsuite`.
+ * @returns {RuntimeExecutorRegistrySlice} Frozen runtime executor registry slice for `@paraharness/netsuite`.
  */
 export function createNetSuiteExecutors(): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({

@@ -4,7 +4,7 @@ import {
   type FsPartitionPathMapping,
   type MaybeBuilder,
   type TopologyNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Compiles a passive `FsPartitionMapNode` (`fs:partition-map`) for `fs.partitionMap(topology, mapping)`.

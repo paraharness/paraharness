@@ -1,4 +1,4 @@
-import { z, type LocalStreamCheckNode } from '@metaharness/core';
+import { z, type LocalStreamCheckNode } from '@paraharness/core';
 import type { LocalStreamCheckBuilderState } from './local-stream-check-builder-state.js';
 
 /**

@@ -5,7 +5,7 @@ import { createSqliteTopologyBuilder } from './create-sqlite-topology-builder.js
 import type { SqliteNamespace } from './sqlite-namespace-contract.js';
 
 /**
- * Pure AST builder namespace for `@metaharness/sqlite` storage and source adapters.
+ * Pure AST builder namespace for `@paraharness/sqlite` storage and source adapters.
  *
  * Exposes `sqlite.ledger`, `sqlite.topologyStore`, `sqlite.lessonStore`, and `sqlite.globalRules`
  * with zero import-time or declaration-time side effects.

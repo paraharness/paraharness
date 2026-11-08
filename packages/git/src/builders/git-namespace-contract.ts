@@ -12,7 +12,7 @@ import type {
   GitWorktreeHandle,
   MaybeBuilder,
   NodeRunnerNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type {
   GitAbortMetaSchema,
   GitScopeReceiptSchema,
@@ -27,7 +27,7 @@ import type { GitMergeQueueOptions } from './git-merge-queue-options.js';
 import type { GitPublicSurfaceCrossTesterOptions } from './git-public-surface-cross-tester-options.js';
 
 /**
- * Public `git` builder and schema namespace contract (`import { git } from '@metaharness/git'`).
+ * Public `git` builder and schema namespace contract (`import { git } from '@paraharness/git'`).
  *
  * Mounts `ScopeReceiptSchema`, `SyncReceiptSchema`, `AbortMetaSchema`, and all declarative
  * Copy-on-Write worktree, hook, cross-verifier, tool, and delivery step builders.

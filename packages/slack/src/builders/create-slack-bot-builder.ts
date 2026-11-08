@@ -1,4 +1,4 @@
-import type { SlackApproverNode } from '@metaharness/core';
+import type { SlackApproverNode } from '@paraharness/core';
 import type { SlackBotOptions } from './slack-bot-options.js';
 
 /**

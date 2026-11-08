@@ -1,4 +1,4 @@
-import type { CompactionSignalTrigger, CompactionTerminalExitTrigger } from '@metaharness/core';
+import type { CompactionSignalTrigger, CompactionTerminalExitTrigger } from '@paraharness/core';
 
 /**
  * Immutable internal state snapshot for `createCompactionConfigBuilder`.

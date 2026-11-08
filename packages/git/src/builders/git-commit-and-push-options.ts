@@ -4,7 +4,7 @@ import type {
   MaybeBuilder,
   NodeRunnerNode,
   z,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Configuration options for `git.commitAndPush(id, options)` (`createGitCommitAndPushBuilder`).

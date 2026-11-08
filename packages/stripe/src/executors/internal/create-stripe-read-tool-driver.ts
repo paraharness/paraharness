@@ -3,7 +3,7 @@ import type {
   ToolDriver,
   ToolEffect,
   ToolExecutionResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { StripeReadToolNode } from '../../nodes/stripe-read-tool-node.js';
 import type { StripeGateway } from '../stripe-gateway.js';
 import { describeStripeToolEffects } from './describe-stripe-tool-effects.js';

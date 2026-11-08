@@ -1,4 +1,4 @@
-import type { HumanDecisionRequest } from '@metaharness/core';
+import type { HumanDecisionRequest } from '@paraharness/core';
 
 /**
  * Constructs a Slack `chat.postMessage` payload containing interactive Block Kit `actions` blocks and metadata.

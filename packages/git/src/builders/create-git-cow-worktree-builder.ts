@@ -6,7 +6,7 @@ import {
   type GitSyncReceipt,
   type GitWorktreeHandle,
   type MaybeBuilder,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { GitCowWorktreeBuilder } from './git-cow-worktree-builder.js';
 import type {
   GitCowWorktreeCheckpointPolicy,

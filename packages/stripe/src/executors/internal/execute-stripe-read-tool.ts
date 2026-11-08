@@ -1,4 +1,4 @@
-import type { StepExecutionContext, ToolExecutionResult } from '@metaharness/core';
+import type { StepExecutionContext, ToolExecutionResult } from '@paraharness/core';
 import type { StripeReadToolNode } from '../../nodes/stripe-read-tool-node.js';
 import type { StripeGateway } from '../stripe-gateway.js';
 import { describeStripeToolEffects } from './describe-stripe-tool-effects.js';

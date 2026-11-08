@@ -3,7 +3,7 @@ import {
   z,
   type RunnerPoolASTNode,
   type StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { describe, expect, it } from 'vitest';
 import {
   NodeRunnerDriver,

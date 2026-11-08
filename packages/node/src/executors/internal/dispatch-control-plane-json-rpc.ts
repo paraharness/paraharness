@@ -1,4 +1,4 @@
-import type { HarnessRuntimeController } from '@metaharness/core';
+import type { HarnessRuntimeController } from '@paraharness/core';
 
 /**
  * Parameters for dispatching an inbound REST or JSON-RPC control-plane payload.

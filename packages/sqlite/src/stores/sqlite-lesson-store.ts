@@ -1,4 +1,4 @@
-import type { LessonRecord, LessonStore } from '@metaharness/core';
+import type { LessonRecord, LessonStore } from '@paraharness/core';
 import type Database from 'better-sqlite3';
 import PQueue from 'p-queue';
 import { openSqliteConnection } from '../ddl/internal/open-sqlite-connection.js';
@@ -15,7 +15,7 @@ import {
 } from './internal/sqlite-lesson-ops.js';
 
 /**
- * WAL-mode SQLite implementation of the `@metaharness/core` `LessonStore` runtime port.
+ * WAL-mode SQLite implementation of the `@paraharness/core` `LessonStore` runtime port.
  *
  * Persists distilled empirical lessons, computes normalized candidate relevance $R(L, Q) \in [0, 1]$,
  * tracks 4-state execution outcomes, synchronizes creation epochs, and enforces signal cooldowns.

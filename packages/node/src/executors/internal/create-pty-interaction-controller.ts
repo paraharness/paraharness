@@ -1,4 +1,4 @@
-import type { LocalServiceInteractionConfig, LocalServiceNode, ToolExecutionResult } from '@metaharness/core';
+import type { LocalServiceInteractionConfig, LocalServiceNode, ToolExecutionResult } from '@paraharness/core';
 import type { LocalDaemonCommandContext } from '../../builders/local-daemon-builder.js';
 import { extractInteractiveInputString } from './extract-interactive-input-string.js';
 import type { ResolvedSubprocessEnvironment } from './process-group-lifecycle.js';

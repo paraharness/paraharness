@@ -7,7 +7,7 @@ import type {
   LeaseDelta,
   ReconcileResult,
   ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import PQueue from 'p-queue';
 import {
   GitScopeReceiptSchema,

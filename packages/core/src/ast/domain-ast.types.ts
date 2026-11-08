@@ -102,7 +102,7 @@ export type StepASTNode<TIn = unknown, TOut = unknown, THandle = unknown> =
   | AgentNode<TIn, TOut, THandle> | LoopNode<TIn, TOut, THandle, string>
   | CommandNode<TIn, TOut, THandle> | DomainStepASTNode<TIn, TOut, THandle>;
 /**
- * Built-in tool AST node union across `@metaharness/{fs,node,git}`.
+ * Built-in tool AST node union across `@paraharness/{fs,node,git}`.
  * @template THandle Isolation scope handle type.
  */
 export type BuiltInToolASTNode<THandle = unknown> =
@@ -116,7 +116,7 @@ export type BuiltInToolASTNode<THandle = unknown> =
  */
 export type ToolASTNode<THandle = unknown> = BuiltInToolASTNode<THandle> | CustomDomainAST<'tool'>;
 /**
- * Built-in deterministic check AST node union across `@metaharness/{node,fs,git}`.
+ * Built-in deterministic check AST node union across `@paraharness/{node,fs,git}`.
  * @template THandle Isolation scope handle type.
  */
 export type BuiltInCheckASTNode<THandle = unknown> =
@@ -136,7 +136,7 @@ export type EvaluatorASTNode<THandle = unknown> = CheckASTNode<THandle>;
  * @template THandle Isolation scope handle type.
  */
 export type ServiceASTNode<THandle = unknown> = LocalServiceNode | CustomDomainAST<'service'> | (THandle extends never ? never : never);
-/** Built-in policy guard AST node union across `@metaharness/{fs,node}`. */
+/** Built-in policy guard AST node union across `@paraharness/{fs,node}`. */
 export type BuiltInGuardASTNode =
   | FsProtectGuardNode | FsReadOnlyGuardNode | FsAllowOnlyGuardNode
   | FsRequireReadBeforeWriteGuardNode | FsScopedWriteGuardNode | FsSecretLiteralsGuardNode

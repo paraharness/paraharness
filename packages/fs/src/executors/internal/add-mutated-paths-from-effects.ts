@@ -1,4 +1,4 @@
-import type { ToolEffect } from '@metaharness/core';
+import type { ToolEffect } from '@paraharness/core';
 
 /**
  * Adds normalized mutated file paths from `observedEffects` (`mutatesScope === true` or `mode === 'write'`) into `mutated`.

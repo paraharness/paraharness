@@ -4,7 +4,7 @@ import type { ExtractEvalScopeReceipt } from './flow-extraction.types.js';
  * Configuration options passed to `LoopBuilder.evaluate(stepId, evaluator, options)`.
  *
  * Defines the synchronous evaluator input mapper, acceptance predicate, and rejection
- * feedback formatter for an `M.loop(id)` refinement cycle.
+ * feedback formatter for an `P.loop(id)` refinement cycle.
  *
  * @template TIn      Loop input payload type.
  * @template TOut     Action step output payload type.

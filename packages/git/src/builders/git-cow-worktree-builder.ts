@@ -6,7 +6,7 @@ import type {
   GitSyncReceipt,
   GitWorktreeHandle,
   MaybeBuilder,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { GitCowWorktreeCheckpointPolicy } from './git-cow-worktree-options.js';
 import type { GitReconcileStrategyOptions } from './git-reconcile-strategy-options.js';
 

@@ -6,7 +6,7 @@ import type {
   GitWorktreeHandle,
   NodeExecutor,
   StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   MergeTrainStepInputSchema,
   type MergeTrainInputItem,

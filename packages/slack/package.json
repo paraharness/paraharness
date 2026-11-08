@@ -1,5 +1,5 @@
 {
-  "name": "@metaharness/slack",
+  "name": "@paraharness/slack",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@metaharness/core": "workspace:*",
+    "@paraharness/core": "workspace:*",
     "@slack/socket-mode": "^3.1.1",
     "@slack/web-api": "^8.3.0",
     "@slack/webhook": "^8.0.2",

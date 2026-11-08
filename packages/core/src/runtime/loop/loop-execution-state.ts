@@ -15,7 +15,7 @@ import type { PoolManager } from '../pools/pool-manager.js';
 import type { ServiceSessionRegistry } from '../services/service-session-registry.js';
 
 /**
- * Mutable execution state passed across `M.loop` iteration phase helpers (`Rule 3.1`).
+ * Mutable execution state passed across `P.loop` iteration phase helpers (`Rule 3.1`).
  *
  * Tracks the active `LoopContinuationFrame`, outer continuation frames, model escalation state,
  * deduplicated lesson outcomes, and runtime managers.

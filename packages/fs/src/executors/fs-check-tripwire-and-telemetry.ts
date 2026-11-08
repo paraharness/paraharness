@@ -9,7 +9,7 @@ import type {
   QuotaTripwireEvaluationResult,
   StepExecutionContext,
   ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { addMutatedPathsFromEffects } from './internal/add-mutated-paths-from-effects.js';
 import { collectMutatedPathsSinceBaseRef } from './internal/collect-mutated-paths-since-base-ref.js';
 import { compileGlobOrExactMatcher } from './internal/compile-glob-or-exact-matcher.js';

@@ -1,4 +1,4 @@
-import type { ForkContext } from '@metaharness/core';
+import type { ForkContext } from '@paraharness/core';
 
 /**
  * Formats the combined child role context and task prompt text for a forked Claude child session.

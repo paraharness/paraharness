@@ -7,7 +7,7 @@ import type {
   HumanDecisionRequest,
   RuntimeDriverContext,
   SlackApproverNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { defaultSlackTransport } from './default-slack-transport.constants.js';
 import { buildSlackDecisionKey } from './internal/build-slack-decision-key.js';
 import { buildSlackDecisionMessagePayload } from './internal/build-slack-decision-message-payload.js';

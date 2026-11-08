@@ -1,4 +1,4 @@
-import type { WireFrameRecord } from '@metaharness/core';
+import type { WireFrameRecord } from '@paraharness/core';
 import { projectCanonicalToGeminiContent } from './project-canonical-to-gemini-content.js';
 import { tryDecodeGeminiWireContent } from './try-decode-gemini-wire-content.js';
 

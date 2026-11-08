@@ -2,7 +2,7 @@ import type { AgentNode } from '../ast/agent-node.js';
 import type { LoopActStepConfig } from '../ast/loop-node.js';
 
 /**
- * Builder descriptor interface for the `.act(stepId, actor)` step inside `M.loop(id)`.
+ * Builder descriptor interface for the `.act(stepId, actor)` step inside `P.loop(id)`.
  *
  * Pairs the literal action step identifier `TActStepId` with the write-capable `AgentNode`
  * executed on each refinement iteration.

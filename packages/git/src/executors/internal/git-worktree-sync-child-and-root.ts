@@ -3,7 +3,7 @@ import type {
   GitSyncReceipt,
   GitWorktreeHandle,
   ReconcileResult,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { GitSyncReceiptSchema } from '../../schemas/git-receipts.schema.js';
 import { runGitCommand } from './git-cli-runner.js';
 import { gitWorktreeFlushCleanParentChanges } from './git-worktree-flush-and-prune.js';

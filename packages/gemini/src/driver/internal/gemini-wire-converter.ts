@@ -3,7 +3,7 @@ import {
   type CanonicalMessage,
   type ModelTurnRequest,
   type ModelTurnResponse,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { computeGeminiTurnUsage } from './compute-gemini-turn-usage.js';
 import { decodeHistoryToAlternatingGeminiContents } from './decode-history-to-alternating-gemini-contents.js';
 import { extractGeminiCandidateParts } from './extract-gemini-candidate-parts.js';

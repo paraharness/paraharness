@@ -79,7 +79,7 @@ export function deepFreeze<T>(value: T): Readonly<T> {
  * Throws an actionable error naming the builder construct when an empty or whitespace-only
  * identifier string is supplied.
  *
- * @param {string} constructLabel - Construct name (`'M.agent'`, `'M.flow'`, etc.) for error reporting.
+ * @param {string} constructLabel - Construct name (`'P.agent'`, `'P.flow'`, etc.) for error reporting.
  * @param {string} id             - Identifier string to validate.
  *
  * @throws {Error} If `id` is empty or whitespace-only.

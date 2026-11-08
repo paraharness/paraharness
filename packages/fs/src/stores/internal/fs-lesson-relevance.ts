@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { LessonRecord } from '@metaharness/core';
+import type { LessonRecord } from '@paraharness/core';
 import MiniSearch from 'minisearch';
 import type { FsLessonDefinitionRecord } from './fs-lesson-definition-record.js';
 import type { FsLessonStatsEntry } from './fs-lesson-stats-entry.js';

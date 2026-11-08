@@ -2,7 +2,7 @@ export type {
   GithubCreateOrUpdatePrNode,
   GithubIssuesTrackerNode,
   GithubWebhookStreamNode,
-} from '@metaharness/core';
+} from '@paraharness/core';
 export { createGithubCreateOrUpdatePrBuilder } from './builders/create-github-create-or-update-pr-builder.js';
 export { createGithubIssuesBuilder } from './builders/create-github-issues-builder.js';
 export { createGithubWebhookStreamBuilder } from './builders/create-github-webhook-stream-builder.js';

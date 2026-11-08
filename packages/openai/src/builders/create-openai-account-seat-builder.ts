@@ -1,4 +1,4 @@
-import type { EnvRef, OpenAiAccountSeatNode } from '@metaharness/core';
+import type { EnvRef, OpenAiAccountSeatNode } from '@paraharness/core';
 import type { OpenAiAccountSeatBuilder } from './openai-account-seat-builder.js';
 
 /**

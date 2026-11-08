@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { GitWorktreeHandle } from '@metaharness/core';
-import { withFileLock } from '@metaharness/lockfile';
+import type { GitWorktreeHandle } from '@paraharness/core';
+import { withFileLock } from '@paraharness/lockfile';
 import writeFileAtomic from 'write-file-atomic';
 import {
   HarnessMetaSchema,

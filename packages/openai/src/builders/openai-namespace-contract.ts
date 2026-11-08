@@ -3,7 +3,7 @@ import type { OpenAiModelBuilder } from './openai-model-builder.js';
 import type { OpenAiModelOptions } from './openai-model-options.js';
 
 /**
- * Builder namespace contract exported as `openai` by `@metaharness/openai`.
+ * Builder namespace contract exported as `openai` by `@paraharness/openai`.
  *
  * Provides entrypoints for declaring passive `OpenAiAccountSeatNode` and `OpenAiModelNode`
  * AST descriptors without import-time or declaration-time side effects.

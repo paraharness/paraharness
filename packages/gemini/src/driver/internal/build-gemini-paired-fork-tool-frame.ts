@@ -4,7 +4,7 @@ import type {
   ForkContext,
   PrecedingCompletedToolResult,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { formatGeminiForkPromptText } from './format-gemini-fork-prompt-text.js';
 import { projectCanonicalToGeminiContent } from './project-canonical-to-gemini-content.js';
 

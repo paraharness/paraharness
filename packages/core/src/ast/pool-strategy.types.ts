@@ -5,7 +5,7 @@ import type { PoolSelectionContext } from './pool-selection-context.js';
 import type { StandardPoolStrategyNode } from './standard-pool-strategy-node.js';
 
 /**
- * Custom synchronous selector function passed to `M.pool(id).strategy(fn)`.
+ * Custom synchronous selector function passed to `P.pool(id).strategy(fn)`.
  *
  * @template TItem Pooled resource item type.
  */

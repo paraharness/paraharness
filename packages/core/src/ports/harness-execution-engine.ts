@@ -15,7 +15,7 @@ export interface HarnessExecutionEngine {
    * Extracts the passive `HarnessNode` when a builder is supplied and binds the provided
    * executor registry and environment variable map without starting background loops until `start()` is called.
    *
-   * @param {HarnessNode | AstBuilder<HarnessNode>} harness   - Compiled `HarnessNode` or `M.harness(...)` builder.
+   * @param {HarnessNode | AstBuilder<HarnessNode>} harness   - Compiled `HarnessNode` or `P.harness(...)` builder.
    * @param {HarnessRuntimeOptions}                 [options] - Optional executor registry and environment map.
    *
    * @returns {HarnessRuntime} Configured runtime instance ready to `start()`.

@@ -1,4 +1,4 @@
-import type { FsGlobMatcherNode } from '@metaharness/core';
+import type { FsGlobMatcherNode } from '@paraharness/core';
 
 /**
  * Compiles a passive `FsGlobMatcherNode` (`fs:match-globs`) for `fs.matchGlobs(globs, mode)`.

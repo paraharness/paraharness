@@ -7,7 +7,7 @@ import {
   type ResolutionContext,
   type StepExecutionContext,
   createExecutorRegistry,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   type FsToolEffect,
@@ -54,7 +54,7 @@ function createStepContext(worktreePath: string, baseRef = 'HEAD'): StepExecutio
   });
 }
 
-describe('@metaharness/fs tools and sources', () => {
+describe('@paraharness/fs tools and sources', () => {
   const workspaces: TempFsWorkspaceHandle[] = [];
   const extraDirs: string[] = [];
 
@@ -361,7 +361,7 @@ describe('@metaharness/fs tools and sources', () => {
       resolveEnv: () => '',
     });
     const hostPackageJson = await executeFsTextSource(fs.text('package.json'), undefined, hostCtx);
-    expect(hostPackageJson.content).toContain('@metaharness');
+    expect(hostPackageJson.content).toContain('@paraharness');
     expect(hostPackageJson.digest).toMatch(/^[a-f0-9]{64}$/);
 
     const worktreeCtx: ResolutionContext = Object.freeze({

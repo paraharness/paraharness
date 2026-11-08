@@ -2,7 +2,7 @@
  * Domain-agnostic base AST node contract for asynchronous event stream sources (`StreamSourceASTNode`).
  *
  * Resolved via `RuntimeExecutorRegistry.streamSources[node.type]` into a `StreamSource`
- * subscribed to by `M.stream()`.
+ * subscribed to by `P.stream()`.
  *
  * @template TType  String-literal discriminant of the stream source node.
  * @template TEvent Raw event payload type emitted by the stream source.

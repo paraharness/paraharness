@@ -5,7 +5,7 @@ import {
   type GitPublicSurfaceCrossTesterNode,
   type GitScopeReceipt,
   type GitWorktreeHandle,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { GitPublicSurfaceCrossTesterOptions } from './git-public-surface-cross-tester-options.js';
 
 /**

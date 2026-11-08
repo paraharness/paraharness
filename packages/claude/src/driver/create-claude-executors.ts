@@ -2,7 +2,7 @@ import type {
   ClaudeModelNode,
   RuntimeDriverContext,
   RuntimeExecutorRegistrySlice,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { ClaudeHttpTransport } from './claude-http-transport.js';
 import { ClaudeModelDriver } from './claude-model-driver.js';
 import { defaultClaudeHttpTransport } from './default-claude-http-transport.constants.js';

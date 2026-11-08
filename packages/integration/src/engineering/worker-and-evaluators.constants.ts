@@ -1,6 +1,6 @@
-import { M, z } from '@metaharness/core';
-import { fs } from '@metaharness/fs';
-import { git } from '@metaharness/git';
+import { P, z } from '@paraharness/core';
+import { fs } from '@paraharness/fs';
+import { git } from '@paraharness/git';
 import {
   arbiterVerdictSchema,
   evaluationResult,
@@ -49,7 +49,7 @@ export const crossTester = git.publicSurfaceCrossTester({
  * Mounts coding tools, `verifySuite.asTool()`, progressive-disclosure skills, and `verifySuite` as a `.beforeStop` gate,
  * and can raise `contractViolation` when an upstream partition boundary must change.
  */
-export const worker = M.agent('worker')
+export const worker = P.agent('worker')
   .prefixGroup(engineeringPrefix)
   .model(workerModels)
   .topology(repoTopology)
@@ -71,7 +71,7 @@ export const worker = M.agent('worker')
  * Shares `engineeringPrefix` with `'role-scoped'` tools, inspects the worktree using `fs.readOnlyTools(runner)`,
  * and emits an `evaluationResult` verdict or raises `contractViolation`.
  */
-export const evaluator = M.agent('evaluator')
+export const evaluator = P.agent('evaluator')
   .prefixGroup(engineeringPrefix)
   .model(opus)
   .topology(repoTopology)
@@ -98,7 +98,7 @@ export const evaluator = M.agent('evaluator')
  * Verifies whether an existing `.test.ts`/`.test.tsx` mutation reflects an approved behavioral change or a broken test,
  * or raises `normativeEscalation` to `owner` when a specification change is required.
  */
-export const leaseAdjudicator = M.agent('lease-adjudicator')
+export const leaseAdjudicator = P.agent('lease-adjudicator')
   .model(opus)
   .topology(repoTopology)
   .rules(repoRules)
@@ -122,7 +122,7 @@ export const leaseAdjudicator = M.agent('lease-adjudicator')
  * Inspects completed and parked branches alongside `crossTester` reports and `git.candidateComparisonTools(runner)`
  * to select a winner, unpark a deferred escalation, or reject all candidates.
  */
-export const candidateArbiter = M.agent('candidate-arbiter')
+export const candidateArbiter = P.agent('candidate-arbiter')
   .model(opus)
   .topology(repoTopology)
   .rules(repoRules)
@@ -130,7 +130,7 @@ export const candidateArbiter = M.agent('candidate-arbiter')
   .tools(fs.readOnlyTools(runner), git.candidateComparisonTools(runner))
   .instructions(fs.text('.harness/prompts/candidate-arbiter.md'))
   .input(
-    M.SpeculationInputSchema(
+    P.SpeculationInputSchema(
       workItem,
       workReceipt,
       git.ScopeReceiptSchema,
@@ -177,7 +177,7 @@ export const guardedWorker = worker
  * Runs up to 3 iterations while preserving the worker's multi-turn session and distilling failure-to-pass
  * trajectories into `repoLessons`.
  */
-export const verifiedWorkerLoop = M.loop('verified-worker-loop')
+export const verifiedWorkerLoop = P.loop('verified-worker-loop')
   .input(workItem)
   .output(workReceipt)
   .partitions((item) => item.targetPartitions)

@@ -4,7 +4,7 @@ import type {
   LocalCommandUnrepeatableConfig,
   NodeRunnerNode,
   z,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Immutable internal state snapshot backing `LocalCommandBuilder`.

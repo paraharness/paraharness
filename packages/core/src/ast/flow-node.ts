@@ -5,7 +5,7 @@ import type { FlowBranchNode } from './flow-branch-node.js';
 import type { FlowStepNode } from './flow-step-node.js';
 
 /**
- * Passive AST node representing a declarative multi-step workflow (`M.flow(id)`).
+ * Passive AST node representing a declarative multi-step workflow (`P.flow(id)`).
  *
  * Binds an input schema, a capability-tiered `IsolationScopeASTNode`, an optional `TelemetryCollectorASTNode`,
  * an ordered sequence of `FlowStepNode` and `FlowBranchNode` items, and a terminal `exitState` label.

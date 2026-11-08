@@ -2,7 +2,7 @@ import type {
   AppendToolResultNotesOptions,
   CanonicalMessage,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 
 /**
  * Named parameter object for `appendNotesToWireFrame`.

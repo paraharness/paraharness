@@ -1,4 +1,4 @@
-export type { GeminiAccountSeatNode, GeminiModelNode } from '@metaharness/core';
+export type { GeminiAccountSeatNode, GeminiModelNode } from '@paraharness/core';
 export { createGeminiAccountSeatBuilder } from './builders/create-gemini-account-seat-builder.js';
 export { createGeminiModelBuilder } from './builders/create-gemini-model-builder.js';
 export type { GeminiAccountSeatBuilder } from './builders/gemini-account-seat-builder.js';

@@ -1,6 +1,6 @@
 import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { StepExecutionContext, GitWorktreeHandle } from '@metaharness/core';
+import type { StepExecutionContext, GitWorktreeHandle } from '@paraharness/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   GitCowWorktreeScopeDriver,

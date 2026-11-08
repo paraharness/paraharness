@@ -7,19 +7,19 @@ import type {
   SqliteLessonsNode,
   SqliteTopologyNode,
   TopologyStore,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { SqliteLedgerStore } from '../stores/sqlite-ledger-store.js';
 import { SqliteLessonStore } from '../stores/sqlite-lesson-store.js';
 import { SqliteTopologyStore } from '../stores/sqlite-topology-store.js';
 import { executeSqliteGlobalRulesSource } from './sqlite-rules-source-executor.js';
 
 /**
- * Creates a `RuntimeExecutorRegistrySlice` registering all `@metaharness/sqlite` storage and source executors.
+ * Creates a `RuntimeExecutorRegistrySlice` registering all `@paraharness/sqlite` storage and source executors.
  *
  * Binds `'sqlite:ledger'`, `'sqlite:topology'`, `'sqlite:lessons'`, and `'sqlite:global-rules'`
  * with late-bound `ctx.resolveEnv(node.uri)` resolution and zero import-time I/O.
  *
- * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@metaharness/sqlite`.
+ * @returns {RuntimeExecutorRegistrySlice} Frozen executor registry slice for `@paraharness/sqlite`.
  */
 export function createSqliteExecutors(): RuntimeExecutorRegistrySlice {
   return Object.freeze<RuntimeExecutorRegistrySlice>({

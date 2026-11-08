@@ -22,7 +22,7 @@ import type { LessonSignalTriggerBuilder } from './lesson-signal-trigger-builder
 import type { LessonsBuilder } from './lessons-builder.js';
 
 /**
- * Creates a fluent `LessonsBuilder` for `M.lessons(id)`.
+ * Creates a fluent `LessonsBuilder` for `P.lessons(id)`.
  *
  * Seeds default empirical scoring parameters from `DEFAULT_LESSON_SCORING` and validates
  * at `.toAST()` compilation time that a backing `LessonStoreASTNode` is bound.
@@ -38,7 +38,7 @@ export function createLessonsBuilder<TIn = unknown>(
   id: string,
   options?: CreateLessonsBuilderOptions<TIn>,
 ): LessonsBuilder<TIn> {
-  assertNonEmptyIdentifier('M.lessons', id);
+  assertNonEmptyIdentifier('P.lessons', id);
   const currentScoring = options?.scoring ?? DEFAULT_LESSON_SCORING;
   const currentTriggers = options?.emitSignalTriggers ?? Object.freeze([]);
 

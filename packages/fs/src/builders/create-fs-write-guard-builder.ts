@@ -1,4 +1,4 @@
-import type { FsWriteGuardNode } from '@metaharness/core';
+import type { FsWriteGuardNode } from '@paraharness/core';
 
 /**
  * Configuration options for `fs.writeGuard(options)`.

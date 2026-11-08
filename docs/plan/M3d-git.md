@@ -1,9 +1,9 @@
-# Milestone M3d — `@metaharness/git` CoW Worktree Scope, Git-Index Checkpoints & Stateless 3-Way Reconciliation
+# Milestone M3d — `@paraharness/git` CoW Worktree Scope, Git-Index Checkpoints & Stateless 3-Way Reconciliation
 
 ## 1. Scope & Ownership (`owned_dirs` & `forbidden_dirs`)
 
 - **Milestone**: `M3d` (Wave 2 — Parallel Adapter Fan-Out `c`, depends on `M1`)
-- **Package**: `@metaharness/git` (`packages/git`)
+- **Package**: `@paraharness/git` (`packages/git`)
 - **`owned_dirs`**:
   - `packages/git/src/**`
   - `packages/git/test/**`
@@ -12,13 +12,13 @@
   - `packages/{sqlite,postgres,fs,markdown,node,claude,openai,gemini,github,slack,stripe,netsuite,integration}/**`
   - Root workspace configs (`package.json`, `eslint.config.mjs`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.config.ts`) and `docs/**`
 - **Cross-Adapter Independence Rule**:
-  - `@metaharness/git` must have **zero runtime or type imports** from any other M3 adapter package. It depends exclusively on `@metaharness/core` (`workspace:*`), `@metaharness/lockfile` (`workspace:*`), `es-module-lexer`, `write-file-atomic`, `picomatch`, `p-queue`, `zod`, the `git` CLI, and Node built-ins (`node:child_process`, `node:fs`, `node:fs/promises`, `node:path`, `node:crypto`).
+  - `@paraharness/git` must have **zero runtime or type imports** from any other M3 adapter package. It depends exclusively on `@paraharness/core` (`workspace:*`), `@paraharness/lockfile` (`workspace:*`), `es-module-lexer`, `write-file-atomic`, `picomatch`, `p-queue`, `zod`, the `git` CLI, and Node built-ins (`node:child_process`, `node:fs`, `node:fs/promises`, `node:path`, `node:crypto`).
 
 ### Approved External Libraries & Native Primitives (`CLAUDE.MD` #2 & `docs/CODING_GUIDELINES.md` Rule 3.5)
 
 | Concern | Selected Package / Built-in | Version & License | Evaluated Alternatives & Rejection Reason | Lifecycle & Native/WASM Trade-offs | Owner Approval Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| Cross-process & in-process advisory file locking (host repo `.git` worktree & ref mutations) | `@metaharness/lockfile` (`withFileLock`, backed by `p-queue` `^9.1.0` + `open(..., 'wx')`) | `workspace:*` (`MIT`) | `proper-lockfile` (unmaintained since 2020); copy-pasting lock helpers across `packages/fs` and `packages/git` (forbidden by `CLAUDE.MD` #2 Step 4) | Shared standalone `packages/lockfile` workspace package built in `M1`; `.unref()`ed heartbeat and deterministic `try / finally` unlock | Approved (`Rule 3.5`) |
+| Cross-process & in-process advisory file locking (host repo `.git` worktree & ref mutations) | `@paraharness/lockfile` (`withFileLock`, backed by `p-queue` `^9.1.0` + `open(..., 'wx')`) | `workspace:*` (`MIT`) | `proper-lockfile` (unmaintained since 2020); copy-pasting lock helpers across `packages/fs` and `packages/git` (forbidden by `CLAUDE.MD` #2 Step 4) | Shared standalone `packages/lockfile` workspace package built in `M1`; `.unref()`ed heartbeat and deterministic `try / finally` unlock | Approved (`Rule 3.5`) |
 | Crash-safe atomic metadata persistence (`<gitdir>/harness-meta.json`) | `write-file-atomic` (`+ @types/write-file-atomic`) | `^8.0.0` (npm `8.0.0`, `ISC`, `0` deprecated, `0` CVEs) | Hand-rolled temp-file rename helper (forbidden by Rule 3.5) | Atomic write + `fsync` + `rename` so `harness-meta.json` is never truncated on crash | Approved (`Rule 3.5`) |
 | ESM/TypeScript export surface extraction (`git.publicSurfaceCrossTester`) | `es-module-lexer` (`init`, `parse`) | `^3.0.4` (npm `3.0.4`, `MIT`, `0` deprecated, `0` CVEs) | Hand-rolled regex `export` parser (fragile on comments/strings and forbidden by Rule 3.5) | Fast WASM-backed lexer initialized once via `await init` | Approved (`Rule 3.5`) |
 | Stateless 3-way tree reconciliation, status checkpoints & patch equivalence (`commitChild`, `syncChild`, `syncRoot`, `patchEquivalence`) | `git` CLI (`git merge-tree --write-tree`, `git status --porcelain=v2 -z --no-renames --untracked-files=all`, `git patch-id --stable`) | Native Git CLI (`>=2.38`, `GPL-2.0` external binary via `execFile`) | `isomorphic-git` (lacks `git worktree` and `merge-tree --write-tree`), hand-rolled patch normalizer (forbidden by `CLAUDE.MD` #2 Step 1) | Uses isolated `GIT_INDEX_FILE` and all 9 `GIT_*` environment overrides; zero `.git/rebase-merge` state during 3-way merge | Approved (`Rule 3.5`) |
@@ -35,7 +35,7 @@
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`GitWorktreeHandle`, `GitScopeReceipt`, `GitSyncReceipt`, `GitAbortMeta`, `GitCleanWorkingTreeNode`, `GitCowWorktreeNode`, `GitCommitAndPushNode`, `GitMergeQueueNode`, `GitSnapshotAndResetNode`, `GitKeepWorktreeNode`, `GitDiscardBranchNode`, `GitPatchEquivalenceNode`, `GitPublicSurfaceCrossTesterNode`, `GitRefReaderToolNode`, `GitCandidateComparisonToolNode`) and zero I/O at builder time. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2–§2.5 (`lines 682–1505`) | `BaseIsolationScopeASTNode` (`capabilityTier: 'branchable'`), `BaseDomainStepASTNode`, `BaseCheckASTNode`, `BaseToolASTNode`, `BaseAbortHookASTNode`, `BaseScopeRewindHookASTNode`, `BaseCrossVerifierASTNode`, `IsolationScope`, `CheckpointableScope`, `BranchableScope` (`getConflictLease`), `ReconcileResult`, `RuntimeExecutorRegistrySlice`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.5, §3.7.2, §3.9, §3.10 (`lines 2286–2616`) | Post-flight subprocess sandboxing (`serializeCheckpoint`, `diffEffects`, `restoreCheckpoint`), downward `.fork()` and `.speculate()` worktree reconciliation (`commitChild`, `syncChild`, `syncRoot`, `reattachRoot`, `reattachChild`), `git.snapshotAndReset()`, and `git.keepWorktree()` / `git.resetWorktree()`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.4 (`lines 2899–3083`) | Complete `@metaharness/git` specification: `git.ScopeReceiptSchema`, `git.SyncReceiptSchema`, `git.AbortMetaSchema`, `git.cowWorktree({ repo, dir })` (`<dir>/roots/<runId>` & `<dir>/forks/<runId>/<forkId>`, `<gitdir>/harness-meta.json`, `unresolvedConflictPaths`, `getConflictLease`, automatic parent working-tree flush, `GIT_CEILING_DIRECTORIES`, `reattachRoot` / `reattachChild`, `--porcelain=v2 -z --no-renames --untracked-files=all` checkpoints, worktree-local `.git` integrity in `diffEffects`, 4-step `restoreCheckpoint`, non-mutating `inspect`, stateless `git merge-tree --write-tree` in `commitChild` / `syncChild` / `syncRoot`, `reconcileStrategy`), `git.snapshotAndReset()`, `git.keepWorktree()`, `git.resetWorktree()`, `git.discardBranch()`, `git.publicSurfaceCrossTester`, `git.patchEquivalence`, `git.refReaderTools`, `git.candidateComparisonTools`, `git.commitAndPush`, `git.mergeQueue`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.4 (`lines 2899–3083`) | Complete `@paraharness/git` specification: `git.ScopeReceiptSchema`, `git.SyncReceiptSchema`, `git.AbortMetaSchema`, `git.cowWorktree({ repo, dir })` (`<dir>/roots/<runId>` & `<dir>/forks/<runId>/<forkId>`, `<gitdir>/harness-meta.json`, `unresolvedConflictPaths`, `getConflictLease`, automatic parent working-tree flush, `GIT_CEILING_DIRECTORIES`, `reattachRoot` / `reattachChild`, `--porcelain=v2 -z --no-renames --untracked-files=all` checkpoints, worktree-local `.git` integrity in `diffEffects`, 4-step `restoreCheckpoint`, non-mutating `inspect`, stateless `git merge-tree --write-tree` in `commitChild` / `syncChild` / `syncRoot`, `reconcileStrategy`), `git.snapshotAndReset()`, `git.keepWorktree()`, `git.resetWorktree()`, `git.discardBranch()`, `git.publicSurfaceCrossTester`, `git.patchEquivalence`, `git.refReaderTools`, `git.candidateComparisonTools`, `git.commitAndPush`, `git.mergeQueue`. |
 | [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §3.2 (`lines 116–127`), §4 (`lines 130–141`), §5 (`lines 144–173`), §6 (`lines 182, 492–530, 681, 692, 715–718, 750, 780, 786, 854, 909, 990–1000, 1051, 1077, 1095, 1189`) | Git-Index Checkpoint Sandboxing (`§3.2`), Two-Temperature Persistence (`§4`), Truth-Maintenance Protocols (`§5`), and all `git.*` invocations in `engineering-harness.ts`. |
 
 ---
@@ -64,7 +64,7 @@ Every file, class, method, and function in `packages/git/src/**` and `packages/g
 | `src/builders/git-namespace-contract.ts` | `interface` | `GitNamespace` |
 | `src/builders/git-namespace.ts` | `const` | `git: GitNamespace` (mounting `ScopeReceiptSchema`, `SyncReceiptSchema`, `AbortMetaSchema`, and all `git.*` builders) |
 | `src/executors/git-checkpoint-payload.ts` | `interface` | `GitCheckpointPayload` |
-| `src/executors/internal/git-cli-runner.ts` | `function` | `runGitCommand`, `buildIsolatedWorktreeGitEnv`, `readHarnessMeta`, `writeHarnessMeta` (delegating to `write-file-atomic` and `@metaharness/lockfile` `withFileLock`) |
+| `src/executors/internal/git-cli-runner.ts` | `function` | `runGitCommand`, `buildIsolatedWorktreeGitEnv`, `readHarnessMeta`, `writeHarnessMeta` (delegating to `write-file-atomic` and `@paraharness/lockfile` `withFileLock`) |
 | `src/executors/internal/porcelain-v2-and-checkpoints.ts` | `function` | `computeWorktreeStatusMap`, `serializeGitWorktreeCheckpoint`, `diffGitWorktreeEffects`, `restoreGitWorktreeCheckpoint` |
 | `src/executors/internal/conflict-pruning-and-parent-flush.ts` | `function` | `pruneResolvedConflictPaths`, `hasPairedConflictMarkers`, `flushParentWorkingTreeCleanChanges`, `buildConflictLeaseDelta` |
 | `src/executors/internal/stateless-merge-tree-reconcile.ts` | `function` | `inspectGitWorktreeNonMutating`, `commitChildViaMergeTree`, `syncChildViaMergeTree`, `syncRootViaMergeTree` |
@@ -76,7 +76,7 @@ Every file, class, method, and function in `packages/git/src/**` and `packages/g
 | `src/executors/git-cross-verifiers-and-tools.ts` | `function` | `executeGitPublicSurfaceCrossTester`, `executeGitPatchEquivalence`, `createGitRefReaderToolDrivers`, `createGitCandidateComparisonToolDrivers` (backed by `es-module-lexer` and `git patch-id --stable`) |
 | `src/executors/create-git-executors.ts` | `function` | `createGitExecutors` |
 | `src/executors/git-executors.constants.ts` | `const` | `gitExecutors: RuntimeExecutorRegistrySlice` |
-| `src/index.ts` | `barrel` | Pure explicit re-exports of `git`, `GitNamespace`, `gitExecutors`, `createGitExecutors`, `GitCowWorktreeScopeDriver`, `GitScopeReceiptSchema`, `GitSyncReceiptSchema`, `GitAbortMetaSchema`, `HarnessMetaSchema`, `HarnessMetaRecord`, `GitCowWorktreeBuilder`, `GitCowWorktreeOptions`, `GitReconcileStrategyOptions`, `GitCommitAndPushBuilder`, `GitCommitAndPushOptions`, `GitMergeQueueBuilder`, `GitMergeQueueOptions`, `GitPublicSurfaceCrossTesterOptions`, all `createGit*` builder factories, and all `Git*` AST types from `@metaharness/core` |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `git`, `GitNamespace`, `gitExecutors`, `createGitExecutors`, `GitCowWorktreeScopeDriver`, `GitScopeReceiptSchema`, `GitSyncReceiptSchema`, `GitAbortMetaSchema`, `HarnessMetaSchema`, `HarnessMetaRecord`, `GitCowWorktreeBuilder`, `GitCowWorktreeOptions`, `GitReconcileStrategyOptions`, `GitCommitAndPushBuilder`, `GitCommitAndPushOptions`, `GitMergeQueueBuilder`, `GitMergeQueueOptions`, `GitPublicSurfaceCrossTesterOptions`, all `createGit*` builder factories, and all `Git*` AST types from `@paraharness/core` |
 
 ---
 
@@ -89,8 +89,8 @@ Every file, class, method, and function in `packages/git/src/**` and `packages/g
    - Each root `interface` (`*-builder.ts`, `git-checkpoint-payload.ts`, `git-namespace-contract.ts`) lives in its own single-interface file, co-locating secondary interfaces reachable via `TSPropertySignature` or `TSMethodSignature` parameter/return types (`GitCowWorktreeOptions`, `GitReconcileStrategyOptions`, `GitCommitAndPushOptions<TIn>`, `GitMergeQueueOptions`) per Rule 1.2.
    - Dedicated 1:1 `*Params` / `*Options` interfaces (`GitPublicSurfaceCrossTesterOptions`) are co-located in their consuming function file (`Rules 1.6 & 3.3`). Every builder factory function (`create-*.ts`) gets its own focused file (`Rule 1.6`); `GitCowWorktreeScopeDriver` gets its own single-class file; `git` and `gitExecutors` live in their own `const`-only files.
 2. **JSDoc Anatomy & Approved Library Mandate (`docs/CODING_GUIDELINES.md` §2 & Rule 3.5)**:
-   - Use `@metaharness/lockfile` (`withFileLock`), `es-module-lexer` for export surface extraction in `publicSurfaceCrossTester`, `git patch-id --stable` in `patchEquivalence`, `write-file-atomic` for `harness-meta.json` persistence, `picomatch` for path exclusion globs, and `p-queue` (`concurrency: 1`) for per-`parentHandle` flush serialization.
-   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @metaharness/git lint`.
+   - Use `@paraharness/lockfile` (`withFileLock`), `es-module-lexer` for export surface extraction in `publicSurfaceCrossTester`, `git patch-id --stable` in `patchEquivalence`, `write-file-atomic` for `harness-meta.json` persistence, `picomatch` for path exclusion globs, and `p-queue` (`concurrency: 1`) for per-`parentHandle` flush serialization.
+   - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @paraharness/git lint`.
 
 ### 4.1 `GitNamespace`, `GitCowWorktreeBuilder`, Disjoint Worktree Layout & Crash Reattachment (`SPEC.md` §4.4 lines 3049–3058)
 1. **`GitNamespace` & `GitCowWorktreeBuilder` Fluent Contract**:
@@ -101,7 +101,7 @@ Every file, class, method, and function in `packages/git/src/**` and `packages/g
    - When `.lockfileGate(lockfilePath)` (e.g., `'pnpm-lock.yaml'`) and `.setup(cmd)` are configured, computes the SHA-256 digest of `lockfilePath` against the host repo's cached lockfile hash: on a cache hit, hardlinks/CoW-clones `node_modules` (excluding `.excludeFromCloneGlobs`); on a gate miss (when `lockfilePath` differs), unlinks/replaces any hardlinked `node_modules` directory before running `.setup(cmd)` so dependency installation never mutates shared host inodes.
    - Injects `GIT_CEILING_DIRECTORIES=<path.dirname(worktreePath)>`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_OPTIONAL_LOCKS=0`, `GIT_CONFIG_COUNT=2`, `GIT_CONFIG_KEY_0=commit.gpgsign`, `GIT_CONFIG_VALUE_0=false`, `GIT_CONFIG_KEY_1=core.hooksPath`, and `GIT_CONFIG_VALUE_1=/dev/null`.
 3. **Automatic Conflict Pruning, `getConflictLease(handle)` & Automatic Parent Flush (`SPEC.md` §4.4 line 3055)**:
-   - `getConflictLease(handle)` returns `{ type: 'harness:lease-delta', id, grantedMatchers: [{ type: 'fs:match-globs', id: matcherId, globs: Object.keys(handle.unresolvedConflictPaths), mode: 'write' }] }` when `unresolvedConflictPaths` is non-empty (without importing `@metaharness/fs`).
+   - `getConflictLease(handle)` returns `{ type: 'harness:lease-delta', id, grantedMatchers: [{ type: 'fs:match-globs', id: matcherId, globs: Object.keys(handle.unresolvedConflictPaths), mode: 'write' }] }` when `unresolvedConflictPaths` is non-empty (without importing `@paraharness/fs`).
    - Prunes any path in `unresolvedConflictPaths` whose working-tree `${mode}:${sha256}` differs from its recorded conflict-time digest (or was unlinked) and contains no paired conflict markers (`^<{7} ` ... `^={7}( |$)` ... `^>{7} `).
    - Auto-commits non-conflicted dirty working-tree files on `parentHandle` onto `parentHandle.HEAD` before `forkChild` (guarded by an internal per-`parentHandle` async mutex), `syncChild`, or `commitChild` while keeping `parentHandle.baseRef` pinned.
 4. **Crash Reattachment (`reattachRoot` / `reattachChild`)**:
@@ -146,8 +146,8 @@ All `test/fixtures/**` files strictly obey single-entity-kind file separation, s
 Run from workspace root (plus the `IMPL_LOOP.md` `baseline_dirty` diff check against `<non_sibling_forbidden_dirs_excluding_upstream_patches>`):
 
 ```bash
-pnpm --filter @metaharness/git lint
-pnpm --filter @metaharness/git typecheck
-pnpm --filter @metaharness/git test -- --reporter=verbose
+pnpm --filter @paraharness/git lint
+pnpm --filter @paraharness/git typecheck
+pnpm --filter @paraharness/git test -- --reporter=verbose
 test -z "$(git status --porcelain -- docs .agents .claude package.json tsconfig.base.json vitest.config.ts)"
 ```

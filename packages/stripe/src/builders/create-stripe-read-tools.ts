@@ -1,4 +1,4 @@
-import { z } from '@metaharness/core';
+import { z } from '@paraharness/core';
 import type { StripeReadToolNode } from '../nodes/stripe-read-tool-node.js';
 
 /**

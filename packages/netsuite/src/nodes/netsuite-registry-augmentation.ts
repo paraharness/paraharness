@@ -4,9 +4,9 @@ import type { NetSuiteDraftScopeNode } from './netsuite-draft-scope-node.js';
 import type { NetSuiteJournalToolNode } from './netsuite-journal-tool-node.js';
 import type { NetSuiteRollbackAbortHookNode } from './netsuite-rollback-abort-hook-node.js';
 
-declare module '@metaharness/core' {
+declare module '@paraharness/core' {
   /**
-   * Augments `CustomDomainASTRegistry` with namespaced `@metaharness/netsuite` domain AST nodes.
+   * Augments `CustomDomainASTRegistry` with namespaced `@paraharness/netsuite` domain AST nodes.
    *
    * Uses namespaced keys (`'scope:netsuite'`, `'guard:netsuite'`, `'abortHook:netsuite'`,
    * `'tool:netsuite'`, `'check:netsuite'`) so multiple domain adapters coexist without `TS2717` collisions.

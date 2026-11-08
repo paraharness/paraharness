@@ -3,7 +3,7 @@ import type {
   CanonicalMessage,
   CanonicalToolResult,
   WireFrameRecord,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { projectCanonicalToGeminiContent } from './project-canonical-to-gemini-content.js';
 import { tryDecodeGeminiWireContent } from './try-decode-gemini-wire-content.js';
 

@@ -3,7 +3,7 @@ import type { ExecutionContext } from '../ports/execution-context.js';
 import type { BivariantCallback } from './ast-foundation.types.js';
 
 /**
- * Passive AST node representing a deterministic TypeScript step command (`M.command(id)`).
+ * Passive AST node representing a deterministic TypeScript step command (`P.command(id)`).
  *
  * Carries input/output Zod validation schemas, an optional partition extractor, and a passive
  * callback `fn` invoked exclusively by the runtime's `executeCommand` `NodeExecutor` (zero `.execute` method on the node).

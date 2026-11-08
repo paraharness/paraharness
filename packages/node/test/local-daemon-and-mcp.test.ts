@@ -11,7 +11,7 @@ import {
   type RunnerPoolASTNode,
   type RuntimeDriverContext,
   type StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { describe, expect, it, vi } from 'vitest';
 import {
   NodeRunnerDriver,

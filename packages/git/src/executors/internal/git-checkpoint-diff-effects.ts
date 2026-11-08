@@ -2,7 +2,7 @@ import type {
   GitCowWorktreeNode,
   GitWorktreeHandle,
   ToolEffect,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import type { GitCheckpointPayload } from '../git-checkpoint-payload.js';
 import {
   computeSymmetricStatusDiff,

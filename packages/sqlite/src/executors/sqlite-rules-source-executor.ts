@@ -6,7 +6,7 @@ import {
   type ResolvedSourceArtifact,
   type SqliteRulesSourceNode,
   z,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import {
   assertValidSqlIdentifier,
   openSqliteConnection,

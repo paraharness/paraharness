@@ -3,7 +3,7 @@ import { createAgentFromState } from './internal/create-agent-from-state.js';
 import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 
 /**
- * Creates a fluent `AgentBuilder` for `M.agent(id)`.
+ * Creates a fluent `AgentBuilder` for `P.agent(id)`.
  *
  * Validates that `id` is a non-empty identifier and initializes an immutable
  * `AgentBuilder` with `roleKey` defaulting to `id`.
@@ -17,7 +17,7 @@ import { assertNonEmptyIdentifier } from './internal/deep-freeze.js';
 export function createAgentBuilder<THandle = unknown>(
   id: string,
 ): AgentBuilder<unknown, unknown, THandle> {
-  assertNonEmptyIdentifier('M.agent', id);
+  assertNonEmptyIdentifier('P.agent', id);
   return createAgentFromState<unknown, unknown, THandle>({
     id,
     roleKey: id,

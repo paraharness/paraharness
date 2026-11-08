@@ -9,7 +9,7 @@ import { hasToAstMethod } from './internal/normalize-scope-predicate-input.js';
 import type { RulesBuilder } from './rules-builder.js';
 
 /**
- * Creates a fluent `RulesBuilder` for `M.rules(id)`.
+ * Creates a fluent `RulesBuilder` for `P.rules(id)`.
  *
  * Accumulates `globalRules` and `scopedRules` in declaration order and compiles into
  * a deeply frozen `RulesNode`.
@@ -23,7 +23,7 @@ export function createRulesBuilder(
   id: string,
   options?: CreateRulesBuilderOptions,
 ): RulesBuilder {
-  assertNonEmptyIdentifier('M.rules', id);
+  assertNonEmptyIdentifier('P.rules', id);
   const currentGlobal = options?.globalRules ?? Object.freeze([]);
   const currentScoped = options?.scopedRules ?? Object.freeze([]);
 

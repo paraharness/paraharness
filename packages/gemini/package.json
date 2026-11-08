@@ -1,5 +1,5 @@
 {
-  "name": "@metaharness/gemini",
+  "name": "@paraharness/gemini",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@google/genai": "^3.0.0",
-    "@metaharness/core": "workspace:*",
+    "@paraharness/core": "workspace:*",
     "zod": "^4.6.7"
   },
   "devDependencies": {

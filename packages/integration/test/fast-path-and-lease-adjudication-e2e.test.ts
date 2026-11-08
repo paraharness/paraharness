@@ -4,8 +4,8 @@ import {
   executeFlow,
   type ModelTurnRequest,
   type ModelTurnResponse,
-} from '@metaharness/core';
-import { git, GitCowWorktreeScopeDriver } from '@metaharness/git';
+} from '@paraharness/core';
+import { git, GitCowWorktreeScopeDriver } from '@paraharness/git';
 import { describe, expect, it } from 'vitest';
 import { workspace } from '../src/index.js';
 import { createEngineeringTestFlowContext } from './fixtures/create-engineering-test-flow-context.js';

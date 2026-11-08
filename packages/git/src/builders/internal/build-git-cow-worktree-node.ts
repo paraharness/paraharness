@@ -6,7 +6,7 @@ import {
   type GitScopeReceipt,
   type GitSyncReceipt,
   type GitWorktreeHandle,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { GitScopeReceiptSchema, GitSyncReceiptSchema } from '../../schemas/git-receipts.schema.js';
 import type {
   GitCowWorktreeCheckpointPolicy,

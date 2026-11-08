@@ -1,5 +1,5 @@
-import type { RuntimeExecutorRegistrySlice } from '@metaharness/core';
+import type { RuntimeExecutorRegistrySlice } from '@paraharness/core';
 import { createGeminiExecutors } from './create-gemini-executors.js';
 
-/** Default `RuntimeExecutorRegistrySlice` for `@metaharness/gemini` (`models['gemini:model']`). */
+/** Default `RuntimeExecutorRegistrySlice` for `@paraharness/gemini` (`models['gemini:model']`). */
 export const geminiExecutors: RuntimeExecutorRegistrySlice = createGeminiExecutors();

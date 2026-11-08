@@ -3,7 +3,7 @@ import type {
   GitMergeQueueNode,
   GitWorktreeHandle,
   StepExecutionContext,
-} from '@metaharness/core';
+} from '@paraharness/core';
 import { extractMergeTrainCandidates } from './internal/git-merge-train-bisect.js';
 import { executeBatchMergeTrainQueue } from './internal/merge-train-runner.js';
 import { runSquashRebaseAndPush } from './internal/squash-rebase-and-push.js';

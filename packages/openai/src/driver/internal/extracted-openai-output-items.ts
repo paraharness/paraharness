@@ -1,4 +1,4 @@
-import type { CanonicalToolCall } from '@metaharness/core';
+import type { CanonicalToolCall } from '@paraharness/core';
 
 /**
  * Extracted output items, visible text, and canonical tool calls from an OpenAI `/v1/responses` payload.
