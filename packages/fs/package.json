@@ -1,17 +1,54 @@
 {
   "name": "@paraharness/fs",
   "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
+  "description": "Workspace-jailed filesystem tools, glob effect matchers, pre/post-flight write policy guards, quota tripwires, and atomic JSONL lesson store for ParaHarness.",
+  "keywords": [
+    "paraharness",
+    "filesystem",
+    "sandbox",
+    "policy-guards",
+    "globs",
+    "tools",
+    "ai-agents"
+  ],
+  "author": "Tornike Tsomaia",
+  "license": "MIT",
+  "homepage": "https://paraharness.github.io/paraharness/modules/_paraharness_fs.html",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paraharness/paraharness.git",
+    "directory": "packages/fs"
   },
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "bugs": {
+    "url": "https://github.com/paraharness/paraharness/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests"
+    "test": "vitest run --config ../../vitest.config.ts --dir . --passWithNoTests",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@paraharness/core": "workspace:*",
@@ -29,5 +66,11 @@
     "@types/write-file-atomic": "^4.0.3",
     "typescript": "^5.8.2",
     "vitest": "^3.2.0"
+  },
+  "typedocOptions": {
+    "entryPoints": [
+      "src/index.ts"
+    ],
+    "tsconfig": "tsconfig.build.json"
   }
 }

@@ -2,15 +2,28 @@
   "name": "paraharness",
   "private": true,
   "version": "0.1.0",
+  "description": "Declarative pure-AST agent orchestration DSL and durable execution runtime across isolated scopes.",
+  "author": "Tornike Tsomaia",
+  "license": "MIT",
+  "homepage": "https://paraharness.github.io/paraharness/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paraharness/paraharness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/paraharness/paraharness/issues"
+  },
   "packageManager": "pnpm@10.34.9",
   "engines": {
     "node": ">=22.0.0",
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "lint": "eslint \"packages/*/{src,test}/**/*.ts\" \".agents/hooks/**/*.mjs\" \"eslint.config.mjs\"",
+    "build": "pnpm --filter \"./packages/*\" run build",
+    "docs:api": "typedoc",
+    "lint": "eslint \"packages/*/{src,test}/**/*.ts\" \"tests/*/{src,test}/**/*.ts\" \".agents/hooks/**/*.mjs\" \"eslint.config.mjs\"",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r --workspace-concurrency=2 test"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -25,6 +38,7 @@
     "@typescript-eslint/parser": "^8.72.1",
     "eslint": "^10.14.0",
     "eslint-plugin-jsdoc": "^65.4.4",
+    "typedoc": "0.28.20",
     "typescript": "^5.8.2",
     "vitest": "^3.2.0"
   },

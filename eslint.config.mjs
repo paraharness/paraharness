@@ -24,25 +24,28 @@ const WORKSPACE_IMPORT_CACHE = {
  */
 function collectPackageTypeScriptFiles(dirPath, outFiles) {
   for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    if (entry.name === 'dist' || entry.name === 'node_modules') continue;
     const fullPath = path.join(dirPath, entry.name);
     if (entry.isDirectory()) collectPackageTypeScriptFiles(fullPath, outFiles);
-    else if (entry.isFile() && entry.name.endsWith('.ts')) outFiles.push(fullPath.replace(/\\/g, '/'));
+    else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+      outFiles.push(fullPath.replace(/\\/g, '/'));
+    }
   }
 }
 
 /**
- * Returns the cached set of normalized absolute `.ts` file paths referenced by any import or re-export across `packages/**`.
+ * Returns the cached set of normalized absolute `.ts` file paths referenced by any import or re-export across `packages/**` and `tests/**`.
  *
- * Scans all `packages/**` TypeScript files once per lint process and resolves relative `.js`/`.ts` specifiers.
+ * Scans all workspace TypeScript files once per lint process and resolves relative `.js`/`.ts` specifiers.
  *
  * @returns {Set<string>} Set of normalized absolute `.ts` file paths imported or re-exported in the workspace.
  */
 function getWorkspaceReferencedFiles() {
   if (WORKSPACE_IMPORT_CACHE.initialized) return WORKSPACE_IMPORT_CACHE.referencedFiles;
   WORKSPACE_IMPORT_CACHE.initialized = true;
-  const packagesDir = path.join(import.meta.dirname, 'packages');
   const allFiles = [];
-  collectPackageTypeScriptFiles(packagesDir, allFiles);
+  collectPackageTypeScriptFiles(path.join(import.meta.dirname, 'packages'), allFiles);
+  collectPackageTypeScriptFiles(path.join(import.meta.dirname, 'tests'), allFiles);
   const specifierPattern = /(?:from|import)\s*['"](\.[^'"]+)['"]/g;
   for (const filePath of allFiles) {
     const sourceText = readFileSync(filePath, 'utf8');
@@ -200,7 +203,7 @@ function checkStructuredJsdoc(params) {
 
 export default [
   {
-    files: ['packages/*/{src,test}/**/*.ts', 'eslint.config.mjs'],
+    files: ['packages/*/{src,test}/**/*.ts', 'tests/*/{src,test}/**/*.ts', 'eslint.config.mjs'],
     languageOptions: { parser: tsParser, parserOptions: { ecmaVersion: 'latest', sourceType: 'module' } },
     plugins: {
       '@typescript-eslint': tsPlugin,
@@ -320,15 +323,15 @@ export default [
           'no-dead-files': {
             create(context) {
               const filename = context.filename.replace(/\\/g, '/');
-              if (!/\/packages\/[^/]+\/src\/.+\.ts$/.test(filename)) return {};
-              if (/\/packages\/[^/]+\/src\/(?:runtime\/)?index\.ts$/.test(filename)) return {};
+              if (!/\/(?:packages|tests)\/[^/]+\/src\/.+\.ts$/.test(filename)) return {};
+              if (/\/(?:packages|tests)\/[^/]+\/src\/(?:runtime\/)?index\.ts$/.test(filename)) return {};
               return {
                 Program(program) {
                   const referencedFiles = getWorkspaceReferencedFiles();
                   if (!referencedFiles.has(filename)) {
                     context.report({
                       node: program,
-                      message: `Unreferenced source file '${filename.split('/packages/').pop() ?? filename}' is not imported or re-exported by any file in 'packages/**' (Rule 1.7 & Rule 3.4).`,
+                      message: `Unreferenced source file '${filename.split(/\/(?:packages|tests)\//).pop() ?? filename}' is not imported or re-exported by any file in the workspace (Rule 1.7 & Rule 3.4).`,
                     });
                   }
                 },
@@ -350,8 +353,14 @@ export default [
     },
   },
   {
-    files: ['packages/*/src/**/*.ts', 'packages/*/test/**/*.ts', 'eslint.config.mjs'],
-    ignores: ['packages/*/test/**/*.test.ts'],
+    files: [
+      'packages/*/src/**/*.ts',
+      'packages/*/test/**/*.ts',
+      'tests/*/src/**/*.ts',
+      'tests/*/test/**/*.ts',
+      'eslint.config.mjs',
+    ],
+    ignores: ['packages/*/test/**/*.test.ts', 'tests/*/test/**/*.test.ts'],
     rules: { 'harness/require-complete-jsdoc': 'error' },
   },
 ];

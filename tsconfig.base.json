@@ -33,8 +33,8 @@
       "@paraharness/gemini": ["packages/gemini/src/index.ts"],
       "@paraharness/github": ["packages/github/src/index.ts"],
       "@paraharness/slack": ["packages/slack/src/index.ts"],
-      "@paraharness/stripe": ["packages/stripe/src/index.ts"],
-      "@paraharness/netsuite": ["packages/netsuite/src/index.ts"]
+      "@paraharness/stripe": ["tests/stripe/src/index.ts"],
+      "@paraharness/netsuite": ["tests/netsuite/src/index.ts"]
     }
   }
 }
