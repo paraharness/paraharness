@@ -78,26 +78,48 @@ export function createLoopFromState<TIn = unknown, TOut = unknown, THandle = unk
     },
     preserveActorSession: (preserve: boolean) => createLoopFromState({ ...state, preserveActorSession: preserve }),
     distillLessonsInto: (lessons: MaybeBuilder<LessonsNode<unknown>>) => createLoopFromState({ ...state, distillLessons: extractAST(lessons) }),
-    act: <TNewActStepId extends string, TActIn = TIn, TActOut = TOut>(
+    act: <
+      TNewActStepId extends string,
+      TActIn extends TIn = TIn,
+      TActOut extends TOut = TOut,
+      TActHandle = THandle,
+    >(
       stepId: TNewActStepId,
-      actor: MaybeBuilder<AgentNode<TActIn, TActOut, THandle>>,
+      actor: MaybeBuilder<AgentNode<TActIn, TActOut, TActHandle>>,
     ) => {
       assertNonEmptyIdentifier('P.loop.act', stepId);
       const actorNode = extractAST(actor);
-      const wideState: LoopBuilderState<unknown, unknown, THandle, string> = {
-        ...state,
-        inputSchema: undefined,
-        outputSchema: undefined,
-        actStep: undefined,
-        returnOutputFromStepId: undefined,
-      };
-      return createLoopFromState<TActIn, TActOut, THandle, TNewActStepId>({
-        ...wideState,
-        inputSchema: state.inputSchema !== undefined ? actorNode.inputSchema : undefined,
-        outputSchema: state.outputSchema !== undefined ? actorNode.outputSchema : undefined,
+      return createLoopFromState<
+        TActIn,
+        TActOut,
+        [unknown] extends [THandle] ? TActHandle : THandle,
+        TNewActStepId
+      >({
+        id: state.id,
         roleKey: actorNode.roleKey,
-        actStep: { stepId, actor: actorNode },
-        returnOutputFromStepId: undefined,
+        inputSchema: actorNode.inputSchema,
+        outputSchema: actorNode.outputSchema,
+        extractPartitions: state.extractPartitions ?? actorNode.extractPartitions,
+        maxIterations: state.maxIterations,
+        preserveActorSession: state.preserveActorSession,
+        distillLessons: state.distillLessons,
+        actStep: {
+          stepId,
+          actor: actorNode as AgentNode<
+            TActIn,
+            TActOut,
+            [unknown] extends [THandle] ? TActHandle : THandle
+          >,
+        },
+        evaluateStep: state.evaluateStep as
+          | LoopBuilderState<
+              TActIn,
+              TActOut,
+              [unknown] extends [THandle] ? TActHandle : THandle,
+              TNewActStepId
+            >['evaluateStep']
+          | undefined,
+        returnOutputFromStepId: (state.returnOutputFromStepId ?? stepId) as TNewActStepId,
       });
     },
     evaluate: <TEvalIn, TEvalOut, TReceipt = ExtractEvalScopeReceipt<TEvalIn>>(

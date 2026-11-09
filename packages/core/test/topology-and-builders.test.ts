@@ -276,20 +276,21 @@ describe('P.agent, P.loop, canonical roleKey derivation, and createExecutorRegis
     expect(policyClone.onInterruptHandlers.length).toBe(1);
 
     const evaluator = P.agent<GitWorktreeHandle>('evaluator').model(SAMPLE_MODEL_NODE).input(evalInSchema).output(evalOutSchema);
+    const evalOptions = {
+      mapInput: (_loopIn: z.output<typeof actorInSchema>, actOut: z.output<typeof actorOutSchema>, receipt: GitScopeReceipt) => ({
+        summary: actOut.summary,
+        scopeReceipt: receipt,
+      }),
+      acceptWhen: (verdict: z.output<typeof evalOutSchema>) => verdict.passed,
+      feedbackMapper: (verdict: z.output<typeof evalOutSchema>) => verdict.feedback,
+    };
     const refineLoop = P.loop<GitWorktreeHandle>('refine-loop')
       .input(actorInSchema)
       .output(actorOutSchema)
       .maxIterations(3)
       .preserveActorSession(true)
       .act('code', baseCoder)
-      .evaluate('review', evaluator, {
-        mapInput: (_loopIn: z.output<typeof actorInSchema>, actOut: z.output<typeof actorOutSchema>, receipt: GitScopeReceipt) => ({
-          summary: actOut.summary,
-          scopeReceipt: receipt,
-        }),
-        acceptWhen: (verdict: z.output<typeof evalOutSchema>) => verdict.passed,
-        feedbackMapper: (verdict: z.output<typeof evalOutSchema>) => verdict.feedback,
-      })
+      .evaluate('review', evaluator, evalOptions)
       .returnOutputFrom('code');
 
     const loopWithTools = refineLoop.withTools(SAMPLE_EXTRA_COMPARE_TOOL_NODE, SAMPLE_EXTRA_SEARCH_TOOL_NODE);
@@ -298,6 +299,15 @@ describe('P.agent, P.loop, canonical roleKey derivation, and createExecutorRegis
     expect(loopWithTools.roleKey).toBe('coder+tools:ast_grep,git_compare');
     expect(loopWithPolicy.actStep.actor.policy?.id).toBe('replacement-policy');
     expect(loopWithPolicy.actStep.actor.onInterruptHandlers.length).toBe(1);
+
+    const shorthandRefineLoop = P.loop('refine-loop')
+      .act('code', baseCoder)
+      .evaluate('review', evaluator, evalOptions);
+    expect(shorthandRefineLoop.toAST()).toEqual(refineLoop.toAST());
+    expect(shorthandRefineLoop.toAST().extractPartitions?.({ issueId: '1', partitions: ['db', 'api'] })).toEqual([
+      'db',
+      'api',
+    ]);
 
     const outOfOrderAgent = P.agent<GitWorktreeHandle>('out-of-order-coder')
       .model(SAMPLE_MODEL_NODE)

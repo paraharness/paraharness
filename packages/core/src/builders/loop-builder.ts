@@ -112,21 +112,34 @@ export interface LoopBuilder<
   /**
    * Binds the write-capable action step executed on each loop iteration.
    *
-   * Narrows `TActStepId` to `TNewActStepId` and updates `roleKey` to `actor.roleKey`.
+   * Narrows `TActStepId` to `TNewActStepId`, updates `roleKey` to `actor.roleKey`, sets
+   * `inputSchema` and `outputSchema` from `actor`, inherits `extractPartitions` from `actor`
+   * when not already configured via `.partitions()`, and defaults `returnOutputFromStepId` to `stepId`.
    *
    * @template TNewActStepId Literal step identifier string of the action step.
    * @template TActIn        Validated action step input payload type.
    * @template TActOut       Validated action step output payload type.
+   * @template TActHandle    Runtime handle type of the action agent's isolation scope.
    *
-   * @param {TNewActStepId}                                     stepId - Action step identifier.
-   * @param {MaybeBuilder<AgentNode<TActIn, TActOut, THandle>>} actor  - Action agent AST node or builder.
+   * @param {TNewActStepId}                                        stepId - Action step identifier.
+   * @param {MaybeBuilder<AgentNode<TActIn, TActOut, TActHandle>>} actor  - Action agent AST node or builder.
    *
-   * @returns {LoopBuilder<TActIn, TActOut, THandle, TNewActStepId>} New immutable loop builder narrowed to `TNewActStepId`.
+   * @returns {LoopBuilder<TActIn, TActOut, [unknown] extends [THandle] ? TActHandle : THandle, TNewActStepId>} New immutable loop builder narrowed to `TNewActStepId`.
    */
-  act<TNewActStepId extends string, TActIn = TIn, TActOut = TOut>(
+  act<
+    TNewActStepId extends string,
+    TActIn extends TIn = TIn,
+    TActOut extends TOut = TOut,
+    TActHandle = THandle,
+  >(
     stepId: TNewActStepId,
-    actor: MaybeBuilder<AgentNode<TActIn, TActOut, THandle>>,
-  ): LoopBuilder<TActIn, TActOut, THandle, TNewActStepId>;
+    actor: MaybeBuilder<AgentNode<TActIn, TActOut, TActHandle>>,
+  ): LoopBuilder<
+    TActIn,
+    TActOut,
+    [unknown] extends [THandle] ? TActHandle : THandle,
+    TNewActStepId
+  >;
 
   /**
    * Binds the read-only adversarial evaluation step executed after `.act()` passes `beforeStop`.
