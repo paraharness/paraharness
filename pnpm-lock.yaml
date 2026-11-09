@@ -229,67 +229,6 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(yaml@2.9.1)
 
-  packages/integration:
-    dependencies:
-      '@paraharness/claude':
-        specifier: workspace:*
-        version: link:../claude
-      '@paraharness/core':
-        specifier: workspace:*
-        version: link:../core
-      '@paraharness/fs':
-        specifier: workspace:*
-        version: link:../fs
-      '@paraharness/gemini':
-        specifier: workspace:*
-        version: link:../gemini
-      '@paraharness/git':
-        specifier: workspace:*
-        version: link:../git
-      '@paraharness/github':
-        specifier: workspace:*
-        version: link:../github
-      '@paraharness/lockfile':
-        specifier: workspace:*
-        version: link:../lockfile
-      '@paraharness/markdown':
-        specifier: workspace:*
-        version: link:../markdown
-      '@paraharness/netsuite':
-        specifier: workspace:*
-        version: link:../netsuite
-      '@paraharness/node':
-        specifier: workspace:*
-        version: link:../node
-      '@paraharness/openai':
-        specifier: workspace:*
-        version: link:../openai
-      '@paraharness/postgres':
-        specifier: workspace:*
-        version: link:../postgres
-      '@paraharness/slack':
-        specifier: workspace:*
-        version: link:../slack
-      '@paraharness/sqlite':
-        specifier: workspace:*
-        version: link:../sqlite
-      '@paraharness/stripe':
-        specifier: workspace:*
-        version: link:../stripe
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/node':
-        specifier: ^22.9.0
-        version: 22.20.5
-      typescript:
-        specifier: ^5.8.2
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.0
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(yaml@2.9.1)
-
   packages/lockfile:
     dependencies:
       p-queue:
@@ -342,31 +281,6 @@ importers:
       '@types/picomatch':
         specifier: ^4.0.3
         version: 4.0.3
-      typescript:
-        specifier: ^5.8.2
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.0
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(yaml@2.9.1)
-
-  packages/netsuite:
-    dependencies:
-      '@paraharness/core':
-        specifier: workspace:*
-        version: link:../core
-      big.js:
-        specifier: ^7.0.1
-        version: 7.0.1
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@types/big.js':
-        specifier: ^7.0.0
-        version: 7.0.0
-      '@types/node':
-        specifier: ^22.9.0
-        version: 22.20.5
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
@@ -447,9 +361,6 @@ importers:
       '@dagrejs/graphlib':
         specifier: ^4.0.7
         version: 4.0.7
-      '@electric-sql/pglite':
-        specifier: ^0.5.15
-        version: 0.5.15
       '@paraharness/core':
         specifier: workspace:*
         version: link:../core
@@ -469,6 +380,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.15
+        version: 0.5.15
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
@@ -543,28 +457,6 @@ importers:
       '@types/better-sqlite3':
         specifier: ^9.6.0
         version: 9.6.0
-      '@types/node':
-        specifier: ^22.9.0
-        version: 22.20.5
-      typescript:
-        specifier: ^5.8.2
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.0
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(yaml@2.9.1)
-
-  packages/stripe:
-    dependencies:
-      '@paraharness/core':
-        specifier: workspace:*
-        version: link:../core
-      stripe:
-        specifier: ^23.1.0
-        version: 23.1.0(@types/node@22.20.5)
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
-    devDependencies:
       '@types/node':
         specifier: ^22.9.0
         version: 22.20.5
