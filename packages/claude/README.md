@@ -33,12 +33,12 @@ const seatA = claude.cliAccount('seat-a').configDir('~/.claude-seat-a');
 const apiFallback = claude.cliAccount('api-fallback').apiKey(P.env('ANTHROPIC_API_KEY'));
 
 const claudeSeats = P.pool('claude-seats')
-  .items(seatA)
+  .with(seatA)
   .strategy('soonest-reset')
   .fallback(apiFallback);
 
 const opus = claude
-  .model('opus', { id: 'claude-opus-4-6', effort: 'high' })
+  .model('claude-opus-4-6', { effort: 'high' })
   .accountPool(claudeSeats);
 
 const reviewer = P.agent('reviewer')

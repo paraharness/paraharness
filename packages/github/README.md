@@ -67,6 +67,25 @@ const publishPr = github.createOrUpdatePr('publish-pr', {
   body: (item) => item.summary,
 });
 
+const issueLane = P.lane('github-issues-lane')
+  .input(TaskInput)
+  .key((item) => item.id)
+  .tracker(issueTracker, ($t) =>
+    $t
+      .everySeconds(30)
+      .from((issue) => ({
+        id: String(issue.number),
+        title: issue.title,
+        summary: issue.body ?? '',
+      }))
+      .onQueued('queued')
+      .onRunning('in-progress')
+      .onWaiting('needs-human')
+      .onErrored('errored')
+      .onCancelled('cancelled')
+      .onExit('done', 'pr-open'),
+  );
+
 const registry = createExecutorRegistry(githubExecutors);
 ```
 

@@ -33,12 +33,12 @@ const primarySeat = openai.account('openai-primary').apiKey(P.env('OPENAI_API_KE
 const cliSeat = openai.cliAccount('codex-cli').configDir('~/.codex-seat-a');
 
 const openaiSeats = P.pool('openai-seats')
-  .items(cliSeat)
+  .with(cliSeat)
   .strategy('least-used')
   .fallback(primarySeat);
 
 const codexModel = openai
-  .model('gpt-5-codex', { id: 'gpt-5-codex', effort: 'high' })
+  .model('gpt-5-codex', { effort: 'high' })
   .accountPool(openaiSeats);
 
 const planner = P.agent('planner')

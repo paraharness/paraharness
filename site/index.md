@@ -46,7 +46,7 @@ Declare an agent, mount it inside an isolated Copy-on-Write Git worktree flow, a
 
 ```ts
 import { P, z } from '@paraharness/core';
-import { createExecutorRegistry, createRuntime } from '@paraharness/core/runtime';
+import { createRuntime, runFlow, runStep } from '@paraharness/core/runtime';
 import { claude, claudeExecutors } from '@paraharness/claude';
 import { fs, fsExecutors } from '@paraharness/fs';
 import { git, gitExecutors } from '@paraharness/git';
@@ -59,27 +59,46 @@ const TaskInput = z.object({
 });
 
 const runner = local.runner({ slots: 4, maxDaemons: 2 });
-const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
+const sonnet = claude.model('claude-sonnet-4-6');
 
 const verifySuite = local
   .streamCheck('verify-suite')
   .runner(runner)
   .argv(['pnpm', 'test', '--run'])
-  .circuitBreakWhenStdout(/FAIL/, { graceLinesAfterMatch: 25 });
+  .circuitBreakWhenStdout(/FAIL/);
 
 const worker = P.agent('worker')
   .model(sonnet)
-  .tools(fs.codingTools(runner), verifySuite.asTool())
+  .tools(fs.codingTools(), verifySuite.asTool())
   .instructions('Implement the requested change and keep all checks passing.')
   .beforeStop(verifySuite)
   .input(TaskInput)
   .output(z.object({ summary: z.string() }));
 
+const stepOut = await runStep(
+  worker,
+  { taskId: 'task-1', prompt: 'Add input validation' },
+  {
+    registry: [claudeExecutors, fsExecutors, nodeExecutors],
+    env: process.env,
+  },
+);
+
 const deliveryFlow = P.flow('delivery-flow')
   .input(TaskInput)
-  .scope(git.cowWorktree({ repo: '.', dir: '.harness/worktrees' }))
+  .scope(git.cowWorktree())
   .step('implement', worker)
   .exit('done');
+
+const flowResult = await runFlow(
+  deliveryFlow,
+  { taskId: 'task-1', prompt: 'Add input validation' },
+  {
+    registry: [claudeExecutors, fsExecutors, gitExecutors, nodeExecutors, sqliteExecutors],
+    ledger: sqlite.ledger('.harness/state.sqlite'),
+    env: process.env,
+  },
+);
 
 const harness = P.harness('engineering-harness')
   .ledger(sqlite.ledger('.harness/state.sqlite'))
@@ -93,14 +112,9 @@ const harness = P.harness('engineering-harness')
       .priority('normal'),
   );
 
-const registry = createExecutorRegistry(
-  claudeExecutors,
-  fsExecutors,
-  gitExecutors,
-  nodeExecutors,
-  sqliteExecutors,
-);
-
-const runtime = createRuntime(harness, { registry, env: process.env });
+const runtime = createRuntime(harness, {
+  registry: [claudeExecutors, fsExecutors, gitExecutors, nodeExecutors, sqliteExecutors],
+  env: process.env,
+});
 await runtime.start();
 ```

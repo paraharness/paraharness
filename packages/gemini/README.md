@@ -30,10 +30,10 @@ import { createExecutorRegistry } from '@paraharness/core/runtime';
 import { gemini, geminiExecutors } from '@paraharness/gemini';
 
 const geminiSeat = gemini.account('gemini-main').apiKey(P.env('GEMINI_API_KEY'));
-const geminiPool = P.pool('gemini-seats').items(geminiSeat).strategy('round-robin');
+const geminiPool = P.pool('gemini-seats').with(geminiSeat).strategy('round-robin');
 
 const geminiPro = gemini
-  .model('gemini-pro', { id: 'gemini-2.5-pro', effort: 'high' })
+  .model('gemini-2.5-pro', { effort: 'high' })
   .accountPool(geminiPool);
 
 const synthesizer = P.agent('synthesizer')

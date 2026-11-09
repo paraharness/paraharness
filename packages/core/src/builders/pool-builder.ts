@@ -37,8 +37,7 @@ export interface PoolBuilder<TItem extends ASTNode = ASTNode>
   /**
    * Configures the pool's selection strategy via a fluent `PoolStrategyBuilder` configurator callback.
    *
-   * Enables fluent configuration of `.escalateOnRetry()`, `.minSuccessRate()`, `.minSamples()`,
-   * or `.soonestReset()` / `.roundRobin()` / `.leastUsed()` on `$`.
+   * Enables fluent configuration of `.escalateOnRetry()`, `.minSuccessRate()`, and `.minSamples()` on `$`.
    *
    * @param {($: PoolStrategyBuilder<TItem>) => MaybeBuilder<PoolStrategyNode<TItem>>} configure - Fluent strategy configurator callback.
    *
