@@ -218,7 +218,13 @@ describe('@paraharness/slack adapter', () => {
       const adapter = new SlackApproverAdapter(botNode, ctx, transport);
       const emittedSignals: Array<{ readonly signalId: string; readonly payload: unknown }> = [];
       const controller: HarnessRuntimeController = {
-        async emitSignal(signalId, payload) {
+        async emitSignal(signal, payload) {
+          const signalId =
+            typeof signal === 'string'
+              ? signal
+              : 'toAST' in signal
+                ? signal.toAST().id
+                : signal.id;
           emittedSignals.push({ signalId, payload });
         },
         async getActiveRuns() {

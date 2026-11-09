@@ -1,6 +1,8 @@
 import type { AstBuilder } from '../../ast/ast-builder.js';
 import type { HarnessNode } from '../../ast/harness-node.js';
 import type { HumanNode } from '../../ast/human-node.js';
+import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
+import type { SignalNode } from '../../ast/signal-node.js';
 import type { TopologyNode } from '../../ast/topology-node.js';
 import type { ActiveRunSummary } from '../../ports/active-run-summary.js';
 import type { ControlPlaneHandle } from '../../ports/control-plane-handle.js';
@@ -131,10 +133,22 @@ export function createRuntime(
   const streamHandles: StreamSubscriptionHandle[] = [];
   const controlPlaneHandles: ControlPlaneHandle[] = [];
   const controller: HarnessRuntimeController = {
-    async emitSignal<TPayload>(signalId: string, payload: TPayload): Promise<void> {
+    async emitSignal<TPayload>(
+      signal: MaybeBuilder<SignalNode<TPayload>> | string,
+      payload: TPayload,
+    ): Promise<void> {
+      const signalNode =
+        typeof signal === 'string'
+          ? undefined
+          : 'toAST' in signal
+            ? signal.toAST()
+            : signal;
+      const signalId = signalNode !== undefined ? signalNode.id : (signal as string);
+      const validatedPayload =
+        signalNode !== undefined ? (signalNode.schema.parse(payload) as TPayload) : payload;
       await handleEmittedRuntimeSignal({
         signalId,
-        payload,
+        payload: validatedPayload,
         node,
         ledgerStore,
         topologyNode: resolvedTopologyNode,

@@ -608,3 +608,42 @@ describe('M2 Runtime — createRuntime registry slice array & auto-resolved stor
   });
 });
 
+describe('M2 Runtime — controller.emitSignal with SignalBuilder and SignalNode (P10)', () => {
+  it('accepts SignalBuilder, SignalNode, and string signalId and validates payload against signalNode.schema', async () => {
+    const ledgerStore = new InMemoryLedgerStore();
+    const humanAdapter = new ScriptedHumanAdapter();
+    const prMergedSig = P.signal('p10-pr-merged', z.object({ itemKey: z.string().min(1) }));
+    const humanNode = P.human('p10-notifier').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const harness = P.harness('p10-harness')
+      .ledger(SAMPLE_LEDGER_NODE)
+      .onSignal(prMergedSig, ($s) =>
+        $s.notify(humanNode, (payload) => `Merged:${payload.itemKey}`),
+      );
+
+    const runtime = createRuntime(harness, {
+      registry: {
+        ledgers: { 'sqlite:ledger': () => ledgerStore },
+        humanChannels: { 'slack:approver': () => humanAdapter },
+      },
+    });
+    await runtime.start();
+
+    await runtime.controller.emitSignal(prMergedSig, { itemKey: 'item-builder' });
+    await runtime.controller.emitSignal(prMergedSig.toAST(), { itemKey: 'item-node' });
+    await runtime.controller.emitSignal('p10-pr-merged', { itemKey: 'item-string' });
+
+    expect(humanAdapter.notifications).toEqual([
+      'Merged:item-builder',
+      'Merged:item-node',
+      'Merged:item-string',
+    ]);
+
+    await expect(
+      runtime.controller.emitSignal(prMergedSig, { itemKey: '' }),
+    ).rejects.toThrow();
+
+    await runtime.stop();
+  });
+});
+
+

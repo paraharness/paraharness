@@ -366,8 +366,14 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
       { runId: 'run-1', laneId: 'engineering', itemKey: '#1', status: 'RUNNING' },
     ];
     const controller: HarnessRuntimeController = {
-      async emitSignal(signalId, payload) {
-        emittedSignals.push({ id: signalId, payload });
+      async emitSignal(signal, payload) {
+        const id =
+          typeof signal === 'string'
+            ? signal
+            : 'toAST' in signal
+              ? signal.toAST().id
+              : signal.id;
+        emittedSignals.push({ id, payload });
       },
       async getActiveRuns() {
         return activeRuns;
