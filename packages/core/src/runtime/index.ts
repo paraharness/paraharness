@@ -80,6 +80,7 @@ export type { InterruptEdgeResolution } from './agent/interrupt-edge-resolution.
 export { createRuntime } from './engine/create-runtime.js';
 export { defaultExecutionEngine } from './engine/default-execution-engine.constants.js';
 export { executeFlow } from './flow/execute-flow.js';
+export { type FlowRunOptions, runFlow } from './flow/run-flow.js';
 export { executeFlowBranch } from './flow/internal/execute-flow-branch.js';
 export { executeFlowStep } from './flow/internal/execute-flow-step.js';
 export type { FlowExecutionContext } from './flow/flow-execution-context.js';

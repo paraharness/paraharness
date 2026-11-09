@@ -7,12 +7,14 @@ import {
   executeAddDependencies, executeFlow, executeHierarchicalRewindDrain, executeReplaceWithPromotion,
   executeSpawnTasks, executeStepNode, executeUpdatePartitionContract, recoverInterruptedRunOnBoot, syncSuspendedRunPrerequisites, z,
 } from '../src/index.js';
+import { type FlowRunOptions, runFlow } from '../src/runtime/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import { InMemoryLessonStore } from './fixtures/in-memory-lesson-store.js';
 import { InMemoryTopologyStore } from './fixtures/in-memory-topology-store.js';
 import {
-  SAMPLE_ABORT_HOOK_NODE, SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_DECLARED_TOOL_NODE, SAMPLE_LOCAL_COMMAND_NODE,
-  SAMPLE_MODEL_NODE, SAMPLE_RUNNER_NODE, SAMPLE_TELEMETRY_COLLECTOR_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TOPOLOGY_STORE_NODE,
+  SAMPLE_ABORT_HOOK_NODE, SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_DECLARED_TOOL_NODE, SAMPLE_LEDGER_NODE,
+  SAMPLE_LESSON_STORE_NODE, SAMPLE_LOCAL_COMMAND_NODE, SAMPLE_MODEL_NODE, SAMPLE_RUNNER_NODE,
+  SAMPLE_TELEMETRY_COLLECTOR_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TOPOLOGY_STORE_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 import { ScriptedBranchableScope } from './fixtures/scripted-branchable-scope.js';
 import { ScriptedHumanAdapter } from './fixtures/scripted-human-adapter.js';
@@ -414,3 +416,111 @@ describe('M2 Runtime — Reboot Crash Recovery (getInterruptedStepsOnBoot, reatt
     await Promise.all([expect(executeStepNode(domainCmd, { arg: 'ok' }, makeDomCtx(0))).resolves.toEqual({ exitCode: 0 }), expect(executeStepNode(domainCmd, { arg: 'ok' }, { ...makeDomCtx(0), registry: createExecutorRegistry() })).rejects.toThrow(/step id 'shell-cmd'/), expect(executeStepNode(domainCmd, { arg: 123 as never }, makeDomCtx(0))).rejects.toThrow(/expected string/i), expect(executeStepNode(domainCmd, { arg: 'ok' }, makeDomCtx('bad' as never))).rejects.toThrow(/expected number/i)]);
   });
 });
+
+describe('M2 Runtime — runFlow standalone flow runner (P2)', () => {
+  it('auto-resolves ledger, scope, topology, lessons, and human adapters from registry, executes flow, and releases scope in finally even on error', async () => {
+    const ledgerStore = new InMemoryLedgerStore();
+    const topologyStore = new InMemoryTopologyStore({ core: { contractText: 'Contract v1', epoch: 1 } });
+    const lessonStore = new InMemoryLessonStore([
+      {
+        id: 'L1',
+        partition: 'core',
+        directive: 'Remember lesson 1',
+        epochAtCreation: 1,
+        recentOutcomes: ['clean_pass', 'clean_pass'],
+        totalCleanPasses: 5,
+        totalViolated: 0,
+        signalLastEmittedAt: {},
+        relevanceScore: 1,
+      },
+    ]);
+    const scope = new ScriptedBranchableScope();
+    const humanAdapter = new ScriptedHumanAdapter([{ approved: true }]);
+    const modelDriver = new ScriptedModelDriver([
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: 'ask human',
+          toolCalls: [{ id: 'tc-esc', name: 'ask_human', argsJson: JSON.stringify({ q: 'ok?' }) }],
+        },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.01 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: { role: 'assistant', visibleText: JSON.stringify({ done: true }), toolCalls: [] },
+        structuredOutput: { done: true },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.01 },
+      },
+    ]);
+
+    const topo = P.topology('flow-topo').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ core: { dependsOn: [] } });
+    const lessons = P.lessons('flow-lessons').store(SAMPLE_LESSON_STORE_NODE);
+    const human = P.human('flow-human').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const escIntr = P.interrupt('ask_human', z.object({ q: z.string() }));
+
+    const worker = P.agent<string>('flow-worker')
+      .model(SAMPLE_MODEL_NODE)
+      .topology(topo)
+      .lessons(lessons)
+      .input(z.object({ id: z.string() }))
+      .partitions(() => ['core'])
+      .output(z.object({ done: z.boolean() }))
+      .canRaise(escIntr)
+      .onInterrupt(escIntr, ($intr) =>
+        $intr.ask(human, z.object({ approved: z.boolean() })).resumeWith((dec) => JSON.stringify(dec)),
+      );
+
+    const flowBuilder = P.flow('standalone-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE as never)
+      .step('work', worker)
+      .exit('done');
+
+    const options: FlowRunOptions = {
+      registry: [
+        {
+          ledgers: { 'sqlite:ledger': () => ledgerStore },
+          scopes: { 'git:cow-worktree': () => scope as never },
+          topologies: { 'sqlite:topology': () => topologyStore },
+          lessons: { 'sqlite:lessons': () => lessonStore },
+          humanChannels: { 'slack:approver': () => humanAdapter },
+          models: { 'claude:model': () => modelDriver },
+        },
+      ],
+      ledger: SAMPLE_LEDGER_NODE,
+    };
+
+    const res = await runFlow(flowBuilder, { id: 'item-42' }, options);
+    expect(res.exitState).toBe('done');
+    expect(res.stepOutputs).toEqual({ work: { done: true } });
+    expect(scope.handleState.has('root:standalone-flow-run')).toBe(true);
+    expect(scope.liveHandles.has('root:standalone-flow-run')).toBe(false);
+    expect(modelDriver.recordedRequests[0]?.history[0]?.canonical.visibleText).toContain('Contract v1');
+    expect(modelDriver.recordedRequests[0]?.history[0]?.canonical.visibleText).toContain('Remember lesson 1');
+    expect(humanAdapter.decisionRequests).toHaveLength(1);
+
+    const failStep = P.command<string>('boom-step')
+      .input(z.object({ id: z.string() }))
+      .output(z.object({}))
+      .run(async () => {
+        throw new Error('Step boom');
+      });
+    const failingFlow = P.flow('failing-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE as never)
+      .step('boom', failStep)
+      .exit('done');
+
+    await expect(
+      runFlow(failingFlow, { id: 'item-fail' }, { ...options, runId: 'fail-run-1' }),
+    ).rejects.toThrow('Step boom');
+    expect(scope.handleState.has('root:fail-run-1')).toBe(true);
+    expect(scope.liveHandles.has('root:fail-run-1')).toBe(false);
+
+    await expect(
+      runFlow(flowBuilder, { id: 'item-missing' }, { registry: {}, ledger: SAMPLE_LEDGER_NODE }),
+    ).rejects.toThrow(/No LedgerStore registered for 'sqlite:ledger'/);
+  });
+});
+
