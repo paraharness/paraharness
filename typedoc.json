@@ -1,16 +1,34 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   "name": "Paraharness API Reference",
+  "plugin": [
+    "typedoc-plugin-markdown",
+    "typedoc-vitepress-theme"
+  ],
+  "out": "site/api",
+  "docsRoot": "site",
+  "readme": "none",
   "entryPointStrategy": "packages",
   "entryPoints": [
     "packages/*"
   ],
-  "out": "docs-dist",
-  "readme": "README.md",
   "includeVersion": true,
   "excludePrivate": true,
   "excludeInternal": false,
+  "excludeExternals": true,
+  "outputFileStrategy": "modules",
+  "parametersFormat": "table",
+  "interfacePropertiesFormat": "table",
+  "enumMembersFormat": "table",
+  "typeDeclarationFormat": "table",
+  "indexFormat": "table",
+  "useCodeBlocks": true,
+  "expandObjects": false,
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
   "packageOptions": {
+    "readme": "none",
+    "excludeExternals": true,
     "validation": {
       "notExported": false
     }

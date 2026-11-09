@@ -203,7 +203,13 @@ function checkStructuredJsdoc(params) {
 
 export default [
   {
-    files: ['packages/*/{src,test}/**/*.ts', 'tests/*/{src,test}/**/*.ts', 'eslint.config.mjs'],
+    files: [
+      'packages/*/{src,test}/**/*.ts',
+      'tests/*/{src,test}/**/*.ts',
+      '.agents/hooks/**/*.mjs',
+      'scripts/**/*.mjs',
+      'eslint.config.mjs',
+    ],
     languageOptions: { parser: tsParser, parserOptions: { ecmaVersion: 'latest', sourceType: 'module' } },
     plugins: {
       '@typescript-eslint': tsPlugin,
@@ -255,7 +261,7 @@ export default [
                       context.report({ node: stmt, message: "Re-export statements ('export { ... }' / 'export *') are only allowed in barrel index.ts files (Rule 1.7)." });
                     }
                   }
-                  if (filename.includes('/.agents/hooks/') || filename.endsWith('/eslint.config.mjs')) return;
+                  if (filename.includes('/.agents/hooks/') || filename.includes('/scripts/') || filename.endsWith('/eslint.config.mjs')) return;
                   const entities = program.body.map(classifyTopLevelEntity).filter(Boolean);
                   if (filename.endsWith('.schema.ts')) {
                     for (const e of entities.filter((x) => x.kind === 'interface' || x.kind === 'class' || x.kind === 'function')) {
@@ -358,6 +364,7 @@ export default [
       'packages/*/test/**/*.ts',
       'tests/*/src/**/*.ts',
       'tests/*/test/**/*.ts',
+      'scripts/**/*.mjs',
       'eslint.config.mjs',
     ],
     ignores: ['packages/*/test/**/*.test.ts', 'tests/*/test/**/*.test.ts'],

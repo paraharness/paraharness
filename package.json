@@ -20,8 +20,8 @@
   },
   "scripts": {
     "build": "pnpm --filter \"./packages/*\" run build",
-    "docs:api": "typedoc",
-    "lint": "eslint \"packages/*/{src,test}/**/*.ts\" \"tests/*/{src,test}/**/*.ts\" \".agents/hooks/**/*.mjs\" \"eslint.config.mjs\"",
+    "docs:api": "node scripts/build-docs.mjs",
+    "lint": "eslint \"packages/*/{src,test}/**/*.ts\" \"tests/*/{src,test}/**/*.ts\" \".agents/hooks/**/*.mjs\" \"scripts/**/*.mjs\" \"eslint.config.mjs\"",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --workspace-concurrency=2 test"
   },
@@ -39,7 +39,10 @@
     "eslint": "^10.14.0",
     "eslint-plugin-jsdoc": "^65.4.4",
     "typedoc": "0.28.20",
+    "typedoc-plugin-markdown": "^4.14.1",
+    "typedoc-vitepress-theme": "^1.1.4",
     "typescript": "^5.8.2",
+    "vitepress": "^1.6.4",
     "vitest": "^3.2.0"
   },
   "pnpm": {

@@ -1,6 +1,6 @@
 # Paraharness
 
-**Declarative multi-agent orchestration and durable execution for TypeScript.** [→ API Documentation](https://paraharness.github.io/paraharness/modules/_paraharness_core.html)
+**Declarative multi-agent orchestration and durable execution for TypeScript.** [→ Documentation & API Reference](https://paraharness.github.io/paraharness/)
 
 Paraharness is a TypeScript framework for building autonomous LLM agent systems that run over isolated workspaces. Instead of writing ad-hoc prompt loops and unguarded shell tools, you declare agents, capability policies, verification loops, and multi-step flows with the `P.*` DSL, compile them into a pure passive AST, and execute them on a crash-recoverable runtime (`@paraharness/core/runtime`).
 
