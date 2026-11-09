@@ -1875,8 +1875,10 @@ In accordance with `docs/CODING_GUIDELINES.md` Rules 1.1–1.8, `@paraharness/me
 | `src/memory-harness-options.ts` | `interface` | `MemoryHarnessOptions` configuration and dependency injection interface. |
 | `src/memory-harness-contract.ts` | `interface` | `MemoryHarnessContract` programmatic surface interface. |
 | `src/memory-harness-error.ts` | `class` | `MemoryHarnessError` structured domain error carrying `code: MemoryErrorCode` and `details?: Readonly<Record<string, unknown>>`. |
+| `src/claude-cli-distiller-runner.ts` | `class` | `ClaudeCliDistillerRunner` built-in `MemoryDistillerRunner` implementation spawning `claude -p` with JSON Schema validation (§6.4, `Rule 1.3`). |
 | `src/memory-harness.ts` | `class` | `MemoryHarness` stateful coordinator implementing `MemoryHarnessContract` and delegating domain phases to `src/internal/*` (`Rules 1.3, 3.1`). |
 | `src/internal/load-memory-config.ts` | `function` | Discovers and validates `.agents/memory.config.json` $\to$ `.claude/memory.config.json` and pre-compiles `forbidRegexes` (§2.1). |
+| `src/internal/list-repo-files.ts` | `function` | Enumerates `repoFiles` via `git ls-files` cached per workspace tree state, falling back to `tinyglobby` outside a Git worktree (§4.3). |
 | `src/internal/normalize-memory-path-pattern.ts` | `function` | Normalizes and deduplicates paths/globs to repo-relative POSIX form (§4.1). |
 | `src/internal/matches-context-scope.ts` | `function` | Implements the 4-way symmetric path/glob matching algorithm and synthetic probe helpers (§4.3). |
 | `src/internal/resolve-record-cap-bucket.ts` | `function` | Implements the most-specific-bucket-wins specificity ranking and bucket partitioning (§5.2). |
@@ -1884,11 +1886,12 @@ In accordance with `docs/CODING_GUIDELINES.md` Rules 1.1–1.8, `@paraharness/me
 | `src/internal/evaluate-note-lifecycle-on-read.ts` | `function` | Evaluates `persistent`, `read-count`, `hard-expiry`, and `soft-expiry` transitions (§3.3). |
 | `src/internal/read-memory-ledger.ts` | `function` | Parses `memory.jsonl` and `memory.meta.json`, reconciles monotonic `highWaterMarks` across raw records before expiry, and purges expired `hard-expiry` notes under `<ledgerPath>.lock` (§3.1, §3.3). |
 | `src/internal/write-memory-ledger.ts` | `function` | Canonical-sorts records (`R*` $\to$ `L*` $\to$ `N*`) and atomically persists `memory.meta.json` first and `memory.jsonl` second via `write-file-atomic` (§3.1, §8.1). |
-| `src/internal/sync-memory-git.ts` | `function` | Executes in-place `ensureMemoryGitCheckout`, fallback-author auto-commit, and 3-way diverged push retry loop (§8.2). |
+| `src/internal/sync-memory-git.ts` | `function` | Executes in-place `ensureMemoryGitCheckout`, first-run `initializeMetaFromGitHistory` (§3.1), fallback-author auto-commit, 3-way diverged push retry loop, and post-lock `<otherSid>.json` remapping (§8.2). |
 | `src/internal/reconcile-diverged-memory-ledgers.ts` | `function` | Pure 3-way record union, ID collision re-numbering, and high-water-mark reconciliation for concurrent multi-repo Git pushes (§8.2.3). |
 | `src/internal/build-memory-protocol.ts` | `function` | Generates the config-adapted `protocol` markdown instructions returned by `memory_init` (§6.2). |
 | `src/internal/build-distiller-prompts.ts` | `function` | Constructs the KV-cacheable static `systemPrompt` and dynamic `userPrompt` for `memory_propose` (§6.4). |
-| `src/internal/resolve-session-epoch-state.ts` | `function` | Incrementally scans `transcriptPath` for compaction checkpoints and role fallback, and loads/persists `.memory/.session-state/<sessionId>.json` and `latest-role.json` (§7.2). |
+| `src/internal/extract-touched-paths-from-hook-input.ts` | `function` | Extracts and normalizes file/directory/glob paths from Claude Code (`PreToolUse`/`PostToolUse`) and Antigravity hook payloads (§7.1). |
+| `src/internal/resolve-session-epoch-state.ts` | `function` | Implements `resolveTranscriptEpochAndRole` (incrementally scanning `transcriptPath` for compaction checkpoints and role fallback) and loads/persists `.memory/.session-state/<sessionId>.json` and `latest-role.json` (§7.2). |
 | `src/index.ts` | Barrel | Explicit `export` and `export type` surface of `@paraharness/memory` (`Rule 1.7`). |
 
 ---
