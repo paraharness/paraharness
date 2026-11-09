@@ -40,12 +40,12 @@ export interface OpenAiNamespace {
    *
    * Supports `.accountPool(pool)` / `.pool(pool)` and `.effort(level)` before compiling to `OpenAiModelNode`.
    *
-   * @param {string}             alias   - Logical model alias (such as `'gpt5'` or `'o3'`).
-   * @param {OpenAiModelOptions} options - OpenAI model identifier and optional reasoning effort.
+   * @param {string}             alias     - Logical model alias (such as `'gpt5'` or `'gpt-5'`).
+   * @param {OpenAiModelOptions} [options] - Optional OpenAI model identifier (`defaults to alias`) and reasoning effort.
    *
    * @returns {OpenAiModelBuilder} Fluent builder for the OpenAI model node.
    *
    * @throws {Error} If `alias` or `options.id` is an empty or whitespace-only string.
    */
-  model(alias: string, options: OpenAiModelOptions): OpenAiModelBuilder;
+  model(alias: string, options?: OpenAiModelOptions): OpenAiModelBuilder;
 }

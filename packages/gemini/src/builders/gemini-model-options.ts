@@ -5,8 +5,8 @@
  * and the optional thinking level applied across turns.
  */
 export interface GeminiModelOptions {
-  /** Google Gemini wire model identifier (such as `'gemini-2.5-pro'` or `'gemini-2.5-flash'`). */
-  readonly id: string;
+  /** Optional Google Gemini wire model identifier (defaults to `alias`, such as `'gemini-2.5-pro'` or `'gemini-2.5-flash'`). */
+  readonly id?: string;
   /** Optional thinking level (`'low' | 'medium' | 'high'`). */
   readonly effort?: 'low' | 'medium' | 'high';
 }

@@ -81,6 +81,14 @@ describe('@paraharness/claude builders and AST invariants', () => {
     expect(opus.effort).toBe('high');
     expect(opus.accountPool).toEqual(pool.toAST());
     expect(claudeExecutors.models?.['claude:model']).toBeTypeOf('function');
+
+    const shorthandSonnet = claude.model('claude-sonnet-4-6').toAST();
+    const explicitSonnet = claude.model('claude-sonnet-4-6', { id: 'claude-sonnet-4-6' }).toAST();
+    expect(shorthandSonnet).toEqual(explicitSonnet);
+    const shorthandOpusEffort = claude.model('claude-opus-4-6', { effort: 'high' }).toAST();
+    expect(shorthandOpusEffort).toEqual(
+      claude.model('claude-opus-4-6', { id: 'claude-opus-4-6', effort: 'high' }).toAST(),
+    );
   });
 
   it('extracts OAuth credentials from configDir and falls back to EnvRef apiKey when configDir is absent', async () => {

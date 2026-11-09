@@ -83,6 +83,11 @@ describe('@paraharness/openai builders and AST invariants', () => {
     expect(o3.effort).toBe('high');
     expect(o3.accountPool).toEqual(pool.toAST());
     expect(openaiExecutors.models?.['openai:model']).toBeTypeOf('function');
+
+    const shorthandGpt5 = openai.model('gpt-5').toAST();
+    expect(shorthandGpt5).toEqual(openai.model('gpt-5', { id: 'gpt-5' }).toAST());
+    const shorthandO3Effort = openai.model('o3', { effort: 'high' }).toAST();
+    expect(shorthandO3Effort).toEqual(openai.model('o3', { id: 'o3', effort: 'high' }).toAST());
   });
 });
 

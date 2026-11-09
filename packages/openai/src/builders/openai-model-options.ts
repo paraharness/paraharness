@@ -5,8 +5,8 @@
  * reasoning effort level applied across turns.
  */
 export interface OpenAiModelOptions {
-  /** OpenAI wire model identifier (such as `'gpt-5'` or `'o3'`). */
-  readonly id: string;
+  /** Optional OpenAI wire model identifier (defaults to `alias`, such as `'gpt-5'` or `'o3'`). */
+  readonly id?: string;
   /** Optional reasoning effort level (`'low' | 'medium' | 'high'`). */
   readonly effort?: 'low' | 'medium' | 'high';
 }

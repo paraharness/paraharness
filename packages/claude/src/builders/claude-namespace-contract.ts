@@ -40,12 +40,12 @@ export interface ClaudeNamespace {
    *
    * Supports `.accountPool(pool)` / `.pool(pool)` and `.effort(level)` before compiling to `ClaudeModelNode`.
    *
-   * @param {string}             alias   - Logical model alias (such as `'sonnet'` or `'opus'`).
-   * @param {ClaudeModelOptions} options - Anthropic model identifier and optional thinking effort.
+   * @param {string}             alias     - Logical model alias (such as `'sonnet'` or `'claude-sonnet-4-6'`).
+   * @param {ClaudeModelOptions} [options] - Optional Anthropic model identifier (`defaults to alias`) and thinking effort.
    *
    * @returns {ClaudeModelBuilder} Fluent builder for the Claude model node.
    *
    * @throws {Error} If `alias` or `options.id` is empty or whitespace-only.
    */
-  model(alias: string, options: ClaudeModelOptions): ClaudeModelBuilder;
+  model(alias: string, options?: ClaudeModelOptions): ClaudeModelBuilder;
 }

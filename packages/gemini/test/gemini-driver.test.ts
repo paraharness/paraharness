@@ -60,6 +60,13 @@ describe('@paraharness/gemini builders and AST invariants', () => {
     expect(flash.effort).toBe('low');
     expect(flash.accountPool).toEqual(pool.toAST());
     expect(geminiExecutors.models?.['gemini:model']).toBeTypeOf('function');
+
+    const shorthandFlash = gemini.model('gemini-3.1-flash').toAST();
+    expect(shorthandFlash).toEqual(gemini.model('gemini-3.1-flash', { id: 'gemini-3.1-flash' }).toAST());
+    const shorthandProEffort = gemini.model('gemini-3.1-pro', { effort: 'high' }).toAST();
+    expect(shorthandProEffort).toEqual(
+      gemini.model('gemini-3.1-pro', { id: 'gemini-3.1-pro', effort: 'high' }).toAST(),
+    );
   });
 });
 

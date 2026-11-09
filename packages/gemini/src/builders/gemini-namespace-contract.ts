@@ -40,12 +40,12 @@ export interface GeminiNamespace {
    *
    * Supports `.pool(pool)` / `.accountPool(pool)` and `.effort(level)` before compiling to `GeminiModelNode`.
    *
-   * @param {string}             alias   - Logical model alias (such as `'pro'` or `'flash'`).
-   * @param {GeminiModelOptions} options - Gemini model identifier and optional thinking effort.
+   * @param {string}             alias     - Logical model alias (such as `'pro'` or `'gemini-3.1-pro'`).
+   * @param {GeminiModelOptions} [options] - Optional Gemini model identifier (`defaults to alias`) and thinking effort.
    *
    * @returns {GeminiModelBuilder} Fluent builder for the Gemini model node.
    *
    * @throws {Error} If `alias` or `options.id` is an empty or whitespace-only string.
    */
-  model(alias: string, options: GeminiModelOptions): GeminiModelBuilder;
+  model(alias: string, options?: GeminiModelOptions): GeminiModelBuilder;
 }
