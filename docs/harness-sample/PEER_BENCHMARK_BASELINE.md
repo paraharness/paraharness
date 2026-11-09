@@ -1,8 +1,9 @@
-# Peer Skill Benchmark Baseline (`v1` — Commit `e366cc5`)
+# Peer Skill Benchmark Baseline (`v1` @ `e366cc5` & `v2` @ `e0a797c`)
 
-- **Candidate Skill (`peer`):** [`docs/harness-sample/skills/peer/SKILL.md`](file:///Users/torniketsomaia/projects/metaharness/docs/harness-sample/skills/peer/SKILL.md) @ `e366cc5` (`60` lines, `863` total words, `809` body words, all 19 prose paragraphs/bullets `≤ 60` words).
+- **Candidate Skill (`peer` `v1`):** [`docs/harness-sample/skills/peer/SKILL.md`](file:///Users/torniketsomaia/projects/metaharness/docs/harness-sample/skills/peer/SKILL.md) @ `e366cc5` (`60` lines, `863` total words, `809` body words, all 19 prose paragraphs/bullets `≤ 60` words).
+- **Candidate Skill (`peer` `v2`):** [`docs/harness-sample/skills/peer/SKILL.md`](file:///Users/torniketsomaia/projects/metaharness/docs/harness-sample/skills/peer/SKILL.md) @ `e0a797c` (`67` lines, every prose paragraph/bullet `≤ 60` words; paired with [`skills/planner/SKILL.md`](file:///Users/torniketsomaia/projects/metaharness/docs/harness-sample/skills/planner/SKILL.md) and [`skills/lesson/SKILL.md`](file:///Users/torniketsomaia/projects/metaharness/docs/harness-sample/skills/lesson/SKILL.md)).
 - **Legacy Baseline Skill (`consultant`):** [`/Users/torniketsomaia/projects/CrookedDuke/.claude/skills/consultant/SKILL.md`](file:///Users/torniketsomaia/projects/CrookedDuke/.claude/skills/consultant/SKILL.md) (`122` lines).
-- **Archived Snapshot Directory:** [`/tmp/harness-refinement/baseline-v1/`](file:///tmp/harness-refinement/baseline-v1/)
+- **Archived Snapshot Directory:** [`/tmp/harness-refinement/baseline-v1/`](file:///tmp/harness-refinement/baseline-v1/) and [`/tmp/harness-refinement/v2/`](file:///tmp/harness-refinement/v2/)
 
 ---
 
@@ -75,3 +76,49 @@
   - A direct instruction to do something **non-trivial** with multiple valid approaches (must check in on the approach first instead of executing blind);
   - A *"Let's plan/spec X"* request (must plan conversationally with the Owner turn-by-turn instead of dumping a 100-line spec monolith);
   - A **trivial** or **already-settled** instruction to act (must execute immediately and cleanly).
+
+---
+
+## 4. `Peer v2` (`@ e0a797c`) Multi-Model Blind A/B Benchmark Across `S1–S6` (`24–0`)
+
+### 4A. Unsealed Cross-Family Blind Judge Scoreboard (`12 Claude Opus High` + `12 Gemini 4 Argon High`)
+
+| Scenario | Domain & Archetype | Simulated Family | Blind Map (`A` / `B`) | Claude Opus Judge | Gemini Argon Judge | Unsealed Winner |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| **S1** *(v1 Reg.)* | `authmesh` — Multi-region session revocation & refresh resurrection | `claude_opus` | `A=new, B=old` | `A` | `A` | **`Peer v2` (`2–0`)** |
+| **S1** *(v1 Reg.)* | `authmesh` — Multi-region session revocation & refresh resurrection | `gemini_argon` | `A=old, B=new` | `B` | `B` | **`Peer v2` (`2–0`)** |
+| **S2** *(v1 Reg.)* | `canvasdoc` — CRDT log compaction & room join architecture | `claude_opus` | `A=old, B=new` | `B` | `B` | **`Peer v2` (`2–0`)** |
+| **S2** *(v1 Reg.)* | `canvasdoc` — CRDT log compaction & room join architecture | `gemini_argon` | `A=new, B=old` | `A` | `A` | **`Peer v2` (`2–0`)** |
+| **S3** *(v1 Reg.)* | `flagpulse` — Postgres `LISTEN/NOTIFY` + watermark delta invalidation | `claude_opus` | `A=new, B=old` | `A` | `A` | **`Peer v2` (`2–0`)** |
+| **S3** *(v1 Reg.)* | `flagpulse` — Postgres `LISTEN/NOTIFY` + watermark delta invalidation | `gemini_argon` | `A=old, B=new` | `B` | `B` | **`Peer v2` (`2–0`)** |
+| **S4** *(v2 New)* | `pulseboard` — Abstract product & architecture brainstorming (zero code pointers) | `claude_opus` | `A=old, B=new` | `B` | `B` | **`Peer v2` (`2–0`)** |
+| **S4** *(v2 New)* | `pulseboard` — Abstract product & architecture brainstorming (zero code pointers) | `gemini_argon` | `A=new, B=old` | `A` | `A` | **`Peer v2` (`2–0`)** |
+| **S5** *(v2 New)* | `vaultsync` — Level-4 decision derivation, veto disclosure & flawed prior decisions | `claude_opus` | `A=new, B=old` | `A` | `A` | **`Peer v2` (`2–0`)** |
+| **S5** *(v2 New)* | `vaultsync` — Level-4 decision derivation, veto disclosure & flawed prior decisions | `gemini_argon` | `A=old, B=new` | `B` | `B` | **`Peer v2` (`2–0`)** |
+| **S6** *(v2 New)* | `streamline` — Question restraint, non-trivial check-in, trivial execution & planning | `claude_opus` | `A=old, B=new` | `B` | `B` | **`Peer v2` (`2–0`)** |
+| **S6** *(v2 New)* | `streamline` — Question restraint, non-trivial check-in, trivial execution & planning | `gemini_argon` | `A=new, B=old` | `A` | `A` | **`Peer v2` (`2–0`)** |
+
+**Aggregate `Peer v2` vs. `Consultant` Score:** **`24–0`** (`12–0` on `S1–S3` regression suite; `12–0` on `S4–S6` new `v2` suite; `12–0` under Claude Opus High Judges; `12–0` under Gemini 4 Argon High Judges).
+
+---
+
+### 4B. Per-Scenario `Peer v2` vs. `Peer v1` & `Consultant` Findings
+
+1. **Closure of `v1` Baseline Blemishes on `S1–S3`:**
+   - **S1 Turn 3–4 override offer & `"One-line cost"` label:** Closed across both `claude_opus` and `gemini_argon`. Neither echoed a bolded label, and neither offered to add `rotateSigningKey` on top of the Redis revocation fix; both stated in one sentence what breaks on the Owner's path and asked whether the Owner wanted to override anyway.
+   - **S1 Turn 8 shortcut framing:** Closed across both models. Both rejected the 10-second TTL shortcut outright and stated plainly that bolting guards onto the shortcut costs as much as the working fix while giving up durability and SCIM/service-account coverage.
+   - **S2 Turn 7 `go?` premature notes write:** Closed on `claude_opus` (`0` file edits on Turns 1–7; waited for the Turn-7 catch on `maxAcceptableUnackedWindowMs` to be answered before writing `peer-notes.md` on Turn 8).
+   - **S3 Turn 1 rollout order & compactness:** `Opus Peer v2` (323 lines vs `Consultant`'s 548 lines) recommended the two-deploy fire-and-forget `broadcastFlagInvalidation` rollout on Turn 1 and anchored the `updated_at` lookback to `lastSuccessfulPollDbNow`, with zero mid-debate notes edits.
+2. **Performance on New `v2` Scenarios (`S4`, `S5`, `S6`):**
+   - **`S4` (`pulseboard` — Abstract Product & Architecture Brainstorming):** Both `Opus Peer v2` and `Argon Peer v2` proactively grounded 8 turns of pure product-level brainstorming in exact schema, constant, and code mechanics (`MAX_REVOCATION_PROPAGATION_SECONDS = 5`, `SOC2_AUDIT_REQUIRES_NAMED_VIEWER`, unconnected `query-cache.ts`, `AT TIME ZONE` + `COUNT(DISTINCT account_id)` non-additivity across half-hour/quarter-hour offsets, `AUTOSAVE_DEBOUNCE_MS = 200` wiping `MAX_RETAINED_REVISIONS = 50` in 10 seconds, draft isolation from live `layout_json`, and `buildWidgetCacheKey` omitting widget config), keeping `git status -s` clean across all 8 turns. (`Consultant` endorsed scheduled static snapshots on Turn 2 and tenant-timezone override on Turn 4, while forcing 5-section tables and `(a)/(b)/(c)` quizzes onto every turn.)
+   - **`S5` (`vaultsync` — Level-4 Decision Derivation & Critical Prior-Decision Re-evaluation):** Both `Opus Peer v2` and `Argon Peer v2` settled single-valid-answer items (`Q1`, `Q2`, `Q9`), derived answers implied by prior decisions (`Q3`, `Q4`, `Q5`, `Q10`) with rejected options disclosed in prose for veto, caught **both** flawed prior decisions (`D5` on `Q6`: synchronous `SERIALIZABLE` hash-chained audit writes causing `40001` storms across 25 DB connections when 500 CI pods fetch 40 secrets; `D6` on `Q11`: 5s clock-skew tolerance + 15m lockout breaking developer laptops on sleep/wake), held `git status -s` clean on Turn 7's leading question, and logged settled decisions on Turn 8. (`Consultant` defended keeping `SERIALIZABLE` on Turn 1–2, missed the `D6` developer lockout on Turn 5, and edited `consultant-notes.md` on Turn 1's opening question.)
+   - **`S6` (`streamline` — Restraint, Non-Trivial Check-In, Trivial Immediate Execution, Conversational Planning):**
+     - `Argon Peer v2` passed **8/8** turns of the `git status -s` verification matrix: conversational planning on Turn 1 (`git status` empty), prose-only answer on Turn 2 (`git status` empty), non-trivial approach check-in on Turn 3 (`git status` empty), immediate 1-line edit of `MAX_REPLAY_BATCH_SIZE = 250` in `src/config/dlq-config.ts` on Turn 4 without asking `"go?"`, zero momentum relapse on Turn 5's `"why don't we just swap those two lines right now?"`, zero edits on Turns 6–7, and full execution + notes logging on Turn 8.
+     - `Opus Peer v2` passed Turns 1, 2, 3, 4, 5, 7, and 8 cleanly (and caught two subtle SQL bugs on Turn 8: stamping `last_replayed_at = NOW()` on first claim so `NULL` is reclaimable, and matching `claim_token` on rollback), while `Opus Consultant` failed Turns 1, 3, 4, 6, and 8 (dumping a 53-line questionnaire on Turn 1, refusing the trivial Turn-4 config edit to write a draft ticket `H1` instead, and refusing the explicit Turn-8 coding instruction because `"head.md has no session id"`).
+
+---
+
+### 4C. Remaining Nuances Queued for Unified Memory Harness + `S7`
+
+1. **Mixed Sub-Point Agreement + Open Question (`claude_opus` `S6` Turn 6):** When Turn 6 opened with `"Let's have requeueDeadLetter atomically transition..."` and ended with `"Also, on that 250-row cursor batching..."`, `claude_opus` treated paragraph 1 as an instruction to edit `src/dlq/dlq-consumer.ts` on Turn 6 while answering paragraph 2. Tightening `peer/SKILL.md` (`L34`) so execution only runs when no part of the turn is still an open design question on the feature closes this edge.
+2. **Unified Memory Harness (`docs/unified-memory/UNIFIED_MEMORY_SPEC.md`) & Scenario `S7`:** Replaces separate static `LESSONS.md`, `lessons/<ROLE>.md`, `peer-notes.md`, and `skills/lesson/SKILL.md` with `.agents/memory.config.json`, `.memory/memory.jsonl` (`rule` | `lesson` | `note`), the 5 Zod-validated tools (`memory_init`, `memory_load_scoped`, `memory_propose`, `memory_commit`, `memory_drain_notes`), and the first-touch-since-compaction file hook.
