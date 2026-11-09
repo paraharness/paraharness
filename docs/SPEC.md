@@ -1358,6 +1358,25 @@ export interface HarnessExecutionEngine {
   ): HarnessRuntime;
 }
 
+export interface FlowRunOptions {
+  readonly registry:
+    | Partial<RuntimeExecutorRegistry>
+    | RuntimeExecutorRegistrySlice
+    | readonly RuntimeExecutorRegistrySlice[];
+  readonly ledger: MaybeBuilder<LedgerStoreASTNode>;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly runId?: string;
+  readonly laneId?: string;
+  readonly itemKey?: string;
+  readonly signal?: AbortSignal;
+}
+
+export declare function runFlow<TIn = unknown, THandle = unknown>(
+  flow: MaybeBuilder<FlowNode<TIn, THandle, string>>,
+  input: TIn,
+  options: FlowRunOptions,
+): Promise<FlowRunResult>;
+
 // ============================================================================
 // 2.4 Runtime Contexts, Tool Effects, Policy Guards, Tripwires & Services
 // ============================================================================
