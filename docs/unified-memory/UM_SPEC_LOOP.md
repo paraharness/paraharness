@@ -2,9 +2,7 @@ STATE
 docs                       := ["docs/unified-memory/UNIFIED_MEMORY_SPEC.md", "docs/CODING_GUIDELINES.md"]
 round                      := 3
 $verified_mechanical_fixes := []
-$verified_core_proposals   := [
-  "R2-P1: Add optional autoPullOnInit: z.boolean().default(true) to MemoryGitStorageConfigSchema (§2.2) and fetch+reconcile origin/<branch> during memory_init (§6.2, §8.2.1) so multi-repo sessions receive newly pushed remote rules, lessons, and handoff notes at session startup."
-]
+$verified_core_proposals   := []
 $pending_adjacent_defects  := []
 round_history              := [
   {

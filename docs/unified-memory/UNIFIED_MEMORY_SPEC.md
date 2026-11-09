@@ -76,6 +76,7 @@ export const MemoryGitStorageConfigSchema = z.object({
   branch: z.string().min(1).default('main'),
   autoCommit: z.boolean().default(true),
   autoPush: z.boolean().default(false),
+  autoPullOnInit: z.boolean().default(true),
 });
 
 /**
@@ -94,6 +95,7 @@ export const MemoryStorageConfigSchema = z.object({
     branch: 'main',
     autoCommit: true,
     autoPush: false,
+    autoPullOnInit: true,
   }),
 });
 
@@ -183,6 +185,7 @@ export const MemoryConfigSchema = z
         branch: 'main',
         autoCommit: true,
         autoPush: false,
+        autoPullOnInit: true,
       },
     }),
     allowedRoles: z
@@ -837,7 +840,7 @@ export type MemoryInitOutput = z.infer<typeof MemoryInitOutputSchema>;
 2. Acquire `.memory/.session-state/latest-role.lock` via `withFileLock`, atomically write `.memory/.session-state/latest-role.json` (`{ role: input.role, updatedAt: nowIso }` validated via `MemoryLatestRoleStateSchema` in §7.2), and release `latest-role.lock`.
 3. If `sessionId` is present/resolved, acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second** per §8.1 Rule 1 (if no `sessionId` is available, acquire `<ledgerPath>.lock` directly):
    - Inside `<ledgerPath>.lock`:
-     - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized per §8.2.1.
+     - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized (and when `config.storage.git.autoPullOnInit === true && config.storage.git.remoteUrl !== undefined`, run the best-effort session-start remote fetch and 3-way reconciliation) per §8.2.1.
      - Parse `memory.jsonl` and `memory.meta.json`, immediately reconcile `meta.highWaterMarks` across all raw loaded records per §3.1 before any purge, and delete any `type: 'note'` record with `lifecycle.mode === 'hard-expiry'` where `nowMs >= Date.parse(lifecycle.expiresAt)`.
      - Select all **unscoped** records (`record.context === undefined`) where `(record.role === 'general' || record.role === input.role)` and `(record.repos === undefined || record.repos.includes(config.repoId))`.
      - Apply the §3.3 lifecycle transition table to each selected unscoped `type: 'note'` record (`read-count` decrement/drainage and `soft-expiry` final-read drainage). When `drainedOnThisRead === true`, set `renderedText = "[FINAL READ - DRAINED] " + note.text` (retaining `lifecycle.remainingReads = 1` on `read-count` notes); otherwise set `renderedText = note.text` (and `lifecycle.remainingReads = remainingReads - 1` on `read-count` notes).
@@ -1674,7 +1677,9 @@ When `config.storage.git.enabled === true`:
        - Run `git -C <checkoutDir> ls-remote --heads origin refs/heads/<branch>` (throwing `MemoryHarnessError` with `'GIT_SYNC_FAILED'` if `ls-remote` exits non-zero due to network or authentication failure).
        - If `refs/heads/<branch>` exists on `origin`: run `git -C <checkoutDir> fetch origin <branch>`. If a local `<relLedgerPath>` already existed on disk prior to fetch, snapshot its local records/meta, run `git -C <checkoutDir> reset --hard origin/<branch>`, ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`, reconcile the pre-existing local records with `origin/<branch>` via `reconcileDivergedMemoryLedgers(emptyBase, local, remote)` (§8.2.3), atomically write `mergedMeta` first and `mergedRecords` second to disk via `write-file-atomic`, and if `config.storage.git.autoCommit === true`, stage and commit (and push if `config.storage.git.autoPush === true`) per §8.2.2–§8.2.3; otherwise run `git -C <checkoutDir> reset --hard origin/<branch>`.
      - Ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*` after the `if (config.storage.git.remoteUrl !== undefined)` block so `git reset --hard origin/<branch>` never leaves `.gitignore` missing those entries.
-   - Whenever `<checkoutDir>/.git` already exists, ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`.
+   - Whenever `<checkoutDir>/.git` already exists:
+     - Ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`.
+     - When invoked by `memory_init` (§6.2) with `config.storage.git.autoPullOnInit === true && config.storage.git.remoteUrl !== undefined`, run a best-effort `git -C <checkoutDir> fetch origin <branch>` (if `git fetch` exits non-zero due to transient offline or network unavailability during `memory_init`, continue with the local ledger rather than throwing `'GIT_SYNC_FAILED'`). If `git fetch` succeeds and `origin/<branch>` exists and is not already an ancestor of `HEAD` (`git -C <checkoutDir> merge-base --is-ancestor origin/<branch> HEAD` exits non-zero), reconcile `HEAD` (`local`) and `origin/<branch>` (`remote`) relative to `merge-base HEAD origin/<branch>` (`base`) via `reconcileDivergedMemoryLedgers(base, local, remote)` (§8.2.3), run `git -C <checkoutDir> reset --hard origin/<branch>`, ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`, atomically write `mergedMeta` first and `mergedRecords` second via `write-file-atomic`, and if `config.storage.git.autoCommit === true`, stage and commit (and push if `config.storage.git.autoPush === true`) per §8.2.2–§8.2.3.
 2. **Auto-Commit (`config.storage.git.autoCommit === true`):**
    - Inside `<ledgerPath>.lock`, after writing `memory.meta.json` and `memory.jsonl`:
    - Stage only the ledger, metadata, and ignore files: `git -C <checkoutDir> add -- <relLedgerPath> <relMetaPath> .gitignore`.
