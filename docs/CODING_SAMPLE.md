@@ -992,10 +992,10 @@ const deliveryInputSchema = z.object({
 
 const landChanges = git
   .commitAndPush('land-changes', {
-    branch: ({ item }: z.infer<typeof deliveryInputSchema>) => `fix/${item.ref}`,
+    inputSchema: deliveryInputSchema,
+    branch: ({ item }) => `fix/${item.ref}`,
     message: ({ item }) => `${item.ref}: ${item.title}`,
   })
-  .input(deliveryInputSchema)
   .runner(runner)
   .env({ GH_TOKEN: P.env('GITHUB_TOKEN') });
 

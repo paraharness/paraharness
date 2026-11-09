@@ -140,8 +140,8 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
 2. **`github.webhookStream({ repo?, port?, path?, secret, events })`**:
    - Compiles to `GithubWebhookStreamNode` (`readonly type: 'github:webhook-stream'`, defaulting `port` to `3000` and `path` to `'/webhooks/github'`).
    - `GithubWebhookStreamSource` (`streamSources['github:webhook-stream']`) verifies HMAC-SHA256 (`X-Hub-Signature-256`) using resolved `secret`, filters by `X-GitHub-Event` / `payload.action` against `node.events` and `payload.repository.full_name` against `node.repo`, and invokes `onEvent(payload)`.
-3. **`github.createOrUpdatePr(id, { repo, token, branch, baseBranch?, title, body })`**:
-   - Compiles to `GithubCreateOrUpdatePrNode` (`readonly type: 'github:create-or-update-pr'`, supporting `.input(schema)` and `.output(schema)`).
+3. **`github.createOrUpdatePr(id, { inputSchema?, outputSchema?, repo, token, branch, baseBranch?, title, body })`**:
+   - Compiles to `GithubCreateOrUpdatePrNode` (`readonly type: 'github:create-or-update-pr'`, inferring `TIn` from `inputSchema` across `branch`, `baseBranch`, `title`, and `body` callbacks and also supporting `.input(schema)` and `.output(schema)`).
    - Step executor queries open PRs for `head: branch(input)` and creates or updates the PR on `/repos/${repo}/pulls`.
 
 ### 4.2 `@paraharness/slack` (`SPEC.md` §4.5 line 3178 & `CODING_SAMPLE.md` lines 356–365, 1197–1206)
