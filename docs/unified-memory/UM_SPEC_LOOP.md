@@ -1,8 +1,10 @@
 STATE
 docs                       := ["docs/unified-memory/UNIFIED_MEMORY_SPEC.md", "docs/CODING_GUIDELINES.md"]
-round                      := 2
+round                      := 3
 $verified_mechanical_fixes := []
-$verified_core_proposals   := []
+$verified_core_proposals   := [
+  "R2-P1: Add optional autoPullOnInit: z.boolean().default(true) to MemoryGitStorageConfigSchema (§2.2) and fetch+reconcile origin/<branch> during memory_init (§6.2, §8.2.1) so multi-repo sessions receive newly pushed remote rules, lessons, and handoff notes at session startup."
+]
 $pending_adjacent_defects  := []
 round_history              := [
   {
@@ -22,9 +24,26 @@ round_history              := [
     ],
     "verified_core_proposals": [],
     "rejected_findings": []
+  },
+  {
+    "round": 2,
+    "pre_remediation_sha": "ee991795c1d0709e0850e5a37b4b6f4cd14fa6ad",
+    "verified_mechanical_fixes": [
+      "R2-F1: Re-ensure <checkoutDir>/.gitignore and persist reconciled pre-existing local ledger in ensureMemoryGitCheckout (§8.2.1); restore pre-operation reconciled state on post-push CAP_EXCEEDED, skip empty commits on clean status --porcelain, compose transitive cumulativeIdRemap across push retries, and remap other sessions' seenRecordIds only after releasing <ledgerPath>.lock and <sessionId>.lock (§8.1, §8.2.3).",
+      "R2-F2: Release <ledgerPath>.lock immediately after loading the in-memory ledger snapshot and computing bucketStatus in memory_propose (§6.4 Step 2), and add 'GIT_SYNC_FAILED' to MemoryHarnessContract.propose @throws JSDoc (§9.1).",
+      "R2-F3: Validate explicit input.sessionId strictly and env fallbacks via safeParse in memory_init (§6.2) and memory_load_scoped (§6.3); join raw path+pattern/glob before normalizeMemoryPathPattern in Claude Code Glob/Grep and Antigravity find_by_name/grep_search (§7.1); acquire <sessionId>.lock before scanning transcriptPath, handle incremental vs full transcript scan, and prioritize transcript memory_init role over default 'general' in §7.2.",
+      "R2-F4: Reject duplicate roles/types, './'/'C:' cap paths, and invalid ledgerPath/checkoutDir in MemoryConfigSchema.superRefine (§2.2); fix '/' when workspaceRoot !== '/' in normalizeMemoryPathPattern (§4.1 Step 3); and replace extractProbeSuffixes with segment-wise buildRelativeProbes and isDirectoryCandidate in matchesContextScope (§4.3).",
+      "R2-F5: Define isContextCoveredByCapPattern(p, c, repoFiles) for directional cap coverage in §5.2 Step 1, define (maxPrefixSegments, maxPrefixChars) as the minimum across c in r.context of the maximum covering p in §5.2 Step 2, and explicitly define capped bucket zone formula in §5.2 Step 3 & §5.3.",
+      "R2-F6: Allow .nullable().optional() on proposedContext/proposedRepos and add alsoRemoveIds .refine on update choices (§6.4); tighten DistillerStructuredOutputSchema & MemoryProposeOutputSchema superRefine and Step 4 validation (§6.4); require keepRecord.role === removeRecord.role on capMerge (§5.3, §6.4, §6.5); enforce pre-lock capMerge rule protection and explicit RECORD_NOT_FOUND vs VALIDATION_FAILED checks in memory_commit (§6.5); and include the memory_propose -> memory_commit lesson/rule workflow in memory_init protocol (§6.2).",
+      "R2-F7: State explicitly in §3.3 that decrementing lifecycle.remainingReads during read operations mutates only remainingReads and never sets or updates note.updatedAt."
+    ],
+    "verified_core_proposals": [
+      "R2-P1: Add optional autoPullOnInit: z.boolean().default(true) to MemoryGitStorageConfigSchema (§2.2) and fetch+reconcile origin/<branch> during memory_init (§6.2, §8.2.1) so multi-repo sessions receive newly pushed remote rules, lessons, and handoff notes at session startup."
+    ],
+    "rejected_findings": []
   }
 ]
-pre_remediation_sha        := "37a80160c0e2836d52136507d382724c0e01f725"
+pre_remediation_sha        := "ee991795c1d0709e0850e5a37b4b6f4cd14fa6ad"
 
 POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop` after any `CHECKPOINT` compaction in `transcript.jsonl`)
 1. `.agents/hooks/post-compaction.mjs` injects `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md`) if present, or generates and saves the role's sequential grounding note automatically.

@@ -236,9 +236,30 @@ export const MemoryConfigSchema = z
   })
   .superRefine((cfg, ctx) => {
     const allowedSet = new Set(cfg.allowedRoles);
+    if (allowedSet.size !== cfg.allowedRoles.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['allowedRoles'],
+        message: 'allowedRoles must not contain duplicate role names.',
+      });
+    }
     for (let i = 0; i < cfg.caps.length; i += 1) {
       const cap = cfg.caps[i];
       if (cap === undefined) continue;
+      if (new Set(cap.roles).size !== cap.roles.length) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['caps', i, 'roles'],
+          message: 'Cap roles must not contain duplicate entries.',
+        });
+      }
+      if (new Set(cap.types).size !== cap.types.length) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['caps', i, 'types'],
+          message: 'Cap types must not contain duplicate entries.',
+        });
+      }
       if (cap.roles.includes('*') && cap.roles.length > 1) {
         ctx.addIssue({
           code: 'custom',
@@ -274,8 +295,10 @@ export const MemoryConfigSchema = z
         const segments = posix.length === 0 ? [] : posix.split('/');
         if (
           trimmed.length === 0 ||
+          posix.length === 0 ||
           trimmed.startsWith('/') ||
-          /^[A-Za-z]:[\\/]/.test(trimmed) ||
+          /^[A-Za-z]:/.test(trimmed) ||
+          /^[A-Za-z]:/.test(posix) ||
           segments.some((seg) => seg === '..' || seg === '.')
         ) {
           ctx.addIssue({
@@ -293,29 +316,50 @@ export const MemoryConfigSchema = z
         message: 'storage.git.autoPush requires storage.git.autoCommit === true and a non-empty storage.git.remoteUrl.',
       });
     }
+    const normLedger = cfg.storage.ledgerPath
+      .trim()
+      .replaceAll('\\', '/')
+      .replace(/\/+/g, '/')
+      .replace(/^(\.\/)+/, '')
+      .replace(/\/$/, '');
+    const ledgerSegs = normLedger.length === 0 ? [] : normLedger.split('/');
+    const hasInvalidLedgerPath =
+      normLedger.length === 0 ||
+      normLedger.startsWith('/') ||
+      /^[A-Za-z]:/.test(normLedger) ||
+      ledgerSegs.some((seg) => seg === '..' || seg === '.');
+    if (hasInvalidLedgerPath) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['storage', 'ledgerPath'],
+        message: `Invalid storage.ledgerPath ('${cfg.storage.ledgerPath}'). Must be a relative path inside the workspace.`,
+      });
+    }
     if (cfg.storage.git.enabled) {
-      const normLedger = cfg.storage.ledgerPath
-        .trim()
-        .replaceAll('\\', '/')
-        .replace(/\/+/g, '/')
-        .replace(/^(\.\/)+/, '')
-        .replace(/\/$/, '');
       const normCheckout = cfg.storage.git.checkoutDir
         .trim()
         .replaceAll('\\', '/')
         .replace(/\/+/g, '/')
         .replace(/^(\.\/)+/, '')
         .replace(/\/$/, '');
-      const ledgerSegs = normLedger.split('/');
       const checkoutSegs = normCheckout === '.' || normCheckout === '' ? [] : normCheckout.split('/');
-      const hasInvalidSegs =
-        normLedger.startsWith('/') ||
+      const hasInvalidCheckoutPath =
+        normCheckout.length === 0 ||
         normCheckout.startsWith('/') ||
-        ledgerSegs.some((seg) => seg === '..' || seg === '.') ||
-        checkoutSegs.some((seg) => seg === '..' || seg === '.');
+        /^[A-Za-z]:/.test(normCheckout) ||
+        (normCheckout !== '.' && checkoutSegs.some((seg) => seg === '..' || seg === '.'));
+      if (hasInvalidCheckoutPath) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['storage', 'git', 'checkoutDir'],
+          message: `Invalid storage.git.checkoutDir ('${cfg.storage.git.checkoutDir}'). Must be a relative directory path inside the workspace.`,
+        });
+      }
       const insideCheckout =
-        !hasInvalidSegs &&
-        (checkoutSegs.length === 0 || normLedger.startsWith(`${normCheckout}/`));
+        !hasInvalidLedgerPath &&
+        !hasInvalidCheckoutPath &&
+        (checkoutSegs.length === 0 ||
+          (normLedger.startsWith(`${normCheckout}/`) && normLedger.length > normCheckout.length + 1));
       if (!insideCheckout) {
         ctx.addIssue({
           code: 'custom',
@@ -518,7 +562,7 @@ Let `nowMs = Date.now()` (UTC epoch milliseconds) at the moment a read or write 
 | Lifecycle Mode | Condition When Note Is Matched by a Read Operation (`memory_init`, `memory_load_scoped`, or File Hook) | Returned to Caller on This Read? | Ledger Mutation Applied Under Lock |
 | :--- | :--- | :---: | :--- |
 | **`persistent`** | Always | **Yes** (`drainedOnThisRead: false`, `renderedText: note.text`) | None (remains in `memory.jsonl` until removed via `memory_commit({ op: 'remove' })` or `memory_drain_notes`). |
-| **`read-count`** | `remainingReads > 1` | **Yes** (`drainedOnThisRead: false`, `lifecycle.remainingReads: remainingReads - 1`, `renderedText: note.text`) | Decrement `remainingReads` to `remainingReads - 1` and persist `memory.jsonl` (and Git auto-commit/push per §8.2 if configured). |
+| **`read-count`** | `remainingReads > 1` | **Yes** (`drainedOnThisRead: false`, `lifecycle.remainingReads: remainingReads - 1`, `renderedText: note.text`) | Decrement `lifecycle.remainingReads` to `remainingReads - 1` without setting or updating `note.updatedAt` (`note.updatedAt` is set or updated exclusively by `memory_commit({ op: 'update' })`), and persist `memory.jsonl` (and Git auto-commit/push per §8.2 if configured). |
 | **`read-count`** | `remainingReads === 1` | **Yes** (`drainedOnThisRead: true`, `lifecycle.remainingReads: 1`, `renderedText: "[FINAL READ - DRAINED] " + note.text`) | Delete record from `memory.jsonl` and persist (and Git auto-commit/push per §8.2 if configured). |
 | **`hard-expiry`** | `nowMs < Date.parse(expiresAt)` | **Yes** (`drainedOnThisRead: false`, `renderedText: note.text`) | None. |
 | **`hard-expiry`** | `nowMs >= Date.parse(expiresAt)` | **No** (omitted from response) | Delete record from `memory.jsonl` and persist (purged on any ledger read or write under `<ledgerPath>.lock` after reconciling `memory.meta.json` `highWaterMarks`, and excluded from active snapshots during read-only operations). |
@@ -539,7 +583,7 @@ Every path or glob string passed in `record.context`, `memory_load_scoped.paths`
 
 1. Trim leading and trailing whitespace; if empty, throw `MemoryHarnessError` (`'VALIDATION_FAILED'`).
 2. Replace all Windows path separators `\` with POSIX `/` and collapse consecutive slashes `//` into a single `/`.
-3. Normalize `workspaceRoot` to POSIX without trailing slash (`workspaceRootPosix`, or `'/'` if filesystem root). If `normalized === '/' || normalized === '.' || normalized === './' || normalized === workspaceRootPosix || normalized === workspaceRootPosix + '/'`, return `'**/*'`.
+3. Normalize `workspaceRoot` to POSIX without trailing slash (`workspaceRootPosix`, or `'/'` if filesystem root). If `normalized === '.' || normalized === './' || normalized === workspaceRootPosix || normalized === workspaceRootPosix + '/'`, return `'**/*'`.
 4. If `normalized.startsWith(workspaceRootPosix + '/')`, strip the `workspaceRootPosix + '/'` prefix so it becomes workspace-relative.
 5. Otherwise, if `normalized.startsWith('/')` or `/^[A-Za-z]:\//.test(normalized)` (an absolute path outside `workspaceRoot`), throw `MemoryHarnessError` (`'VALIDATION_FAILED'`).
 6. Repeatedly strip any leading `./` prefixes, then strip any trailing `/` (so `'./packages/lockfile/'` normalizes to `'packages/lockfile'`).
@@ -561,8 +605,8 @@ Every path or glob string passed in `record.context`, `memory_load_scoped.paths`
 ### 4.3 Four-Way Symmetric Matching (`matchesContextScope`)
 
 Let:
-- `extractProbeSuffixes(pattern: string): readonly string[]` extract any static terminal file extensions from `pattern` (for example, `['.ts']` from `'**/*.ts'` or `['.ts', '.tsx']` from `'**/*.{ts,tsx}'`), always including `''` (no extension) in the returned deduplicated list.
-- `buildRelativeProbes(pattern: string): readonly string[]` return `['__probe__' + ext, '__sub__/__probe__' + ext]` for each `ext` in `extractProbeSuffixes(pattern)`.
+- `buildRelativeProbes(pattern: string): readonly string[]` construct synthetic relative probe paths segment-wise: take the sub-pattern of `pattern` after `extractStaticDirPrefix(pattern)` (and the full `pattern`), expand any brace alternatives (`{a,b}`), split on `/`, replace each `'**'` segment with both `[]` (zero segments) and `['__sub__']` (one segment), and replace any glob metacharacter tokens (`*`, `?`, `[...]`, extglobs) in each remaining segment with `'__probe__'`—always including `'__probe__'` and `'__sub__/__probe__'` in the returned deduplicated list (so compound extensions like `'**/*.schema.ts'`, exact basenames like `'**/SKILL.md'`, and mid-segment globs like `'packages/memory/**/internal/*.ts'` all produce matching relative probes).
+- `isDirectoryCandidate(s: string, repoFiles: readonly string[]): boolean` evaluate to `!repoFiles.includes(s) && (repoFiles.some((f) => f.startsWith(s + '/')) || path.posix.extname(s) === '')`.
 
 Given normalized query items `Q = readonly string[]`, normalized record context items `C = readonly string[]`, and the repository's tracked relative file list `repoFiles = readonly string[]` (obtained via `git ls-files` cached per workspace tree state, falling back to `tinyglobby` when outside a Git worktree), `matchesContextScope(Q, C, repoFiles)` returns `true` if and only if there exists at least one `q` in `Q` and at least one `c` in `C` such that `matchSingleContextPair(q, c, repoFiles)` evaluates to `true` under one of the four exhaustive cases:
 
@@ -575,7 +619,7 @@ Given normalized query items `Q = readonly string[]`, normalized record context 
 2. **Case 2 — Specific-to-Pattern (`!isGlobPattern(q) && isGlobPattern(c)`):**
    Let `cPrefix = extractStaticDirPrefix(c)` and `cMatcher = picomatch(c, { dot: true })` (pre-compiled per `CODING_GUIDELINES.md` Rule 4.4). Returns `true` if and only if at least one holds:
    - `cMatcher(q)` is `true` (for example, `q = 'packages/lockfile/src/index.ts'` matches `c = 'packages/lockfile/**/*'`), or
-   - There exists `relProbe` in `buildRelativeProbes(c)` such that `cMatcher(q + '/' + relProbe)` is `true` (for example, `q = 'packages/lockfile'` matches `c = 'packages/lockfile/**'`, `c = 'packages/lockfile/**/*'`, or `c = 'packages/lockfile/**/*.ts'` even when `repoFiles` is empty), or
+   - `isDirectoryCandidate(q, repoFiles)` is `true` and there exists `relProbe` in `(cPrefix === '' && repoFiles.length > 0 ? ['__probe__', '__sub__/__probe__'] : buildRelativeProbes(c))` such that `cMatcher(q + '/' + relProbe)` is `true` (so directory `q = 'packages/lockfile'` matches `c = 'packages/lockfile/**'`, `c = 'packages/lockfile/**/*'`, or `c = 'packages/lockfile/**/*.ts'` even when `repoFiles` is empty, while unrooted file-type globs like `c = '**/*.sql'` match populated directories via Bullet 4 and never falsely match specific file paths like `q = 'packages/lockfile/src/index.ts'`), or
    - `cPrefix.length > 0 && (cPrefix === q || cPrefix.startsWith(q + '/'))` (for example, `q = 'packages'` or `q = 'packages/lockfile'` contains the pattern's static directory prefix `c = 'packages/lockfile/src/*.ts'`), or
    - There exists a file `f` in `repoFiles` such that `(f === q || f.startsWith(q + '/')) && cMatcher(f)` (for example, directory `q = 'packages/lockfile'` contains tracked file `'packages/lockfile/schema.sql'` matching `c = '**/*.sql'`).
 
@@ -583,7 +627,7 @@ Given normalized query items `Q = readonly string[]`, normalized record context 
    Symmetric to Case 2 (`matchSingleContextPair(c, q, repoFiles)`):
    Let `qPrefix = extractStaticDirPrefix(q)` and `qMatcher = picomatch(q, { dot: true })`. Returns `true` if and only if at least one holds:
    - `qMatcher(c)` is `true`, or
-   - There exists `relProbe` in `buildRelativeProbes(q)` such that `qMatcher(c + '/' + relProbe)` is `true`, or
+   - `isDirectoryCandidate(c, repoFiles)` is `true` and there exists `relProbe` in `(qPrefix === '' && repoFiles.length > 0 ? ['__probe__', '__sub__/__probe__'] : buildRelativeProbes(q))` such that `qMatcher(c + '/' + relProbe)` is `true`, or
    - `qPrefix.length > 0 && (qPrefix === c || qPrefix.startsWith(c + '/'))`, or
    - There exists a file `f` in `repoFiles` such that `(f === c || f.startsWith(c + '/')) && qMatcher(f)`.
 
@@ -615,7 +659,11 @@ Each record `r` counts toward **at most one** capacity bucket in `config.caps`:
      - Note: `'general'` in `capRule.roles` matches **only** `r.role === 'general'`; `'*'` matches any role.
    - **Path eligibility:**
      - If `r.context === undefined` (unscoped record): eligible if and only if `capRule.paths.length === 0`.
-     - If `r.context !== undefined` (scoped record): eligible if and only if `capRule.paths.includes('*')`, OR (`capRule.paths.length > 0` and for **every** context pattern `c` in `r.context`, there exists at least one `p` in `normalizedCapRulePaths` such that `matchSingleContextPair(p, c, repoFiles)` is `true` AND `pDirPrefix` is an ancestor-or-equal prefix of `cDirPrefix`, i.e., `pDirPrefix === '' || cDirPrefix === pDirPrefix || cDirPrefix.startsWith(pDirPrefix + '/')`, where `pDirPrefix = isGlobPattern(p) ? extractStaticDirPrefix(p) : p` and `cDirPrefix = isGlobPattern(c) ? extractStaticDirPrefix(c) : c`).
+     - If `r.context !== undefined` (scoped record): eligible if and only if `capRule.paths.includes('*')`, OR (`capRule.paths.length > 0` and for **every** context pattern `c` in `r.context`, there exists at least one `p` in `normalizedCapRulePaths` such that `isContextCoveredByCapPattern(p, c, repoFiles)` is `true`).
+       - `isContextCoveredByCapPattern(p, c, repoFiles)` holds if and only if `pDirPrefix` is an ancestor-or-equal prefix of `cDirPrefix` (`pDirPrefix === '' || cDirPrefix === pDirPrefix || cDirPrefix.startsWith(pDirPrefix + '/')`, where `pDirPrefix = isGlobPattern(p) ? extractStaticDirPrefix(p) : p` and `cDirPrefix = isGlobPattern(c) ? extractStaticDirPrefix(c) : c`), AND when `isGlobPattern(p)` is `true` (with `pMatcher = picomatch(p, { dot: true })`):
+         - (a) if `!isGlobPattern(c)` and `!isDirectoryCandidate(c, repoFiles)`: `pMatcher(c)` is `true`;
+         - (b) if `!isGlobPattern(c)` and `isDirectoryCandidate(c, repoFiles)`: `pMatcher(c) || (pMatcher(c + '/__probe__') && pMatcher(c + '/__sub__/__probe__'))` is `true`;
+         - (c) if `isGlobPattern(c)` (with `cMatcher = picomatch(c, { dot: true })` and `base = cDirPrefix === '' ? '' : cDirPrefix + '/'`): `p === c`, or for every `relProbe` in `buildRelativeProbes(c)` where `cMatcher(base + relProbe)` is `true`, `pMatcher(base + relProbe)` is also `true` (with at least one probe matching `cMatcher`).
 
 2. **Specificity Tuple & Winning Rule Selection:**
    If zero rules in `config.caps` are eligible for `r`, then `r` is uncapped by `config.caps` (subject only to `config.maxTotalRecords` if set).
@@ -623,7 +671,7 @@ Each record `r` counts toward **at most one** capacity bucket in `config.caps`:
    - `pathSpec = (pathTier, maxPrefixSegments, maxPrefixChars)`:
      - Unscoped rule (`r.context === undefined && capRule.paths.length === 0`): `(2, 0, 0)`.
      - Wildcard scoped fallback (`r.context !== undefined && capRule.paths.includes('*')`): `(1, 0, 0)`.
-     - Explicit path/glob rule (`r.context !== undefined && !capRule.paths.includes('*')`): `(2, maxPrefixSegments, maxPrefixChars)`, where `maxPrefixSegments` (`pDirPrefix === '' ? 0 : pDirPrefix.split('/').length`) and `maxPrefixChars` (`pDirPrefix.length`) are the segment count and character length of the longest matching `pDirPrefix` in `normalizedCapRulePaths`.
+     - Explicit path/glob rule (`r.context !== undefined && !capRule.paths.includes('*')`): `(2, maxPrefixSegments, maxPrefixChars)`, where for each `c` in `r.context` we compute the maximum `(prefixSegments(p), prefixChars(p))` across all `p` in `normalizedCapRulePaths` satisfying `isContextCoveredByCapPattern(p, c, repoFiles)` (with `prefixSegments(p) = pDirPrefix === '' ? 0 : pDirPrefix.split('/').length` and `prefixChars(p) = pDirPrefix.length`), and the rule's `(maxPrefixSegments, maxPrefixChars)` for `r` is defined as the minimum of those maxima across all `c` in `r.context`.
    - `roleSpec`:
      - `2` if `capRule.roles.includes(r.role)` (explicit role match, e.g. `['builder']` or `['general']`).
      - `1` if matched only via `capRule.roles.includes('*')`.
@@ -641,7 +689,7 @@ Each record `r` counts toward **at most one** capacity bucket in `config.caps`:
        - Else if `!capRule.paths.includes('*')`: `'rule-paths:' + normalizedCapRulePaths.slice().sort().join('|')`
        - Else (`capRule.paths.includes('*')`): `'record-context:' + r.context.slice().sort().join('|')`
      - `bucketId = "rule#${winIdx}|role=${rolePartition}|path=${pathPartition}"`
-     - All active records in `memory.jsonl` (for `config.repoId`) whose winning rule and `bucketId` match `r`'s `bucketId` form `r`'s bucket population `B` (`currentCount = B.length`, `bucketRecordIds = B.map((x) => x.id)` in §3.1 canonical order).
+     - All active records in `memory.jsonl` (for `config.repoId`) whose winning rule and `bucketId` match `r`'s `bucketId` form `r`'s bucket population `B` (`currentCount = B.length`, `bucketRecordIds = B.map((x) => x.id)` in §3.1 canonical order, `softCap = capRule.softCap`, `hardCap = capRule.hardCap`, and `zone = (currentCount >= hardCap || maxTotalRecordsReached) ? 'AT_HARD_CAP' : currentCount >= softCap ? 'SOFT_CAP_PRESSURE' : 'UNDER_SOFT_CAP'`).
    - **When zero rules in `config.caps` are eligible (`UNCAPPED` bucket):**
      - `bucketId = "uncapped|type=${r.type}|role=role:${r.role}|path=${r.context === undefined ? 'unscoped' : 'record-context:' + r.context.slice().sort().join('|')}"`
      - `B` = all active records in `memory.jsonl` (for `config.repoId`) with the same `bucketId` (`currentCount = B.length`, `bucketRecordIds = B.map((x) => x.id)` in §3.1 canonical order, `softCap = null`, `hardCap = null`, and `zone = maxTotalRecordsReached ? 'AT_HARD_CAP' : 'UNCAPPED'`).
@@ -650,13 +698,13 @@ Each record `r` counts toward **at most one** capacity bucket in `config.caps`:
 
 ### 5.3 Three-Zone Capacity Enforcement (`softCap`, `hardCap`, `maxTotalRecords`)
 
-Let `count = B.length` be the number of existing records in the candidate's target bucket `B`, and `totalCount` be the total active records for `config.repoId`:
+Let `count = B.length` be the number of existing records in the candidate's target bucket `B`, `totalCount` be the total active records for `config.repoId`, `maxTotalRecordsReached = config.maxTotalRecords !== undefined && totalCount >= config.maxTotalRecords`, and for a capped bucket `zone = (currentCount >= hardCap || maxTotalRecordsReached) ? 'AT_HARD_CAP' : currentCount >= softCap ? 'SOFT_CAP_PRESSURE' : 'UNDER_SOFT_CAP'`:
 
 | Zone | Condition | `memory_propose` Behavior | `memory_commit({ op: 'add' })` Behavior |
 | :--- | :--- | :--- | :--- |
 | **Zone 1: Under Soft Cap** | `count < softCap` and `(maxTotalRecords === undefined \|\| totalCount < maxTotalRecords)` | Recommends `op: 'update'` if and only if the candidate shares the same mechanism/rule topic as an existing record; otherwise recommends `op: 'add'` with `capMerge: undefined`. | **Permitted** without `capMerge`. |
-| **Zone 2: Soft Cap Consolidation Pressure** | `softCap <= count < hardCap` and `(maxTotalRecords === undefined \|\| totalCount < maxTotalRecords)` | Instructs the Distiller that bucket `B` is over `softCap` (`count / softCap`). If the candidate is a new mechanism, the Distiller scans `B` for two existing records of the same `type` that **genuinely share the same underlying mechanism**. If found, attaches `capMerge: { keepId, removeId, mergedText, whyMerged }` to the `op: 'add'` choice. **If no pair in `B` shares a mechanism, `capMerge` MUST be `undefined`.** | **Permitted** both with `capMerge` (keeping net count at `count`) and without `capMerge` (incrementing count to `count + 1 <= hardCap`). |
-| **Zone 3: At Hard Cap** | `count >= hardCap` or `(maxTotalRecords !== undefined && totalCount >= maxTotalRecords)` | Sets `bucketStatus.zone = 'AT_HARD_CAP'` (or `maxTotalRecordsReached = true`). Any `op: 'add'` choice requires either `capMerge` (when two existing records of the same `type` in `B` share a mechanism) or the caller must choose `op: 'update'` / remove an obsolete record first. | **Rejected** with `MemoryHarnessError` (`'CAP_EXCEEDED'`) unless `op: 'add'` includes a valid `capMerge` whose `keepId` and `removeId` belong to bucket `B` and have the same `type` as the added record (keeping net bucket count `<= hardCap` and `totalCount <= maxTotalRecords`). |
+| **Zone 2: Soft Cap Consolidation Pressure** | `softCap <= count < hardCap` and `(maxTotalRecords === undefined \|\| totalCount < maxTotalRecords)` | Instructs the Distiller that bucket `B` is over `softCap` (`count / softCap`). If the candidate is a new mechanism, the Distiller scans `B` for two existing records with the same `type` and `role` (`keepRecord.type === removeRecord.type && keepRecord.role === removeRecord.role`) that **genuinely share the same underlying mechanism**. If found, attaches `capMerge: { keepId, removeId, mergedText, whyMerged }` to the `op: 'add'` choice. **If no pair in `B` shares a mechanism, `capMerge` MUST be `undefined`.** | **Permitted** both with `capMerge` (keeping net count at `count`) and without `capMerge` (incrementing count to `count + 1 <= hardCap`). |
+| **Zone 3: At Hard Cap** | `count >= hardCap` or `(maxTotalRecords !== undefined && totalCount >= maxTotalRecords)` | Sets `bucketStatus.zone = 'AT_HARD_CAP'` (and `maxTotalRecordsReached = true` when `totalCount >= maxTotalRecords`). Any `op: 'add'` choice requires either `capMerge` (when two existing records in `B` with the same `type` and `role` share a mechanism) or the caller must choose `op: 'update'` / remove an obsolete record first. | **Rejected** with `MemoryHarnessError` (`'CAP_EXCEEDED'`) unless `op: 'add'` includes a valid `capMerge` whose `keepId` and `removeId` belong to bucket `B`, share the same `role` (`keepRecord.role === removeRecord.role`), and have the same `type` as the added record (keeping net bucket count `<= hardCap` and `totalCount <= maxTotalRecords`). |
 
 ---
 
@@ -785,7 +833,7 @@ export type MemoryInitOutput = z.infer<typeof MemoryInitOutputSchema>;
 ```
 
 **Behavioral Contract for `memory_init`:**
-1. Validate `config.allowedRoles.includes(input.role)`. If invalid, throw `MemoryHarnessError` with code `'INVALID_ROLE'` and details containing `allowedRoles: config.allowedRoles`. Resolve optional `sessionId` from `input.sessionId` or environment (`CLAUDE_SESSION_ID` / `AGY_SESSION_ID`, validated via `SessionIdSchema`).
+1. Validate `config.allowedRoles.includes(input.role)`. If invalid, throw `MemoryHarnessError` with code `'INVALID_ROLE'` and details containing `allowedRoles: config.allowedRoles`. If `input.sessionId !== undefined`, validate it strictly via `SessionIdSchema` (throwing `MemoryHarnessError` with `'VALIDATION_FAILED'` if invalid); otherwise parse fallback environment variables (`CLAUDE_SESSION_ID`, then `AGY_SESSION_ID`) via `SessionIdSchema.safeParse` (treating empty or non-matching environment values as `undefined`).
 2. Acquire `.memory/.session-state/latest-role.lock` via `withFileLock`, atomically write `.memory/.session-state/latest-role.json` (`{ role: input.role, updatedAt: nowIso }` validated via `MemoryLatestRoleStateSchema` in §7.2), and release `latest-role.lock`.
 3. If `sessionId` is present/resolved, acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second** per §8.1 Rule 1 (if no `sessionId` is available, acquire `<ledgerPath>.lock` directly):
    - Inside `<ledgerPath>.lock`:
@@ -798,7 +846,7 @@ export type MemoryInitOutput = z.infer<typeof MemoryInitOutputSchema>;
 4. Generate the config-adapted `protocol` markdown string containing:
    - The 3-tier lesson gate (Tier 1 test/type/linter/script $\to$ Tier 2 role/doc line $\to$ Tier 3 atomic lesson),
    - The project's exact `config.format` rules (`template`, `maxChars`, `requireSubstrings`, `forbidRegexes`) for lessons,
-   - The `rule: <text>` workflow (`memory_propose` $\to$ show Owner for `"go"` $\to$ `memory_commit`),
+   - The `memory_propose` $\to$ `memory_commit` workflow for lessons and rules (including handling both `executionMode: 'resolved'` and `executionMode: 'delegate_to_subagent'` by invoking the host subagent with `delegateToSubagent` and passing the chosen `add` / `update` payload to `memory_commit`, and requiring explicit Owner `"go"` before committing any `type: 'rule'` record),
    - The `note` lifecycle modes (`persistent`, `read-count`, `hard-expiry`, `soft-expiry`) and `memory_drain_notes` dry-run-first workflow, and
    - When to call `memory_load_scoped({ role, paths })`.
 5. Return `{ role: input.role, repoId: config.repoId, protocol, rules, lessons, notes }` sorted by numeric ID within each array.
@@ -843,7 +891,7 @@ export type MemoryLoadScopedOutput = z.infer<typeof MemoryLoadScopedOutputSchema
 
 **Behavioral Contract for `memory_load_scoped`:**
 1. Validate `config.allowedRoles.includes(input.role)` (throwing `MemoryHarnessError` with `'INVALID_ROLE'` and `config.allowedRoles` if invalid).
-2. Normalize and deduplicate `input.paths` via `normalizeMemoryPathPattern` (§4.1). Resolve optional `sessionId` from `input.sessionId` or environment (`CLAUDE_SESSION_ID` / `AGY_SESSION_ID`, validated via `SessionIdSchema`).
+2. Normalize and deduplicate `input.paths` via `normalizeMemoryPathPattern` (§4.1). If `input.sessionId !== undefined`, validate it strictly via `SessionIdSchema` (throwing `MemoryHarnessError` with `'VALIDATION_FAILED'` if invalid); otherwise parse fallback environment variables (`CLAUDE_SESSION_ID`, then `AGY_SESSION_ID`) via `SessionIdSchema.safeParse` (treating empty or non-matching environment values as `undefined`).
 3. If `sessionId` is present/resolved, acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second** per §8.1 Rule 1 (otherwise acquire `<ledgerPath>.lock` directly):
    - Inside `<ledgerPath>.lock`:
      - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized per §8.2.1.
@@ -888,16 +936,26 @@ export type MemoryCapMergeProposal = z.infer<typeof MemoryCapMergeProposalSchema
  * Choice item produced directly by the Distiller LLM (referencing `targetId` without echoing full record metadata).
  */
 export const DistillerChoiceOutputSchema = z.discriminatedUnion('op', [
-  z.object({
-    op: z.literal('update'),
-    targetId: z.string().regex(/^[RL][1-9]\d*$/),
-    whyMatched: z.string().trim().min(1),
-    proposedText: z.string().trim().min(1),
-    proposedRole: z.string().min(1),
-    proposedContext: z.array(z.string().min(1)).min(1).optional(),
-    proposedRepos: z.array(z.string().min(1)).min(1).optional(),
-    alsoRemoveIds: z.array(z.string().regex(/^[RL][1-9]\d*$/)).optional(),
-  }),
+  z
+    .object({
+      op: z.literal('update'),
+      targetId: z.string().regex(/^[RL][1-9]\d*$/),
+      whyMatched: z.string().trim().min(1),
+      proposedText: z.string().trim().min(1),
+      proposedRole: z.string().min(1),
+      proposedContext: z.array(z.string().min(1)).min(1).nullable().optional(),
+      proposedRepos: z.array(z.string().min(1)).min(1).nullable().optional(),
+      alsoRemoveIds: z.array(z.string().regex(/^[RL][1-9]\d*$/)).optional(),
+    })
+    .refine(
+      (val) =>
+        val.alsoRemoveIds === undefined ||
+        (new Set(val.alsoRemoveIds).size === val.alsoRemoveIds.length &&
+          val.alsoRemoveIds.every((id) => id !== val.targetId && id[0] === val.targetId[0])),
+      {
+        message: 'alsoRemoveIds must be unique, distinct from targetId, and share targetId type prefix',
+      },
+    ),
   z.object({
     op: z.literal('add'),
     proposedText: z.string().trim().min(1),
@@ -917,17 +975,27 @@ export type DistillerChoiceOutput = z.infer<typeof DistillerChoiceOutputSchema>;
  * Hydrated proposal choice returned to the caller by `memory_propose` in `resolved` mode.
  */
 export const MemoryProposalChoiceSchema = z.discriminatedUnion('op', [
-  z.object({
-    op: z.literal('update'),
-    targetId: z.string().regex(/^[RL][1-9]\d*$/),
-    existingRecord: z.union([MemoryRuleRecordSchema, MemoryLessonRecordSchema]),
-    whyMatched: z.string().trim().min(1),
-    proposedText: z.string().trim().min(1),
-    proposedRole: z.string().min(1),
-    proposedContext: z.array(z.string().min(1)).min(1).optional(),
-    proposedRepos: z.array(z.string().min(1)).min(1).optional(),
-    alsoRemoveIds: z.array(z.string().regex(/^[RL][1-9]\d*$/)).optional(),
-  }),
+  z
+    .object({
+      op: z.literal('update'),
+      targetId: z.string().regex(/^[RL][1-9]\d*$/),
+      existingRecord: z.union([MemoryRuleRecordSchema, MemoryLessonRecordSchema]),
+      whyMatched: z.string().trim().min(1),
+      proposedText: z.string().trim().min(1),
+      proposedRole: z.string().min(1),
+      proposedContext: z.array(z.string().min(1)).min(1).nullable().optional(),
+      proposedRepos: z.array(z.string().min(1)).min(1).nullable().optional(),
+      alsoRemoveIds: z.array(z.string().regex(/^[RL][1-9]\d*$/)).optional(),
+    })
+    .refine(
+      (val) =>
+        val.alsoRemoveIds === undefined ||
+        (new Set(val.alsoRemoveIds).size === val.alsoRemoveIds.length &&
+          val.alsoRemoveIds.every((id) => id !== val.targetId && id[0] === val.targetId[0])),
+      {
+        message: 'alsoRemoveIds must be unique, distinct from targetId, and share targetId type prefix',
+      },
+    ),
   z.object({
     op: z.literal('add'),
     proposedText: z.string().trim().min(1),
@@ -974,6 +1042,26 @@ export const DistillerStructuredOutputSchema = z
           message: 'choices must be empty when matchStatus is REJECTED_TIER_1_OR_2.',
         });
       }
+    } else if (val.tierRejectionReason !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tierRejectionReason'],
+        message: 'tierRejectionReason is only permitted when matchStatus is REJECTED_TIER_1_OR_2.',
+      });
+    }
+    if (val.matchStatus === 'EXACT_DUPLICATE' && val.choices.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['choices'],
+        message: 'choices must be empty when matchStatus is EXACT_DUPLICATE.',
+      });
+    }
+    if (val.matchStatus === 'LIKELY_MATCH' && !val.choices.some((c) => c.op === 'update')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['choices'],
+        message: 'choices must include at least one op: "update" choice when matchStatus is LIKELY_MATCH.',
+      });
     }
     if (val.choices.length === 0 && val.recommendedChoiceIndex !== -1) {
       ctx.addIssue({
@@ -1057,6 +1145,13 @@ export const MemoryProposeOutputSchema = z
   ])
   .superRefine((val, ctx) => {
     if (val.executionMode !== 'resolved') return;
+    if (val.type === 'rule' && val.matchStatus === 'REJECTED_TIER_1_OR_2') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['matchStatus'],
+        message: 'matchStatus cannot be REJECTED_TIER_1_OR_2 when type is "rule".',
+      });
+    }
     if (val.matchStatus === 'REJECTED_TIER_1_OR_2') {
       if (val.tierRejectionReason === undefined) {
         ctx.addIssue({
@@ -1072,6 +1167,37 @@ export const MemoryProposeOutputSchema = z
           message: 'choices must be empty when matchStatus is REJECTED_TIER_1_OR_2.',
         });
       }
+    } else if (val.tierRejectionReason !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tierRejectionReason'],
+        message: 'tierRejectionReason is only permitted when matchStatus is REJECTED_TIER_1_OR_2.',
+      });
+    }
+    if (val.matchStatus === 'EXACT_DUPLICATE' && val.choices.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['choices'],
+        message: 'choices must be empty when matchStatus is EXACT_DUPLICATE.',
+      });
+    }
+    if (val.matchStatus === 'LIKELY_MATCH' && !val.choices.some((c) => c.op === 'update')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['choices'],
+        message: 'choices must include at least one op: "update" choice when matchStatus is LIKELY_MATCH.',
+      });
+    }
+    if (
+      val.matchStatus === 'NO_MATCH' &&
+      val.choices.length === 0 &&
+      val.bucketStatus.zone !== 'AT_HARD_CAP'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['choices'],
+        message: 'choices must not be empty when matchStatus is NO_MATCH unless bucketStatus.zone is AT_HARD_CAP.',
+      });
     }
     if (val.choices.length === 0 && val.recommendedChoiceIndex !== -1) {
       ctx.addIssue({
@@ -1100,20 +1226,21 @@ export type MemoryProposeOutput = z.infer<typeof MemoryProposeOutputSchema>;
 
 **Behavioral & Validation Contract for `memory_propose`:**
 1. Validate `callerRole` and `targetRole` against `config.allowedRoles` (throwing `MemoryHarnessError` with `'INVALID_ROLE'`). Normalize and deduplicate `context` (if provided) via `normalizeMemoryPathPattern` (§4.1).
-2. Acquire `<ledgerPath>.lock` (running `ensureMemoryGitCheckout` per §8.2.1 if `config.storage.git.enabled`), load `memory.jsonl` while excluding any `hard-expiry` notes where `nowMs >= Date.parse(expiresAt)`, and compute `bucketStatus` (including `bucketStatus.bucketRecordIds`) for a synthetic candidate `{ type: input.type, role: input.targetRole, context: normalizedContext, repos: input.repos }` using §5.2.
+2. Acquire `<ledgerPath>.lock` (running `ensureMemoryGitCheckout` per §8.2.1 if `config.storage.git.enabled`), load an in-memory snapshot of `memory.jsonl` while excluding any `hard-expiry` notes where `nowMs >= Date.parse(expiresAt)`, compute `bucketStatus` (including `bucketStatus.bucketRecordIds`) for a synthetic candidate `{ type: input.type, role: input.targetRole, context: normalizedContext, repos: input.repos }` using §5.2, and immediately release `<ledgerPath>.lock` so `<ledgerPath>.lock` is never held during prompt construction or Distiller execution across Steps 3 and 4.
 3. Build the **Prompt-Cached Distiller Prompt**:
-   - **`systemPrompt` (static prefix for KV-caching):** Contains the Distiller instructions, `config.format` rules, `config.distiller.customInstructions`, the current repository's role rule files (`CLAUDE.MD`, plus `docs/rules/*.md` when present sorted in ascending POSIX path code-unit order), and all active `R*` and `L*` records in `memory.jsonl` applicable to `config.repoId` (§5.1) in §3.1 canonical order (`R1, R2, ...` then `L1, L2, ...`).
-   - **`userPrompt` (dynamic suffix):** Contains the candidate `{ type, targetRole, rawText, normalizedContext, repos, incident }`, the target `bucketStatus` (`bucketId`, `zone`, `currentCount`, `softCap`, `hardCap`, `bucketRecordIds`, `totalRecordsCount`, `maxTotalRecords`, `maxTotalRecordsReached`), and the strict rule that in `SOFT_CAP_PRESSURE` or `AT_HARD_CAP`, `capMerge` may be proposed **only** if two existing records of the same `type` in `bucketStatus.bucketRecordIds` share the exact same underlying failure mechanism.
+   - **`systemPrompt` (static prefix for KV-caching):** Contains the Distiller instructions, `config.format` rules, `config.distiller.customInstructions`, the current repository's role rule files (`CLAUDE.MD`, plus `docs/rules/*.md` when present sorted in ascending POSIX path code-unit order), and all active `R*` and `L*` records in the in-memory `memory.jsonl` snapshot applicable to `config.repoId` (§5.1) in §3.1 canonical order (`R1, R2, ...` then `L1, L2, ...`).
+   - **`userPrompt` (dynamic suffix):** Contains the candidate `{ type, targetRole, rawText, normalizedContext, repos, incident }`, the target `bucketStatus` (`bucketId`, `zone`, `currentCount`, `softCap`, `hardCap`, `bucketRecordIds`, `totalRecordsCount`, `maxTotalRecords`, `maxTotalRecordsReached`), the choice-scope contract (`op: 'add'` preserves the candidate's target `role`, `context`, and `repos`, while `op: 'update'` must match `input.type` and may widen scope via `null` for unscoped `proposedContext` or all-repos `proposedRepos`), and the strict rule that in `SOFT_CAP_PRESSURE` or `AT_HARD_CAP`, `capMerge` may be proposed **only** if two existing records in `bucketStatus.bucketRecordIds` with the same `type` and `role` (`keepRecord.type === removeRecord.type && keepRecord.role === removeRecord.role`) share the exact same underlying failure mechanism.
 4. **Runner Dispatch (`config.distiller.runner`):**
    - Convert `DistillerStructuredOutputSchema` via `z.toJSONSchema(DistillerStructuredOutputSchema)` into `outputJsonSchema`.
    - If `config.distiller.runner === 'claude-cli'` or if `options.distillerRunner !== undefined`:
      - Invoke `options.distillerRunner.runDistillerProposal(...)` when injected; otherwise (when `config.distiller.runner === 'claude-cli'` and `options.distillerRunner` is omitted), execute the built-in CLI runner spawning `claude -p --model <config.distiller.model> --effort <config.distiller.effort> --system-prompt <systemPrompt> --output-format json --json-schema <JSON.stringify(outputJsonSchema)> <userPrompt>` with timeout `config.distiller.timeoutMs`.
-     - If the runner throws, times out, exits non-zero, or returns output that fails `DistillerStructuredOutputSchema`, throw `MemoryHarnessError` with code `'DISTILLER_EXECUTION_FAILED'`.
-     - Hydrate `existingRecord` from `memory.jsonl` for every `op: 'update'` choice and deterministically validate every choice in `choices`:
+     - If the runner throws, times out, exits non-zero, returns output that fails `DistillerStructuredOutputSchema`, returns `matchStatus === 'REJECTED_TIER_1_OR_2'` when `input.type === 'rule'`, or returns `matchStatus === 'NO_MATCH' && choices.length === 0` when `bucketStatus.zone !== 'AT_HARD_CAP'`, throw `MemoryHarnessError` with code `'DISTILLER_EXECUTION_FAILED'`.
+     - Hydrate `existingRecord` from the in-memory `memory.jsonl` snapshot for every `op: 'update'` choice and deterministically validate every choice in `choices`:
        - **Rule Protection & Type Consistency Check:** Require every choice's `targetId`, `alsoRemoveIds`, and `capMerge` (`keepId`, `removeId`) IDs to match `input.type` (`'R'` for `'rule'`, `'L'` for `'lesson'`). If `input.type === 'lesson'` and any choice's `targetId`, `alsoRemoveIds`, or `capMerge` references an `R*` rule record, throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`). If `input.type === 'rule'` and any choice references an `L*` record, throw `MemoryHarnessError` (`'DISTILLER_EXECUTION_FAILED'`).
-       - Validate `config.allowedRoles.includes(choice.proposedRole)` and normalize+deduplicate `choice.proposedContext` (if present) via `normalizeMemoryPathPattern` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` if invalid).
-       - For `choice.op === 'update'`: verify `choice.targetId` exists in `memory.jsonl`, and if `choice.alsoRemoveIds` is present, verify all IDs in `choice.alsoRemoveIds` are unique, distinct from `choice.targetId`, and exist in `memory.jsonl` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` otherwise).
-       - For `choice.op === 'add'` with `choice.capMerge !== undefined`: verify `bucketStatus.zone === 'SOFT_CAP_PRESSURE' || bucketStatus.zone === 'AT_HARD_CAP'` (forbidding `capMerge` when `bucketStatus.zone` is `'UNCAPPED'` or `'UNDER_SOFT_CAP'`) and verify that `capMerge.keepId` and `capMerge.removeId` are distinct IDs currently residing in `bucketStatus.bucketRecordIds` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` otherwise).
+       - Validate `config.allowedRoles.includes(choice.proposedRole)` and normalize+deduplicate `choice.proposedContext` (if an array is present) via `normalizeMemoryPathPattern` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` if invalid).
+       - For `choice.op === 'add'`: verify `choice.proposedRole === input.targetRole`, normalized `choice.proposedContext` equals `normalizedContext`, and deduplicated `choice.proposedRepos` equals deduplicated `input.repos` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` otherwise).
+       - For `choice.op === 'update'`: verify `choice.targetId` and `choice.alsoRemoveIds` (if present, unique and distinct from `choice.targetId`) exist in active `memory.jsonl` records applicable to `config.repoId` (§5.1), and verify that after removing `choice.alsoRemoveIds`, any bucket or repo-scope transition does not exceed destination `B_new.hardCap` or `config.maxTotalRecords` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` otherwise).
+       - For `choice.op === 'add'` with `choice.capMerge !== undefined`: verify `bucketStatus.zone === 'SOFT_CAP_PRESSURE' || bucketStatus.zone === 'AT_HARD_CAP'` (forbidding `capMerge` when `bucketStatus.zone` is `'UNCAPPED'` or `'UNDER_SOFT_CAP'`) and verify that `capMerge.keepId` and `capMerge.removeId` are distinct IDs currently residing in `bucketStatus.bucketRecordIds` whose records satisfy `keepRecord.type === removeRecord.type` and `keepRecord.role === removeRecord.role` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` otherwise).
        - If `input.type === 'lesson'`, verify that every `choice.proposedText` (and any `choice.capMerge.mergedText`) passes `validateLessonTextFormat(text, config.format)` (§6.7).
      - Return `executionMode: 'resolved'` with `requiresOwnerGo: input.type === 'rule'`.
    - If `config.distiller.runner === 'subagent'` and `options.distillerRunner === undefined` (standalone MCP stdio server mode):
@@ -1270,6 +1397,7 @@ export type MemoryCommitOutput = z.infer<typeof MemoryCommitOutputSchema>;
 **Behavioral & Concurrency Contract for `memory_commit`:**
 1. Validate `callerRole` (and `role` if present) against `config.allowedRoles` (throwing `'INVALID_ROLE'`). Normalize and deduplicate any `context` array via `normalizeMemoryPathPattern` (§4.1). Trim `input.text` (and `input.capMerge.mergedText` if present).
 2. **Pre-Lock Format & Rule Protection Gate:**
+   - If `op === 'add' && input.type !== 'rule' && input.capMerge !== undefined` and (`input.capMerge.keepId.startsWith('R') || input.capMerge.removeId.startsWith('R')`), throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`).
    - If `op === 'update'` and `!input.id.startsWith('R')` and any ID in `input.alsoRemoveIds` starts with `'R'`, throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`).
    - Validate remaining input fields against `MemoryCommitInputSchema` (throwing `'VALIDATION_FAILED'` on schema issues).
    - If `op === 'add' && type === 'lesson'`, validate `input.text.trim()` against `config.format` via `validateLessonTextFormat` (§6.7).
@@ -1282,16 +1410,17 @@ export type MemoryCommitOutput = z.infer<typeof MemoryCommitOutputSchema>;
      - Evaluate the target bucket `B` and `bucketStatus` (§5.2–§5.3).
      - If `input.capMerge` is provided:
        - Verify `bucketStatus.zone === 'SOFT_CAP_PRESSURE' || bucketStatus.zone === 'AT_HARD_CAP'` (throwing `'VALIDATION_FAILED'` if `zone` is `'UNCAPPED'` or `'UNDER_SOFT_CAP'`).
-       - Verify both `keepId` and `removeId` exist in bucket `B` (`bucketStatus.bucketRecordIds`) and have `type === input.type`.
+       - Locate `keepRecord` (`keepId`) and `removeRecord` (`removeId`) in active `memory.jsonl` records applicable to `config.repoId` (§5.1); if either is absent, throw `MemoryHarnessError` (`'RECORD_NOT_FOUND'`).
+       - Verify both `keepId` and `removeId` exist in bucket `B` (`bucketStatus.bucketRecordIds`), have `keepRecord.type === input.type && removeRecord.type === input.type`, and share the same role (`keepRecord.role === removeRecord.role`) (throwing `'VALIDATION_FAILED'` if any check fails).
        - Update `keepId` with `text: input.capMerge.mergedText.trim()`, `updatedAt: nowIso`, `context` set to the deduplicated union of `keepId.context` and `removeId.context` when both are defined (or `undefined` if either is unscoped), and `repos` set to the deduplicated union of `keepId.repos` and `removeId.repos` when both are defined (or `undefined` if either applies to all repos), and delete `removeId`.
      - Check capacity after applying any `capMerge`: if the added record applies to `config.repoId` and `(hardCap !== null && nextBucketCount > hardCap)` or `(config.maxTotalRecords !== undefined && nextTotalCount > config.maxTotalRecords)`, throw `MemoryHarnessError` (`'CAP_EXCEEDED'`) without modifying disk.
      - Allocate the next monotonic ID (`R<n>`, `L<n>`, or `N<n>`) per §3.1, construct the new `MemoryRecord` with `text: input.text.trim()` and `createdAt: nowIso`, insert in canonical order, and write `memory.meta.json` first and `memory.jsonl` second atomically per §8.1 Rule 2.
    - **On `op === 'update'`:**
-     - Locate existing record `target` with `target.id === input.id`; if absent, throw `MemoryHarnessError` (`'RECORD_NOT_FOUND'`).
+     - Locate existing record `target` with `target.id === input.id` in `memory.jsonl`; if absent, throw `MemoryHarnessError` (`'RECORD_NOT_FOUND'`).
      - If `input.lifecycle !== undefined && target.type !== 'note'`, throw `MemoryHarnessError` (`'VALIDATION_FAILED'`).
      - If `input.alsoRemoveIds` is provided:
        - **Rule Protection Check:** If `target.type !== 'rule'` and any ID in `alsoRemoveIds` starts with `'R'`, throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`).
-       - Verify all IDs in `alsoRemoveIds` are unique, distinct from `input.id`, have `type === target.type`, and exist in `memory.jsonl` (throwing `'RECORD_NOT_FOUND'` if absent or `'VALIDATION_FAILED'` if invalid).
+       - Verify all IDs in `alsoRemoveIds` exist in `memory.jsonl` (throwing `'RECORD_NOT_FOUND'` if absent), and verify all IDs in `alsoRemoveIds` are unique, distinct from `input.id`, have `type === target.type`, and are applicable to `config.repoId` (§5.1) (throwing `'VALIDATION_FAILED'` if invalid).
        - Remove all records in `alsoRemoveIds`.
      - Compute the updated record (`text: input.text.trim()`, `role: input.role ?? target.role`, `context: input.context === null ? undefined : (normalizedInputContext ?? target.context)`, `repos: input.repos === null ? undefined : (input.repos ?? target.repos)`, `lifecycle: input.lifecycle ?? target.lifecycle`, `updatedAt: nowIso`).
      - **Capacity Check on Bucket or Repo-Scope Transition:** After removing `alsoRemoveIds`, if the updated record applies to `config.repoId` (§5.1) and was not already an active member of `B_new` for `config.repoId` (either because its `bucketId` changed or because `target` did not previously apply to `config.repoId`), verify `B_new` does not exceed `B_new.hardCap` and total active records for `config.repoId` do not exceed `config.maxTotalRecords` (throwing `MemoryHarnessError` with `'CAP_EXCEEDED'` without modifying disk).
@@ -1438,8 +1567,8 @@ export type FileInteractionHookOutput = z.infer<typeof FileInteractionHookOutput
    - Extracts candidate paths/globs per tool:
      - `Read`, `Edit`, `MultiEdit`, `Write`: extracts `tool_input.file_path` (plus `tool_input.path` and `tool_input.paths` if present).
      - `NotebookEdit`: extracts `tool_input.notebook_path` (plus `tool_input.file_path` if present).
-     - `Glob`: when both `tool_input.path` and `tool_input.pattern` are present, joins `path.posix.join(normPath, tool_input.pattern)`; otherwise extracts `tool_input.pattern` or `tool_input.path`.
-     - `Grep`: extracts `tool_input.path` (defaulting to `'.'` when omitted) and, when `tool_input.glob` is present, joins `tool_input.path` with `tool_input.glob` (**never** extracting `tool_input.pattern`, which is a regular expression search string rather than a file path).
+     - `Glob`: when both `tool_input.path` and `tool_input.pattern` are present, joins the raw strings (`rawPath.replace(/\/+$/, '') + '/' + rawPattern.replace(/^\/+/, '')`) before calling `normalizeMemoryPathPattern`; otherwise extracts `tool_input.pattern` or `tool_input.path`.
+     - `Grep`: when `tool_input.glob` is present (non-empty string), extracts **only** the joined raw `(tool_input.path ?? '.').replace(/\/+$/, '') + '/' + tool_input.glob.replace(/^\/+/, '')` before calling `normalizeMemoryPathPattern`; extracts `tool_input.path ?? '.'` only when `tool_input.glob` is omitted or empty (**never** extracting `tool_input.pattern`, which is a regular expression search string rather than a file path).
    - When `output.injected === true`, writes JSON to `stdout`:
      ```json
      {
@@ -1450,7 +1579,7 @@ export type FileInteractionHookOutput = z.infer<typeof FileInteractionHookOutput
      }
      ```
 2. **Antigravity (`.agents/hooks.json`):**
-   - Incrementally inspects the latest tool invocation steps in `transcript.jsonl` starting from `state.lastScannedTranscriptOffset` across Antigravity file and search tools (`view_file`, `view_file_outline`, `view_code_item`, `replace_file_content`, `multi_replace_file_content`, `write_to_file`, `read_file`, `edit_file`, `write_file`, `grep_search`, `find_by_name`), extracting path and glob arguments (`AbsolutePath`, `File`, `TargetFile`, `SearchPath`, `SearchDirectory`, `DirectoryPath`, `Paths`, `Includes`, `Pattern`, `path`, `file_path`), advancing `state.lastScannedTranscriptOffset` to the current transcript byte length, and returning `{ "injectSteps": [{ "systemMessage": { "systemMessage": "<output.formattedContext>" } }] }` when `output.injected === true`.
+   - Under `.memory/.session-state/<sessionId>.lock` (§7.2), incrementally inspects the latest tool invocation steps in `transcript.jsonl` starting from `state.lastScannedTranscriptOffset` (or from byte offset `0` on initial/reset scan per §7.2 Step 1) across Antigravity file and search tools (`view_file`, `view_file_outline`, `view_code_item`, `replace_file_content`, `multi_replace_file_content`, `write_to_file`, `read_file`, `edit_file`, `write_file`, `grep_search`, `find_by_name`), extracting path and glob arguments (`AbsolutePath`, `File`, `TargetFile`, `Paths`, `path`, `file_path` for file tools; for `find_by_name`, when `Pattern` is a non-empty string, joining raw `(SearchDirectory ?? DirectoryPath ?? '.').replace(/\/+$/, '') + '/' + Pattern.replace(/^\/+/, '')` before calling `normalizeMemoryPathPattern`, or extracting `SearchDirectory ?? DirectoryPath ?? '.'` only when `Pattern` is omitted/empty; for `grep_search`, when `Includes` is a non-empty array or string, joining raw `(SearchPath ?? SearchDirectory ?? '.').replace(/\/+$/, '') + '/' + includePattern.replace(/^\/+/, '')` for each pattern in `Includes` before calling `normalizeMemoryPathPattern`, or extracting `SearchPath ?? SearchDirectory ?? '.'` only when `Includes` is omitted/empty and **never** extracting `Query`), advancing `state.lastScannedTranscriptOffset` to the current transcript byte length, and returning `{ "injectSteps": [{ "systemMessage": { "systemMessage": "<output.formattedContext>" } }] }` when `output.injected === true`.
 
 ---
 
@@ -1490,17 +1619,18 @@ export type MemorySessionEpochState = z.infer<typeof MemorySessionEpochStateSche
 ```
 
 **Deduplication & Epoch Reset Algorithm:**
-1. **Determine Current Compaction Checkpoint ID & Role (`resolveTranscriptEpochAndRole(transcriptPath)`):**
+1. **Validate Role Input, Acquire Session Lock & Scan Transcript (`resolveTranscriptEpochAndRole`):**
    - If `input.role` is provided, validate `config.allowedRoles.includes(input.role)` (throwing `MemoryHarnessError` with `'INVALID_ROLE'` if invalid).
-   - Scan `transcriptPath` (if provided and readable) for:
-     - The last JSONL entry representing a context compaction boundary (`obj.type === 'CHECKPOINT'` in Antigravity transcripts, or `obj.type === 'compact_boundary' || obj.subtype === 'compact_boundary'` in Claude Code transcripts), extracting a stable identifier (`String(obj.step_index ?? obj.uuid ?? obj.timestamp ?? obj.created_at ?? 'offset:' + lineByteOffset)`), or `'epoch-0'` if no compaction has occurred.
-     - The latest `memory_init` tool call argument `role` in `transcriptPath`.
-   - If `input.role` was omitted, resolve `resolvedRole` from the first valid role in `config.allowedRoles` across: (a) `state.role` in `.memory/.session-state/<sessionId>.json`, (b) the latest `memory_init` `role` in `transcriptPath`, (c) `.memory/.session-state/latest-role.json`, or (d) final fallback `'general'`.
-2. **Load or Reset Session State Under Lock (§8.1 Rule 1):**
-   - Acquire `.memory/.session-state/<sessionId>.lock` **first** via `withFileLock` and load `.memory/.session-state/<sessionId>.json`.
+   - Acquire `.memory/.session-state/<sessionId>.lock` **first** via `withFileLock` (§8.1 Rule 1) and load `.memory/.session-state/<sessionId>.json` (if present) before scanning `transcriptPath`.
+   - When `transcriptPath` is provided and readable (with current byte length `transcriptByteLength`):
+     - If `<sessionId>.json` does not exist, `state.lastCompactionCheckpointId === 'PENDING_HOOK_EPOCH'`, `state.transcriptPath !== input.transcriptPath`, or `transcriptByteLength < state.lastScannedTranscriptOffset`, scan `transcriptPath` from byte offset `0` (setting `currentCheckpointId` to the last compaction boundary ID found—where a compaction boundary is `obj.type === 'CHECKPOINT'` in Antigravity transcripts or `obj.type === 'compact_boundary' || obj.subtype === 'compact_boundary'` in Claude Code transcripts, with stable identifier `String(obj.step_index ?? obj.uuid ?? obj.timestamp ?? obj.created_at ?? 'offset:' + lineByteOffset)`—or `'epoch-0'` if none exists); otherwise scan incrementally from `state.lastScannedTranscriptOffset` to `transcriptByteLength` (setting `currentCheckpointId` to the latest compaction boundary ID in that slice if found, or retaining `state.lastCompactionCheckpointId` when no new compaction boundary occurred in that slice).
+     - Also extract the latest `memory_init` tool call `role` argument found in `transcriptPath` (or the scanned slice).
+   - When `transcriptPath` is omitted or unreadable, set `currentCheckpointId` to `(state !== undefined && state.lastCompactionCheckpointId !== 'PENDING_HOOK_EPOCH') ? state.lastCompactionCheckpointId : 'epoch-0'`.
+   - If `input.role` was omitted, resolve `resolvedRole` from the first valid role in `config.allowedRoles` across: (a) the latest `memory_init` tool call `role` found in `transcriptPath` (or the scanned slice), (b) `state.role` in `<sessionId>.json` when `state.role !== 'general'`, (c) `.memory/.session-state/latest-role.json`, (d) `state.role` in `<sessionId>.json`, or (e) final fallback `'general'`.
+2. **Initialize or Reset Session State Under Lock (§8.1 Rule 1):**
    - If `<sessionId>.json` exists and `state.lastCompactionCheckpointId === 'PENDING_HOOK_EPOCH'`, set `state.lastCompactionCheckpointId = currentCheckpointId` **without** clearing `state.seenRecordIds` (preserving any scoped record IDs already loaded via `memory_load_scoped` since `memory_init`).
    - Otherwise, if `<sessionId>.json` does not exist or `state.lastCompactionCheckpointId !== currentCheckpointId`, set `state.lastCompactionCheckpointId = currentCheckpointId` and reset `state.seenRecordIds = []`.
-   - Update `state.role = resolvedRole`, `state.transcriptPath = input.transcriptPath ?? state.transcriptPath`, `state.lastScannedTranscriptOffset` (when scanning `transcriptPath`), and `state.updatedAt = nowIso`.
+   - Update `state.role = resolvedRole`, `state.transcriptPath = input.transcriptPath ?? state.transcriptPath`, `state.lastScannedTranscriptOffset = transcriptByteLength` (when `transcriptPath` was scanned), and `state.updatedAt = nowIso`.
 3. **Normalize `touchedPaths` & Early-Exit on Out-of-Workspace Paths:**
    - Normalize and deduplicate `input.touchedPaths` via `normalizeMemoryPathPattern` (§4.1), catching `MemoryHarnessError` (`'VALIDATION_FAILED'`) on out-of-workspace entries to skip them.
    - If zero valid in-workspace `touchedPaths` remain, atomically persist `.memory/.session-state/<sessionId>.json` (whenever Step 2 created or modified the session state), release `.memory/.session-state/<sessionId>.lock`, and return `{ injected: false, compactionEpochId: currentCheckpointId, formattedContext: null, rules: [], lessons: [], notes: [] }` without acquiring `<ledgerPath>.lock`.
@@ -1520,12 +1650,12 @@ export type MemorySessionEpochState = z.infer<typeof MemorySessionEpochStateSche
 
 ### 8.1 Lock Ordering & Atomic Persistence Invariants
 
-1. **Lock Acquisition Order:** When both a session state lock (`.memory/.session-state/<sessionId>.lock`) and the ledger lock (`<ledgerPath>.lock`) are acquired, always acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second**—never the reverse—so two concurrent hooks or tool calls can never deadlock. (`.memory/.session-state/latest-role.lock` is acquired and released independently before acquiring `<sessionId>.lock` or `<ledgerPath>.lock`.)
+1. **Lock Acquisition Order:** When both a session state lock (`.memory/.session-state/<sessionId>.lock`) and the ledger lock (`<ledgerPath>.lock`) are acquired, always acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second**—never the reverse—so two concurrent hooks or tool calls can never deadlock. (`.memory/.session-state/latest-role.lock` is acquired and released independently before acquiring `<sessionId>.lock` or `<ledgerPath>.lock`; any post-reconcile ID remapping of other sessions' `.memory/.session-state/<otherSid>.json` files is performed strictly **after** releasing `<ledgerPath>.lock` and `<sessionId>.lock`, acquiring each `.memory/.session-state/<otherSid>.lock` individually via `withFileLock`.)
 2. **Atomic Write Requirement & Strict Multi-File Write Ordering:** Every write to `memory.meta.json`, `memory.jsonl`, `.memory/.session-state/<sessionId>.json`, and `.memory/.session-state/latest-role.json` uses `write-file-atomic` (temp file in target directory + `fsync` + POSIX `rename`) inside `@paraharness/lockfile`'s `withFileLock`. Every operation holding `<ledgerPath>.lock` immediately reconciles `meta.highWaterMarks[P] = Math.max(meta.highWaterMarks[P], maxNumericIdInLedger(rawLoadedRecords, P))` across all raw records in `memory.jsonl` **before** purging expired `hard-expiry` notes or removing records, and enforces the strict write sequence:
    1. `memory.meta.json` (whenever created or `highWaterMarks` advance),
    2. `memory.jsonl` (whenever records are added, updated, purged, decremented, or drained),
    3. §8.2 Git auto-commit/push (when `config.storage.git.enabled && config.storage.git.autoCommit` and `memory.meta.json` or `memory.jsonl` was written), and
-   4. `.memory/.session-state/<sessionId>.json` (whenever session state was created or updated).
+   4. `.memory/.session-state/<sessionId>.json` (whenever session state was created or updated, after applying any §8.2.3 `cumulativeIdRemap` to the caller's in-memory `state.seenRecordIds` and active return payload).
 3. **Gitignored Ephemeral Files:** `.memory/*.lock`, `.memory/.session-state/`, and any `write-file-atomic` temporary files (`*.tmp*`) MUST be excluded in `<checkoutDir>/.gitignore` so ephemeral lock and session files are never committed to the memory Git repository.
 
 ---
@@ -1542,7 +1672,8 @@ When `config.storage.git.enabled === true`:
      - If `config.storage.git.remoteUrl !== undefined`:
        - Configure `origin` (`git -C <checkoutDir> remote add origin <remoteUrl>`, or `git -C <checkoutDir> remote set-url origin <remoteUrl>` if `origin` already exists).
        - Run `git -C <checkoutDir> ls-remote --heads origin refs/heads/<branch>` (throwing `MemoryHarnessError` with `'GIT_SYNC_FAILED'` if `ls-remote` exits non-zero due to network or authentication failure).
-       - If `refs/heads/<branch>` exists on `origin`: run `git -C <checkoutDir> fetch origin <branch>`. If a local `<relLedgerPath>` already existed on disk prior to fetch, snapshot its local records/meta, run `git -C <checkoutDir> reset --hard origin/<branch>`, and reconcile the pre-existing local records with `origin/<branch>` via `reconcileDivergedMemoryLedgers(emptyBase, local, remote)` (§8.2.3); otherwise run `git -C <checkoutDir> reset --hard origin/<branch>`.
+       - If `refs/heads/<branch>` exists on `origin`: run `git -C <checkoutDir> fetch origin <branch>`. If a local `<relLedgerPath>` already existed on disk prior to fetch, snapshot its local records/meta, run `git -C <checkoutDir> reset --hard origin/<branch>`, ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`, reconcile the pre-existing local records with `origin/<branch>` via `reconcileDivergedMemoryLedgers(emptyBase, local, remote)` (§8.2.3), atomically write `mergedMeta` first and `mergedRecords` second to disk via `write-file-atomic`, and if `config.storage.git.autoCommit === true`, stage and commit (and push if `config.storage.git.autoPush === true`) per §8.2.2–§8.2.3; otherwise run `git -C <checkoutDir> reset --hard origin/<branch>`.
+     - Ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*` after the `if (config.storage.git.remoteUrl !== undefined)` block so `git reset --hard origin/<branch>` never leaves `.gitignore` missing those entries.
    - Whenever `<checkoutDir>/.git` already exists, ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`.
 2. **Auto-Commit (`config.storage.git.autoCommit === true`):**
    - Inside `<ledgerPath>.lock`, after writing `memory.meta.json` and `memory.jsonl`:
@@ -1563,9 +1694,11 @@ When `config.storage.git.enabled === true`:
             - Otherwise, if one side is unchanged from `base` and the other side modified it, keep the modified side; if both sides modified it, keep the version with the larger `Date.parse(r.updatedAt ?? r.createdAt)` (breaking exact millisecond ties in favor of `local`).
         - **High-Water-Mark Merge:** For each prefix `P` in `['R', 'L', 'N']`, set `mergedMeta.highWaterMarks[P] = Math.max(localMeta.highWaterMarks[P], remoteMeta.highWaterMarks[P], maxNumericIdInMergedRecords(P))`.
      3. **Post-Reconcile Capacity Check, Atomic Write & State Remapping:**
-        - Re-evaluate `bucketStatusAfter` on `mergedRecords`. If the local operation was `op: 'add'` or a bucket-changing `op: 'update'` and `mergedRecords` now exceeds the target bucket's `hardCap` or `config.maxTotalRecords`, reset `<checkoutDir>` to `origin/<branch>` (`git -C <checkoutDir> reset --hard origin/<branch>`) and throw `MemoryHarnessError` (`'CAP_EXCEEDED'`).
-        - Reset `<checkoutDir>` branch to `origin/<branch>` (`git -C <checkoutDir> reset --hard origin/<branch>`), write `mergedMeta` first and `mergedRecords` second atomically, create the reconciled commit with fallback author identity, and re-run `git -C <checkoutDir> push origin <branch>` (retrying up to 3 times on concurrent races, throwing `MemoryHarnessError` with `'GIT_SYNC_FAILED'` if still failing).
-        - If `idRemap.size > 0`, apply `idRemap` to any returned `MemoryCommitOutput` (`committedRecord.id`, `mergedKeepRecord.id`, `bucketStatusAfter.bucketRecordIds`) and remap any matching IDs in `.memory/.session-state/*.json` `seenRecordIds`.
+        - **Post-Reconcile Capacity Check & Pre-Operation Rollback:** Re-evaluate `bucketStatusAfter` on `mergedRecords`. If the local operation was `op: 'add'` or a bucket- or repo-scope-changing `op: 'update'` (§6.5) and `mergedRecords` now exceeds the target bucket's `hardCap` or `config.maxTotalRecords`, restore the pre-operation local ledger/meta snapshot reconciled with `origin/<branch>` (running `git -C <checkoutDir> reset --hard origin/<branch>`, ensuring `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`, writing the reconciled pre-operation `meta` first and `records` second atomically via `write-file-atomic`, and staging/committing if `config.storage.git.autoCommit === true`) before throwing `MemoryHarnessError` (`'CAP_EXCEEDED'`), so prior unpushed local commits are never lost.
+        - **Atomic Write, Staging & Clean-Tree Check:** Reset `<checkoutDir>` branch to `origin/<branch>` (`git -C <checkoutDir> reset --hard origin/<branch>`), ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`, write `mergedMeta` first and `mergedRecords` second atomically via `write-file-atomic`, run `git -C <checkoutDir> add -- <relLedgerPath> <relMetaPath> .gitignore`, and check `git -C <checkoutDir> status --porcelain -- <relLedgerPath> <relMetaPath> .gitignore`: only when non-empty, create the reconciled commit with fallback author identity and re-run `git -C <checkoutDir> push origin <branch>` (retrying up to 3 times on concurrent races, throwing `MemoryHarnessError` with `'GIT_SYNC_FAILED'` if still failing; when `git status --porcelain` is empty, `origin/<branch>` already reflects the merged state and no commit or push is needed).
+        - **Transitive `cumulativeIdRemap` & Lock-Safe Session State Remapping:** Compose `idRemap` transitively across push retry attempts into `cumulativeIdRemap: Map<string, string>` (`prevOld -> prevNew` updated to `prevOld -> latestIdRemap.get(prevNew) ?? prevNew`, plus any newly remapped IDs). When `cumulativeIdRemap.size > 0`:
+          1. Apply `cumulativeIdRemap` in-memory to the active operation's return payload (`MemoryCommitOutput`—also updating `bucketStatusAfter` to the post-reconcile `bucketStatusAfter` evaluated on `mergedRecords`—`MemoryInitOutput`, `MemoryLoadScopedOutput`, `MemoryDrainNotesOutput`, `FileInteractionHookOutput`) and to the caller's own in-memory `state.seenRecordIds` before writing `<sessionId>.json` in Step 4 of the multi-file write order (§8.1 Rule 2).
+          2. Remap any other `.memory/.session-state/<otherSid>.json` files **only after releasing `<ledgerPath>.lock` (and `<sessionId>.lock`)**, acquiring each `.memory/.session-state/<otherSid>.lock` individually via `withFileLock` before reading, remapping `seenRecordIds`, and atomically writing `<otherSid>.json` (preserving lock-ordering invariant §8.1 Rule 1 with zero AB-BA deadlock).
 
 ---
 
@@ -1683,7 +1816,7 @@ export interface MemoryHarnessContract {
    *
    * @returns {Promise<MemoryProposeOutput>} Resolved Distiller proposal choices or subagent delegation payload.
    *
-   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, `'LESSON_FORMAT_INVALID'`, `'RULE_PROTECTION_VIOLATION'`, or `'DISTILLER_EXECUTION_FAILED'`.
+   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, `'LESSON_FORMAT_INVALID'`, `'RULE_PROTECTION_VIOLATION'`, `'DISTILLER_EXECUTION_FAILED'`, or `'GIT_SYNC_FAILED'`.
    */
   propose(input: MemoryProposeInput): Promise<MemoryProposeOutput>;
 
