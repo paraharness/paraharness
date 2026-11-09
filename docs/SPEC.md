@@ -1177,6 +1177,23 @@ export const executeStepNode: NodeExecutor<
   return node.outputSchema.parse(rawOutput);
 };
 
+export interface StepRunOptions<THandle = unknown> {
+  readonly registry:
+    | Partial<RuntimeExecutorRegistry>
+    | RuntimeExecutorRegistrySlice
+    | readonly RuntimeExecutorRegistrySlice[];
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly scopeHandle?: THandle;
+  readonly runId?: string;
+  readonly signal?: AbortSignal;
+}
+
+export declare function runStep<TIn = unknown, TOut = unknown, THandle = unknown>(
+  node: MaybeBuilder<StepASTNode<TIn, TOut, THandle>>,
+  input: TIn,
+  options: StepRunOptions<THandle>,
+): Promise<TOut>;
+
 export interface RuntimeExecutorRegistry {
   readonly steps: NodeExecutorMap<DomainStepASTNode, any, any, StepExecutionContext<any>>;
   readonly sources: NodeExecutorMap<
