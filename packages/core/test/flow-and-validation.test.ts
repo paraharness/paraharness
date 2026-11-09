@@ -593,6 +593,105 @@ describe('Static build-time validation rejections', () => {
       .onSignal(RewindSignal, ($s) => $s.notify(bidirectionalHuman, mapper));
     expect(harnessShorthand.toAST()).toEqual(harnessExplicit.toAST());
   });
+
+  it('supports pass-through defaults on cap.fork(toolName, child, configure?) and 1-arg speculate.arbiter(arbiterActor) preserving TCandidate (P15)', () => {
+    const WorkerInSchema = z.object({ task: z.string() });
+    const WorkerOutSchema = z.object({ diff: z.string() });
+    const ReceiptSchema = z.object({ headSha: z.string() });
+    const ArbiterInSchema = SpeculationInputSchema(WorkerInSchema, WorkerOutSchema, ReceiptSchema);
+    const ArbiterOutSchema = z.discriminatedUnion('decision', [
+      z.object({
+        decision: z.literal('select-winner'),
+        winnerBranchIndex: z.number(),
+        needsRefinement: z.boolean(),
+      }),
+      z.object({
+        decision: z.literal('unpark-escalation'),
+        parkedBranchIndex: z.number(),
+        rationale: z.string(),
+      }),
+      z.object({
+        decision: z.literal('reject-all'),
+        rationale: z.string(),
+      }),
+    ]);
+
+    const worker = P.agent<GitWorktreeHandle>('p15-worker')
+      .model(SAMPLE_MODEL_NODE)
+      .input(WorkerInSchema)
+      .output(WorkerOutSchema);
+
+    const arbiter = P.agent<GitWorktreeHandle>('p15-arbiter')
+      .model(SAMPLE_MODEL_NODE)
+      .input(ArbiterInSchema)
+      .output(ArbiterOutSchema);
+
+    const coordinator = P.agent<GitWorktreeHandle>('p15-coord')
+      .model(SAMPLE_MODEL_NODE)
+      .input(FlowInputSchema)
+      .output(StepOutputSchema)
+      .capabilities(($cap) =>
+        $cap
+          .fork('delegate-worker', worker)
+          .fork('delegate-clone', worker, ($f) => $f.historyMode('clone-transcript'))
+          .speculate('race-workers', ($s) =>
+            $s
+              .requestSchema(z.object({ tasks: z.array(z.string()) }))
+              .worker(worker)
+              .branches(2, (_parentIn, req) => req.tasks.map((task) => ({ task })))
+              .arbiter(arbiter)
+              .refineWinnerWhen(
+                (verdict) => verdict.decision === 'select-winner' && verdict.needsRefinement,
+                worker,
+                (_parentIn, _verdict, candidates) => {
+                  const first = candidates[0];
+                  const sha = first?.status === 'COMPLETED' ? first.scopeReceipt.headSha : 'none';
+                  return { task: `refine:${sha}` };
+                },
+              ),
+          ),
+      );
+
+    const ast = coordinator.toAST();
+    const fork0 = ast.capabilities?.forks[0];
+    const fork1 = ast.capabilities?.forks[1];
+    expect(fork0?.toolName).toBe('delegate-worker');
+    expect(fork0?.historyMode).toBe('shared-prefix-only');
+    expect(fork0?.requestSchema).toBe(WorkerInSchema);
+    expect(fork0?.mapInput({ id: '1', title: 'item', mode: 'fast' }, { task: 'run' })).toEqual({
+      task: 'run',
+    });
+    expect(fork1?.historyMode).toBe('clone-transcript');
+    expect(fork1?.requestSchema).toBe(WorkerInSchema);
+
+    const spec0 = ast.capabilities?.speculations[0];
+    expect(spec0?.arbiter.actor.id).toBe('p15-arbiter');
+    expect(
+      spec0?.arbiter.resolveDecision({
+        decision: 'select-winner',
+        winnerBranchIndex: 1,
+        needsRefinement: false,
+      }),
+    ).toEqual({
+      decision: 'select-winner',
+      winnerBranchIndex: 1,
+      needsRefinement: false,
+    });
+
+    expect(() =>
+      P.agent<GitWorktreeHandle>('p15-bad-fork')
+        .model(SAMPLE_MODEL_NODE)
+        .input(FlowInputSchema)
+        .output(StepOutputSchema)
+        .capabilities(($cap) =>
+          $cap.fork('custom-req-missing-map', worker, ($f) =>
+            $f.requestSchema(z.object({ custom: z.string() })),
+          ),
+        )
+        .toAST(),
+    ).toThrow(/custom-req-missing-map/);
+  });
 });
+
 
 

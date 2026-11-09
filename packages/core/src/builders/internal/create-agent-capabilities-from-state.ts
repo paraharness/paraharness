@@ -47,19 +47,19 @@ export function createAgentCapabilitiesFromState<TParentIn = unknown, THandle = 
     fork: <TChildIn, TChildOut>(
       toolName: string,
       childExecutable: MaybeBuilder<AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>>,
-      configure: ($f: ForkCapabilityBuilder<TParentIn, unknown, TChildIn, TChildOut, THandle>) => AstBuilder<ForkCapabilityNode<TParentIn, unknown, TChildIn, TChildOut, THandle>>,
+      configure?: ($f: ForkCapabilityBuilder<TParentIn, TChildIn, TChildIn, TChildOut, THandle>) => AstBuilder<ForkCapabilityNode<TParentIn, unknown, TChildIn, TChildOut, THandle>>,
     ) => {
       assertNonEmptyIdentifier('P.agent.capabilities.fork', toolName);
-      const forkNode = configure(
-        createForkCapabilityFromState<TParentIn, unknown, TChildIn, TChildOut, THandle>({
-          toolName,
-          childExecutable: extractAST(childExecutable),
-          historyMode: 'shared-prefix-only',
-          requestSchema: undefined,
-          mapInput: undefined,
-          modelRouting: undefined,
-        }),
-      ).toAST();
+      const childNode = extractAST(childExecutable);
+      const initialFork = createForkCapabilityFromState<TParentIn, TChildIn, TChildIn, TChildOut, THandle>({
+        toolName,
+        childExecutable: childNode,
+        historyMode: 'shared-prefix-only',
+        requestSchema: childNode.inputSchema,
+        mapInput: (_parentInput: TParentIn, req: TChildIn): TChildIn => req,
+        modelRouting: undefined,
+      });
+      const forkNode = (configure !== undefined ? configure(initialFork) : initialFork).toAST();
       return createAgentCapabilitiesFromState({ forks: [...forks, forkNode], speculations, mutatePlan, escalations });
     },
     speculate: (

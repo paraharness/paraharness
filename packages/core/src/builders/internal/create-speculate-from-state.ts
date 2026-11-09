@@ -76,11 +76,16 @@ export function createSpeculateFromState<
       }),
     arbiter: <TNewVerdict, TArbiterIn = unknown>(
       arbiterActor: MaybeBuilder<AgentNode<TArbiterIn, TNewVerdict, THandle>>,
-      arbiterOptions: { readonly resolveDecision: (verdict: TNewVerdict) => SpeculateArbiterDecision },
+      arbiterOptions?: { readonly resolveDecision?: (verdict: TNewVerdict) => SpeculateArbiterDecision },
     ) =>
       createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TNewVerdict, ExtractSpeculationCandidate<TArbiterIn>>({
         ...state,
-        arbiter: { actor: extractAST(arbiterActor), resolveDecision: arbiterOptions.resolveDecision },
+        arbiter: {
+          actor: extractAST(arbiterActor),
+          resolveDecision:
+            arbiterOptions?.resolveDecision ??
+            ((verdict: TNewVerdict): SpeculateArbiterDecision => verdict as SpeculateArbiterDecision),
+        },
         refineWinnerWhen: undefined,
       }),
     refineWinnerWhen: (

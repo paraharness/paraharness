@@ -25,16 +25,18 @@ import type { SpeculateCapabilityBuilder } from './speculate-capability-builder.
 export interface AgentCapabilitiesBuilder<TParentIn = unknown, THandle = unknown>
   extends AstBuilder<AgentCapabilitiesNode<TParentIn, THandle>> {
   /**
-   * Registers a downward child fork capability tool (`$cap.fork(toolName, childExecutable, $f => ...)`).
+   * Registers a downward child fork capability tool (`$cap.fork(toolName, childExecutable, configure?)`).
    *
    * Requires the enclosing flow's isolation scope to have `capabilityTier: 'branchable'`.
+   * Defaults `requestSchema` to `childExecutable.inputSchema` and `mapInput` to `(_parentIn, req) => req`
+   * when omitted.
    *
    * @template TChildIn  Child executable input payload type.
    * @template TChildOut Child executable output payload type.
    *
-   * @param {string}                                                                                                                                                            toolName        - Tool name exposed to the parent agent.
-   * @param {MaybeBuilder<AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>>}                                                            childExecutable - Child agent or loop.
-   * @param {($f: ForkCapabilityBuilder<TParentIn, unknown, TChildIn, TChildOut, THandle>) => AstBuilder<ForkCapabilityNode<TParentIn, unknown, TChildIn, TChildOut, THandle>>} configure       - Fork builder configurator callback.
+   * @param {string}                                                                                                                                                              toolName        - Tool name exposed to the parent agent.
+   * @param {MaybeBuilder<AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>>}                                                              childExecutable - Child agent or loop.
+   * @param {($f: ForkCapabilityBuilder<TParentIn, TChildIn, TChildIn, TChildOut, THandle>) => AstBuilder<ForkCapabilityNode<TParentIn, unknown, TChildIn, TChildOut, THandle>>} [configure]     - Optional fork builder configurator callback.
    *
    * @returns {AgentCapabilitiesBuilder<TParentIn, THandle>} New immutable capabilities builder.
    */
@@ -43,8 +45,8 @@ export interface AgentCapabilitiesBuilder<TParentIn = unknown, THandle = unknown
     childExecutable: MaybeBuilder<
       AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>
     >,
-    configure: (
-      $f: ForkCapabilityBuilder<TParentIn, unknown, TChildIn, TChildOut, THandle>,
+    configure?: (
+      $f: ForkCapabilityBuilder<TParentIn, TChildIn, TChildIn, TChildOut, THandle>,
     ) => AstBuilder<ForkCapabilityNode<TParentIn, unknown, TChildIn, TChildOut, THandle>>,
   ): AgentCapabilitiesBuilder<TParentIn, THandle>;
 

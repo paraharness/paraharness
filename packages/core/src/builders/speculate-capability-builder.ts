@@ -166,6 +166,37 @@ export interface SpeculateCapabilityBuilder<
   >;
 
   /**
+   * Binds the read-only arbiter agent (with an optional decision projector) when the arbiter output already extends `SpeculateArbiterDecision`.
+   *
+   * Infers `TCandidate` from `TArbiterIn` so `.refineWinnerWhen(...)` receives typed candidates, and defaults
+   * `resolveDecision` to the identity projection `(verdict) => verdict` when omitted.
+   *
+   * @template TArbiterIn  Arbiter input payload type (used to infer `TCandidate`).
+   * @template TNewVerdict Arbiter structured verdict output type extending `SpeculateArbiterDecision`.
+   *
+   * @param {MaybeBuilder<AgentNode<TArbiterIn, TNewVerdict, THandle>>}                          arbiterActor - Read-only arbiter agent.
+   * @param {{ readonly resolveDecision?: (verdict: TNewVerdict) => SpeculateArbiterDecision }} [options]    - Optional pure decision projector.
+   *
+   * @returns {SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TNewVerdict, ExtractSpeculationCandidate<TArbiterIn>>} New immutable speculate builder.
+   */
+  arbiter<
+    TArbiterIn = unknown,
+    TNewVerdict extends SpeculateArbiterDecision = SpeculateArbiterDecision,
+  >(
+    arbiterActor: MaybeBuilder<AgentNode<TArbiterIn, TNewVerdict, THandle>>,
+    options?: { readonly resolveDecision?: (verdict: TNewVerdict) => SpeculateArbiterDecision },
+  ): SpeculateCapabilityBuilder<
+    TParentIn,
+    TReq,
+    TChildIn,
+    TChildOut,
+    THandle,
+    TCrossReport,
+    TNewVerdict,
+    ExtractSpeculationCandidate<TArbiterIn>
+  >;
+
+  /**
    * Binds the read-only arbiter agent and decision projector for judging candidate branches.
    *
    * Infers `TCandidate` from `TArbiterIn` so `.refineWinnerWhen(...)` receives typed candidates.
