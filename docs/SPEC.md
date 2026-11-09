@@ -1347,7 +1347,10 @@ export interface HarnessRuntime {
 }
 
 export interface HarnessRuntimeOptions {
-  readonly registry?: Partial<RuntimeExecutorRegistry>;
+  readonly registry?:
+    | Partial<RuntimeExecutorRegistry>
+    | RuntimeExecutorRegistrySlice
+    | readonly RuntimeExecutorRegistrySlice[];
   readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
