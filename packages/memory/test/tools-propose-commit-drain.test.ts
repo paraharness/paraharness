@@ -623,7 +623,6 @@ describe('MemoryHarness tools (getConfig, init, loadScoped, propose, commit, dra
 
       const harness = new MemoryHarness({
         workspaceRoot: ws.workspaceRoot,
-        distillerRunner: new ClaudeCliDistillerRunner(),
       });
 
       await writeFile(modeFilePath, 'structured_output', 'utf8');
@@ -693,11 +692,14 @@ describe('MemoryHarness tools (getConfig, init, loadScoped, propose, commit, dra
 
       await writeFile(modeFilePath, 'timeout', 'utf8');
       await expect(
-        harness.propose({
-          callerRole: 'builder',
-          targetRole: 'builder',
-          type: 'lesson',
-          rawText: VALID_LESSON_ONE,
+        new ClaudeCliDistillerRunner().runDistillerProposal({
+          model: 'opus',
+          effort: 'high',
+          timeoutMs: 50,
+          systemPrompt: 'sys',
+          userPrompt: 'usr',
+          bucketStatus: outStructured.bucketStatus,
+          outputJsonSchema: { type: 'object' },
         }),
       ).rejects.toThrowError(
         expect.objectContaining({

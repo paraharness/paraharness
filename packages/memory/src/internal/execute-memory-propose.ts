@@ -21,6 +21,7 @@ import {
   deduplicateReposArray,
   hydrateAndValidateProposeChoices,
 } from './hydrate-and-validate-propose-choices.js';
+import { isGlobPattern } from './is-glob-pattern.js';
 import { listRepoFiles } from './list-repo-files.js';
 import { normalizeMemoryPathArray } from './normalize-memory-path-pattern.js';
 import { readMemoryLedger } from './read-memory-ledger.js';
@@ -153,6 +154,18 @@ async function invokeDistillerRunnerSafely(
 }
 
 /**
+ * Checks whether `config.caps` contains any capacity rule with an explicit glob pattern (`p !== '*' && isGlobPattern(p)`),
+ * which is the only condition under which `resolveRecordCapBucket` inspects `repoFiles` (§5.2.1).
+ *
+ * @param {MemoryConfig} config - Validated unified memory configuration.
+ *
+ * @returns {boolean} `true` if at least one capacity rule path is an explicit glob pattern; `false` otherwise.
+ */
+function hasExplicitGlobCapPaths(config: MemoryConfig): boolean {
+  return config.caps.some((cap) => cap.paths.some((p) => p !== '*' && isGlobPattern(p)));
+}
+
+/**
  * Executes the `memory_propose` tool contract (§6.4): validates roles and candidate fields, snapshots
  * the ledger under `<ledgerPath>.lock` and immediately releases the lock before Distiller execution,
  * builds the KV-cacheable `systemPrompt` and dynamic `userPrompt`, and either resolves the proposal
@@ -183,7 +196,9 @@ export async function executeMemoryPropose(
       ? normalizeMemoryPathArray(validatedInput.context, params.workspaceRoot)
       : undefined;
   const normalizedRepos = deduplicateReposArray(validatedInput.repos);
-  const repoFiles = await listRepoFiles(params.workspaceRoot);
+  const repoFiles = hasExplicitGlobCapPaths(params.config)
+    ? await listRepoFiles(params.workspaceRoot)
+    : [];
   const snapshotOutcome = await captureProposeLedgerSnapshotUnderLock({
     workspaceRoot: params.workspaceRoot,
     config: params.config,

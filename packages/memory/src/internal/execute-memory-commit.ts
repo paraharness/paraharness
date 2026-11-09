@@ -16,6 +16,7 @@ import {
 import { assertAllowedRole } from './assert-allowed-role.js';
 import { ensureMemoryGitCheckout } from './ensure-memory-git-checkout.js';
 import { deduplicateReposArray } from './hydrate-and-validate-propose-choices.js';
+import { isGlobPattern } from './is-glob-pattern.js';
 import { listRepoFiles } from './list-repo-files.js';
 import type { MemoryLedgerSnapshot } from './memory-ledger-snapshot.js';
 import { normalizeMemoryPathArray } from './normalize-memory-path-pattern.js';
@@ -727,6 +728,18 @@ async function executeCommitRemoveUnderLock(
 }
 
 /**
+ * Checks whether `config.caps` contains any capacity rule with an explicit glob pattern (`p !== '*' && isGlobPattern(p)`),
+ * which is the only condition under which `resolveRecordCapBucket` inspects `repoFiles` (§5.2.1).
+ *
+ * @param {MemoryConfig} config - Validated unified memory configuration.
+ *
+ * @returns {boolean} `true` if at least one capacity rule path is an explicit glob pattern; `false` otherwise.
+ */
+function hasExplicitGlobCapPaths(config: MemoryConfig): boolean {
+  return config.caps.some((cap) => cap.paths.some((p) => p !== '*' && isGlobPattern(p)));
+}
+
+/**
  * Executes the `memory_commit` tool contract (§6.5, §8.1, §8.2): enforces pre-lock role,
  * rule-protection, schema, and lesson format gates, acquires `<ledgerPath>.lock`, executes `add`,
  * `update`, or `remove` with monotonic ID allocation and capacity enforcement, runs Git
@@ -743,7 +756,9 @@ export async function executeMemoryCommit(
   params: ExecuteMemoryCommitParams,
 ): Promise<MemoryCommitOutput> {
   const { validatedInput, normalizedContext, normalizedRepos } = validatePreLockCommitInput(params);
-  const repoFiles = await listRepoFiles(params.workspaceRoot);
+  const repoFiles = hasExplicitGlobCapPaths(params.config)
+    ? await listRepoFiles(params.workspaceRoot)
+    : [];
   const absLedgerPath = path.resolve(params.workspaceRoot, params.config.storage.ledgerPath);
   const ledgerLockPath = `${absLedgerPath}.lock`;
   const nowIso = new Date(params.nowMs).toISOString();
