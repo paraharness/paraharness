@@ -38,7 +38,7 @@
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §1.1–§1.2 (`lines 3–34`) | Pure passive AST nodes (`SqliteLedgerNode`, `PostgresLedgerNode`, `SqliteTopologyNode`, `PostgresTopologyNode`, `SqliteLessonsNode`, `PostgresLessonsNode`, `SqliteRulesSourceNode`, `PostgresRulesSourceNode`), zero I/O at builder time, and late-bound `EnvRef` resolution via `ctx.resolveEnv`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.1 (`lines 172–189`, `325–337`) | `CompactionConfigNode` (`onSignal`, `onTerminalExit`, `retainFailedRunsForDays`) and `TopologyNode.commitOverlayWhen`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.2 (`lines 807–840`, `1001–1037`, `1068–1092`) | `BaseSourceASTNode`, `BaseLedgerStoreASTNode`, `BaseTopologyStoreASTNode`, `BaseLessonStoreASTNode`, `SourceASTNode`, `LedgerStoreASTNode`, `TopologyStoreASTNode`, `LessonStoreASTNode`. |
-| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.3–§2.4 (`lines 1094–1394`) | `NodeExecutor`, `RuntimeDriverContext`, `ResolutionContext`, `RuntimeExecutorRegistry`, `RuntimeExecutorRegistrySlice`. |
+| [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.3–§2.4 (`lines 1094–1420`) | `NodeExecutor`, `RuntimeDriverContext`, `ResolutionContext`, `RuntimeExecutorRegistry`, `RuntimeExecutorRegistrySlice`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §2.6–§2.7 (`lines 1546–2125`) | `CanonicalMessage`, `WireFrameRecord`, `CompiledWirePrefix`, `UniversalStepTelemetry`, `PendingToolBatch`, `AgentPauseState`, `ContinuationFrame`, `SuspendedForkRecord`, `LedgerStore` (`lines 1921–2028`), `TopologyPartitionState`, `TopologyStore` (`lines 2030–2076`), `LessonOutcome`, `DistilledLessonCandidate`, `LessonRecord`, `LessonStore` (`lines 2078–2125`). |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.3 (`lines 2233–2244`) | Relational Topology CoW overlay lifecycle (`getPartitions`, `updateContract` with `stepExecId` and at-most-once per-`(runId, partitionId)` epoch increment, `syncRunOverlays`, `resetRunOverlay` for `scope: 'step' \| 'run'`, `sealRunOverlay`, `commitRunOverlay` 3-way merge against `baseContractTextAtAcquire`, `discardRunOverlay`). |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.4.1 & §3.4.3 (`lines 2247–2324`) | `GlobalRuleSchema` validation for `sqlite:global-rules` / `postgres:global-rules`, and `LessonStore` relevance scoring $R(L, Q)$ in `queryCandidates`, `admit`, `recordOutcomes`, `syncCreationEpochsForRuns`, `markSignalEmitted`, and `retire`. |
@@ -149,7 +149,7 @@ Every file, class, method, and function in `packages/sqlite/src/**`, `packages/p
    - Compiles to `SqliteRulesSourceNode` (`readonly type: 'sqlite:global-rules'`) / `PostgresRulesSourceNode` (`readonly type: 'postgres:global-rules'`).
    - Validates `table` against `^[A-Za-z_][A-Za-z0-9_]*$`.
 
-### 4.2 `LedgerStore` Implementation (`SPEC.md` §2.7 lines 1882–1989, §3.7.2, §3.9, §3.10)
+### 4.2 `LedgerStore` Implementation (`SPEC.md` §2.7 lines 1921–2028, §3.7.2, §3.9, §3.10)
 1. **Run & Step Lifecycle**:
    - `createOrResumeRun`: inserts a new run row (`status: 'RUNNING'`) or returns the existing run's persisted `status`, `currentStepId`, `inputJson`, `rewindPendingToStepId`, `compiledPrefixesJson` (pinned at initial run start and never overwritten on resume), `costUsd`, `approvedMaxCostUsd`, and `completedStepOutputsJson` (`ReadonlyMap<string, string>` mapping completed `stepId -> outputJson`).
    - `recordStepStart`, `updateContinuationStack` (updating `continuation_stack_json` and optional `baseScopeCheckpoint`), `updateRunInput` (updating `inputJson` and `rewindPendingToStepId`), `recordStepTransition`, `recordRunTerminalReceipt`, `getRunTerminalReceipts`, and `getInterruptedStepsOnBoot` (returning all runs in `'QUEUED' | 'RUNNING' | 'WAITING' | 'SUSPENDED'` along with their latest step's `stepExecId`, `stepId`, `executableId`, `baseScopeCheckpoint`, `headScopeCheckpoint`, and `continuationStack`).
@@ -163,7 +163,7 @@ Every file, class, method, and function in `packages/sqlite/src/**`, `packages/p
    - `getSuspendedForks(runId, opts)` returns only unresolved records matching optional `forkIds` (by `forkId` or `suspendedForkId`) and `parentStepExecId`.
    - `resolveSuspendedFork(suspendedForkId, status)` marks `${forkId}#${epoch}` and any earlier unresolved epochs `${forkId}#1 .. ${forkId}#${epoch}` for the same `(runId, forkId)` as resolved (`'RESUMED' | 'ABORTED'`).
 
-### 4.3 `TopologyStore` Implementation (`SPEC.md` §2.7 lines 1991–2037 & §3.3)
+### 4.3 `TopologyStore` Implementation (`SPEC.md` §2.7 lines 2030–2076 & §3.3)
 1. **`getPartitions(runId?)`**:
    - Returns `ReadonlyMap<string, TopologyPartitionState>` merging any active/sealed overlay for `runId` over the canonical base partitions, and pinning `baseContractTextAtAcquire` on first access for `(runId, partitionId)`.
 2. **`updateContract(runId, partitionId, newContractText, stepExecId?)`**:
@@ -177,7 +177,7 @@ Every file, class, method, and function in `packages/sqlite/src/**`, `packages/p
    - `commitRunOverlay(runId)` atomically commits `runId`'s overlay (and any absorbed prerequisite `SEALED_UNMERGED` overlays) into the canonical base table, allocating `base.epoch = currentBase.epoch + 1` monotonically, performing a 3-way contract text merge against `baseContractTextAtAcquire`, and returning `{ committedRunIds, updatedEpochs }`.
    - `discardRunOverlay(runId)` deletes `runId`'s overlay without modifying canonical base rows.
 
-### 4.4 `LessonStore` & Global Rules Source Executor (`SPEC.md` §2.7 lines 2039–2086, §3.4, §4.5)
+### 4.4 `LessonStore` & Global Rules Source Executor (`SPEC.md` §2.7 lines 2078–2125, §3.4, §4.5)
 1. **`LessonStore`**:
    - `queryCandidates({ queryText, partitions })`: queries non-retired lessons matching `partition IS NULL OR partition IN (partitions)`, computes normalized token/trigram similarity `relevanceScore` $R(L, Q) \in [0, 1]$, and returns `LessonRecord[]`.
    - `admit`, `recordOutcomes` (appending to `recentOutcomes` and incrementing `totalCleanPasses` on `'clean_pass'` or `totalViolated` on `'violated'`), `syncCreationEpochsForRuns(runIds, updatedEpochs)`, `markSignalEmitted(lessonId, signalId, emittedAt)`, and `retire(lessonIds)`.
