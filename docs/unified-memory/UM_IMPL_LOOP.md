@@ -1,5 +1,5 @@
 STATE
-wave                       := "Wave 1: UM-1" ("Wave 1: UM-1" | "Wave 2: UM-2"; Wave 2 starts only after Wave 1 reaches TERMINATION and passes the Wave-Barrier Gate)
+wave                       := "Wave 1: UM-1" ("Wave 1: UM-1" | "Wave 2: UM-2"; Wave 2 starts only after Wave 1 reaches TERMINATION and passes the Wave-Barrier Gate and Wave-Barrier Distillation)
 unit                       := "UM-1" ("UM-1" | "UM-2" from docs/unified-memory/UM_PLAN.md)
 plan_file                  := "docs/unified-memory/UM_PLAN.md"
 spec_file                  := "docs/unified-memory/UNIFIED_MEMORY_SPEC.md"
@@ -7,12 +7,12 @@ precedence                 := "CLAUDE.MD > spec_file > docs/CODING_GUIDELINES.md
 owned_dirs                 := Owned Files & Directories defined in plan_file §1.1 for unit
 forbidden_dirs             := Forbidden Directories defined in plan_file §1.1 for unit
 baseline_dirty             := repo-wide pre-existing dirty/untracked paths recorded via $(git status --porcelain) at Step 0.0 before the wave/unit starts (paths under .memory/post-compaction*.md written by .agents/hooks/post-compaction.mjs are never stray edits and are excluded from every status/diff check)
-upstream_patches           := [] (list of UM-1-authored files modified during Wave 2 under explicit Head Rule 4 authorization)
+upstream_patches           := [] (files in forbidden_dirs patched under explicit Head Rule 4 authorization: prior-milestone package files such as packages/lockfile/** in either wave, or UM-1-authored files during Wave 2)
 wave_base_sha              := "origin/main" ("origin/main" in Wave 1; updated to um1_sha at Wave 1 -> Wave 2 progression so Wave 2 reviews only Wave 2 commits)
 um1_sha                    := "" (recorded at Wave 1 -> Wave 2 progression)
 um1_manifest               := [] (all UM-1-authored files recorded via git ls-files at Wave 1 -> Wave 2 progression)
 unit_manifest              := git ls-files -- <owned_dirs> <upstream_patches> in Wave 1; in Wave 2, git ls-files -- <owned_dirs> <upstream_patches> minus <um1_manifest minus upstream_patches and packages/memory/src/index.ts> (so Wave 2 Reviewers audit only Wave 2 files plus src/index.ts and any authorized upstream_patches)
-gate_cmd                   := "pnpm --filter @paraharness/memory lint && pnpm --filter @paraharness/memory typecheck && pnpm --filter @paraharness/memory test -- --reporter=verbose"
+gate_cmd                   := "pnpm --filter @paraharness/memory lint && pnpm --filter @paraharness/memory typecheck && pnpm --filter @paraharness/memory test -- --reporter=verbose" (plus pnpm --filter <pkg> lint && pnpm --filter <pkg> typecheck && pnpm --filter <pkg> test -- --reporter=verbose for every workspace package outside packages/memory touched by upstream_patches)
 round                      := 1
 $verified_findings         := []
 $pending_adjacent_defects  := []
@@ -20,7 +20,7 @@ round_history              := []
 pre_remediation_sha        := ""
 
 POST-COMPACTION GROUNDING & HEAD BOOTSTRAP (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop` after any `CHECKPOINT` compaction in `transcript.jsonl`)
-1. For the Unified Memory execution loop, `plan_file` (`docs/unified-memory/UM_PLAN.md`) is the authoritative wave/unit DAG source (in place of `docs/plan/INDEX.md`, which tracks the completed Paraharness `M1`–`M4` milestones), and Head's Turn-1 and post-compaction grounding sequence substitutes `docs/unified-memory/UNIFIED_MEMORY_SPEC.md` (`spec_file`), `docs/unified-memory/UM_PLAN.md` (`plan_file`), and `docs/unified-memory/UM_IMPL_LOOP.md` in place of `docs/SPEC.md` (`CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/HEAD.md`, `docs/lessons/GENERAL.md`, `docs/lessons/HEAD.md`, `docs/unified-memory/UNIFIED_MEMORY_SPEC.md`, `docs/unified-memory/UM_PLAN.md`, `docs/unified-memory/UM_IMPL_LOOP.md`; plus `.agents/skills/peer/SKILL.md` when the Owner overrides Head bootstrap for a combined Peer/Head session in `.agents/hooks/post-compaction.mjs`).
+1. For the Unified Memory execution loop, `plan_file` (`docs/unified-memory/UM_PLAN.md`) is the authoritative wave/unit DAG source (in place of `docs/plan/INDEX.md`, which tracks the completed Paraharness `M1`–`M4` milestones), and Head's Turn-1 and post-compaction grounding sequence substitutes `docs/unified-memory/UNIFIED_MEMORY_SPEC.md` (`spec_file`), `docs/unified-memory/UM_PLAN.md` (`plan_file`), and `docs/unified-memory/UM_IMPL_LOOP.md` in place of `docs/SPEC.md` (`CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/HEAD.md`, `docs/lessons/GENERAL.md`, `docs/lessons/HEAD.md`, `docs/unified-memory/UNIFIED_MEMORY_SPEC.md`, `docs/unified-memory/UM_PLAN.md`, `docs/unified-memory/UM_IMPL_LOOP.md`; plus `.agents/skills/peer/SKILL.md` when the Owner overrides Head bootstrap for a combined Peer/Head session via the session-scoped `.memory/post-compaction-<sessionId>.md` override read by `.agents/hooks/post-compaction.mjs`).
 2. `.agents/hooks/post-compaction.mjs` injects `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md` / session-specific `.memory/post-compaction-<sessionId>.md`) if present, or generates and saves the role's sequential grounding note automatically.
 3. When `POST_COMPACTION_GROUNDING_REQUIRED` is injected, read every listed file in exact sequence, one by one, each one fully, before taking any other action.
 
