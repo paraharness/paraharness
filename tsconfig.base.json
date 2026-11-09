@@ -20,6 +20,7 @@
     "baseUrl": ".",
     "paths": {
       "@paraharness/lockfile": ["packages/lockfile/src/index.ts"],
+      "@paraharness/memory": ["packages/memory/src/index.ts"],
       "@paraharness/core": ["packages/core/src/index.ts"],
       "@paraharness/core/runtime": ["packages/core/src/runtime/index.ts"],
       "@paraharness/sqlite": ["packages/sqlite/src/index.ts"],
