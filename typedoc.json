@@ -8,6 +8,7 @@
   "out": "site/api",
   "docsRoot": "site",
   "readme": "none",
+  "entryFileName": "index",
   "entryPointStrategy": "packages",
   "entryPoints": [
     "packages/*"
@@ -16,7 +17,22 @@
   "excludePrivate": true,
   "excludeInternal": false,
   "excludeExternals": true,
-  "outputFileStrategy": "modules",
+  "outputFileStrategy": "members",
+  "membersWithOwnFile": [
+    "Class",
+    "Function",
+    "Variable",
+    "Interface",
+    "Enum"
+  ],
+  "groupOrder": [
+    "Variables",
+    "Functions",
+    "Classes",
+    "Interfaces",
+    "Type Aliases",
+    "*"
+  ],
   "parametersFormat": "table",
   "interfacePropertiesFormat": "table",
   "enumMembersFormat": "table",
@@ -29,6 +45,14 @@
   "packageOptions": {
     "readme": "none",
     "excludeExternals": true,
+    "groupOrder": [
+      "Variables",
+      "Functions",
+      "Classes",
+      "Interfaces",
+      "Type Aliases",
+      "*"
+    ],
     "validation": {
       "notExported": false
     }

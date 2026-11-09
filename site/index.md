@@ -14,7 +14,7 @@ hero:
       link: /packages/core
     - theme: alt
       text: API Reference
-      link: /api/@paraharness/core
+      link: /api/@paraharness/core/
     - theme: alt
       text: GitHub
       link: https://github.com/paraharness/paraharness

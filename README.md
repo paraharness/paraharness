@@ -257,18 +257,18 @@ const repoLessons = P.lessons('repo-lessons')
 | Package | Description |
 | :--- | :--- |
 | [`@paraharness/core`](https://paraharness.github.io/paraharness/modules/_paraharness_core.html) | Core declarative `P.*` DSL builders, AST contracts, port interfaces, and durable execution runtime (`@paraharness/core/runtime`) |
-| [`@paraharness/claude`](https://paraharness.github.io/paraharness/modules/_paraharness_claude.html) | Anthropic Claude `/v1/messages` `ModelDriver` and AST builders (`claude.cliAccount`, `claude.model`) |
-| [`@paraharness/openai`](https://paraharness.github.io/paraharness/modules/_paraharness_openai.html) | OpenAI Responses API & Codex CLI `ModelDriver` and AST builders (`openai.account`, `openai.cliAccount`, `openai.model`) |
-| [`@paraharness/gemini`](https://paraharness.github.io/paraharness/modules/_paraharness_gemini.html) | Google Gemini `generateContent` `ModelDriver` and AST builders (`gemini.account`, `gemini.cliAccount`, `gemini.model`) |
+| [`@paraharness/node`](https://paraharness.github.io/paraharness/modules/_paraharness_node.html) | Local OS subprocess runner pools, one-shot commands, circuit-breaking stream checks, PTY daemons, and MCP control planes (`local.*`, `mcp.*`) |
 | [`@paraharness/git`](https://paraharness.github.io/paraharness/modules/_paraharness_git.html) | Copy-on-Write Git worktree isolation scope, git-index checkpoints, 3-way `merge-tree` reconciliation, and candidate comparison tools (`git.*`) |
 | [`@paraharness/fs`](https://paraharness.github.io/paraharness/modules/_paraharness_fs.html) | Workspace-jailed file tools, glob matchers, pre/post-flight write guards, quota tripwires, and atomic JSONL lesson store (`fs.*`) |
-| [`@paraharness/node`](https://paraharness.github.io/paraharness/modules/_paraharness_node.html) | Local OS subprocess runner pools, one-shot commands, circuit-breaking stream checks, PTY daemons, and MCP control planes (`local.*`, `mcp.*`) |
 | [`@paraharness/markdown`](https://paraharness.github.io/paraharness/modules/_paraharness_markdown.html) | Frontmatter and section-aware Markdown loaders for global rules, scoped rules, and on-demand skills (`md.*`) |
 | [`@paraharness/sqlite`](https://paraharness.github.io/paraharness/modules/_paraharness_sqlite.html) | WAL-mode SQLite drivers for `LedgerStore`, Copy-on-Write `TopologyStore`, `LessonStore`, and global rules (`sqlite.*`) |
 | [`@paraharness/postgres`](https://paraharness.github.io/paraharness/modules/_paraharness_postgres.html) | Distributed PostgreSQL drivers for `LedgerStore`, Copy-on-Write `TopologyStore`, `LessonStore`, and global rules (`postgres.*`) |
+| [`@paraharness/lockfile`](https://paraharness.github.io/paraharness/modules/_paraharness_lockfile.html) | Cross-process advisory lockfile utility with `p-queue` in-process serialization, heartbeat, and stale lock reclamation (`withFileLock`) |
+| [`@paraharness/claude`](https://paraharness.github.io/paraharness/modules/_paraharness_claude.html) | Anthropic Claude `/v1/messages` `ModelDriver` and AST builders (`claude.cliAccount`, `claude.model`) |
+| [`@paraharness/openai`](https://paraharness.github.io/paraharness/modules/_paraharness_openai.html) | OpenAI Responses API & Codex CLI `ModelDriver` and AST builders (`openai.account`, `openai.cliAccount`, `openai.model`) |
+| [`@paraharness/gemini`](https://paraharness.github.io/paraharness/modules/_paraharness_gemini.html) | Google Gemini `generateContent` `ModelDriver` and AST builders (`gemini.account`, `gemini.cliAccount`, `gemini.model`) |
 | [`@paraharness/github`](https://paraharness.github.io/paraharness/modules/_paraharness_github.html) | GitHub Issues tracker adapter, HMAC-SHA256 webhook event stream source, and idempotent pull-request step executor (`github.*`) |
 | [`@paraharness/slack`](https://paraharness.github.io/paraharness/modules/_paraharness_slack.html) | Slack Socket Mode interactive human approval / control-plane adapter and incoming webhook notifier (`slack.*`) |
-| [`@paraharness/lockfile`](https://paraharness.github.io/paraharness/modules/_paraharness_lockfile.html) | Cross-process advisory lockfile utility with `p-queue` in-process serialization, heartbeat, and stale lock reclamation (`withFileLock`) |
 
 ## Documentation
 
