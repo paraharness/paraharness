@@ -309,7 +309,7 @@ Every file, class, method, and function in `packages/lockfile/src/**`, `packages
 
 | File Path | Primary Category | Exported Symbols |
 | :--- | :--- | :--- |
-| `src/builders/builder-defaults.constants.ts` | `const` | `DEFAULT_AGENT_MAX_TURNS`, `DEFAULT_LESSON_TOP_K`, `DEFAULT_LESSON_MIN_SCORE`, `DEFAULT_LESSON_WEIGHTS` |
+| `src/builders/builder-defaults.constants.ts` | `const` | `DEFAULT_AGENT_MAX_TURNS`, `DEFAULT_LESSON_TOP_K`, `DEFAULT_LESSON_MIN_SCORE`, `DEFAULT_LESSON_WEIGHTS`, `DEFAULT_NODE_RUNNER_AST_NODE` |
 | `src/builders/internal/deep-freeze.ts` | `function` | `deepFreeze<T>(value: T): Readonly<T>`, `assertNonEmptyIdentifier(label: string, id: string): void`, `deriveCanonicalRoleKey(baseId: string, extraTools: readonly ToolASTNode<any>[]): string` |
 | `src/builders/internal/validate-flow-capabilities.ts` | `function` | `validateFlowScopeCapabilities`, `validatePrefixGroupCloneTranscriptMode`, `validateBidirectionalHumanChannel` |
 | `src/builders/create-signal-builder.ts` | `function` | `createSignalBuilder` |
@@ -368,7 +368,7 @@ Every file, class, method, and function in `packages/lockfile/src/**`, `packages
 | `src/p-namespace-contract.ts` | `interface` | `PNamespace` |
 | `src/p-namespace.ts` | `const` | `P: PNamespace` |
 | `src/runtime/index.ts` | `barrel` | Pure explicit re-exports of `createExecutorRegistry` and runtime port types (expanded in `M2`) |
-| `src/index.ts` | `barrel` | Pure explicit re-exports of `P`, `PNamespace`, `z`, `extractAST`, `dependentsOf`, `affectedBy`, `zodToJsonSchema`, `createExecutorRegistry`, all schemas, all builder interfaces (including all `TSMethodSignature` sub-builder and options interfaces) and factory functions, all port interfaces/types, and all `CoreASTNode` / `DomainASTNode` interfaces/types |
+| `src/index.ts` | `barrel` | Pure explicit re-exports of `P`, `PNamespace`, `z`, `extractAST`, `dependentsOf`, `affectedBy`, `zodToJsonSchema`, `createExecutorRegistry`, `DEFAULT_NODE_RUNNER_AST_NODE`, all schemas, all builder interfaces (including all `TSMethodSignature` sub-builder and options interfaces) and factory functions, all port interfaces/types, and all `CoreASTNode` / `DomainASTNode` interfaces/types |
 
 ---
 

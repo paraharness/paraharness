@@ -96,8 +96,8 @@ Every file, class, method, and function in `packages/node/src/**` and `packages/
 - Separates one-shot command semaphores (`withSlot`, used by `local.command` and `local.streamCheck`) from long-lived daemon semaphores (`withDaemonSlot`, used by `local.daemon`) so active daemons never starve one-shot verification commands.
 - All subprocesses execute with `cwd: scopeHandle.worktreePath` and all 9 isolated `GIT_*` environment variables (`GIT_CEILING_DIRECTORIES=<path.dirname(worktreePath)>`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_OPTIONAL_LOCKS=0`, `GIT_CONFIG_COUNT=2`, `GIT_CONFIG_KEY_0=commit.gpgsign`, `GIT_CONFIG_VALUE_0=false`, `GIT_CONFIG_KEY_1=core.hooksPath`, `GIT_CONFIG_VALUE_1=/dev/null`, `SPEC.md:3057`) when `scopeHandle` has a `worktreePath` (falling back to the host root), resolve `EnvRef` values via `ctx.resolveEnv`, and terminate their detached process group (`SIGTERM` $\to$ grace window $\to$ `SIGKILL`) immediately when `ctx.signal` (`AbortSignal`) fires while removing the `abort` listener in `finally` (`docs/CODING_GUIDELINES.md` Rule 5.3).
 
-### 4.2 `local.command(id)` (`SPEC.md` §4.2 line 2784)
-- Fluent methods: `.runner(runner)`, `.stdin('closed' | mapper)`, `.env(record)`, `.argv(arrayOrMapper)`, `.timeoutMinutes(minutes)`, `.input(schema)` (defaults to `z.unknown()`), `.output(schema)` (defaults to `z.unknown()`), `.unrepeatable(preCheckCmd, { key })`, `.asCheck()`, `.asTool()`.
+### 4.2 `local.command(id)` (`SPEC.md` §4.2 line 2820)
+- Fluent methods: `.runner(runner)` (defaults to `DEFAULT_NODE_RUNNER_AST_NODE` from `@paraharness/core`), `.stdin('closed' | mapper)`, `.env(record)`, `.argv(arrayOrMapper)`, `.timeoutMinutes(minutes)`, `.input(schema)` (defaults to `z.unknown()`), `.output(schema)` (defaults to `z.unknown()`), `.unrepeatable(preCheckCmd, { key })`, `.asCheck()`, `.asTool()`.
 - Step execution (`steps['node:command']`):
   - Acquires slot via `ctx.getRunner(node.runner).withSlot(...)`.
   - If `node.unrepeatable` is configured, executes `preCheckCmd` first; if `preCheckCmd` returns `true`, skips execution as a no-op success.
@@ -107,8 +107,8 @@ Every file, class, method, and function in `packages/node/src/**` and `packages/
   - Defaults `inputSchema` to `z.object({})` when `argv` is a static array (or uses `.input()` schema when `argv` is a mapper function).
   - Sets `effectTracking: 'subprocess-post-flight'` and **omits** `ToolDriver.describeEffects` so `CheckpointableScope.diffEffects()` verifies workspace changes post-flight.
 
-### 4.3 `local.streamCheck(id)` (`SPEC.md` §4.2 line 2785)
-- Fluent methods: `.runner(runner)`, `.argv(argv)`, `.env(record)`, `.timeoutMinutes(minutes)`, `.circuitBreakWhenStdout(regex, { graceLinesAfterMatch })`, `.asTool()`.
+### 4.3 `local.streamCheck(id)` (`SPEC.md` §4.2 line 2821)
+- Fluent methods: `.runner(runner)` (defaults to `DEFAULT_NODE_RUNNER_AST_NODE` from `@paraharness/core`), `.argv(argv)`, `.env(record)`, `.timeoutMinutes(minutes)`, `.circuitBreakWhenStdout(regex, { graceLinesAfterMatch })`, `.asTool()`.
 - Streams `stdout` and `stderr` into a combined rolling multi-line buffer.
 - When `circuitBreaker` matches across the rolling `stdout`/`stderr` buffer, collects `graceLinesAfterMatch` additional lines, kills the process group (`SIGTERM` $\to$ `SIGKILL`), and returns `{ ok: false, deficits: [matchedExcerpt] }`.
 - `.asTool()` (`tools['node:stream-check-tool']`) sets `effectTracking: 'subprocess-post-flight'` and omits `describeEffects`.
