@@ -87,8 +87,8 @@ export function buildGitCowWorktreeNode(
     supportsBranching: true,
     receiptSchema: GitScopeReceiptSchema,
     syncSchema: GitSyncReceiptSchema,
-    repo: options.repo,
-    dir: options.dir,
+    repo: options.repo ?? '.',
+    dir: options.dir ?? '.paraharness/worktree',
     setupCommands: Object.freeze([...(options.setupCommands ?? [])]),
     lockfileGatePath: options.lockfileGatePath,
     excludeFromCloneGlobs:

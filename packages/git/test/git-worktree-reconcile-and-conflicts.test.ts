@@ -425,4 +425,20 @@ describe('git.cowWorktree forkChild, inspect ref pinning, stateless 3-way merge-
     await scope.release(rootA);
     await scope.release(rootB);
   }, 20_000);
+
+  it('defaults repo to "." and dir to ".paraharness/worktree" on git.cowWorktree(options?) (P13)', () => {
+    const explicit = git.cowWorktree({ repo: '.', dir: '.paraharness/worktree' });
+    const zeroArg = git.cowWorktree();
+    const onlyDir = git.cowWorktree({ dir: '/custom/worktrees' });
+    const onlyRepo = git.cowWorktree({ repo: '/custom/repo' });
+
+    expect(zeroArg.toAST()).toEqual(explicit.toAST());
+    expect(onlyDir.toAST()).toEqual(
+      git.cowWorktree({ repo: '.', dir: '/custom/worktrees' }).toAST(),
+    );
+    expect(onlyRepo.toAST()).toEqual(
+      git.cowWorktree({ repo: '/custom/repo', dir: '.paraharness/worktree' }).toAST(),
+    );
+  });
 });
+

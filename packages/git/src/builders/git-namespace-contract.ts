@@ -43,13 +43,14 @@ export interface GitNamespace {
   /**
    * Creates a fluent builder for a Tier-3 branchable Copy-on-Write Git worktree scope.
    *
-   * Provisions disjoint sibling `<dir>/roots/<runId>` and `<dir>/forks/<runId>/<forkId>` worktrees at runtime.
+   * Provisions disjoint sibling `<dir>/roots/<runId>` and `<dir>/forks/<runId>/<forkId>` worktrees at runtime,
+   * defaulting `repo` to `'.'` and `dir` to `'.paraharness/worktree'`.
    *
-   * @param {GitCowWorktreeOptions} options - Host repository path and worktree base directory.
+   * @param {GitCowWorktreeOptions} [options] - Optional host repository path and worktree base directory.
    *
    * @returns {GitCowWorktreeBuilder} Immutable fluent worktree scope builder.
    */
-  cowWorktree(options: GitCowWorktreeOptions): GitCowWorktreeBuilder;
+  cowWorktree(options?: GitCowWorktreeOptions): GitCowWorktreeBuilder;
 
   /**
    * Creates a fluent builder for a retry-safe squash, rebase, verify, and push step.

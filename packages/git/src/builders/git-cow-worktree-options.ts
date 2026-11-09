@@ -31,10 +31,10 @@ export interface GitCowWorktreeCheckpointPolicy {
 export interface GitCowWorktreeOptions {
   /** Optional logical identifier for the isolation scope node (defaults to `'git-cow-worktree'`). */
   readonly id?: string;
-  /** Path to the host Git repository. */
-  readonly repo: string;
-  /** Base directory under which `roots/<runId>` and `forks/<runId>/<forkId>` worktrees are created. */
-  readonly dir: string;
+  /** Path to the host Git repository (defaults to `'.'`). */
+  readonly repo?: string;
+  /** Base directory under which `roots/<runId>` and `forks/<runId>/<forkId>` worktrees are created (defaults to `'.paraharness/worktree'`). */
+  readonly dir?: string;
   /** Optional ordered setup step AST nodes executed when initializing a root worktree. */
   readonly setupCommands?: readonly ASTNode[];
   /** Optional lockfile path whose SHA-256 digest gates whether `setupCommands` can be skipped. */
