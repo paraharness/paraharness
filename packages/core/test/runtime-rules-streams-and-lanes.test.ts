@@ -6,6 +6,7 @@ import {
   ServiceSessionRegistry, type StepExecutionContext, type StreamSource, type ToolEffect,
   type TrackerAdapter, createExecutorRegistry, createRuntime, executeAgent, executeLoop, z,
 } from '../src/index.js';
+import { type StepRunOptions, runStep } from '../src/runtime/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import {
   SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_CLEAN_TREE_CHECK_NODE, SAMPLE_DECLARED_TOOL_NODE,
@@ -394,3 +395,90 @@ describe('M2 Runtime — Mixed-Turn Tool Batching & P.loop Step-Boundary Isolati
     expect(savedLoopFrame?.costUsd).toBeCloseTo(0.8, 5);
   });
 });
+
+describe('M2 Runtime — runStep standalone step runner (P1)', () => {
+  it('executes builder and AST step nodes, derives activePartitions via extractPartitions, memoizes getRunner, and throws fail-closed on missing runner driver', async () => {
+    const partRule = P.scopedRule('rule-part-auth').when({ partitions: ['auth'] }).directive('Auth partition directive.');
+    const rulesNode = P.rules('step-rules').scoped(partRule);
+    const agentBuilder = P.agent<GitWorktreeHandle>('standalone-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .rules(rulesNode)
+      .input(z.object({ targetPartition: z.string() }))
+      .output(z.object({ ok: z.boolean() }))
+      .partitions((i) => [i.targetPartition]);
+
+    const modelDriver = new ScriptedModelDriver([
+      makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
+    ]);
+
+    const options: StepRunOptions<GitWorktreeHandle> = {
+      scopeHandle: SAMPLE_HANDLE,
+      registry: [{ models: { 'claude:model': () => modelDriver } }],
+    };
+
+    const agentOut = await runStep(agentBuilder, { targetPartition: 'auth' }, options);
+    expect(agentOut).toEqual({ ok: true });
+    expect(modelDriver.recordedRequests[0]?.history[0]?.canonical.visibleText).toContain('Auth partition directive.');
+
+    let runnerFactoryCalls = 0;
+    const fakeRunner = Object.freeze({
+      acquireSlot: async () => ({ release: () => undefined }),
+      exec: async () => ({ exitCode: 0, stdout: '', stderr: '', durationMs: 1 }),
+    });
+    const cmdStep = P.command<GitWorktreeHandle>('inspect-ctx')
+      .input(z.object({ key: z.string() }))
+      .output(z.object({
+        runId: z.string(),
+        stepExecId: z.string(),
+        resolvedSecret: z.string().optional(),
+        sameRunner: z.boolean(),
+        effectCount: z.number(),
+      }))
+      .run(async (input, ctx) => {
+        const r1 = ctx.getRunner(SAMPLE_RUNNER_NODE);
+        const r2 = ctx.getRunner(SAMPLE_RUNNER_NODE);
+        ctx.recordEffects([Object.freeze<ToolEffect>({ kind: 'fs:write', mutatesScope: true })]);
+        return {
+          runId: ctx.runId,
+          stepExecId: ctx.stepExecId,
+          resolvedSecret: ctx.resolveEnv(P.env(input.key)),
+          sameRunner: r1 === r2,
+          effectCount: ctx.observedEffects.length,
+        };
+      });
+
+    const cmdOut = await runStep(cmdStep, { key: 'API_TOKEN' }, {
+      scopeHandle: SAMPLE_HANDLE,
+      registry: {
+        runners: {
+          'node:runner': () => {
+            runnerFactoryCalls += 1;
+            return fakeRunner as never;
+          },
+        },
+      },
+      env: { API_TOKEN: 'secret-val' },
+    });
+    expect(cmdOut).toEqual({
+      runId: 'standalone-run',
+      stepExecId: 'standalone-step-1',
+      resolvedSecret: 'secret-val',
+      sameRunner: true,
+      effectCount: 1,
+    });
+    expect(runnerFactoryCalls).toBe(1);
+
+    const missingRunnerStep = P.command<GitWorktreeHandle>('missing-runner-step')
+      .input(z.object({}))
+      .output(z.object({}))
+      .run(async (_in, ctx) => {
+        ctx.getRunner(SAMPLE_RUNNER_NODE);
+        return {};
+      });
+
+    await expect(
+      runStep(missingRunnerStep, {}, { scopeHandle: SAMPLE_HANDLE, registry: {} }),
+    ).rejects.toThrow("No RunnerDriver registered for 'node:runner' (runner id 'local-runner', runId 'standalone-run').");
+  });
+});
+
