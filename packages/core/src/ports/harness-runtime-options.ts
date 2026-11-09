@@ -8,8 +8,11 @@ import type { RuntimeExecutorRegistrySlice } from './runtime-executor-registry-s
  * used to resolve symbolic `P.env(key)` references at leaf driver invocation time.
  */
 export interface HarnessRuntimeOptions {
-  /** Executor registry or partial registry slice mapping domain AST node types to runtime drivers. */
-  readonly registry?: Partial<RuntimeExecutorRegistry> | RuntimeExecutorRegistrySlice;
+  /** Executor registry, partial registry slice, or slice array mapping domain AST node types to runtime drivers. */
+  readonly registry?:
+    | Partial<RuntimeExecutorRegistry>
+    | RuntimeExecutorRegistrySlice
+    | readonly RuntimeExecutorRegistrySlice[];
   /** Explicit environment variable map used to resolve symbolic `P.env(key)` references. */
   readonly env?: Readonly<Record<string, string | undefined>>;
 }

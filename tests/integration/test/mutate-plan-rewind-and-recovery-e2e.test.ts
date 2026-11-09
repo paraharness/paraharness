@@ -318,7 +318,10 @@ async function emitChangeShippedAndVerifyOverlays(
   ]);
 
   const runtime = createRuntime(appHarness.toAST(), {
-    registry: parentFlowCtx.registry,
+    registry: [
+      parentFlowCtx.registry,
+      { ledgers: { 'sqlite:ledger': () => env.stores.ledgerStore } },
+    ],
     env: env.fixture.env,
     topologyNode: repoTopology.toAST(),
     topologyStore: env.stores.topologyStore,

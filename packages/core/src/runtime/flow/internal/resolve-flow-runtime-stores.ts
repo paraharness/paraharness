@@ -32,6 +32,18 @@ export interface ResolveFlowRuntimeStoresParams {
   readonly extraHumans?: ReadonlyArray<
     HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode
   >;
+
+  /** Optional pre-supplied topology AST node override. */
+  readonly existingTopologyNode?: TopologyNode<string>;
+
+  /** Optional pre-supplied topology store override. */
+  readonly existingTopologyStore?: TopologyStore;
+
+  /** Optional pre-supplied lesson store override. */
+  readonly existingLessonStore?: LessonStore;
+
+  /** Optional pre-supplied human adapter map override. */
+  readonly existingHumanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
 }
 
 /**
@@ -132,7 +144,17 @@ export function resolveFlowRuntimeStores(params: ResolveFlowRuntimeStoresParams)
   readonly lessonStore: LessonStore | undefined;
   readonly humanAdaptersById: Map<string, HumanAdapter>;
 } {
-  const { flows, registry, drvCtx, contextLabel, extraHumans = [] } = params;
+  const {
+    flows,
+    registry,
+    drvCtx,
+    contextLabel,
+    extraHumans = [],
+    existingTopologyNode,
+    existingTopologyStore,
+    existingLessonStore,
+    existingHumanAdaptersById,
+  } = params;
   const visited = new Set<string>();
   const collected: {
     topologyNode: TopologyNode<string> | undefined;
@@ -142,7 +164,7 @@ export function resolveFlowRuntimeStores(params: ResolveFlowRuntimeStoresParams)
       HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode
     >;
   } = {
-    topologyNode: undefined,
+    topologyNode: existingTopologyNode,
     lessonsNode: undefined,
     humansById: new Map<
       string,
@@ -185,8 +207,8 @@ export function resolveFlowRuntimeStores(params: ResolveFlowRuntimeStoresParams)
   for (const flow of flows) {
     visitFlowNodes(flow.nodes);
   }
-  let topologyStore: TopologyStore | undefined;
-  if (collected.topologyNode !== undefined) {
+  let topologyStore: TopologyStore | undefined = existingTopologyStore;
+  if (topologyStore === undefined && collected.topologyNode !== undefined) {
     const topoStoreType = collected.topologyNode.store
       .type as keyof RuntimeExecutorRegistry['topologies'];
     const topoFactory = registry.topologies[topoStoreType];
@@ -197,8 +219,8 @@ export function resolveFlowRuntimeStores(params: ResolveFlowRuntimeStoresParams)
     }
     topologyStore = topoFactory(collected.topologyNode.store as never, drvCtx);
   }
-  let lessonStore: LessonStore | undefined;
-  if (collected.lessonsNode !== undefined) {
+  let lessonStore: LessonStore | undefined = existingLessonStore;
+  if (lessonStore === undefined && collected.lessonsNode !== undefined) {
     const lessonFactory = registry.lessons[collected.lessonsNode.store.type];
     if (lessonFactory === undefined) {
       throw new Error(
@@ -207,8 +229,13 @@ export function resolveFlowRuntimeStores(params: ResolveFlowRuntimeStoresParams)
     }
     lessonStore = lessonFactory(collected.lessonsNode.store as never, drvCtx);
   }
-  const humanAdaptersById = new Map<string, HumanAdapter>();
+  const humanAdaptersById = new Map<string, HumanAdapter>(
+    existingHumanAdaptersById?.entries() ?? [],
+  );
   for (const humanNode of collected.humansById.values()) {
+    if (humanAdaptersById.has(humanNode.id)) {
+      continue;
+    }
     const chFactory = registry.humanChannels[humanNode.channel.type];
     if (chFactory === undefined) {
       throw new Error(

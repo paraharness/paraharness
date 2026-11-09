@@ -1,5 +1,6 @@
 import type { AstBuilder } from '../../ast/ast-builder.js';
 import type { HarnessNode } from '../../ast/harness-node.js';
+import type { HumanNode } from '../../ast/human-node.js';
 import type { TopologyNode } from '../../ast/topology-node.js';
 import type { ActiveRunSummary } from '../../ports/active-run-summary.js';
 import type { ControlPlaneHandle } from '../../ports/control-plane-handle.js';
@@ -14,6 +15,7 @@ import type { RuntimeDriverContext } from '../../ports/runtime-driver-context.js
 import type { RuntimeExecutorRegistry } from '../../ports/runtime-executor-registry.js';
 import type { StreamSubscriptionHandle } from '../../ports/stream-subscription-handle.js';
 import type { TopologyStore } from '../../ports/topology-store.js';
+import { resolveFlowRuntimeStores } from '../flow/internal/resolve-flow-runtime-stores.js';
 import { LaneScheduler } from '../lane/lane-scheduler.js';
 import { ScopeLockManager } from '../locks/scope-lock-manager.js';
 import { StepContinuationQueue } from '../locks/step-continuation-queue.js';
@@ -79,15 +81,33 @@ export function createRuntime(
   const continuationQueue = new StepContinuationQueue();
   const poolManager = new PoolManager();
   const serviceRegistry = new ServiceSessionRegistry();
-  const humanAdaptersById = new Map<string, HumanAdapter>(
-    options?.humanAdaptersById?.entries() ?? [],
-  );
+  const extraHumans: Array<
+    HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode
+  > = [];
   for (const notif of node.onSignalNotifications) {
-    const chFactory = registry.humanChannels[notif.human.channel.type];
-    if (!humanAdaptersById.has(notif.human.id) && chFactory !== undefined) {
-      humanAdaptersById.set(notif.human.id, chFactory(notif.human.channel as never, drvCtx));
+    extraHumans.push(notif.human);
+  }
+  for (const lane of node.lanes) {
+    if (lane.maxCostUsd !== undefined) {
+      extraHumans.push(lane.maxCostUsd.approver.human);
     }
   }
+  const {
+    topologyNode: resolvedTopologyNode,
+    topologyStore: resolvedTopologyStore,
+    lessonStore: resolvedLessonStore,
+    humanAdaptersById,
+  } = resolveFlowRuntimeStores({
+    flows: node.lanes.map((l) => l.flow),
+    registry,
+    drvCtx,
+    contextLabel: `harness '${node.id}'`,
+    extraHumans,
+    existingTopologyNode: options?.topologyNode,
+    existingTopologyStore: options?.topologyStore,
+    existingLessonStore: options?.lessonStore,
+    existingHumanAdaptersById: options?.humanAdaptersById,
+  });
   const laneSchedulers = new Map<string, LaneScheduler<unknown>>();
   for (const lane of node.lanes) {
     laneSchedulers.set(
@@ -97,9 +117,9 @@ export function createRuntime(
         registry,
         env,
         ledgerStore,
-        topologyStore: options?.topologyStore,
-        topologyNode: options?.topologyNode,
-        lessonStore: options?.lessonStore,
+        topologyStore: resolvedTopologyStore,
+        topologyNode: resolvedTopologyNode,
+        lessonStore: resolvedLessonStore,
         lockManager,
         continuationQueue,
         poolManager,
@@ -117,9 +137,9 @@ export function createRuntime(
         payload,
         node,
         ledgerStore,
-        topologyNode: options?.topologyNode,
-        topologyStore: options?.topologyStore,
-        lessonStore: options?.lessonStore,
+        topologyNode: resolvedTopologyNode,
+        topologyStore: resolvedTopologyStore,
+        lessonStore: resolvedLessonStore,
         humanAdaptersById,
         laneSchedulers,
       });

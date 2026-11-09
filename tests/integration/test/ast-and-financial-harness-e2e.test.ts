@@ -17,7 +17,12 @@ import {
   netsuiteExecutors,
   type NetSuiteDraftHandle,
 } from '@paraharness/netsuite';
-import { SqliteLedgerStore, sqliteExecutors } from '@paraharness/sqlite';
+import {
+  SqliteLedgerStore,
+  SqliteLessonStore,
+  SqliteTopologyStore,
+  sqliteExecutors,
+} from '@paraharness/sqlite';
 import { stripeExecutors } from '@paraharness/stripe';
 import { describe, expect, it } from 'vitest';
 import {
@@ -311,7 +316,11 @@ describe('AST purity and non-coding financial harness E2E (SPEC.md §5)', () => 
     });
 
     const engRuntime = createEngineeringHarnessRuntime({
-      registry: { ledgers: { 'sqlite:ledger': () => new SqliteLedgerStore(':memory:') } },
+      registry: {
+        ledgers: { 'sqlite:ledger': () => new SqliteLedgerStore(':memory:') },
+        topologies: { 'sqlite:topology': () => new SqliteTopologyStore(':memory:') },
+        lessons: { 'sqlite:lessons': () => new SqliteLessonStore(':memory:') },
+      },
       env: { RECONCILIATION_LEDGER_PATH: ':memory:' },
     });
     const finRuntime = createReconciliationHarnessRuntime({

@@ -25,14 +25,17 @@ import { stripeExecutors } from '@paraharness/stripe';
  * `slackExecutors`, `stripeExecutors`, and `netsuiteExecutors` so every AST node discriminant in
  * `appHarness` and `reconciliationFlow` resolves at runtime startup.
  *
- * @param {RuntimeExecutorRegistrySlice} [overrideRegistry] - Optional caller executor slice overrides merged last.
+ * @param {RuntimeExecutorRegistrySlice | readonly RuntimeExecutorRegistrySlice[]} [overrideRegistry] - Optional caller executor slice or slice array overrides merged last.
  *
  * @returns {RuntimeExecutorRegistry} Complete merged runtime executor registry.
  */
 export function createAllIntegrationExecutorsRegistry(
-  overrideRegistry?: RuntimeExecutorRegistrySlice,
+  overrideRegistry?: RuntimeExecutorRegistrySlice | readonly RuntimeExecutorRegistrySlice[],
 ): RuntimeExecutorRegistry {
   if (overrideRegistry !== undefined) {
+    const overrideSlices: readonly RuntimeExecutorRegistrySlice[] = Array.isArray(overrideRegistry)
+      ? (overrideRegistry as readonly RuntimeExecutorRegistrySlice[])
+      : [overrideRegistry as RuntimeExecutorRegistrySlice];
     return createExecutorRegistry(
       sqliteExecutors,
       postgresExecutors,
@@ -47,7 +50,7 @@ export function createAllIntegrationExecutorsRegistry(
       slackExecutors,
       stripeExecutors,
       netsuiteExecutors,
-      overrideRegistry,
+      ...overrideSlices,
     );
   }
   return createExecutorRegistry(

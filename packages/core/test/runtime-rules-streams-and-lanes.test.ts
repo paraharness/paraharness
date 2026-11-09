@@ -231,7 +231,13 @@ describe('M2 Runtime — P.stream, P.harness (.onSignal().notify, .expose) & P.l
 
     streamClosed = false;
     const failCpRegistry = createExecutorRegistry(registry, { controlPlanes: { 'node:http-control-plane': () => ({ start: () => Promise.reject(new Error('cp start failed')) }) } });
-    const failingRuntime = createRuntime(harness, { registry: failCpRegistry });
+    const failingRuntime = createRuntime(harness, {
+      registry: failCpRegistry,
+      humanAdaptersById: new Map([
+        ['ops-pager', humanAdapter],
+        ['budget-owner', humanAdapter],
+      ]),
+    });
     await expect(failingRuntime.start()).rejects.toThrow('cp start failed');
     expect(streamClosed).toBe(true);
 

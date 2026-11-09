@@ -524,3 +524,87 @@ describe('M2 Runtime — runFlow standalone flow runner (P2)', () => {
   });
 });
 
+describe('M2 Runtime — createRuntime registry slice array & auto-resolved stores/humans (P9)', () => {
+  it('accepts an array of registry slices and auto-resolves TopologyNode, LessonsNode, and HumanNode from harness lanes and flows', async () => {
+    const ledgerStore = new InMemoryLedgerStore();
+    const topologyStore = new InMemoryTopologyStore({ api: { contractText: 'contract-v1', epoch: 1 } });
+    const lessonStore = new InMemoryLessonStore();
+    const humanAdapter = new ScriptedHumanAdapter();
+    const scope = new ScriptedBranchableScope();
+
+    const prMergedSig = P.signal('p9-pr-merged', z.object({ itemKey: z.string() }));
+    const topologyNode = P.topology('p9-topo')
+      .store(SAMPLE_TOPOLOGY_STORE_NODE)
+      .partitions({ api: { dependsOn: [] } })
+      .commitOverlayWhen({
+        onSignal: {
+          signal: prMergedSig,
+          correlateBy: (p: { readonly itemKey: string }) => p.itemKey,
+        },
+      });
+    const lessonsNode = P.lessons('p9-lessons').store(SAMPLE_LESSON_STORE_NODE);
+    const humanNode = P.human('p9-approver').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const workerAgent = P.agent<string>('p9-worker')
+      .model(SAMPLE_MODEL_NODE)
+      .topology(topologyNode)
+      .lessons(lessonsNode)
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ ok: z.boolean() }))
+      .onInterrupt(P.interrupt('p9-esc'), ($i) =>
+        $i.ask(humanNode, z.object({ approved: z.boolean() })).resumeWith((d) => String(d.approved)),
+      );
+    const flow = P.flow('p9-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE as never)
+      .step('work', workerAgent)
+      .exit('done');
+    const lane = P.lane('p9-lane')
+      .input(z.object({ id: z.string() }))
+      .key((i) => i.id)
+      .maxCostUsd(5, humanNode.withName('budget-approver').output(BudgetApprovalSchema))
+      .runs(flow);
+    const harness = P.harness('p9-harness').ledger(SAMPLE_LEDGER_NODE).lanes(lane);
+
+    await topologyStore.updateContract('run-p9-1', 'api', 'contract-v2', 'step-1');
+    await topologyStore.sealRunOverlay('run-p9-1');
+    await ledgerStore.recordRunTerminalReceipt(
+      'run-p9-1',
+      'item-p9-1',
+      'done',
+      JSON.stringify({ baseBranch: 'main' }),
+    );
+    await lessonStore.admit({
+      partition: 'api',
+      directive: 'Lesson for p9',
+      epochAtCreation: 0,
+      createdByRunId: 'run-p9-1',
+    });
+
+    const runtime = createRuntime(harness, {
+      registry: [
+        { ledgers: { 'sqlite:ledger': () => ledgerStore } },
+        { scopes: { 'git:cow-worktree': () => scope as never } },
+        { topologies: { 'sqlite:topology': () => topologyStore } },
+        { lessons: { 'sqlite:lessons': () => lessonStore } },
+        { humanChannels: { 'slack:approver': () => humanAdapter } },
+      ],
+    });
+    await runtime.start();
+    await runtime.controller.emitSignal('p9-pr-merged', { itemKey: 'item-p9-1' });
+    expect((await topologyStore.getPartitions()).get('api')?.contractText).toBe('contract-v2');
+    expect(lessonStore.lessons.get('lesson-1')?.epochAtCreation).toBe(2);
+    await runtime.stop();
+
+    expect(() =>
+      createRuntime(harness, {
+        registry: [
+          { ledgers: { 'sqlite:ledger': () => ledgerStore } },
+          { scopes: { 'git:cow-worktree': () => scope as never } },
+          { topologies: { 'sqlite:topology': () => topologyStore } },
+          { humanChannels: { 'slack:approver': () => humanAdapter } },
+        ],
+      }),
+    ).toThrow(/No LessonStore registered for 'sqlite:lessons'/);
+  });
+});
+
