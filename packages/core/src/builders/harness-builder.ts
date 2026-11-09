@@ -6,6 +6,7 @@ import type {
   RunnerPoolASTNode,
 } from '../ast/domain-ast.types.js';
 import type { HarnessNode } from '../ast/harness-node.js';
+import type { HumanNode } from '../ast/human-node.js';
 import type { LaneNode } from '../ast/lane-node.js';
 import type { PoolNode } from '../ast/pool-node.js';
 import type { SignalNode } from '../ast/signal-node.js';
@@ -83,6 +84,28 @@ export interface HarnessBuilder extends AstBuilder<HarnessNode> {
     configure: (
       $sig: HarnessSignalNotificationBuilder<TPayload>,
     ) => HarnessSignalNotificationBuilder<TPayload>,
+  ): HarnessBuilder;
+
+  /**
+   * Registers a root-level signal notification rule routing `signal` directly to `human` formatted by `messageMapper`.
+   *
+   * Shorthand equivalent to `.onSignal(signal, $sig => $sig.notify(human, messageMapper))`.
+   *
+   * @template TPayload Signal payload type.
+   *
+   * @param {MaybeBuilder<SignalNode<TPayload>>}                                                                               signal        - Target `SignalNode` or builder.
+   * @param {MaybeBuilder<HumanNode<'bidirectional'>> | MaybeBuilder<HumanNode<'notify-only'>> | MaybeBuilder<HumanNode>} human         - Target `HumanNode` or builder.
+   * @param {(payload: TPayload) => string}                                                                                    messageMapper - Notification message formatter.
+   *
+   * @returns {HarnessBuilder} New immutable harness builder.
+   */
+  onSignal<TPayload>(
+    signal: MaybeBuilder<SignalNode<TPayload>>,
+    human:
+      | MaybeBuilder<HumanNode<'bidirectional'>>
+      | MaybeBuilder<HumanNode<'notify-only'>>
+      | MaybeBuilder<HumanNode>,
+    messageMapper: (payload: TPayload) => string,
   ): HarnessBuilder;
 
   /**

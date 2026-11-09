@@ -3,6 +3,7 @@ import type { MaybeBuilder } from '../ast/ast-foundation.types.js';
 import type { AstBuilder } from '../ast/ast-builder.js';
 import type { TrackerASTNode } from '../ast/domain-ast.types.js';
 import type { FlowNode } from '../ast/flow-node.js';
+import type { HumanNode } from '../ast/human-node.js';
 import type { LaneNode } from '../ast/lane-node.js';
 import type { ScopedHumanTargetNode } from '../ast/scoped-human-target-node.js';
 import type { SignalNode } from '../ast/signal-node.js';
@@ -160,15 +161,21 @@ export interface LaneBuilder<TIn = unknown, TStepIds extends string = string>
    * Configures a per-run USD cost limit and the scoped bidirectional human budget approver.
    *
    * Validates at builder call time that `approver` wraps a `'bidirectional'` human channel.
+   * Accepts either `human.withName(alias).output(BudgetApprovalSchema)` or a bidirectional `HumanNode` / `HumanBuilder`
+   * directly (defaulting `alias` to `` `${human.id}:budget-approver` `` and `outputSchema` to `BudgetApprovalSchema`).
    *
-   * @param {number}                                              limitUsd - Initial USD budget ceiling per run.
-   * @param {MaybeBuilder<ScopedHumanTargetNode<BudgetApproval>>} approver - Scoped bidirectional human target.
+   * @param {number}                                                                                                                                      limitUsd - Initial USD budget ceiling per run.
+   * @param {MaybeBuilder<ScopedHumanTargetNode<BudgetApproval>> | MaybeBuilder<HumanNode<'bidirectional'>> | MaybeBuilder<HumanNode<'notify-only'>> | MaybeBuilder<HumanNode>} approver - Scoped or direct bidirectional human target.
    *
    * @returns {LaneBuilder<TIn, TStepIds>} New immutable lane builder.
    */
   maxCostUsd(
     limitUsd: number,
-    approver: MaybeBuilder<ScopedHumanTargetNode<BudgetApproval>>,
+    approver:
+      | MaybeBuilder<ScopedHumanTargetNode<BudgetApproval>>
+      | MaybeBuilder<HumanNode<'bidirectional'>>
+      | MaybeBuilder<HumanNode<'notify-only'>>
+      | MaybeBuilder<HumanNode>,
   ): LaneBuilder<TIn, TStepIds>;
 
   /**

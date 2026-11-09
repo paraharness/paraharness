@@ -11,8 +11,8 @@ import { deepFreeze } from './deep-freeze.js';
  *
  * @template TMode Interaction mode of the target human node (`'bidirectional' | 'notify-only'`).
  *
- * @param {HumanNode<TMode>} humanNode      - Target `HumanNode` AST node to validate.
- * @param {string}           operationLabel - Name of the builder operation requiring bidirectional interaction.
+ * @param {HumanNode<TMode> | HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode<'bidirectional' | 'notify-only'>} humanNode      - Target `HumanNode` AST node to validate.
+ * @param {string}                                                                                                                operationLabel - Name of the builder operation requiring bidirectional interaction.
  *
  * @returns {HumanNode<'bidirectional'>} Validated bidirectional `HumanNode`.
  *
@@ -20,7 +20,14 @@ import { deepFreeze } from './deep-freeze.js';
  */
 export function validateBidirectionalHumanChannel<
   TMode extends 'bidirectional' | 'notify-only' = 'bidirectional' | 'notify-only',
->(humanNode: HumanNode<TMode>, operationLabel: string): HumanNode<'bidirectional'> {
+>(
+  humanNode:
+    | HumanNode<TMode>
+    | HumanNode<'bidirectional'>
+    | HumanNode<'notify-only'>
+    | HumanNode<'bidirectional' | 'notify-only'>,
+  operationLabel: string,
+): HumanNode<'bidirectional'> {
   const channel: HumanChannelASTNode<'bidirectional' | 'notify-only'> = humanNode.channel;
   if (channel.interactionMode !== 'bidirectional') {
     throw new Error(

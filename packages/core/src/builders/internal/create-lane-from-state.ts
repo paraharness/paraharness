@@ -3,10 +3,14 @@ import type { BivariantCallback, MaybeBuilder } from '../../ast/ast-foundation.t
 import type { TrackerASTNode } from '../../ast/domain-ast.types.js';
 import { extractAST } from '../../ast/extract-ast.js';
 import type { FlowNode } from '../../ast/flow-node.js';
+import type { HumanNode } from '../../ast/human-node.js';
 import type { LaneNode, LaneSignalHandlerConfig } from '../../ast/lane-node.js';
 import type { ScopedHumanTargetNode } from '../../ast/scoped-human-target-node.js';
 import type { SignalNode } from '../../ast/signal-node.js';
-import type { BudgetApproval } from '../../schemas/budget-and-lesson.schema.js';
+import {
+  BudgetApprovalSchema,
+  type BudgetApproval,
+} from '../../schemas/budget-and-lesson.schema.js';
 import type { ExtractTrackerExternal, ExtractTrackerState } from '../flow-extraction.types.js';
 import type { LaneBuilder } from '../lane-builder.js';
 import type { LaneRetryConfigBuilder as LaneRetryBuilder } from '../lane-retry-config-builder.js';
@@ -19,7 +23,7 @@ import {
 } from './create-lane-retry-from-state.js';
 import { createLaneSignalHandlerFromState } from './create-lane-signal-handler-from-state.js';
 import { createLaneTrackerFromState } from './create-lane-tracker-from-state.js';
-import { assertNonEmptyIdentifier } from './deep-freeze.js';
+import { assertNonEmptyIdentifier, deepFreeze } from './deep-freeze.js';
 import type { LaneBuilderState } from './lane-builder-state.js';
 import { validateBidirectionalHumanChannel } from './validate-agent-and-human-capabilities.js';
 
@@ -137,9 +141,24 @@ export function createLaneFromState<TIn = unknown, TStepIds extends string = str
       assertNonEmptyIdentifier('P.lane.waitFor', onAbandonedState);
       return createLaneFromState<TIn, TStepIds>({ ...state, waitFor: { depsMapper, onAbandonedState } });
     },
-    maxCostUsd: (limitUsd: number, approver: MaybeBuilder<ScopedHumanTargetNode<BudgetApproval>>): LaneBuilder<TIn, TStepIds> => {
-      const approverNode = extractAST(approver);
-      validateBidirectionalHumanChannel(approverNode.human, 'P.lane.maxCostUsd()');
+    maxCostUsd: (
+      limitUsd: number,
+      approver:
+        | MaybeBuilder<ScopedHumanTargetNode<BudgetApproval>>
+        | MaybeBuilder<HumanNode<'bidirectional'>>
+        | MaybeBuilder<HumanNode<'notify-only'>>
+        | MaybeBuilder<HumanNode>,
+    ): LaneBuilder<TIn, TStepIds> => {
+      const extracted = extractAST(approver);
+      const approverNode: ScopedHumanTargetNode<BudgetApproval> =
+        extracted.type === 'harness:human'
+          ? deepFreeze<ScopedHumanTargetNode<BudgetApproval>>({
+              type: 'harness:scoped-human',
+              human: validateBidirectionalHumanChannel(extracted, 'P.lane.maxCostUsd()'),
+              alias: `${extracted.id}:budget-approver`,
+              outputSchema: BudgetApprovalSchema,
+            })
+          : (validateBidirectionalHumanChannel(extracted.human, 'P.lane.maxCostUsd()'), extracted);
       return createLaneFromState<TIn, TStepIds>({ ...state, maxCostUsd: { limitUsd, approver: approverNode } });
     },
     retry: (configure: ($r: LaneRetryBuilder) => LaneRetryBuilder): LaneBuilder<TIn, TStepIds> => {

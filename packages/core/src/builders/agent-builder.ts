@@ -175,13 +175,17 @@ export interface AgentBuilder<TIn = unknown, TOut = unknown, THandle = unknown>
   /**
    * Registers an upward child-interrupt handler (`.onChildInterrupt(interrupt, $intr => ...)`).
    *
-   * Intercepts `interrupt` when raised inside a child fork and suspends the fork back to this parent agent.
+   * Intercepts `interrupt` when raised inside a child fork and suspends the fork back to this parent agent,
+   * defaulting to `.suspendAndReturnToParent()` when `configure` is omitted.
    * @template TPayload Interrupt payload type.
-   * @param {MaybeBuilder<InterruptNode<TPayload>>}                                       interrupt - Upward interrupt node or builder.
-   * @param {($intr: ChildInterruptBuilder<TPayload>) => ChildInterruptBuilder<TPayload>} configure - Child interrupt configurator callback.
+   * @param {MaybeBuilder<InterruptNode<TPayload>>}                                       interrupt   - Upward interrupt node or builder.
+   * @param {($intr: ChildInterruptBuilder<TPayload>) => ChildInterruptBuilder<TPayload>} [configure] - Optional child interrupt configurator callback.
    * @returns {AgentBuilder<TIn, TOut, THandle>} New immutable agent builder.
    */
-  onChildInterrupt<TPayload>(interrupt: MaybeBuilder<InterruptNode<TPayload>>, configure: ($intr: ChildInterruptBuilder<TPayload>) => ChildInterruptBuilder<TPayload>): AgentBuilder<TIn, TOut, THandle>;
+  onChildInterrupt<TPayload>(
+    interrupt: MaybeBuilder<InterruptNode<TPayload>>,
+    configure?: ($intr: ChildInterruptBuilder<TPayload>) => ChildInterruptBuilder<TPayload>,
+  ): AgentBuilder<TIn, TOut, THandle>;
   /**
    * Registers an actor-level default interrupt handler preserved across `.withPolicy()` and `.withTools()` clones.
    *

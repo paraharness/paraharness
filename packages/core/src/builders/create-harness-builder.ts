@@ -6,6 +6,7 @@ import type {
 } from '../ast/domain-ast.types.js';
 import { extractAST } from '../ast/extract-ast.js';
 import type { HarnessNode } from '../ast/harness-node.js';
+import type { HumanNode } from '../ast/human-node.js';
 import type { LaneNode } from '../ast/lane-node.js';
 import type { PoolNode } from '../ast/pool-node.js';
 import type { SignalNode } from '../ast/signal-node.js';
@@ -63,14 +64,26 @@ export function createHarnessBuilder(id: string, state?: CreateHarnessBuilderSta
     },
     onSignal<TPayload>(
       signal: MaybeBuilder<SignalNode<TPayload>>,
-      configure: (
-        $sig: HarnessSignalNotificationBuilder<TPayload>,
-      ) => HarnessSignalNotificationBuilder<TPayload>,
+      configureOrHuman:
+        | (($sig: HarnessSignalNotificationBuilder<TPayload>) => HarnessSignalNotificationBuilder<TPayload>)
+        | MaybeBuilder<HumanNode<'bidirectional'>>
+        | MaybeBuilder<HumanNode<'notify-only'>>
+        | MaybeBuilder<HumanNode>,
+      messageMapper?: (payload: TPayload) => string,
     ): HarnessBuilder {
       const signalNode = extractAST(signal);
-      const notification = configure(
-        createHarnessSignalNotificationSubBuilder<TPayload>(signalNode),
-      ).toAST();
+      const subBuilder = createHarnessSignalNotificationSubBuilder<TPayload>(signalNode);
+      const notification =
+        typeof configureOrHuman === 'function'
+          ? configureOrHuman(subBuilder).toAST()
+          : ((): ReturnType<typeof subBuilder.toAST> => {
+              if (typeof messageMapper !== 'function') {
+                throw new Error(
+                  `Harness '${id}' signal notification on '${signalNode.id}' requires a messageMapper function.`,
+                );
+              }
+              return subBuilder.notify(configureOrHuman, messageMapper).toAST();
+            })();
       return createHarnessBuilder(id, {
         ...state,
         onSignalNotifications: [...onSignalNotifications, notification],

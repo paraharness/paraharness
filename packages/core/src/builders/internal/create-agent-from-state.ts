@@ -84,15 +84,20 @@ export function createAgentFromState<TIn = unknown, TOut = unknown, THandle = un
       createAgentFromState({ ...state, capabilities: configure(createAgentCapabilitiesFromState<TIn, THandle>(state.capabilities)).toAST() }),
     onChildInterrupt: <TPayload>(
       interrupt: MaybeBuilder<InterruptNode<TPayload>>,
-      configure: ($intr: ChildInterruptHandlerBuilder<TPayload>) => ChildInterruptHandlerBuilder<TPayload>,
-    ) =>
-      createAgentFromState({
+      configure?: ($intr: ChildInterruptHandlerBuilder<TPayload>) => ChildInterruptHandlerBuilder<TPayload>,
+    ) => {
+      const baseBuilder = createChildInterruptFromState({
+        interrupt: extractAST(interrupt),
+        pauseSiblingForksInPartitions: undefined,
+        suspended: false,
+      });
+      const configuredBuilder =
+        configure !== undefined ? configure(baseBuilder) : baseBuilder.suspendAndReturnToParent();
+      return createAgentFromState({
         ...state,
-        onChildInterruptHandlers: [
-          ...state.onChildInterruptHandlers,
-          configure(createChildInterruptFromState({ interrupt: extractAST(interrupt), pauseSiblingForksInPartitions: undefined, suspended: false })).toAST(),
-        ],
-      }),
+        onChildInterruptHandlers: [...state.onChildInterruptHandlers, configuredBuilder.toAST()],
+      });
+    },
     onInterrupt: <TPayload>(
       interrupt: MaybeBuilder<InterruptNode<TPayload>>,
       configure: ($intr: InterruptEdgeBuilder<TIn, TPayload, THandle>) => AstBuilder<InterruptHandlerNode<TIn, TPayload, THandle>>,

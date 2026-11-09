@@ -536,5 +536,63 @@ describe('Static build-time validation rejections', () => {
       expect(handler.onInterruptHandlers).toHaveLength(1);
     }
   });
+
+  it('supports 1-arg agent.onChildInterrupt(interrupt), direct HumanNode on lane.maxCostUsd(limit, human), and 3-arg harness.onSignal(sig, human, mapper) with exact AST equivalence (P12)', () => {
+    const bidirectionalHuman = P.human('tech-lead').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const notifyOnlyHuman = P.human('webhook-only').notify(SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE);
+
+    const agentShorthand = P.agent<GitWorktreeHandle>('p12-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(FlowInputSchema)
+      .output(StepOutputSchema)
+      .onChildInterrupt(EscalationInterrupt);
+    const agentExplicit = P.agent<GitWorktreeHandle>('p12-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(FlowInputSchema)
+      .output(StepOutputSchema)
+      .onChildInterrupt(EscalationInterrupt, ($ci) => $ci.suspendAndReturnToParent());
+    expect(agentShorthand.toAST()).toEqual(agentExplicit.toAST());
+
+    const flow = P.flow('p12-flow')
+      .input(FlowInputSchema)
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('work', agentShorthand)
+      .exit('done');
+
+    const laneShorthand = P.lane('p12-lane')
+      .input(FlowInputSchema)
+      .key((i) => i.id)
+      .maxCostUsd(25, bidirectionalHuman)
+      .runs(flow);
+    const laneExplicit = P.lane('p12-lane')
+      .input(FlowInputSchema)
+      .key((i) => i.id)
+      .maxCostUsd(
+        25,
+        bidirectionalHuman.withName('tech-lead:budget-approver').output(BudgetApprovalSchema),
+      )
+      .runs(flow);
+    expect(laneShorthand.toAST().maxCostUsd?.approver.alias).toBe('tech-lead:budget-approver');
+    expect(laneShorthand.toAST().maxCostUsd?.approver.human).toEqual(bidirectionalHuman.toAST());
+    expect(laneShorthand.toAST().maxCostUsd?.approver.outputSchema).toBe(BudgetApprovalSchema);
+    expect(laneExplicit.toAST().maxCostUsd?.approver.alias).toBe('tech-lead:budget-approver');
+
+    expect(() =>
+      P.lane('p12-bad-lane').maxCostUsd(25, notifyOnlyHuman),
+    ).toThrow(
+      "Invalid human channel on 'webhook-only' in P.lane.maxCostUsd(): channel 'slack:notifier' has interactionMode 'notify-only', but interactive decisions require 'bidirectional'.",
+    );
+
+    const mapper = (p: { readonly runId: string; readonly failureLog: string }): string =>
+      `Failed:${p.runId}:${p.failureLog}`;
+    const harnessShorthand = P.harness('p12-harness')
+      .ledger(SAMPLE_LEDGER_NODE)
+      .onSignal(RewindSignal, bidirectionalHuman, mapper);
+    const harnessExplicit = P.harness('p12-harness')
+      .ledger(SAMPLE_LEDGER_NODE)
+      .onSignal(RewindSignal, ($s) => $s.notify(bidirectionalHuman, mapper));
+    expect(harnessShorthand.toAST()).toEqual(harnessExplicit.toAST());
+  });
 });
+
 
