@@ -1,3 +1,4 @@
+export { ClaudeCliDistillerRunner } from './claude-cli-distiller-runner.js';
 export { extractTouchedPathsFromHookInput } from './extract-touched-paths-from-hook-input.js';
 export type {
   DistillerProposalRequest,
@@ -6,6 +7,7 @@ export type {
 export type { MemoryHarnessContract } from './memory-harness-contract.js';
 export { MemoryHarnessError } from './memory-harness-error.js';
 export type { MemoryHarnessOptions } from './memory-harness-options.js';
+export { MemoryHarness } from './memory-harness.js';
 export {
   MemoryCapRuleSchema,
   MemoryConfigSchema,
