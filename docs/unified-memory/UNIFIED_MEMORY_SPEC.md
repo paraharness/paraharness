@@ -61,16 +61,10 @@ When any Unified Memory tool or hook executes against a `workspaceRoot` director
 
 ```ts
 import { z } from 'zod';
-
-/**
- * Discriminator for the three record kinds stored in the unified memory ledger.
- */
-export const MemoryRecordTypeSchema = z.enum(['rule', 'lesson', 'note']);
-
-/**
- * Inferred union type for memory record kinds (`'rule' | 'lesson' | 'note'`).
- */
-export type MemoryRecordType = z.infer<typeof MemoryRecordTypeSchema>;
+import {
+  MemoryRecordTypeSchema,
+  type MemoryRecordType,
+} from './memory-record.schema.js';
 
 /**
  * Git synchronization configuration for `.memory` branch worktrees or external shared repositories.
@@ -245,6 +239,13 @@ export const MemoryConfigSchema = z
     for (let i = 0; i < cfg.caps.length; i += 1) {
       const cap = cfg.caps[i];
       if (cap === undefined) continue;
+      if (cap.roles.includes('*') && cap.roles.length > 1) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['caps', i, 'roles'],
+          message: 'Cap roles cannot mix "*" with specific role names.',
+        });
+      }
       for (const r of cap.roles) {
         if (r !== '*' && !allowedSet.has(r)) {
           ctx.addIssue({
@@ -253,6 +254,74 @@ export const MemoryConfigSchema = z
             message: `Cap role '${r}' is not present in allowedRoles.`,
           });
         }
+      }
+      if (cap.paths.includes('*') && cap.paths.length > 1) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['caps', i, 'paths'],
+          message: 'Cap paths cannot mix "*" with specific path or glob patterns.',
+        });
+      }
+      for (let j = 0; j < cap.paths.length; j += 1) {
+        const rawPath = cap.paths[j];
+        if (rawPath === undefined || rawPath === '*') continue;
+        const trimmed = rawPath.trim();
+        const posix = trimmed
+          .replaceAll('\\', '/')
+          .replace(/\/+/g, '/')
+          .replace(/^(\.\/)+/, '')
+          .replace(/\/$/, '');
+        const segments = posix.length === 0 ? [] : posix.split('/');
+        if (
+          trimmed.length === 0 ||
+          trimmed.startsWith('/') ||
+          /^[A-Za-z]:[\\/]/.test(trimmed) ||
+          segments.some((seg) => seg === '..' || seg === '.')
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['caps', i, 'paths', j],
+            message: `Invalid cap path pattern '${rawPath}'.`,
+          });
+        }
+      }
+    }
+    if (cfg.storage.git.autoPush && (!cfg.storage.git.autoCommit || cfg.storage.git.remoteUrl === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['storage', 'git', 'autoPush'],
+        message: 'storage.git.autoPush requires storage.git.autoCommit === true and a non-empty storage.git.remoteUrl.',
+      });
+    }
+    if (cfg.storage.git.enabled) {
+      const normLedger = cfg.storage.ledgerPath
+        .trim()
+        .replaceAll('\\', '/')
+        .replace(/\/+/g, '/')
+        .replace(/^(\.\/)+/, '')
+        .replace(/\/$/, '');
+      const normCheckout = cfg.storage.git.checkoutDir
+        .trim()
+        .replaceAll('\\', '/')
+        .replace(/\/+/g, '/')
+        .replace(/^(\.\/)+/, '')
+        .replace(/\/$/, '');
+      const ledgerSegs = normLedger.split('/');
+      const checkoutSegs = normCheckout === '.' || normCheckout === '' ? [] : normCheckout.split('/');
+      const hasInvalidSegs =
+        normLedger.startsWith('/') ||
+        normCheckout.startsWith('/') ||
+        ledgerSegs.some((seg) => seg === '..' || seg === '.') ||
+        checkoutSegs.some((seg) => seg === '..' || seg === '.');
+      const insideCheckout =
+        !hasInvalidSegs &&
+        (checkoutSegs.length === 0 || normLedger.startsWith(`${normCheckout}/`));
+      if (!insideCheckout) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['storage', 'ledgerPath'],
+          message: `storage.ledgerPath ('${cfg.storage.ledgerPath}') must resolve inside storage.git.checkoutDir ('${cfg.storage.git.checkoutDir}') when storage.git.enabled is true.`,
+        });
       }
     }
     for (let i = 0; i < cfg.format.forbidRegexes.length; i += 1) {
@@ -284,30 +353,16 @@ export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 
 1. **Ledger File (`<ledgerPath>`, default `.memory/memory.jsonl`):**
    - UTF-8 encoded JSON Lines file where each line is a single serialized `MemoryRecord` JSON object followed by `\n`.
-   - If `<ledgerPath>` does not exist on disk during a read operation, the ledger is treated as empty (`[]`); during the first mutating operation, its parent directory, `<ledgerPath>`, and `<ledgerDir>/memory.meta.json` are created atomically.
+   - If `<ledgerPath>` does not exist on disk during a read operation, the ledger is treated as empty (`[]`); during the first mutating operation, its parent directory, `<ledgerDir>/memory.meta.json`, and `<ledgerPath>` are created atomically.
    - On every write, records in `memory.jsonl` are written in canonical deterministic order: sorted first by `typeRank` (`rule: 0`, `lesson: 1`, `note: 2`), and second by ascending numeric suffix of `id` (`Number(id.slice(1))`).
 2. **Monotonic High-Water-Mark Metadata File (`<ledgerDir>/memory.meta.json`):**
-   - Co-located in the same directory as `memory.jsonl` and protected by the same exclusive file lock (`<ledgerPath>.lock`).
-   - Stores the highest numeric ID ever allocated for each prefix (`R`, `L`, `N`) so deleted or lazily drained IDs are **never reused**:
-     ```ts
-     /**
-      * Persistent monotonic ID high-water-mark metadata stored alongside `memory.jsonl`.
-      */
-     export const MemoryMetaSchema = z.object({
-       schemaVersion: z.literal(1),
-       highWaterMarks: z.object({
-         R: z.number().int().min(0),
-         L: z.number().int().min(0),
-         N: z.number().int().min(0),
-       }),
-     });
-
-     /**
-      * Inferred monotonic ID high-water-mark metadata type.
-      */
-     export type MemoryMeta = z.infer<typeof MemoryMetaSchema>;
-     ```
-   - **Self-Healing Allocation Rule:** Before allocating a new ID for prefix `P` (`'R' | 'L' | 'N'`), compute `effectiveMax = Math.max(meta.highWaterMarks[P], maxNumericIdInLedger(records, P))`, allocate `${P}${effectiveMax + 1}`, and set `meta.highWaterMarks[P] = effectiveMax + 1`. If `memory.meta.json` does not exist yet on first run, initialize it from `maxNumericIdInLedger` across current `memory.jsonl` records (and `git log -p -S '"id":"' -- <ledgerPath>` if inside a Git checkout with prior history).
+   - Co-located in the same directory as `memory.jsonl`, validated by `MemoryMetaSchema` (`src/schemas/memory-record.schema.ts` in §3.2), and protected by the same exclusive file lock (`<ledgerPath>.lock`).
+   - Stores the highest numeric ID ever allocated for each prefix (`R`, `L`, `N`) so deleted or lazily drained IDs are **never reused**.
+   - **Self-Healing Pre-Purge Reconciliation & Allocation Rule:**
+     - Every operation acquiring `<ledgerPath>.lock` immediately reconciles `meta.highWaterMarks[P] = Math.max(meta.highWaterMarks[P], maxNumericIdInLedger(rawLoadedRecords, P))` for each prefix `P` in `['R', 'L', 'N']` across all raw loaded records in `memory.jsonl` **before** purging expired `hard-expiry` notes or removing any records.
+     - If `memory.meta.json` does not exist yet on first run, initialize it from `maxNumericIdInLedger` across current raw `memory.jsonl` records (and `git log -p -S '"id":"' -- <ledgerPath>` if inside a Git checkout with prior history).
+     - Before allocating a new ID for prefix `P` (`'R' | 'L' | 'N'`), compute `effectiveMax = Math.max(meta.highWaterMarks[P], maxNumericIdInLedger(records, P))`, allocate `${P}${effectiveMax + 1}`, and set `meta.highWaterMarks[P] = effectiveMax + 1`.
+     - Whenever `memory.meta.json` is created or `highWaterMarks` advances, atomically persist `memory.meta.json` **before** writing `memory.jsonl` per §8.1 Rule 2 so a crash between the two writes can never leave a record in `memory.jsonl` (or a subsequently drained record) with an unrecorded ID.
 
 ---
 
@@ -315,6 +370,16 @@ export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 
 ```ts
 import { z } from 'zod';
+
+/**
+ * Discriminator for the three record kinds stored in the unified memory ledger.
+ */
+export const MemoryRecordTypeSchema = z.enum(['rule', 'lesson', 'note']);
+
+/**
+ * Inferred union type for memory record kinds (`'rule' | 'lesson' | 'note'`).
+ */
+export type MemoryRecordType = z.infer<typeof MemoryRecordTypeSchema>;
 
 /**
  * Lifecycle mode names supported on `type: 'note'` records.
@@ -425,6 +490,23 @@ export const MemoryRecordSchema = z.discriminatedUnion('type', [
  * Inferred memory record union type.
  */
 export type MemoryRecord = z.infer<typeof MemoryRecordSchema>;
+
+/**
+ * Persistent monotonic ID high-water-mark metadata stored alongside `memory.jsonl`.
+ */
+export const MemoryMetaSchema = z.object({
+  schemaVersion: z.literal(1),
+  highWaterMarks: z.object({
+    R: z.number().int().min(0),
+    L: z.number().int().min(0),
+    N: z.number().int().min(0),
+  }),
+});
+
+/**
+ * Inferred monotonic ID high-water-mark metadata type.
+ */
+export type MemoryMeta = z.infer<typeof MemoryMetaSchema>;
 ```
 
 ---
@@ -435,13 +517,13 @@ Let `nowMs = Date.now()` (UTC epoch milliseconds) at the moment a read or write 
 
 | Lifecycle Mode | Condition When Note Is Matched by a Read Operation (`memory_init`, `memory_load_scoped`, or File Hook) | Returned to Caller on This Read? | Ledger Mutation Applied Under Lock |
 | :--- | :--- | :---: | :--- |
-| **`persistent`** | Always | **Yes** (`drainedOnThisRead: false`) | None (remains in `memory.jsonl` until removed via `memory_commit({ op: 'remove' })` or `memory_drain_notes`). |
-| **`read-count`** | `remainingReads > 1` | **Yes** (`drainedOnThisRead: false`) | Decrement `remainingReads` to `remainingReads - 1` and persist `memory.jsonl`. |
-| **`read-count`** | `remainingReads === 1` | **Yes** (`drainedOnThisRead: true`, prefixed `[FINAL READ - DRAINED]`) | Delete record from `memory.jsonl` and persist. |
-| **`hard-expiry`** | `nowMs < Date.parse(expiresAt)` | **Yes** (`drainedOnThisRead: false`) | None. |
-| **`hard-expiry`** | `nowMs >= Date.parse(expiresAt)` | **No** (omitted from response) | Delete record from `memory.jsonl` and persist (also purged opportunistically on any ledger write or read). |
-| **`soft-expiry`** | `nowMs < Date.parse(expiresAt)` | **Yes** (`drainedOnThisRead: false`) | None. |
-| **`soft-expiry`** | `nowMs >= Date.parse(expiresAt)` | **Yes** (`drainedOnThisRead: true`, prefixed `[FINAL READ - DRAINED]`) | Delete record from `memory.jsonl` and persist immediately after constructing the read response. |
+| **`persistent`** | Always | **Yes** (`drainedOnThisRead: false`, `renderedText: note.text`) | None (remains in `memory.jsonl` until removed via `memory_commit({ op: 'remove' })` or `memory_drain_notes`). |
+| **`read-count`** | `remainingReads > 1` | **Yes** (`drainedOnThisRead: false`, `lifecycle.remainingReads: remainingReads - 1`, `renderedText: note.text`) | Decrement `remainingReads` to `remainingReads - 1` and persist `memory.jsonl` (and Git auto-commit/push per §8.2 if configured). |
+| **`read-count`** | `remainingReads === 1` | **Yes** (`drainedOnThisRead: true`, `lifecycle.remainingReads: 1`, `renderedText: "[FINAL READ - DRAINED] " + note.text`) | Delete record from `memory.jsonl` and persist (and Git auto-commit/push per §8.2 if configured). |
+| **`hard-expiry`** | `nowMs < Date.parse(expiresAt)` | **Yes** (`drainedOnThisRead: false`, `renderedText: note.text`) | None. |
+| **`hard-expiry`** | `nowMs >= Date.parse(expiresAt)` | **No** (omitted from response) | Delete record from `memory.jsonl` and persist (purged on any ledger read or write under `<ledgerPath>.lock` after reconciling `memory.meta.json` `highWaterMarks`, and excluded from active snapshots during read-only operations). |
+| **`soft-expiry`** | `nowMs < Date.parse(expiresAt)` | **Yes** (`drainedOnThisRead: false`, `renderedText: note.text`) | None. |
+| **`soft-expiry`** | `nowMs >= Date.parse(expiresAt)` | **Yes** (`drainedOnThisRead: true`, `renderedText: "[FINAL READ - DRAINED] " + note.text`) | Delete record from `memory.jsonl` and persist immediately after constructing the read response (and Git auto-commit/push per §8.2 if configured). |
 
 **Scoping & Compaction Drainage Invariants:**
 1. **Unscoped vs. Scoped Isolation:** `memory_init` selects only **unscoped** records (`context === undefined`). Therefore, `memory_init` MUST NOT decrement `remainingReads` or trigger `soft-expiry` final-read drainage on any **path-scoped** note (`context !== undefined`). Path-scoped notes are evaluated for `read-count` and `soft-expiry` transitions exclusively when matched and returned by `memory_load_scoped` or injected by the File-Interaction Hook.
@@ -456,26 +538,31 @@ Let `nowMs = Date.now()` (UTC epoch milliseconds) at the moment a read or write 
 Every path or glob string passed in `record.context`, `memory_load_scoped.paths`, `memory_propose.context`, `memory_commit.context`, `memory_drain_notes.paths`, `config.caps[*].paths`, or extracted by the File-Interaction Hook MUST be normalized via `normalizeMemoryPathPattern(rawPath, workspaceRoot)` before storage or comparison:
 
 1. Trim leading and trailing whitespace; if empty, throw `MemoryHarnessError` (`'VALIDATION_FAILED'`).
-2. Replace all Windows path separators `\` with POSIX `/`.
-3. If the string is an absolute path inside `workspaceRoot` (`normalized.startsWith(workspaceRootPosix + '/')`), strip the `workspaceRootPosix + '/'` prefix so it becomes workspace-relative.
-4. Strip any leading `./` segments and any leading `/`.
-5. Collapse consecutive slashes `//` into a single `/`.
-6. Strip any trailing `/` (so `'packages/lockfile/'` normalizes to `'packages/lockfile'`).
-7. Split on `/` and reject any pattern containing a `'..'` segment or interior `'.'` segment with `MemoryHarnessError` (`'VALIDATION_FAILED'`) so patterns cannot escape the repository root.
-8. If the resulting string is empty (for example, raw input was `'/'` or `'.'`), normalize it to `'**/*'`.
+2. Replace all Windows path separators `\` with POSIX `/` and collapse consecutive slashes `//` into a single `/`.
+3. Normalize `workspaceRoot` to POSIX without trailing slash (`workspaceRootPosix`, or `'/'` if filesystem root). If `normalized === '/' || normalized === '.' || normalized === './' || normalized === workspaceRootPosix || normalized === workspaceRootPosix + '/'`, return `'**/*'`.
+4. If `normalized.startsWith(workspaceRootPosix + '/')`, strip the `workspaceRootPosix + '/'` prefix so it becomes workspace-relative.
+5. Otherwise, if `normalized.startsWith('/')` or `/^[A-Za-z]:\//.test(normalized)` (an absolute path outside `workspaceRoot`), throw `MemoryHarnessError` (`'VALIDATION_FAILED'`).
+6. Repeatedly strip any leading `./` prefixes, then strip any trailing `/` (so `'./packages/lockfile/'` normalizes to `'packages/lockfile'`).
+7. If `normalized === '' || normalized === '.'`, return `'**/*'`.
+8. Split on `/` and reject any segment equal to `'..'` or `'.'` with `MemoryHarnessError` (`'VALIDATION_FAILED'`) so patterns cannot escape the repository root.
+9. When normalizing any path array (`record.context`, `paths`, `touchedPaths`, `caps[*].paths`), deduplicate the normalized strings while preserving first-seen order.
 
 ---
 
 ### 4.2 Pattern Classification & Static Prefix Extraction
 
 1. **`isGlobPattern(normalized: string): boolean`:**
-   Returns `true` if and only if `normalized` contains any unescaped glob metacharacter from the set `*`, `?`, `[`, `]`, `{`, `}`, `!`, or extglob prefixes `@(`, `+(`, `*(`, `?(`, `!( )`. Otherwise, `normalized` is classified as a **`specific`** path (identifying a specific file or directory path).
+   Returns `true` if and only if `normalized` contains any glob metacharacter from the set `*`, `?`, `[`, `]`, `{`, `}`, `!`, or extglob prefixes `@(`, `+(`, `*(`, `?(`, `!(`, i.e., any glob syntax. Otherwise, `normalized` is classified as a **`specific`** path (identifying a specific file or directory path).
 2. **`extractStaticDirPrefix(globPattern: string): string`:**
    Splits `globPattern` on `/`, collects all leading path segments that contain zero glob metacharacters, and joins them with `/` (returning `''` when the first segment contains a glob metacharacter, such as `'**/*.sql'`).
 
 ---
 
 ### 4.3 Four-Way Symmetric Matching (`matchesContextScope`)
+
+Let:
+- `extractProbeSuffixes(pattern: string): readonly string[]` extract any static terminal file extensions from `pattern` (for example, `['.ts']` from `'**/*.ts'` or `['.ts', '.tsx']` from `'**/*.{ts,tsx}'`), always including `''` (no extension) in the returned deduplicated list.
+- `buildRelativeProbes(pattern: string): readonly string[]` return `['__probe__' + ext, '__sub__/__probe__' + ext]` for each `ext` in `extractProbeSuffixes(pattern)`.
 
 Given normalized query items `Q = readonly string[]`, normalized record context items `C = readonly string[]`, and the repository's tracked relative file list `repoFiles = readonly string[]` (obtained via `git ls-files` cached per workspace tree state, falling back to `tinyglobby` when outside a Git worktree), `matchesContextScope(Q, C, repoFiles)` returns `true` if and only if there exists at least one `q` in `Q` and at least one `c` in `C` such that `matchSingleContextPair(q, c, repoFiles)` evaluates to `true` under one of the four exhaustive cases:
 
@@ -488,7 +575,7 @@ Given normalized query items `Q = readonly string[]`, normalized record context 
 2. **Case 2 — Specific-to-Pattern (`!isGlobPattern(q) && isGlobPattern(c)`):**
    Let `cPrefix = extractStaticDirPrefix(c)` and `cMatcher = picomatch(c, { dot: true })` (pre-compiled per `CODING_GUIDELINES.md` Rule 4.4). Returns `true` if and only if at least one holds:
    - `cMatcher(q)` is `true` (for example, `q = 'packages/lockfile/src/index.ts'` matches `c = 'packages/lockfile/**/*'`), or
-   - `cMatcher(q + '/__probe__')` is `true` (for example, `q = 'packages/lockfile'` matches `c = 'packages/lockfile/**'` or `c = 'packages/lockfile/**/*'`), or
+   - There exists `relProbe` in `buildRelativeProbes(c)` such that `cMatcher(q + '/' + relProbe)` is `true` (for example, `q = 'packages/lockfile'` matches `c = 'packages/lockfile/**'`, `c = 'packages/lockfile/**/*'`, or `c = 'packages/lockfile/**/*.ts'` even when `repoFiles` is empty), or
    - `cPrefix.length > 0 && (cPrefix === q || cPrefix.startsWith(q + '/'))` (for example, `q = 'packages'` or `q = 'packages/lockfile'` contains the pattern's static directory prefix `c = 'packages/lockfile/src/*.ts'`), or
    - There exists a file `f` in `repoFiles` such that `(f === q || f.startsWith(q + '/')) && cMatcher(f)` (for example, directory `q = 'packages/lockfile'` contains tracked file `'packages/lockfile/schema.sql'` matching `c = '**/*.sql'`).
 
@@ -496,7 +583,7 @@ Given normalized query items `Q = readonly string[]`, normalized record context 
    Symmetric to Case 2 (`matchSingleContextPair(c, q, repoFiles)`):
    Let `qPrefix = extractStaticDirPrefix(q)` and `qMatcher = picomatch(q, { dot: true })`. Returns `true` if and only if at least one holds:
    - `qMatcher(c)` is `true`, or
-   - `qMatcher(c + '/__probe__')` is `true`, or
+   - There exists `relProbe` in `buildRelativeProbes(q)` such that `qMatcher(c + '/' + relProbe)` is `true`, or
    - `qPrefix.length > 0 && (qPrefix === c || qPrefix.startsWith(c + '/'))`, or
    - There exists a file `f` in `repoFiles` such that `(f === c || f.startsWith(c + '/')) && qMatcher(f)`.
 
@@ -505,7 +592,7 @@ Given normalized query items `Q = readonly string[]`, normalized record context 
    - `q === c`, or
    - `qMatcher(c) || cMatcher(q)`, or
    - There exists a file `f` in `repoFiles` such that `qMatcher(f) && cMatcher(f)`, or
-   - When `repoFiles` contains no files matching either `qPrefix` or `cPrefix` (such as an unpopulated directory during initial scaffolding), `(qPrefix === '' || cPrefix === '' || qPrefix === cPrefix || qPrefix.startsWith(cPrefix + '/') || cPrefix.startsWith(qPrefix + '/'))` AND their fixed terminal file extensions (if both patterns end in `*.<ext>`) are identical.
+   - When `qPrefix` and `cPrefix` are hierarchically compatible (`qPrefix === '' || cPrefix === '' || qPrefix === cPrefix || qPrefix.startsWith(cPrefix + '/') || cPrefix.startsWith(qPrefix + '/')`), let `deeperPrefix = qPrefix.length >= cPrefix.length ? qPrefix : cPrefix` and `base = deeperPrefix === '' ? '' : deeperPrefix + '/'`, and test synthetic probe paths `probe = base + relProbe` for every `relProbe` in `buildRelativeProbes(q) ∪ buildRelativeProbes(c)`—returning `true` if `qMatcher(probe) && cMatcher(probe)` holds for any synthetic probe path.
 
 ---
 
@@ -528,14 +615,15 @@ Each record `r` counts toward **at most one** capacity bucket in `config.caps`:
      - Note: `'general'` in `capRule.roles` matches **only** `r.role === 'general'`; `'*'` matches any role.
    - **Path eligibility:**
      - If `r.context === undefined` (unscoped record): eligible if and only if `capRule.paths.length === 0`.
-     - If `r.context !== undefined` (scoped record): eligible if and only if `capRule.paths.length > 0` and `(capRule.paths.includes('*') || matchesContextScope(normalizedCapRulePaths, r.context, repoFiles))`.
+     - If `r.context !== undefined` (scoped record): eligible if and only if `capRule.paths.includes('*')`, OR (`capRule.paths.length > 0` and for **every** context pattern `c` in `r.context`, there exists at least one `p` in `normalizedCapRulePaths` such that `matchSingleContextPair(p, c, repoFiles)` is `true` AND `pDirPrefix` is an ancestor-or-equal prefix of `cDirPrefix`, i.e., `pDirPrefix === '' || cDirPrefix === pDirPrefix || cDirPrefix.startsWith(pDirPrefix + '/')`, where `pDirPrefix = isGlobPattern(p) ? extractStaticDirPrefix(p) : p` and `cDirPrefix = isGlobPattern(c) ? extractStaticDirPrefix(c) : c`).
 
 2. **Specificity Tuple & Winning Rule Selection:**
-   If zero rules in `config.caps` are eligible for `r`, then `r` is uncapped (subject only to `config.maxTotalRecords` if set).
-   If one or more rules are eligible, rank each eligible `capRule` at index `i` by the 4-tuple `(pathSpec, roleSpec, typeSpec, -i)` in descending lexicographical order and select the unique maximum:
-   - `pathSpec`:
-     - `2` if `(r.context === undefined && capRule.paths.length === 0)` OR `(r.context !== undefined && !capRule.paths.includes('*'))` (exact unscoped rule or explicit path/glob rule).
-     - `1` if `r.context !== undefined && capRule.paths.includes('*')` (wildcard scoped fallback).
+   If zero rules in `config.caps` are eligible for `r`, then `r` is uncapped by `config.caps` (subject only to `config.maxTotalRecords` if set).
+   If one or more rules are eligible, rank each eligible `capRule` at index `i` by the 6-tuple `(pathTier, maxPrefixSegments, maxPrefixChars, roleSpec, typeSpec, -i)` (where `pathSpec = (pathTier, maxPrefixSegments, maxPrefixChars)`) in descending lexicographical order and select the unique maximum:
+   - `pathSpec = (pathTier, maxPrefixSegments, maxPrefixChars)`:
+     - Unscoped rule (`r.context === undefined && capRule.paths.length === 0`): `(2, 0, 0)`.
+     - Wildcard scoped fallback (`r.context !== undefined && capRule.paths.includes('*')`): `(1, 0, 0)`.
+     - Explicit path/glob rule (`r.context !== undefined && !capRule.paths.includes('*')`): `(2, maxPrefixSegments, maxPrefixChars)`, where `maxPrefixSegments` (`pDirPrefix === '' ? 0 : pDirPrefix.split('/').length`) and `maxPrefixChars` (`pDirPrefix.length`) are the segment count and character length of the longest matching `pDirPrefix` in `normalizedCapRulePaths`.
    - `roleSpec`:
      - `2` if `capRule.roles.includes(r.role)` (explicit role match, e.g. `['builder']` or `['general']`).
      - `1` if matched only via `capRule.roles.includes('*')`.
@@ -544,15 +632,19 @@ Each record `r` counts toward **at most one** capacity bucket in `config.caps`:
      - `1` if `capRule.types.length > 1`.
    - `-i`: Earlier array index `i` in `config.caps` wins ties.
 
-3. **Partition Key (`bucketId`) Within the Winning Rule `capRule[winIdx]`:**
-   To ensure wildcard rules (`roles: ['*']` or `paths: ['*']`) give each role and each path scope its own independent budget rather than pooling unrelated roles or packages together, the bucket partition key for record `r` under winning rule `winIdx` is:
-   - `rolePartition = capRule.roles.includes(r.role) ? capRule.roles.slice().sort().join(',') : 'role:' + r.role`
-   - `pathPartition`:
-     - If `r.context === undefined`: `'unscoped'`
-     - Else if `!capRule.paths.includes('*')`: `'rule-paths:' + normalizedCapRulePaths.slice().sort().join('|')`
-     - Else (`capRule.paths.includes('*')`): `'record-context:' + r.context.slice().sort().join('|')`
-   - `bucketId = "rule#${winIdx}|role=${rolePartition}|path=${pathPartition}"`
-   - All active records in `memory.jsonl` (for `config.repoId`) whose winning rule and `bucketId` match `r`'s `bucketId` form `r`'s bucket population `B`.
+3. **Partition Key (`bucketId`) & Bucket Population `B`:**
+   - **When one or more rules in `config.caps` are eligible (winning rule `capRule[winIdx]`):**
+     To ensure wildcard rules (`roles: ['*']` or `paths: ['*']`) give each role and each path scope its own independent budget rather than pooling unrelated roles or packages together, the bucket partition key for record `r` under winning rule `winIdx` is:
+     - `rolePartition = capRule.roles.includes(r.role) ? capRule.roles.slice().sort().join(',') : 'role:' + r.role`
+     - `pathPartition`:
+       - If `r.context === undefined`: `'unscoped'`
+       - Else if `!capRule.paths.includes('*')`: `'rule-paths:' + normalizedCapRulePaths.slice().sort().join('|')`
+       - Else (`capRule.paths.includes('*')`): `'record-context:' + r.context.slice().sort().join('|')`
+     - `bucketId = "rule#${winIdx}|role=${rolePartition}|path=${pathPartition}"`
+     - All active records in `memory.jsonl` (for `config.repoId`) whose winning rule and `bucketId` match `r`'s `bucketId` form `r`'s bucket population `B` (`currentCount = B.length`, `bucketRecordIds = B.map((x) => x.id)` in §3.1 canonical order).
+   - **When zero rules in `config.caps` are eligible (`UNCAPPED` bucket):**
+     - `bucketId = "uncapped|type=${r.type}|role=role:${r.role}|path=${r.context === undefined ? 'unscoped' : 'record-context:' + r.context.slice().sort().join('|')}"`
+     - `B` = all active records in `memory.jsonl` (for `config.repoId`) with the same `bucketId` (`currentCount = B.length`, `bucketRecordIds = B.map((x) => x.id)` in §3.1 canonical order, `softCap = null`, `hardCap = null`, and `zone = maxTotalRecordsReached ? 'AT_HARD_CAP' : 'UNCAPPED'`).
 
 ---
 
@@ -583,6 +675,21 @@ import {
   NoteLifecycleModeSchema,
   NoteLifecycleSchema,
 } from './memory-record.schema.js';
+
+/**
+ * Safe single-segment session identifier schema preventing path traversal and reserved filename collisions.
+ */
+export const SessionIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]+$/)
+  .refine((s) => s !== 'latest-role', {
+    message: 'sessionId cannot be the reserved identifier "latest-role".',
+  });
+
+/**
+ * Inferred session identifier type.
+ */
+export type SessionId = z.infer<typeof SessionIdSchema>;
 
 /**
  * Deterministic machine-readable error codes thrown by `MemoryHarnessError`.
@@ -624,6 +731,7 @@ export type MemoryLoadedNoteRecord = z.infer<typeof MemoryLoadedNoteRecordSchema
 export const MemoryBucketStatusSchema = z.object({
   bucketId: z.string().min(1),
   currentCount: z.number().int().min(0),
+  bucketRecordIds: z.array(z.string().regex(/^[RLN][1-9]\d*$/)),
   softCap: z.number().int().min(1).nullable(),
   hardCap: z.number().int().min(1).nullable(),
   zone: z.enum(['UNCAPPED', 'UNDER_SOFT_CAP', 'SOFT_CAP_PRESSURE', 'AT_HARD_CAP']),
@@ -650,7 +758,7 @@ Called at session start and after every context compaction by every role.
  */
 export const MemoryInitInputSchema = z.object({
   role: z.string().min(1),
-  sessionId: z.string().min(1).optional(),
+  sessionId: SessionIdSchema.optional(),
 });
 
 /**
@@ -677,22 +785,23 @@ export type MemoryInitOutput = z.infer<typeof MemoryInitOutputSchema>;
 ```
 
 **Behavioral Contract for `memory_init`:**
-1. Validate `config.allowedRoles.includes(input.role)`. If invalid, throw `MemoryHarnessError` with code `'INVALID_ROLE'` and details containing `allowedRoles: config.allowedRoles`.
-2. Ensure the Git storage checkout (if `config.storage.git.enabled`) is initialized per §8.2.
-3. Persist the active session role in `.memory/.session-state/latest-role.json` (and `.memory/.session-state/<sessionId>.json` when `sessionId` is provided or resolved from `CLAUDE_SESSION_ID` / `AGY_SESSION_ID`) so the File-Interaction Hook (§7.2) knows the caller's role even when the hook payload omits it.
-4. Acquire the exclusive lock on `<ledgerPath>.lock`:
-   - Parse `memory.jsonl` and `memory.meta.json`.
-   - Delete any `type: 'note'` record with `lifecycle.mode === 'hard-expiry'` where `nowMs >= Date.parse(lifecycle.expiresAt)`.
-   - Select all **unscoped** records (`record.context === undefined`) where `(record.role === 'general' || record.role === input.role)` and `(record.repos === undefined || record.repos.includes(config.repoId))`.
-   - Apply the §3.3 lifecycle transition table to each selected unscoped `type: 'note'` record (`read-count` decrement/drainage and `soft-expiry` final-read drainage). When `drainedOnThisRead === true`, set `renderedText = "[FINAL READ - DRAINED] " + note.text`; otherwise `renderedText = note.text`.
-   - If any record was mutated or deleted by expiry/drainage, atomically write `memory.jsonl` (and commit/push per §8.2 if `config.storage.git.enabled && config.storage.git.autoCommit`).
-5. Generate the config-adapted `protocol` markdown string containing:
+1. Validate `config.allowedRoles.includes(input.role)`. If invalid, throw `MemoryHarnessError` with code `'INVALID_ROLE'` and details containing `allowedRoles: config.allowedRoles`. Resolve optional `sessionId` from `input.sessionId` or environment (`CLAUDE_SESSION_ID` / `AGY_SESSION_ID`, validated via `SessionIdSchema`).
+2. Acquire `.memory/.session-state/latest-role.lock` via `withFileLock`, atomically write `.memory/.session-state/latest-role.json` (`{ role: input.role, updatedAt: nowIso }` validated via `MemoryLatestRoleStateSchema` in §7.2), and release `latest-role.lock`.
+3. If `sessionId` is present/resolved, acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second** per §8.1 Rule 1 (if no `sessionId` is available, acquire `<ledgerPath>.lock` directly):
+   - Inside `<ledgerPath>.lock`:
+     - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized per §8.2.1.
+     - Parse `memory.jsonl` and `memory.meta.json`, immediately reconcile `meta.highWaterMarks` across all raw loaded records per §3.1 before any purge, and delete any `type: 'note'` record with `lifecycle.mode === 'hard-expiry'` where `nowMs >= Date.parse(lifecycle.expiresAt)`.
+     - Select all **unscoped** records (`record.context === undefined`) where `(record.role === 'general' || record.role === input.role)` and `(record.repos === undefined || record.repos.includes(config.repoId))`.
+     - Apply the §3.3 lifecycle transition table to each selected unscoped `type: 'note'` record (`read-count` decrement/drainage and `soft-expiry` final-read drainage). When `drainedOnThisRead === true`, set `renderedText = "[FINAL READ - DRAINED] " + note.text` (retaining `lifecycle.remainingReads = 1` on `read-count` notes); otherwise set `renderedText = note.text` (and `lifecycle.remainingReads = remainingReads - 1` on `read-count` notes).
+     - Follow the §8.1 Rule 2 multi-file write order: atomically write `memory.meta.json` first (whenever created or `highWaterMarks` advanced), atomically write `memory.jsonl` second (whenever any record was purged, decremented, or drained), and run §8.2 Git auto-commit/push third (when `config.storage.git.enabled && config.storage.git.autoCommit` and `memory.jsonl` or `memory.meta.json` was written).
+   - While holding `.memory/.session-state/<sessionId>.lock` (when `sessionId` is present/resolved), atomically write `.memory/.session-state/<sessionId>.json` fourth with `sessionId`, `role: input.role`, `seenRecordIds: []`, `lastCompactionCheckpointId: 'PENDING_HOOK_EPOCH'`, and `updatedAt: nowIso` (preserving any existing `transcriptPath` and `lastScannedTranscriptOffset` if `<sessionId>.json` already existed).
+4. Generate the config-adapted `protocol` markdown string containing:
    - The 3-tier lesson gate (Tier 1 test/type/linter/script $\to$ Tier 2 role/doc line $\to$ Tier 3 atomic lesson),
    - The project's exact `config.format` rules (`template`, `maxChars`, `requireSubstrings`, `forbidRegexes`) for lessons,
    - The `rule: <text>` workflow (`memory_propose` $\to$ show Owner for `"go"` $\to$ `memory_commit`),
    - The `note` lifecycle modes (`persistent`, `read-count`, `hard-expiry`, `soft-expiry`) and `memory_drain_notes` dry-run-first workflow, and
    - When to call `memory_load_scoped({ role, paths })`.
-6. Return `{ role: input.role, repoId: config.repoId, protocol, rules, lessons, notes }` sorted by numeric ID within each array.
+5. Return `{ role: input.role, repoId: config.repoId, protocol, rules, lessons, notes }` sorted by numeric ID within each array.
 
 ---
 
@@ -707,7 +816,7 @@ Called when planning or working on specific files, directories, or glob patterns
 export const MemoryLoadScopedInputSchema = z.object({
   role: z.string().min(1),
   paths: z.array(z.string().min(1)).min(1),
-  sessionId: z.string().min(1).optional(),
+  sessionId: SessionIdSchema.optional(),
 });
 
 /**
@@ -734,14 +843,18 @@ export type MemoryLoadScopedOutput = z.infer<typeof MemoryLoadScopedOutputSchema
 
 **Behavioral Contract for `memory_load_scoped`:**
 1. Validate `config.allowedRoles.includes(input.role)` (throwing `MemoryHarnessError` with `'INVALID_ROLE'` and `config.allowedRoles` if invalid).
-2. Normalize every element of `input.paths` via `normalizeMemoryPathPattern` (§4.1).
-3. Acquire `<ledgerPath>.lock`:
-   - Parse `memory.jsonl`, purge expired `hard-expiry` notes (`nowMs >= Date.parse(expiresAt)`), and select all **scoped** records (`record.context !== undefined && record.context.length > 0`) where:
-     - `(record.role === 'general' || record.role === input.role)`,
-     - `(record.repos === undefined || record.repos.includes(config.repoId))`, and
-     - `matchesContextScope(normalizedPaths, record.context, repoFiles)` (§4.3) is `true`.
-   - Apply §3.3 lifecycle transitions (`read-count` and `soft-expiry`) to the matched scoped `N*` notes and persist `memory.jsonl` if any note was decremented or drained.
-   - If `input.sessionId` is provided (or resolved from environment), record all returned `R*`, `L*`, and `N*` IDs in `.memory/.session-state/<sessionId>.json` for the current compaction epoch (§7.2) so subsequent file touches in the same epoch do not re-inject them.
+2. Normalize and deduplicate `input.paths` via `normalizeMemoryPathPattern` (§4.1). Resolve optional `sessionId` from `input.sessionId` or environment (`CLAUDE_SESSION_ID` / `AGY_SESSION_ID`, validated via `SessionIdSchema`).
+3. If `sessionId` is present/resolved, acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second** per §8.1 Rule 1 (otherwise acquire `<ledgerPath>.lock` directly):
+   - Inside `<ledgerPath>.lock`:
+     - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized per §8.2.1.
+     - Parse `memory.jsonl` and `memory.meta.json`, immediately reconcile `meta.highWaterMarks` across all raw loaded records per §3.1 before any purge, and purge expired `hard-expiry` notes (`nowMs >= Date.parse(expiresAt)`).
+     - Select all **scoped** records (`record.context !== undefined && record.context.length > 0`) where:
+       - `(record.role === 'general' || record.role === input.role)`,
+       - `(record.repos === undefined || record.repos.includes(config.repoId))`, and
+       - `matchesContextScope(normalizedPaths, record.context, repoFiles)` (§4.3) is `true`.
+     - Apply §3.3 lifecycle transitions (`read-count` and `soft-expiry`) to the matched scoped `N*` notes.
+     - Follow the §8.1 Rule 2 multi-file write order: atomically write `memory.meta.json` first (whenever created or `highWaterMarks` advanced), atomically write `memory.jsonl` second (whenever any note was purged, decremented, or drained), and run §8.2 Git auto-commit/push third (when `config.storage.git.enabled && config.storage.git.autoCommit` and `memory.jsonl` or `memory.meta.json` was written).
+   - If `sessionId` is present/resolved, merge all returned scoped `R*`, `L*`, and `N*` IDs (deduplicated) into `state.seenRecordIds` in `.memory/.session-state/<sessionId>.json` (initializing `lastCompactionCheckpointId: 'PENDING_HOOK_EPOCH'` and `lastScannedTranscriptOffset: 0` if `<sessionId>.json` did not exist yet, and updating `role: input.role` and `updatedAt: nowIso`), and atomically write `.memory/.session-state/<sessionId>.json` fourth per §8.1 Rule 2.
 4. Return `{ role: input.role, normalizedPaths, rules, lessons, notes }` (never re-returning unscoped memories).
 
 ---
@@ -755,12 +868,16 @@ Runs (or prepares) the Distiller agent to format, deduplicate, and check capacit
  * Consolidation merge payload attached to an `op: 'add'` choice when two existing records of the
  * same type in a bucket at or above `softCap` genuinely share the same underlying mechanism.
  */
-export const MemoryCapMergeProposalSchema = z.object({
-  keepId: z.string().regex(/^[RLN][1-9]\d*$/),
-  removeId: z.string().regex(/^[RLN][1-9]\d*$/),
-  mergedText: z.string().min(1),
-  whyMerged: z.string().min(1),
-});
+export const MemoryCapMergeProposalSchema = z
+  .object({
+    keepId: z.string().regex(/^[RL][1-9]\d*$/),
+    removeId: z.string().regex(/^[RL][1-9]\d*$/),
+    mergedText: z.string().trim().min(1),
+    whyMerged: z.string().trim().min(1),
+  })
+  .refine((m) => m.keepId !== m.removeId && m.keepId[0] === m.removeId[0], {
+    message: 'keepId and removeId must be distinct IDs with the same type prefix.',
+  });
 
 /**
  * Inferred capacity-merge proposal type.
@@ -774,8 +891,8 @@ export const DistillerChoiceOutputSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('update'),
     targetId: z.string().regex(/^[RL][1-9]\d*$/),
-    whyMatched: z.string().min(1),
-    proposedText: z.string().min(1),
+    whyMatched: z.string().trim().min(1),
+    proposedText: z.string().trim().min(1),
     proposedRole: z.string().min(1),
     proposedContext: z.array(z.string().min(1)).min(1).optional(),
     proposedRepos: z.array(z.string().min(1)).min(1).optional(),
@@ -783,7 +900,7 @@ export const DistillerChoiceOutputSchema = z.discriminatedUnion('op', [
   }),
   z.object({
     op: z.literal('add'),
-    proposedText: z.string().min(1),
+    proposedText: z.string().trim().min(1),
     proposedRole: z.string().min(1),
     proposedContext: z.array(z.string().min(1)).min(1).optional(),
     proposedRepos: z.array(z.string().min(1)).min(1).optional(),
@@ -804,8 +921,8 @@ export const MemoryProposalChoiceSchema = z.discriminatedUnion('op', [
     op: z.literal('update'),
     targetId: z.string().regex(/^[RL][1-9]\d*$/),
     existingRecord: z.union([MemoryRuleRecordSchema, MemoryLessonRecordSchema]),
-    whyMatched: z.string().min(1),
-    proposedText: z.string().min(1),
+    whyMatched: z.string().trim().min(1),
+    proposedText: z.string().trim().min(1),
     proposedRole: z.string().min(1),
     proposedContext: z.array(z.string().min(1)).min(1).optional(),
     proposedRepos: z.array(z.string().min(1)).min(1).optional(),
@@ -813,7 +930,7 @@ export const MemoryProposalChoiceSchema = z.discriminatedUnion('op', [
   }),
   z.object({
     op: z.literal('add'),
-    proposedText: z.string().min(1),
+    proposedText: z.string().trim().min(1),
     proposedRole: z.string().min(1),
     proposedContext: z.array(z.string().min(1)).min(1).optional(),
     proposedRepos: z.array(z.string().min(1)).min(1).optional(),
@@ -829,17 +946,53 @@ export type MemoryProposalChoice = z.infer<typeof MemoryProposalChoiceSchema>;
 /**
  * Structured output schema that the Distiller LLM must produce.
  */
-export const DistillerStructuredOutputSchema = z.object({
-  matchStatus: z.enum([
-    'NO_MATCH',
-    'LIKELY_MATCH',
-    'EXACT_DUPLICATE',
-    'REJECTED_TIER_1_OR_2',
-  ]),
-  tierRejectionReason: z.string().min(1).optional(),
-  recommendedChoiceIndex: z.number().int().min(-1),
-  choices: z.array(DistillerChoiceOutputSchema),
-});
+export const DistillerStructuredOutputSchema = z
+  .object({
+    matchStatus: z.enum([
+      'NO_MATCH',
+      'LIKELY_MATCH',
+      'EXACT_DUPLICATE',
+      'REJECTED_TIER_1_OR_2',
+    ]),
+    tierRejectionReason: z.string().trim().min(1).optional(),
+    recommendedChoiceIndex: z.number().int().min(-1),
+    choices: z.array(DistillerChoiceOutputSchema),
+  })
+  .superRefine((val, ctx) => {
+    if (val.matchStatus === 'REJECTED_TIER_1_OR_2') {
+      if (val.tierRejectionReason === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['tierRejectionReason'],
+          message: 'tierRejectionReason is required when matchStatus is REJECTED_TIER_1_OR_2.',
+        });
+      }
+      if (val.choices.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['choices'],
+          message: 'choices must be empty when matchStatus is REJECTED_TIER_1_OR_2.',
+        });
+      }
+    }
+    if (val.choices.length === 0 && val.recommendedChoiceIndex !== -1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['recommendedChoiceIndex'],
+        message: 'recommendedChoiceIndex must be -1 when choices is empty.',
+      });
+    }
+    if (
+      val.choices.length > 0 &&
+      (val.recommendedChoiceIndex < 0 || val.recommendedChoiceIndex >= val.choices.length)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['recommendedChoiceIndex'],
+        message: 'recommendedChoiceIndex must be a valid index into choices.',
+      });
+    }
+  });
 
 /**
  * Inferred Distiller structured output type.
@@ -856,10 +1009,10 @@ export const MemoryProposeInputSchema = z.object({
   callerRole: z.string().min(1),
   targetRole: z.string().min(1),
   type: z.enum(['rule', 'lesson']),
-  rawText: z.string().min(1),
+  rawText: z.string().trim().min(1),
   context: z.array(z.string().min(1)).min(1).optional(),
   repos: z.array(z.string().min(1)).min(1).optional(),
-  incident: z.string().min(1).max(1000).optional(),
+  incident: z.string().trim().min(1).max(1000).optional(),
 });
 
 /**
@@ -870,36 +1023,74 @@ export type MemoryProposeInput = z.infer<typeof MemoryProposeInputSchema>;
 /**
  * Output schema for `memory_propose`, discriminated by `executionMode`.
  */
-export const MemoryProposeOutputSchema = z.discriminatedUnion('executionMode', [
-  z.object({
-    executionMode: z.literal('resolved'),
-    type: z.enum(['rule', 'lesson']),
-    requiresOwnerGo: z.boolean(),
-    bucketStatus: MemoryBucketStatusSchema,
-    matchStatus: z.enum([
-      'NO_MATCH',
-      'LIKELY_MATCH',
-      'EXACT_DUPLICATE',
-      'REJECTED_TIER_1_OR_2',
-    ]),
-    tierRejectionReason: z.string().min(1).optional(),
-    recommendedChoiceIndex: z.number().int().min(-1),
-    choices: z.array(MemoryProposalChoiceSchema),
-  }),
-  z.object({
-    executionMode: z.literal('delegate_to_subagent'),
-    type: z.enum(['rule', 'lesson']),
-    requiresOwnerGo: z.boolean(),
-    bucketStatus: MemoryBucketStatusSchema,
-    delegateToSubagent: z.object({
-      model: z.string().min(1),
-      effort: z.enum(['low', 'medium', 'high']),
-      systemPrompt: z.string().min(1),
-      userPrompt: z.string().min(1),
-      outputJsonSchema: z.record(z.string(), z.unknown()),
+export const MemoryProposeOutputSchema = z
+  .discriminatedUnion('executionMode', [
+    z.object({
+      executionMode: z.literal('resolved'),
+      type: z.enum(['rule', 'lesson']),
+      requiresOwnerGo: z.boolean(),
+      bucketStatus: MemoryBucketStatusSchema,
+      matchStatus: z.enum([
+        'NO_MATCH',
+        'LIKELY_MATCH',
+        'EXACT_DUPLICATE',
+        'REJECTED_TIER_1_OR_2',
+      ]),
+      tierRejectionReason: z.string().trim().min(1).optional(),
+      recommendedChoiceIndex: z.number().int().min(-1),
+      choices: z.array(MemoryProposalChoiceSchema),
     }),
-  }),
-]);
+    z.object({
+      executionMode: z.literal('delegate_to_subagent'),
+      type: z.enum(['rule', 'lesson']),
+      requiresOwnerGo: z.boolean(),
+      bucketStatus: MemoryBucketStatusSchema,
+      delegateToSubagent: z.object({
+        model: z.string().min(1),
+        effort: z.enum(['low', 'medium', 'high']),
+        timeoutMs: z.number().int().min(1000).max(600000),
+        systemPrompt: z.string().min(1),
+        userPrompt: z.string().min(1),
+        outputJsonSchema: z.record(z.string(), z.unknown()),
+      }),
+    }),
+  ])
+  .superRefine((val, ctx) => {
+    if (val.executionMode !== 'resolved') return;
+    if (val.matchStatus === 'REJECTED_TIER_1_OR_2') {
+      if (val.tierRejectionReason === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['tierRejectionReason'],
+          message: 'tierRejectionReason is required when matchStatus is REJECTED_TIER_1_OR_2.',
+        });
+      }
+      if (val.choices.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['choices'],
+          message: 'choices must be empty when matchStatus is REJECTED_TIER_1_OR_2.',
+        });
+      }
+    }
+    if (val.choices.length === 0 && val.recommendedChoiceIndex !== -1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['recommendedChoiceIndex'],
+        message: 'recommendedChoiceIndex must be -1 when choices is empty.',
+      });
+    }
+    if (
+      val.choices.length > 0 &&
+      (val.recommendedChoiceIndex < 0 || val.recommendedChoiceIndex >= val.choices.length)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['recommendedChoiceIndex'],
+        message: 'recommendedChoiceIndex must be a valid index into choices.',
+      });
+    }
+  });
 
 /**
  * Inferred output type for `memory_propose`.
@@ -908,20 +1099,25 @@ export type MemoryProposeOutput = z.infer<typeof MemoryProposeOutputSchema>;
 ```
 
 **Behavioral & Validation Contract for `memory_propose`:**
-1. Validate `callerRole` and `targetRole` against `config.allowedRoles`. Normalize `context` (if provided) via `normalizeMemoryPathPattern`.
-2. Compute `bucketStatus` for a synthetic candidate `{ type: input.type, role: input.targetRole, context: normalizedContext, repos: input.repos }` using §5.2.
+1. Validate `callerRole` and `targetRole` against `config.allowedRoles` (throwing `MemoryHarnessError` with `'INVALID_ROLE'`). Normalize and deduplicate `context` (if provided) via `normalizeMemoryPathPattern` (§4.1).
+2. Acquire `<ledgerPath>.lock` (running `ensureMemoryGitCheckout` per §8.2.1 if `config.storage.git.enabled`), load `memory.jsonl` while excluding any `hard-expiry` notes where `nowMs >= Date.parse(expiresAt)`, and compute `bucketStatus` (including `bucketStatus.bucketRecordIds`) for a synthetic candidate `{ type: input.type, role: input.targetRole, context: normalizedContext, repos: input.repos }` using §5.2.
 3. Build the **Prompt-Cached Distiller Prompt**:
-   - **`systemPrompt` (static prefix for KV-caching):** Contains the Distiller instructions, `config.format` rules, `config.distiller.customInstructions`, the current repository's role rule files (`CLAUDE.MD`, `docs/rules/*.md` when present), and all active `R*` and `L*` records in `memory.jsonl` ordered deterministically.
-   - **`userPrompt` (dynamic suffix):** Contains the candidate `{ type, targetRole, rawText, normalizedContext, repos, incident }`, the target `bucketStatus` (`zone`, `currentCount`, `softCap`, `hardCap`), and the strict rule that in `SOFT_CAP_PRESSURE` or `AT_HARD_CAP`, `capMerge` may be proposed **only** if two existing records of the same `type` in the target bucket share the exact same underlying failure mechanism.
+   - **`systemPrompt` (static prefix for KV-caching):** Contains the Distiller instructions, `config.format` rules, `config.distiller.customInstructions`, the current repository's role rule files (`CLAUDE.MD`, plus `docs/rules/*.md` when present sorted in ascending POSIX path code-unit order), and all active `R*` and `L*` records in `memory.jsonl` applicable to `config.repoId` (§5.1) in §3.1 canonical order (`R1, R2, ...` then `L1, L2, ...`).
+   - **`userPrompt` (dynamic suffix):** Contains the candidate `{ type, targetRole, rawText, normalizedContext, repos, incident }`, the target `bucketStatus` (`bucketId`, `zone`, `currentCount`, `softCap`, `hardCap`, `bucketRecordIds`, `totalRecordsCount`, `maxTotalRecords`, `maxTotalRecordsReached`), and the strict rule that in `SOFT_CAP_PRESSURE` or `AT_HARD_CAP`, `capMerge` may be proposed **only** if two existing records of the same `type` in `bucketStatus.bucketRecordIds` share the exact same underlying failure mechanism.
 4. **Runner Dispatch (`config.distiller.runner`):**
-   - If `config.distiller.runner === 'claude-cli'` (or if `runner === 'subagent'` and an in-process `MemoryDistillerRunner` port is injected into `MemoryHarnessOptions`):
-     - Execute `distillerRunner.runDistillerProposal(...)`, parse the output through `DistillerStructuredOutputSchema`, hydrate `existingRecord` from `memory.jsonl` for every `op: 'update'` choice, and deterministically validate every choice:
+   - Convert `DistillerStructuredOutputSchema` via `z.toJSONSchema(DistillerStructuredOutputSchema)` into `outputJsonSchema`.
+   - If `config.distiller.runner === 'claude-cli'` or if `options.distillerRunner !== undefined`:
+     - Invoke `options.distillerRunner.runDistillerProposal(...)` when injected; otherwise (when `config.distiller.runner === 'claude-cli'` and `options.distillerRunner` is omitted), execute the built-in CLI runner spawning `claude -p --model <config.distiller.model> --effort <config.distiller.effort> --system-prompt <systemPrompt> --output-format json --json-schema <JSON.stringify(outputJsonSchema)> <userPrompt>` with timeout `config.distiller.timeoutMs`.
+     - If the runner throws, times out, exits non-zero, or returns output that fails `DistillerStructuredOutputSchema`, throw `MemoryHarnessError` with code `'DISTILLER_EXECUTION_FAILED'`.
+     - Hydrate `existingRecord` from `memory.jsonl` for every `op: 'update'` choice and deterministically validate every choice in `choices`:
+       - **Rule Protection & Type Consistency Check:** Require every choice's `targetId`, `alsoRemoveIds`, and `capMerge` (`keepId`, `removeId`) IDs to match `input.type` (`'R'` for `'rule'`, `'L'` for `'lesson'`). If `input.type === 'lesson'` and any choice's `targetId`, `alsoRemoveIds`, or `capMerge` references an `R*` rule record, throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`). If `input.type === 'rule'` and any choice references an `L*` record, throw `MemoryHarnessError` (`'DISTILLER_EXECUTION_FAILED'`).
+       - Validate `config.allowedRoles.includes(choice.proposedRole)` and normalize+deduplicate `choice.proposedContext` (if present) via `normalizeMemoryPathPattern` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` if invalid).
+       - For `choice.op === 'update'`: verify `choice.targetId` exists in `memory.jsonl`, and if `choice.alsoRemoveIds` is present, verify all IDs in `choice.alsoRemoveIds` are unique, distinct from `choice.targetId`, and exist in `memory.jsonl` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` otherwise).
+       - For `choice.op === 'add'` with `choice.capMerge !== undefined`: verify `bucketStatus.zone === 'SOFT_CAP_PRESSURE' || bucketStatus.zone === 'AT_HARD_CAP'` (forbidding `capMerge` when `bucketStatus.zone` is `'UNCAPPED'` or `'UNDER_SOFT_CAP'`) and verify that `capMerge.keepId` and `capMerge.removeId` are distinct IDs currently residing in `bucketStatus.bucketRecordIds` (throwing `MemoryHarnessError` with `'DISTILLER_EXECUTION_FAILED'` otherwise).
        - If `input.type === 'lesson'`, verify that every `choice.proposedText` (and any `choice.capMerge.mergedText`) passes `validateLessonTextFormat(text, config.format)` (§6.7).
-       - Verify that when `input.type === 'lesson'`, no `alsoRemoveIds` or `capMerge` references an `R*` rule record.
-       - Verify that `capMerge.keepId` and `capMerge.removeId` are distinct IDs of the same `type` currently residing in the target bucket `B`.
-     - Return `executionMode: 'resolved'` with `requiresOwnerGo: input.type === 'rule' || choices.some((c) => c.op === 'update' && c.targetId.startsWith('R'))`.
-   - If `config.distiller.runner === 'subagent'` and no in-process `MemoryDistillerRunner` is injected (standalone MCP stdio server mode):
-     - Convert `DistillerStructuredOutputSchema` via `z.toJSONSchema(DistillerStructuredOutputSchema)` and return `executionMode: 'delegate_to_subagent'` so the calling agent invokes its native subagent tool with `delegateToSubagent` and passes the selected choice to `memory_commit`.
+     - Return `executionMode: 'resolved'` with `requiresOwnerGo: input.type === 'rule'`.
+   - If `config.distiller.runner === 'subagent'` and `options.distillerRunner === undefined` (standalone MCP stdio server mode):
+     - Return `executionMode: 'delegate_to_subagent'` with `requiresOwnerGo: input.type === 'rule'` and `delegateToSubagent: { model: config.distiller.model, effort: config.distiller.effort, timeoutMs: config.distiller.timeoutMs, systemPrompt, userPrompt, outputJsonSchema }` so the calling agent invokes its native subagent tool and passes the selected choice to `memory_commit`.
 
 ---
 
@@ -933,14 +1129,14 @@ Atomically adds, updates, or removes a record in `memory.jsonl`.
 /**
  * Input schema for `memory_commit`, discriminated by `op` (`'add' | 'update' | 'remove'`).
  */
-export const MemoryCommitInputSchema = z.discriminatedUnion('op', [
-  z
-    .object({
+export const MemoryCommitInputSchema = z
+  .discriminatedUnion('op', [
+    z.object({
       op: z.literal('add'),
       callerRole: z.string().min(1),
       type: MemoryRecordTypeSchema,
       role: z.string().min(1),
-      text: z.string().min(1),
+      text: z.string().trim().min(1),
       context: z.array(z.string().min(1)).min(1).optional(),
       repos: z.array(z.string().min(1)).min(1).optional(),
       lifecycle: NoteLifecycleSchema.optional(),
@@ -948,11 +1144,35 @@ export const MemoryCommitInputSchema = z.discriminatedUnion('op', [
         .object({
           keepId: z.string().regex(/^[RLN][1-9]\d*$/),
           removeId: z.string().regex(/^[RLN][1-9]\d*$/),
-          mergedText: z.string().min(1),
+          mergedText: z.string().trim().min(1),
         })
         .optional(),
-    })
-    .superRefine((val, ctx) => {
+    }),
+    z.object({
+      op: z.literal('update'),
+      callerRole: z.string().min(1),
+      id: z.string().regex(/^[RLN][1-9]\d*$/),
+      text: z.string().trim().min(1),
+      role: z.string().min(1).optional(),
+      context: z.array(z.string().min(1)).min(1).nullable().optional(),
+      repos: z.array(z.string().min(1)).min(1).nullable().optional(),
+      lifecycle: NoteLifecycleSchema.optional(),
+      alsoRemoveIds: z.array(z.string().regex(/^[RLN][1-9]\d*$/)).optional(),
+    }),
+    z.object({
+      op: z.literal('remove'),
+      callerRole: z.string().min(1),
+      id: z.string().regex(/^[RLN][1-9]\d*$/),
+      reason: z.enum([
+        'owner_veto',
+        'promoted_to_tier1_or_tier2',
+        'merged_into_wider_record',
+        'note_settled_or_obsolete',
+      ]),
+    }),
+  ])
+  .superRefine((val, ctx) => {
+    if (val.op === 'add') {
       if (val.type === 'note' && val.lifecycle === undefined) {
         ctx.addIssue({
           code: 'custom',
@@ -987,30 +1207,40 @@ export const MemoryCommitInputSchema = z.discriminatedUnion('op', [
           });
         }
       }
-    }),
-  z.object({
-    op: z.literal('update'),
-    callerRole: z.string().min(1),
-    id: z.string().regex(/^[RLN][1-9]\d*$/),
-    text: z.string().min(1),
-    role: z.string().min(1).optional(),
-    context: z.array(z.string().min(1)).min(1).nullable().optional(),
-    repos: z.array(z.string().min(1)).min(1).nullable().optional(),
-    lifecycle: NoteLifecycleSchema.optional(),
-    alsoRemoveIds: z.array(z.string().regex(/^[RLN][1-9]\d*$/)).optional(),
-  }),
-  z.object({
-    op: z.literal('remove'),
-    callerRole: z.string().min(1),
-    id: z.string().regex(/^[RLN][1-9]\d*$/),
-    reason: z.enum([
-      'owner_veto',
-      'promoted_to_tier1_or_tier2',
-      'merged_into_wider_record',
-      'note_settled_or_obsolete',
-    ]),
-  }),
-]);
+    }
+    if (val.op === 'update') {
+      if (val.lifecycle !== undefined && !val.id.startsWith('N')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['lifecycle'],
+          message: 'lifecycle is only permitted when updating a note record (ID starting with "N").',
+        });
+      }
+      if (val.alsoRemoveIds !== undefined) {
+        const seen = new Set<string>();
+        const targetPrefix = val.id[0];
+        for (let i = 0; i < val.alsoRemoveIds.length; i += 1) {
+          const remId = val.alsoRemoveIds[i];
+          if (remId === undefined) continue;
+          if (remId === val.id || seen.has(remId)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['alsoRemoveIds', i],
+              message: 'alsoRemoveIds must contain unique IDs distinct from target id.',
+            });
+          }
+          seen.add(remId);
+          if (targetPrefix !== undefined && !remId.startsWith(targetPrefix)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['alsoRemoveIds', i],
+              message: `alsoRemoveIds entry '${remId}' must match target record prefix '${targetPrefix}'.`,
+            });
+          }
+        }
+      }
+    }
+  });
 
 /**
  * Inferred input type for `memory_commit`.
@@ -1038,31 +1268,45 @@ export type MemoryCommitOutput = z.infer<typeof MemoryCommitOutputSchema>;
 ```
 
 **Behavioral & Concurrency Contract for `memory_commit`:**
-1. Validate `callerRole` (and `role` if present) against `config.allowedRoles`. Normalize any `context` array via `normalizeMemoryPathPattern`.
-2. **Pre-Lock Format Gate (`validateLessonTextFormat`):**
-   - If `op === 'add' && type === 'lesson'`, validate `input.text` against `config.format`.
-   - If `op === 'add' && type === 'lesson' && input.capMerge !== undefined`, validate `input.capMerge.mergedText` against `config.format`.
-   - If `op === 'update' && input.id.startsWith('L')`, validate `input.text` against `config.format`.
+1. Validate `callerRole` (and `role` if present) against `config.allowedRoles` (throwing `'INVALID_ROLE'`). Normalize and deduplicate any `context` array via `normalizeMemoryPathPattern` (§4.1). Trim `input.text` (and `input.capMerge.mergedText` if present).
+2. **Pre-Lock Format & Rule Protection Gate:**
+   - If `op === 'update'` and `!input.id.startsWith('R')` and any ID in `input.alsoRemoveIds` starts with `'R'`, throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`).
+   - Validate remaining input fields against `MemoryCommitInputSchema` (throwing `'VALIDATION_FAILED'` on schema issues).
+   - If `op === 'add' && type === 'lesson'`, validate `input.text.trim()` against `config.format` via `validateLessonTextFormat` (§6.7).
+   - If `op === 'add' && type === 'lesson' && input.capMerge !== undefined`, validate `input.capMerge.mergedText.trim()` against `config.format`.
+   - If `op === 'update' && input.id.startsWith('L')`, validate `input.text.trim()` against `config.format`.
 3. Acquire `<ledgerPath>.lock` via `withFileLock`:
-   - Load `memory.jsonl` and `memory.meta.json`, and purge any `hard-expiry` notes with `nowMs >= Date.parse(expiresAt)`.
+   - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized per §8.2.1.
+   - Load `memory.jsonl` and `memory.meta.json`, immediately reconcile `meta.highWaterMarks` across all raw loaded records per §3.1 before any purge, and purge any `hard-expiry` notes with `nowMs >= Date.parse(expiresAt)`.
    - **On `op === 'add'`:**
      - Evaluate the target bucket `B` and `bucketStatus` (§5.2–§5.3).
-     - If `input.capMerge` is provided: verify both `keepId` and `removeId` exist in bucket `B` and match `input.type`. Update `keepId` with `mergedText` and `updatedAt: nowIso`, and delete `removeId`.
-     - Check capacity after applying any `capMerge`: if `(hardCap !== null && nextBucketCount > hardCap)` or `(config.maxTotalRecords !== undefined && nextTotalCount > config.maxTotalRecords)`, throw `MemoryHarnessError` (`'CAP_EXCEEDED'`) without modifying disk.
-     - Allocate the next monotonic ID (`R<n>`, `L<n>`, or `N<n>`) per §3.1, construct the new `MemoryRecord` with `createdAt: nowIso`, insert in canonical order, and write `memory.jsonl` + `memory.meta.json` atomically.
+     - If `input.capMerge` is provided:
+       - Verify `bucketStatus.zone === 'SOFT_CAP_PRESSURE' || bucketStatus.zone === 'AT_HARD_CAP'` (throwing `'VALIDATION_FAILED'` if `zone` is `'UNCAPPED'` or `'UNDER_SOFT_CAP'`).
+       - Verify both `keepId` and `removeId` exist in bucket `B` (`bucketStatus.bucketRecordIds`) and have `type === input.type`.
+       - Update `keepId` with `text: input.capMerge.mergedText.trim()`, `updatedAt: nowIso`, `context` set to the deduplicated union of `keepId.context` and `removeId.context` when both are defined (or `undefined` if either is unscoped), and `repos` set to the deduplicated union of `keepId.repos` and `removeId.repos` when both are defined (or `undefined` if either applies to all repos), and delete `removeId`.
+     - Check capacity after applying any `capMerge`: if the added record applies to `config.repoId` and `(hardCap !== null && nextBucketCount > hardCap)` or `(config.maxTotalRecords !== undefined && nextTotalCount > config.maxTotalRecords)`, throw `MemoryHarnessError` (`'CAP_EXCEEDED'`) without modifying disk.
+     - Allocate the next monotonic ID (`R<n>`, `L<n>`, or `N<n>`) per §3.1, construct the new `MemoryRecord` with `text: input.text.trim()` and `createdAt: nowIso`, insert in canonical order, and write `memory.meta.json` first and `memory.jsonl` second atomically per §8.1 Rule 2.
    - **On `op === 'update'`:**
      - Locate existing record `target` with `target.id === input.id`; if absent, throw `MemoryHarnessError` (`'RECORD_NOT_FOUND'`).
      - If `input.lifecycle !== undefined && target.type !== 'note'`, throw `MemoryHarnessError` (`'VALIDATION_FAILED'`).
      - If `input.alsoRemoveIds` is provided:
-       - Verify none of `alsoRemoveIds` equals `input.id` and all exist in `memory.jsonl`.
        - **Rule Protection Check:** If `target.type !== 'rule'` and any ID in `alsoRemoveIds` starts with `'R'`, throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`).
+       - Verify all IDs in `alsoRemoveIds` are unique, distinct from `input.id`, have `type === target.type`, and exist in `memory.jsonl` (throwing `'RECORD_NOT_FOUND'` if absent or `'VALIDATION_FAILED'` if invalid).
        - Remove all records in `alsoRemoveIds`.
-     - Compute the updated record (`text: input.text.trim()`, `role: input.role ?? target.role`, `context: input.context === null ? undefined : (input.context ?? target.context)`, `repos: input.repos === null ? undefined : (input.repos ?? target.repos)`, `lifecycle: input.lifecycle ?? target.lifecycle`, `updatedAt: nowIso`).
-     - If `role` or `context` changed such that the record moved into a different capacity bucket `B_new`, verify `B_new` does not exceed its `hardCap` (throwing `MemoryHarnessError` with `'CAP_EXCEEDED'` if `B_new.count + 1 > B_new.hardCap`).
-     - Persist `memory.jsonl` atomically.
+     - Compute the updated record (`text: input.text.trim()`, `role: input.role ?? target.role`, `context: input.context === null ? undefined : (normalizedInputContext ?? target.context)`, `repos: input.repos === null ? undefined : (input.repos ?? target.repos)`, `lifecycle: input.lifecycle ?? target.lifecycle`, `updatedAt: nowIso`).
+     - **Capacity Check on Bucket or Repo-Scope Transition:** After removing `alsoRemoveIds`, if the updated record applies to `config.repoId` (§5.1) and was not already an active member of `B_new` for `config.repoId` (either because its `bucketId` changed or because `target` did not previously apply to `config.repoId`), verify `B_new` does not exceed `B_new.hardCap` and total active records for `config.repoId` do not exceed `config.maxTotalRecords` (throwing `MemoryHarnessError` with `'CAP_EXCEEDED'` without modifying disk).
+     - Persist `memory.meta.json` (if created or `highWaterMarks` advanced) first and `memory.jsonl` second atomically.
    - **On `op === 'remove'`:**
-     - Locate and remove `input.id` (throwing `MemoryHarnessError` with `'RECORD_NOT_FOUND'` if absent), leaving `memory.meta.json` `highWaterMarks` untouched so `input.id` is never reused. Persist `memory.jsonl` atomically.
+     - Locate existing record `target` with `target.id === input.id`; if absent, throw `MemoryHarnessError` (`'RECORD_NOT_FOUND'`).
+     - **Rule Protection & Reason Validation:**
+       - If `target.type === 'rule'` and `input.reason !== 'owner_veto'`, throw `MemoryHarnessError` (`'RULE_PROTECTION_VIOLATION'`).
+       - If `input.reason === 'note_settled_or_obsolete'` and `target.type !== 'note'`, or if `target.type === 'note'` and `(input.reason === 'promoted_to_tier1_or_tier2' || input.reason === 'merged_into_wider_record')`, throw `MemoryHarnessError` (`'VALIDATION_FAILED'`).
+     - Remove `target` from `memory.jsonl`, leaving `memory.meta.json` `highWaterMarks` untouched so `input.id` is never reused. Persist `memory.meta.json` (if created or `highWaterMarks` advanced) first and `memory.jsonl` second atomically.
    - Run the Git auto-commit/push step (§8.2) while holding `<ledgerPath>.lock`.
+4. **Output Field Mapping (`MemoryCommitOutput`):**
+   - **`op === 'add'`:** `committedRecord` = newly added record (with re-numbered `id` if §8.2.3 remapped it during push reconcile), `previousRecord = null`, `mergedKeepRecord` = updated `keepId` record if `capMerge` was applied else `null`, `removedIds = input.capMerge ? [input.capMerge.removeId] : []`, `bucketStatusAfter` = post-commit `MemoryBucketStatus` of `committedRecord`'s bucket (or `null` if `committedRecord` does not apply to `config.repoId`).
+   - **`op === 'update'`:** `committedRecord` = updated record, `previousRecord` = snapshot of `target` prior to update, `mergedKeepRecord = null`, `removedIds = input.alsoRemoveIds ?? []`, `bucketStatusAfter` = post-commit `MemoryBucketStatus` of `committedRecord`'s bucket (or `null` if `committedRecord` does not apply to `config.repoId`).
+   - **`op === 'remove'`:** `committedRecord = null`, `previousRecord` = removed `target` record, `mergedKeepRecord = null`, `removedIds = [input.id]`, `bucketStatusAfter` = post-commit `MemoryBucketStatus` of `previousRecord`'s bucket (or `null` if `previousRecord` did not apply to `config.repoId`).
 
 ---
 
@@ -1121,15 +1365,17 @@ export type MemoryDrainNotesOutput = z.infer<typeof MemoryDrainNotesOutputSchema
 ```
 
 **Behavioral Contract for `memory_drain_notes`:**
-1. Validate `callerRole` (and `input.role` if provided) against `config.allowedRoles`. Normalize `input.paths` (if provided) via `normalizeMemoryPathPattern`.
+1. Validate `callerRole` (and `input.role` if provided) against `config.allowedRoles` (throwing `'INVALID_ROLE'`). Normalize and deduplicate `input.paths` (if provided) via `normalizeMemoryPathPattern` (§4.1).
 2. Acquire `<ledgerPath>.lock`:
-   - Load `memory.jsonl` and filter all `type: 'note'` records applicable to `config.repoId` that satisfy **all** specified filters:
+   - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized per §8.2.1.
+   - Load `memory.jsonl` and `memory.meta.json`, immediately reconcile `meta.highWaterMarks` across all raw loaded records per §3.1 before any purge, and exclude any `hard-expiry` notes where `nowMs >= Date.parse(expiresAt)` (purging them on write when `dryRun === false`).
+   - Filter all active `type: 'note'` records applicable to `config.repoId` (§5.1) that satisfy **all** specified filters:
      - **Lifecycle mode filter:** `input.modes.includes('*') || input.modes.includes(note.lifecycle.mode)`.
      - **Role filter:** `input.role === undefined || note.role === input.role`.
      - **Path filter:** `input.paths === undefined || (note.context !== undefined && matchesContextScope(normalizedPaths, note.context, repoFiles))`.
      - **ID filter:** `input.ids === undefined || input.ids.includes(note.id)`.
    - If `input.dryRun === true`: return `{ dryRun: true, matchedNotes, drainedIds: [], gitCommitted: false, gitPushed: false }` without mutating `memory.jsonl`.
-   - If `input.dryRun === false`: remove `matchedNotes` from `memory.jsonl`, persist `memory.jsonl` atomically (preserving `memory.meta.json` `highWaterMarks`), execute Git commit/push if configured (§8.2), and return `{ dryRun: false, matchedNotes, drainedIds: matchedNotes.map((n) => n.id), gitCommitted, gitPushed }`.
+   - If `input.dryRun === false`: remove `matchedNotes` (and any expired `hard-expiry` notes) from `memory.jsonl`, persist `memory.meta.json` (if created or `highWaterMarks` advanced) first and `memory.jsonl` second atomically per §8.1 Rule 2, execute Git auto-commit/push if configured (§8.2), and return `{ dryRun: false, matchedNotes, drainedIds: matchedNotes.map((n) => n.id), gitCommitted, gitPushed }`.
 
 ---
 
@@ -1140,9 +1386,9 @@ Every `type: 'lesson'` text (`trimmed = rawText.trim()`) must pass all five dete
 2. **Single-Sentence Check (when `config.format.requireSingleSentence === true`):**
    - Must not contain newline characters (`\n` or `\r`).
    - Must end with `.`.
-   - Must not contain sentence-splitting punctuation followed by whitespace and an uppercase letter (`/[.!?]\s+[A-Z]/u`).
-3. **Required Substrings:** For every substring `sub` in `config.format.requireSubstrings`, `trimmed.includes(sub)` must be `true` (and for `' because '`, both the action clause before `' because '` and the mechanism clause after `' because '` must be at least 10 characters long).
-4. **Forbidden Regexes:** For every pattern `pat` in `config.format.forbidRegexes`, `new RegExp(pat, 'u').test(trimmed)` must be `false`.
+   - Must not contain sentence-splitting punctuation followed by whitespace anywhere before the final character (`!/[.!?]\s+/u.test(trimmed.slice(0, -1))`).
+3. **Required Substrings:** For every substring `sub` in `config.format.requireSubstrings`, `trimmed.includes(sub)` must be `true`. For `' because '`, split at the first occurrence `const idx = trimmed.indexOf(' because ')` and verify both the action clause before `' because '` (`trimmed.slice(0, idx).trim().length >= 10`) and the mechanism clause after `' because '` excluding the trailing period (`trimmed.slice(idx + ' because '.length, -1).trim().length >= 10`) are at least 10 characters long.
+4. **Forbidden Regexes:** Test `trimmed` against the pre-compiled `RegExp` instances compiled at config load time (§2.1 Step 5, `CODING_GUIDELINES.md` Rule 4.4) for `config.format.forbidRegexes`; every `regex.test(trimmed)` must evaluate to `false`.
 5. If any check fails, throw `MemoryHarnessError` with code `'LESSON_FORMAT_INVALID'` naming the exact failed check and quoting the offending substring or match.
 
 ---
@@ -1154,18 +1400,11 @@ Every `type: 'lesson'` text (`trimmed = rawText.trim()`) must pass all five dete
 The File-Interaction Hook automatically surfaces context-scoped rules, lessons, and active notes on the **first** interaction with a matching file, directory, or glob after session start or after the latest context compaction:
 
 ```ts
-import { z } from 'zod';
-import {
-  MemoryLessonRecordSchema,
-  MemoryRuleRecordSchema,
-} from './memory-record.schema.js';
-import { MemoryLoadedNoteRecordSchema } from './memory-tools.schema.js';
-
 /**
  * Normalized input payload passed to `MemoryHarness.handleFileInteractionHook`.
  */
 export const FileInteractionHookInputSchema = z.object({
-  sessionId: z.string().min(1),
+  sessionId: SessionIdSchema,
   role: z.string().min(1).optional(),
   transcriptPath: z.string().min(1).optional(),
   touchedPaths: z.array(z.string().min(1)).min(1),
@@ -1196,7 +1435,11 @@ export type FileInteractionHookOutput = z.infer<typeof FileInteractionHookOutput
 
 1. **Claude Code (`PostToolUse` Hook in `.claude/settings.json`):**
    - Matcher: `"Read|Edit|MultiEdit|Write|Grep|Glob|NotebookEdit"`.
-   - Extracts candidate paths/globs from `tool_input.file_path`, `tool_input.path`, `tool_input.pattern`, or `tool_input.paths`.
+   - Extracts candidate paths/globs per tool:
+     - `Read`, `Edit`, `MultiEdit`, `Write`: extracts `tool_input.file_path` (plus `tool_input.path` and `tool_input.paths` if present).
+     - `NotebookEdit`: extracts `tool_input.notebook_path` (plus `tool_input.file_path` if present).
+     - `Glob`: when both `tool_input.path` and `tool_input.pattern` are present, joins `path.posix.join(normPath, tool_input.pattern)`; otherwise extracts `tool_input.pattern` or `tool_input.path`.
+     - `Grep`: extracts `tool_input.path` (defaulting to `'.'` when omitted) and, when `tool_input.glob` is present, joins `tool_input.path` with `tool_input.glob` (**never** extracting `tool_input.pattern`, which is a regular expression search string rather than a file path).
    - When `output.injected === true`, writes JSON to `stdout`:
      ```json
      {
@@ -1207,23 +1450,36 @@ export type FileInteractionHookOutput = z.infer<typeof FileInteractionHookOutput
      }
      ```
 2. **Antigravity (`.agents/hooks.json`):**
-   - Inspects the latest tool invocation steps (`read_file`, `edit_file`, `write_file`, `grep_search`, `find_by_name`) in `transcript.jsonl` since the last hook checkpoint and returns `{ "injectSteps": [{ "systemMessage": { "systemMessage": "<output.formattedContext>" } }] }` when `output.injected === true`.
+   - Incrementally inspects the latest tool invocation steps in `transcript.jsonl` starting from `state.lastScannedTranscriptOffset` across Antigravity file and search tools (`view_file`, `view_file_outline`, `view_code_item`, `replace_file_content`, `multi_replace_file_content`, `write_to_file`, `read_file`, `edit_file`, `write_file`, `grep_search`, `find_by_name`), extracting path and glob arguments (`AbsolutePath`, `File`, `TargetFile`, `SearchPath`, `SearchDirectory`, `DirectoryPath`, `Paths`, `Includes`, `Pattern`, `path`, `file_path`), advancing `state.lastScannedTranscriptOffset` to the current transcript byte length, and returning `{ "injectSteps": [{ "systemMessage": { "systemMessage": "<output.formattedContext>" } }] }` when `output.injected === true`.
 
 ---
 
 ### 7.2 Compaction-Epoch State Schema & Deduplication Algorithm
 
 ```ts
-import { z } from 'zod';
+/**
+ * Fallback active session role persisted at `.memory/.session-state/latest-role.json`.
+ */
+export const MemoryLatestRoleStateSchema = z.object({
+  role: z.string().min(1),
+  updatedAt: z.iso.datetime(),
+});
+
+/**
+ * Inferred fallback latest-role state type.
+ */
+export type MemoryLatestRoleState = z.infer<typeof MemoryLatestRoleStateSchema>;
 
 /**
  * Per-session deduplication state persisted at `.memory/.session-state/<sessionId>.json`.
  */
 export const MemorySessionEpochStateSchema = z.object({
-  sessionId: z.string().min(1),
+  sessionId: SessionIdSchema,
   role: z.string().min(1),
   lastCompactionCheckpointId: z.string().min(1),
   seenRecordIds: z.array(z.string().regex(/^[RLN][1-9]\d*$/)).default([]),
+  lastScannedTranscriptOffset: z.number().int().min(0).default(0),
+  transcriptPath: z.string().min(1).optional(),
   updatedAt: z.iso.datetime(),
 });
 
@@ -1235,18 +1491,28 @@ export type MemorySessionEpochState = z.infer<typeof MemorySessionEpochStateSche
 
 **Deduplication & Epoch Reset Algorithm:**
 1. **Determine Current Compaction Checkpoint ID & Role (`resolveTranscriptEpochAndRole(transcriptPath)`):**
+   - If `input.role` is provided, validate `config.allowedRoles.includes(input.role)` (throwing `MemoryHarnessError` with `'INVALID_ROLE'` if invalid).
    - Scan `transcriptPath` (if provided and readable) for:
-     - The last JSONL entry representing a context compaction boundary (`obj.type === 'CHECKPOINT'` in Antigravity transcripts, or `obj.type === 'compact_boundary' || obj.subtype === 'compact_boundary'` in Claude Code transcripts), extracting a stable identifier (`String(obj.step_index ?? obj.uuid ?? obj.created_at ?? lineNumber)`), or `'epoch-0'` if no compaction has occurred.
-     - The latest `memory_init` tool call argument `role` in `transcriptPath` (used as fallback if `input.role` is omitted and `.memory/.session-state/<sessionId>.json` has not been created yet, with final fallback to `.memory/.session-state/latest-role.json`).
-2. **Load or Reset Session State:**
-   - Under a per-session lock (`withFileLock('.memory/.session-state/<sessionId>.lock')`), load `.memory/.session-state/<sessionId>.json`.
-   - If the file does not exist or `state.lastCompactionCheckpointId !== currentCheckpointId`:
-     - Reset `state.lastCompactionCheckpointId = currentCheckpointId` and `state.seenRecordIds = []`.
-3. **Match & Filter Unseen Scoped Records:**
-   - Normalize `input.touchedPaths` via `normalizeMemoryPathPattern` (silently skipping any path outside `workspaceRoot`).
-   - Acquire `<ledgerPath>.lock`, query scoped records (`record.context !== undefined && record.context.length > 0`) for `(record.role === 'general' || record.role === resolvedRole)` and `config.repoId` where `matchesContextScope(touchedPaths, record.context, repoFiles)` is `true`, and filter to records whose `id` is **not** in `new Set(state.seenRecordIds)`.
-   - If the filtered list is empty, release locks and return `{ injected: false, compactionEpochId: currentCheckpointId, formattedContext: null, rules: [], lessons: [], notes: [] }`.
-   - Otherwise, apply §3.3 lifecycle transitions (`read-count` and `soft-expiry`) to only the newly matched unseen `N*` notes, append all newly injected `R*`, `L*`, and `N*` IDs to `state.seenRecordIds`, atomically write both `memory.jsonl` (if any note transitioned) and `.memory/.session-state/<sessionId>.json`, and return `injected: true` with `formattedContext`.
+     - The last JSONL entry representing a context compaction boundary (`obj.type === 'CHECKPOINT'` in Antigravity transcripts, or `obj.type === 'compact_boundary' || obj.subtype === 'compact_boundary'` in Claude Code transcripts), extracting a stable identifier (`String(obj.step_index ?? obj.uuid ?? obj.timestamp ?? obj.created_at ?? 'offset:' + lineByteOffset)`), or `'epoch-0'` if no compaction has occurred.
+     - The latest `memory_init` tool call argument `role` in `transcriptPath`.
+   - If `input.role` was omitted, resolve `resolvedRole` from the first valid role in `config.allowedRoles` across: (a) `state.role` in `.memory/.session-state/<sessionId>.json`, (b) the latest `memory_init` `role` in `transcriptPath`, (c) `.memory/.session-state/latest-role.json`, or (d) final fallback `'general'`.
+2. **Load or Reset Session State Under Lock (§8.1 Rule 1):**
+   - Acquire `.memory/.session-state/<sessionId>.lock` **first** via `withFileLock` and load `.memory/.session-state/<sessionId>.json`.
+   - If `<sessionId>.json` exists and `state.lastCompactionCheckpointId === 'PENDING_HOOK_EPOCH'`, set `state.lastCompactionCheckpointId = currentCheckpointId` **without** clearing `state.seenRecordIds` (preserving any scoped record IDs already loaded via `memory_load_scoped` since `memory_init`).
+   - Otherwise, if `<sessionId>.json` does not exist or `state.lastCompactionCheckpointId !== currentCheckpointId`, set `state.lastCompactionCheckpointId = currentCheckpointId` and reset `state.seenRecordIds = []`.
+   - Update `state.role = resolvedRole`, `state.transcriptPath = input.transcriptPath ?? state.transcriptPath`, `state.lastScannedTranscriptOffset` (when scanning `transcriptPath`), and `state.updatedAt = nowIso`.
+3. **Normalize `touchedPaths` & Early-Exit on Out-of-Workspace Paths:**
+   - Normalize and deduplicate `input.touchedPaths` via `normalizeMemoryPathPattern` (§4.1), catching `MemoryHarnessError` (`'VALIDATION_FAILED'`) on out-of-workspace entries to skip them.
+   - If zero valid in-workspace `touchedPaths` remain, atomically persist `.memory/.session-state/<sessionId>.json` (whenever Step 2 created or modified the session state), release `.memory/.session-state/<sessionId>.lock`, and return `{ injected: false, compactionEpochId: currentCheckpointId, formattedContext: null, rules: [], lessons: [], notes: [] }` without acquiring `<ledgerPath>.lock`.
+4. **Match & Filter Unseen Scoped Records Under `<ledgerPath>.lock`:**
+   - While holding `.memory/.session-state/<sessionId>.lock`, acquire `<ledgerPath>.lock` **second** per §8.1 Rule 1:
+     - If `config.storage.git.enabled === true`, ensure the Git storage checkout is initialized per §8.2.1.
+     - Load `memory.jsonl` and `memory.meta.json`, immediately reconcile `meta.highWaterMarks` across all raw loaded records per §3.1 before any purge, and purge any expired `hard-expiry` notes (`nowMs >= Date.parse(expiresAt)`).
+     - Query scoped records (`record.context !== undefined && record.context.length > 0`) for `(record.role === 'general' || record.role === resolvedRole)` and `config.repoId` (§5.1) where `matchesContextScope(touchedPaths, record.context, repoFiles)` is `true`, and filter to records whose `id` is **not** in `new Set(state.seenRecordIds)`.
+     - Apply §3.3 lifecycle transitions (`read-count` and `soft-expiry`) to only the newly matched unseen `N*` notes.
+     - Follow the §8.1 Rule 2 multi-file write order: atomically write `memory.meta.json` first (whenever created or `highWaterMarks` advanced), atomically write `memory.jsonl` second (whenever any note was purged, decremented, or drained), and run §8.2 Git auto-commit/push third (when `config.storage.git.enabled && config.storage.git.autoCommit` and `memory.jsonl` or `memory.meta.json` was written).
+   - Append all newly injected `R*`, `L*`, and `N*` IDs (deduplicated) to `state.seenRecordIds`, and atomically write `.memory/.session-state/<sessionId>.json` fourth whenever Step 2 or Step 4 created or modified the session state (even if 0 unseen scoped records matched).
+   - If the filtered unseen record list is empty, return `{ injected: false, compactionEpochId: currentCheckpointId, formattedContext: null, rules: [], lessons: [], notes: [] }`; otherwise return `injected: true` with `formattedContext`, `rules`, `lessons`, and `notes` ordered per §1.2.
 
 ---
 
@@ -1254,9 +1520,13 @@ export type MemorySessionEpochState = z.infer<typeof MemorySessionEpochStateSche
 
 ### 8.1 Lock Ordering & Atomic Persistence Invariants
 
-1. **Lock Acquisition Order:** When both a session state lock (`.memory/.session-state/<sessionId>.lock`) and the ledger lock (`<ledgerPath>.lock`) are acquired, always acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second**—never the reverse—so two concurrent hooks or tool calls can never deadlock.
-2. **Atomic Write Requirement:** Every write to `memory.jsonl`, `memory.meta.json`, and `.memory/.session-state/<sessionId>.json` uses `write-file-atomic` (temp file in target directory + `fsync` + POSIX `rename`) inside `@paraharness/lockfile`'s `withFileLock`.
-3. **Gitignored Ephemeral Files:** `.memory/*.lock`, `.memory/.session-state/`, and any `write-file-atomic` temporary files MUST be excluded in `<checkoutDir>/.gitignore` so ephemeral lock and session files are never committed to the memory Git repository.
+1. **Lock Acquisition Order:** When both a session state lock (`.memory/.session-state/<sessionId>.lock`) and the ledger lock (`<ledgerPath>.lock`) are acquired, always acquire `.memory/.session-state/<sessionId>.lock` **first** and `<ledgerPath>.lock` **second**—never the reverse—so two concurrent hooks or tool calls can never deadlock. (`.memory/.session-state/latest-role.lock` is acquired and released independently before acquiring `<sessionId>.lock` or `<ledgerPath>.lock`.)
+2. **Atomic Write Requirement & Strict Multi-File Write Ordering:** Every write to `memory.meta.json`, `memory.jsonl`, `.memory/.session-state/<sessionId>.json`, and `.memory/.session-state/latest-role.json` uses `write-file-atomic` (temp file in target directory + `fsync` + POSIX `rename`) inside `@paraharness/lockfile`'s `withFileLock`. Every operation holding `<ledgerPath>.lock` immediately reconciles `meta.highWaterMarks[P] = Math.max(meta.highWaterMarks[P], maxNumericIdInLedger(rawLoadedRecords, P))` across all raw records in `memory.jsonl` **before** purging expired `hard-expiry` notes or removing records, and enforces the strict write sequence:
+   1. `memory.meta.json` (whenever created or `highWaterMarks` advance),
+   2. `memory.jsonl` (whenever records are added, updated, purged, decremented, or drained),
+   3. §8.2 Git auto-commit/push (when `config.storage.git.enabled && config.storage.git.autoCommit` and `memory.meta.json` or `memory.jsonl` was written), and
+   4. `.memory/.session-state/<sessionId>.json` (whenever session state was created or updated).
+3. **Gitignored Ephemeral Files:** `.memory/*.lock`, `.memory/.session-state/`, and any `write-file-atomic` temporary files (`*.tmp*`) MUST be excluded in `<checkoutDir>/.gitignore` so ephemeral lock and session files are never committed to the memory Git repository.
 
 ---
 
@@ -1264,27 +1534,38 @@ export type MemorySessionEpochState = z.infer<typeof MemorySessionEpochStateSche
 
 When `config.storage.git.enabled === true`:
 1. **Checkout Initialization (`ensureMemoryGitCheckout`):**
-   - Resolve `checkoutDir = path.resolve(workspaceRoot, config.storage.git.checkoutDir)`.
-   - If `<checkoutDir>/.git` does not exist:
-     - If `config.storage.git.remoteUrl !== undefined`, run `git clone --branch <branch> --single-branch <remoteUrl> <checkoutDir>` (or if the remote branch does not exist yet on an empty remote, `git init -b <branch> <checkoutDir>` + `git -C <checkoutDir> remote add origin <remoteUrl>`).
-     - If `config.storage.git.remoteUrl === undefined`, run `git init -b <branch> <checkoutDir>`.
-   - Ensure `<checkoutDir>/.gitignore` contains `.session-state/` and `*.lock`.
+   - Executed inside `<ledgerPath>.lock` prior to ledger reads or writes.
+   - Resolve `checkoutDir = path.resolve(workspaceRoot, config.storage.git.checkoutDir)` and ensure `<checkoutDir>` exists (`fs.mkdir(checkoutDir, { recursive: true })`).
+   - If `<checkoutDir>/.git` does not exist (initializing in-place so pre-existing `.session-state/` or `*.lock` files inside `<checkoutDir>` never cause `git clone` to fail on a non-empty directory):
+     - Run `git init -b <branch> <checkoutDir>`.
+     - Ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`.
+     - If `config.storage.git.remoteUrl !== undefined`:
+       - Configure `origin` (`git -C <checkoutDir> remote add origin <remoteUrl>`, or `git -C <checkoutDir> remote set-url origin <remoteUrl>` if `origin` already exists).
+       - Run `git -C <checkoutDir> ls-remote --heads origin refs/heads/<branch>` (throwing `MemoryHarnessError` with `'GIT_SYNC_FAILED'` if `ls-remote` exits non-zero due to network or authentication failure).
+       - If `refs/heads/<branch>` exists on `origin`: run `git -C <checkoutDir> fetch origin <branch>`. If a local `<relLedgerPath>` already existed on disk prior to fetch, snapshot its local records/meta, run `git -C <checkoutDir> reset --hard origin/<branch>`, and reconcile the pre-existing local records with `origin/<branch>` via `reconcileDivergedMemoryLedgers(emptyBase, local, remote)` (§8.2.3); otherwise run `git -C <checkoutDir> reset --hard origin/<branch>`.
+   - Whenever `<checkoutDir>/.git` already exists, ensure `<checkoutDir>/.gitignore` contains `.session-state/`, `*.lock`, and `*.tmp*`.
 2. **Auto-Commit (`config.storage.git.autoCommit === true`):**
-   - Inside `<ledgerPath>.lock`, after writing `memory.jsonl` and `memory.meta.json`:
-   - Stage only the ledger and metadata files: `git -C <checkoutDir> add -- <relLedgerPath> <relMetaPath> .gitignore`.
-   - Check `git -C <checkoutDir> status --porcelain -- <relLedgerPath> <relMetaPath> .gitignore`. If non-empty, commit with `git -C <checkoutDir> commit -m "memory(<repoId>): <opSummary>"`.
+   - Inside `<ledgerPath>.lock`, after writing `memory.meta.json` and `memory.jsonl`:
+   - Stage only the ledger, metadata, and ignore files: `git -C <checkoutDir> add -- <relLedgerPath> <relMetaPath> .gitignore`.
+   - Check `git -C <checkoutDir> status --porcelain -- <relLedgerPath> <relMetaPath> .gitignore`. If non-empty, commit with fallback author identity `git -C <checkoutDir> -c user.name="paraharness-memory" -c user.email="memory@paraharness.local" commit -m "memory(<repoId>): <opSummary>"`.
 3. **Conflict-Free Multi-Repo Auto-Push (`config.storage.git.autoPush === true` and `remoteUrl` configured):**
    - Run `git -C <checkoutDir> push origin <branch>`.
    - If `git push` exits non-zero due to non-fast-forward remote updates (another repository or session pushed new memory records concurrently):
-     1. Run `git -C <checkoutDir> fetch origin <branch>` and resolve `baseSha = git -C <checkoutDir> merge-base HEAD origin/<branch>`.
+     1. Run `git -C <checkoutDir> fetch origin <branch>` and resolve `baseSha = git -C <checkoutDir> merge-base HEAD origin/<branch>`. If `git merge-base` exits with code `1` (unrelated histories) or if `<relLedgerPath>` / `<relMetaPath>` is absent at `<baseSha>`, default `base` to empty (`records: []`, `highWaterMarks: { R: 0, L: 0, N: 0 }`).
      2. Read `base` (`<baseSha>`), `local` (`HEAD`), and `remote` (`origin/<branch>`) versions of `<relLedgerPath>` and `<relMetaPath>` and reconcile them deterministically in-memory via `reconcileDivergedMemoryLedgers(base, local, remote)`:
-        - **ID Collision Re-numbering:** If any record newly added in `local` (absent in `base`) has the same `id` (`R<n>`, `L<n>`, or `N<n>`) as a different record newly added in `remote` (absent in `base`, detected by differing `createdAt` or `text`), keep the `remote` record at `id` and re-number the `local` record to `${prefix}${nextMonotonicId}` above `Math.max(localMeta.highWaterMarks[P], remoteMeta.highWaterMarks[P])`.
+        - **ID Collision & Monotonic High-Water-Mark Re-numbering:** Any record newly added in `local` (absent in `base`) whose numeric ID `n <= remoteMeta.highWaterMarks[P]` or whose `id` collides with a record in `remote` absent in `base` (unless an identical record with the same `type`, `role`, `text`, and `createdAt` already exists at `id` in `remote`) MUST be re-numbered in ascending numeric ID order to sequential IDs `${P}${nextMonotonicId}` starting above `Math.max(localMeta.highWaterMarks[P], remoteMeta.highWaterMarks[P], maxNumericId(local, P), maxNumericId(remote, P))`, keeping `remote`'s record/allocation at the original ID and recording the mapping in `idRemap: ReadonlyMap<string, string>`.
         - **Three-Way Record Merge:**
-          - A record present in `base` and deleted in `local` stays deleted unless `remote` updated it (`remote.updatedAt > base.updatedAt`).
-          - A record present in `base` and deleted in `remote` stays deleted unless `local` updated it (`local.updatedAt > base.updatedAt`).
-          - For records present in both `local` and `remote` with the same `id`, keep the version with the newer `updatedAt ?? createdAt` timestamp (for `read-count` notes, set `remainingReads = Math.min(local.remainingReads, remote.remainingReads)`).
+          - Compare all record timestamps numerically via `Date.parse(r.updatedAt ?? r.createdAt)`.
+          - A record present in `base` and deleted in `local` stays deleted unless `remote` modified it after `base` (`Date.parse(remote.updatedAt ?? remote.createdAt) > Date.parse(base.updatedAt ?? base.createdAt)`).
+          - A record present in `base` and deleted in `remote` stays deleted unless `local` modified it after `base` (`Date.parse(local.updatedAt ?? local.createdAt) > Date.parse(base.updatedAt ?? base.createdAt)`).
+          - For records present in both `local` and `remote` with the same `id`:
+            - For `read-count` notes where both `local` and `remote` have `lifecycle.mode === 'read-count'` and `updatedAt` did not advance past `base`, compute `mergedRemaining = base?.lifecycle.mode === 'read-count' ? base.lifecycle.remainingReads - (base.lifecycle.remainingReads - local.lifecycle.remainingReads) - (base.lifecycle.remainingReads - remote.lifecycle.remainingReads) : Math.min(local.lifecycle.remainingReads, remote.lifecycle.remainingReads)`. If `mergedRemaining <= 0`, delete the note from `mergedRecords`; otherwise retain the note with `remainingReads: mergedRemaining`.
+            - Otherwise, if one side is unchanged from `base` and the other side modified it, keep the modified side; if both sides modified it, keep the version with the larger `Date.parse(r.updatedAt ?? r.createdAt)` (breaking exact millisecond ties in favor of `local`).
         - **High-Water-Mark Merge:** For each prefix `P` in `['R', 'L', 'N']`, set `mergedMeta.highWaterMarks[P] = Math.max(localMeta.highWaterMarks[P], remoteMeta.highWaterMarks[P], maxNumericIdInMergedRecords(P))`.
-     3. Reset `<checkoutDir>` branch to `origin/<branch>` (`git -C <checkoutDir> reset --hard origin/<branch>`), write `mergedRecords` and `mergedMeta` atomically, create the reconciled commit, and re-run `git -C <checkoutDir> push origin <branch>` (retrying up to 3 times on concurrent races, throwing `MemoryHarnessError` with `'GIT_SYNC_FAILED'` if still failing).
+     3. **Post-Reconcile Capacity Check, Atomic Write & State Remapping:**
+        - Re-evaluate `bucketStatusAfter` on `mergedRecords`. If the local operation was `op: 'add'` or a bucket-changing `op: 'update'` and `mergedRecords` now exceeds the target bucket's `hardCap` or `config.maxTotalRecords`, reset `<checkoutDir>` to `origin/<branch>` (`git -C <checkoutDir> reset --hard origin/<branch>`) and throw `MemoryHarnessError` (`'CAP_EXCEEDED'`).
+        - Reset `<checkoutDir>` branch to `origin/<branch>` (`git -C <checkoutDir> reset --hard origin/<branch>`), write `mergedMeta` first and `mergedRecords` second atomically, create the reconciled commit with fallback author identity, and re-run `git -C <checkoutDir> push origin <branch>` (retrying up to 3 times on concurrent races, throwing `MemoryHarnessError` with `'GIT_SYNC_FAILED'` if still failing).
+        - If `idRemap.size > 0`, apply `idRemap` to any returned `MemoryCommitOutput` (`committedRecord.id`, `mergedKeepRecord.id`, `bucketStatusAfter.bucketRecordIds`) and remap any matching IDs in `.memory/.session-state/*.json` `seenRecordIds`.
 
 ---
 
@@ -1327,6 +1608,8 @@ export interface DistillerProposalRequest {
   readonly userPrompt: string;
   /** Target bucket capacity status. */
   readonly bucketStatus: MemoryBucketStatus;
+  /** JSON Schema object generated from `DistillerStructuredOutputSchema` for structured output enforcement. */
+  readonly outputJsonSchema: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -1336,9 +1619,11 @@ export interface MemoryDistillerRunner {
   /**
    * Executes the Distiller prompt and returns a validated structured proposal.
    *
-   * @param {DistillerProposalRequest} request - Distiller prompt and model parameters.
+   * @param {DistillerProposalRequest} request - Distiller prompt, JSON schema, and model parameters.
    *
    * @returns {Promise<DistillerStructuredOutput>} Structured Distiller match and choice analysis.
+   *
+   * @throws {MemoryHarnessError} With code `'DISTILLER_EXECUTION_FAILED'` when the runner fails or times out.
    */
   runDistillerProposal(request: DistillerProposalRequest): Promise<DistillerStructuredOutput>;
 }
@@ -1361,19 +1646,78 @@ export interface MemoryHarnessOptions {
  * Public programmatic contract of the Unified Memory Harness (`MemoryHarness`).
  */
 export interface MemoryHarnessContract {
-  /** Returns the loaded and validated `MemoryConfig`. */
+  /**
+   * Returns the loaded and validated `MemoryConfig` for this workspace.
+   *
+   * @returns {MemoryConfig} Validated unified memory configuration object.
+   */
   getConfig(): MemoryConfig;
-  /** Executes `memory_init` at session start and after compaction. */
+
+  /**
+   * Executes `memory_init` at session start and after context compaction, returning the config-adapted
+   * protocol and all unscoped `'general'` and `<role>` rules, lessons, and active notes.
+   *
+   * @param {MemoryInitInput} input - Session role and optional session identifier.
+   *
+   * @returns {Promise<MemoryInitOutput>} Protocol markdown and ordered unscoped memories.
+   *
+   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, or `'GIT_SYNC_FAILED'`.
+   */
   init(input: MemoryInitInput): Promise<MemoryInitOutput>;
-  /** Executes `memory_load_scoped` for specific paths or glob patterns. */
+
+  /**
+   * Executes `memory_load_scoped` for specific file paths, directories, or glob patterns.
+   *
+   * @param {MemoryLoadScopedInput} input - Target role, paths/globs to match, and optional session identifier.
+   *
+   * @returns {Promise<MemoryLoadScopedOutput>} Normalized query paths and matching scoped rules, lessons, and notes.
+   *
+   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, or `'GIT_SYNC_FAILED'`.
+   */
   loadScoped(input: MemoryLoadScopedInput): Promise<MemoryLoadScopedOutput>;
-  /** Executes `memory_propose` to format and deduplicate a rule or lesson candidate. */
+
+  /**
+   * Executes `memory_propose` to format, deduplicate, and evaluate capacity for a rule or lesson candidate.
+   *
+   * @param {MemoryProposeInput} input - Candidate rule or lesson payload and optional scope/incident context.
+   *
+   * @returns {Promise<MemoryProposeOutput>} Resolved Distiller proposal choices or subagent delegation payload.
+   *
+   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, `'LESSON_FORMAT_INVALID'`, `'RULE_PROTECTION_VIOLATION'`, or `'DISTILLER_EXECUTION_FAILED'`.
+   */
   propose(input: MemoryProposeInput): Promise<MemoryProposeOutput>;
-  /** Executes `memory_commit` to atomically add, update, or remove a record. */
+
+  /**
+   * Executes `memory_commit` to atomically add, update, or remove a record in `memory.jsonl`.
+   *
+   * @param {MemoryCommitInput} input - Discriminated `'add' | 'update' | 'remove'` mutation payload.
+   *
+   * @returns {Promise<MemoryCommitOutput>} Committed/previous record snapshots, post-commit bucket status, and Git sync flags.
+   *
+   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, `'LESSON_FORMAT_INVALID'`, `'CAP_EXCEEDED'`, `'RECORD_NOT_FOUND'`, `'RULE_PROTECTION_VIOLATION'`, or `'GIT_SYNC_FAILED'`.
+   */
   commit(input: MemoryCommitInput): Promise<MemoryCommitOutput>;
-  /** Executes `memory_drain_notes` in dry-run or destructive mode. */
+
+  /**
+   * Executes `memory_drain_notes` in dry-run preview or destructive bulk-drain mode.
+   *
+   * @param {MemoryDrainNotesInput} input - Lifecycle mode selectors, optional role/path/ID filters, and `dryRun` flag.
+   *
+   * @returns {Promise<MemoryDrainNotesOutput>} Matched note records, drained IDs, and Git sync flags.
+   *
+   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, or `'GIT_SYNC_FAILED'`.
+   */
   drainNotes(input: MemoryDrainNotesInput): Promise<MemoryDrainNotesOutput>;
-  /** Evaluates a file/directory tool interaction and returns unseen scoped memories for the current compaction epoch. */
+
+  /**
+   * Evaluates a file or directory tool interaction and returns unseen scoped memories for the active compaction epoch.
+   *
+   * @param {FileInteractionHookInput} input - Session ID, touched paths/globs, and optional role and transcript path.
+   *
+   * @returns {Promise<FileInteractionHookOutput>} Injection status, compaction epoch ID, formatted context, and newly injected records.
+   *
+   * @throws {MemoryHarnessError} With `'INVALID_ROLE'`, `'VALIDATION_FAILED'`, or `'GIT_SYNC_FAILED'`.
+   */
   handleFileInteractionHook(input: FileInteractionHookInput): Promise<FileInteractionHookOutput>;
 }
 ```
@@ -1387,32 +1731,41 @@ In accordance with `docs/CODING_GUIDELINES.md` Rules 1.1–1.8, `@paraharness/me
 | File Path | Entity Kind (`Rule 1.1`) | Primary Export & Responsibility |
 | :--- | :---: | :--- |
 | `src/schemas/memory-config.schema.ts` | `*.schema.ts` | `MemoryConfigSchema`, `MemoryCapRuleSchema`, `MemoryLessonFormatConfigSchema`, `MemoryDistillerConfigSchema`, `MemoryStorageConfigSchema`, `MemoryGitStorageConfigSchema` and inferred types. |
-| `src/schemas/memory-record.schema.ts` | `*.schema.ts` | `MemoryRecordSchema`, `MemoryRuleRecordSchema`, `MemoryLessonRecordSchema`, `MemoryNoteRecordSchema`, `NoteLifecycleSchema`, `MemoryMetaSchema` and inferred types. |
-| `src/schemas/memory-tools.schema.ts` | `*.schema.ts` | Input/output Zod schemas and inferred types for `memory_init`, `memory_load_scoped`, `memory_propose`, `memory_commit`, `memory_drain_notes`, `FileInteractionHookInputSchema`, `FileInteractionHookOutputSchema`, `MemorySessionEpochStateSchema`, and `MemoryErrorCodeSchema`. |
+| `src/schemas/memory-record.schema.ts` | `*.schema.ts` | `MemoryRecordTypeSchema`, `MemoryRecordSchema`, `MemoryRuleRecordSchema`, `MemoryLessonRecordSchema`, `MemoryNoteRecordSchema`, `NoteLifecycleModeSchema`, `NoteLifecycleSchema`, `MemoryMetaSchema` and inferred types. |
+| `src/schemas/memory-tools.schema.ts` | `*.schema.ts` | Input/output Zod schemas and inferred types for `memory_init`, `memory_load_scoped`, `memory_propose`, `memory_commit`, `memory_drain_notes`, `SessionIdSchema`, `FileInteractionHookInputSchema`, `FileInteractionHookOutputSchema`, `MemoryLatestRoleStateSchema`, `MemorySessionEpochStateSchema`, and `MemoryErrorCodeSchema`. |
 | `src/memory-distiller-runner.ts` | `interface` | `MemoryDistillerRunner` and reachable `DistillerProposalRequest` sub-interface (`Rule 1.2`). |
 | `src/memory-harness-options.ts` | `interface` | `MemoryHarnessOptions` configuration and dependency injection interface. |
 | `src/memory-harness-contract.ts` | `interface` | `MemoryHarnessContract` programmatic surface interface. |
 | `src/memory-harness-error.ts` | `class` | `MemoryHarnessError` structured domain error carrying `code: MemoryErrorCode` and `details?: Readonly<Record<string, unknown>>`. |
-| `src/memory-harness.ts` | `class` | `MemoryHarness` stateful coordinator implementing `MemoryHarnessContract`. |
-| `src/internal/load-memory-config.ts` | `function` | Discovers and validates `.agents/memory.config.json` $\to$ `.claude/memory.config.json` (§2.1). |
-| `src/internal/normalize-memory-path-pattern.ts` | `function` | Normalizes paths/globs to repo-relative POSIX form (§4.1). |
-| `src/internal/matches-context-scope.ts` | `function` | Implements the 4-way symmetric path/glob matching algorithm (§4.3). |
+| `src/memory-harness.ts` | `class` | `MemoryHarness` stateful coordinator implementing `MemoryHarnessContract` and delegating domain phases to `src/internal/*` (`Rules 1.3, 3.1`). |
+| `src/internal/load-memory-config.ts` | `function` | Discovers and validates `.agents/memory.config.json` $\to$ `.claude/memory.config.json` and pre-compiles `forbidRegexes` (§2.1). |
+| `src/internal/normalize-memory-path-pattern.ts` | `function` | Normalizes and deduplicates paths/globs to repo-relative POSIX form (§4.1). |
+| `src/internal/matches-context-scope.ts` | `function` | Implements the 4-way symmetric path/glob matching algorithm and synthetic probe helpers (§4.3). |
 | `src/internal/resolve-record-cap-bucket.ts` | `function` | Implements the most-specific-bucket-wins specificity ranking and bucket partitioning (§5.2). |
-| `src/internal/validate-lesson-text-format.ts` | `function` | Enforces deterministic string, single-sentence, required-substring, and forbidden-regex gates (§6.7). |
+| `src/internal/validate-lesson-text-format.ts` | `function` | Enforces deterministic string, single-sentence, required-substring, and pre-compiled forbidden-regex gates (§6.7). |
 | `src/internal/evaluate-note-lifecycle-on-read.ts` | `function` | Evaluates `persistent`, `read-count`, `hard-expiry`, and `soft-expiry` transitions (§3.3). |
-| `src/internal/reconcile-diverged-memory-ledgers.ts` | `function` | Pure 3-way record union, ID collision re-numbering, and high-water-mark reconciliation for concurrent multi-repo Git pushes (§8.2). |
+| `src/internal/read-memory-ledger.ts` | `function` | Parses `memory.jsonl` and `memory.meta.json`, reconciles monotonic `highWaterMarks` across raw records before expiry, and purges expired `hard-expiry` notes under `<ledgerPath>.lock` (§3.1, §3.3). |
+| `src/internal/write-memory-ledger.ts` | `function` | Canonical-sorts records (`R*` $\to$ `L*` $\to$ `N*`) and atomically persists `memory.meta.json` first and `memory.jsonl` second via `write-file-atomic` (§3.1, §8.1). |
+| `src/internal/sync-memory-git.ts` | `function` | Executes in-place `ensureMemoryGitCheckout`, fallback-author auto-commit, and 3-way diverged push retry loop (§8.2). |
+| `src/internal/reconcile-diverged-memory-ledgers.ts` | `function` | Pure 3-way record union, ID collision re-numbering, and high-water-mark reconciliation for concurrent multi-repo Git pushes (§8.2.3). |
+| `src/internal/build-memory-protocol.ts` | `function` | Generates the config-adapted `protocol` markdown instructions returned by `memory_init` (§6.2). |
+| `src/internal/build-distiller-prompts.ts` | `function` | Constructs the KV-cacheable static `systemPrompt` and dynamic `userPrompt` for `memory_propose` (§6.4). |
+| `src/internal/resolve-session-epoch-state.ts` | `function` | Incrementally scans `transcriptPath` for compaction checkpoints and role fallback, and loads/persists `.memory/.session-state/<sessionId>.json` and `latest-role.json` (§7.2). |
 | `src/index.ts` | Barrel | Explicit `export` and `export type` surface of `@paraharness/memory` (`Rule 1.7`). |
 
 ---
 
 ## 10. Role Skill Integration (`peer/SKILL.md`)
 
-When `@paraharness/memory` is enabled in a repository:
-1. Delete static `skills/lesson/SKILL.md`, `LESSONS.md`, `lessons/<ROLE>.md`, and `peer-notes.md`.
-2. In `skills/peer/SKILL.md`:
+When `@paraharness/memory` is enabled in a repository (where role skills live at `.agents/skills/{peer,lesson}/SKILL.md` or `skills/{peer,lesson}/SKILL.md`, and static lesson files live at `docs/lessons/*.md` or `LESSONS.md` / `lessons/<ROLE>.md`):
+1. Delete static `.agents/skills/lesson/SKILL.md` (`skills/lesson/SKILL.md`), `docs/lessons/*.md` (`LESSONS.md`, `lessons/<ROLE>.md`), and `peer-notes.md`.
+2. In `.agents/skills/peer/SKILL.md` (`skills/peer/SKILL.md`):
+   - In the YAML frontmatter `description` (line 3), replace `records decisions in peer-notes.md and tests new questions against them` with `records decisions as unified memory notes and tests new questions against them`.
    - Under `## Debate and decision` (line 34), tighten the execution gate so mixed agreement+question turns stay in prose:
      > *"An instruction to act needs no special phrasing. Carry it out in the same turn, without asking again, when no part of the turn is still an open question and the change is either trivial with one valid solution or already settled between you. When building it would mean making a choice the owner has not seen, lay out the options with your pick and build once they choose."*
    - Under `## Proposals, prior decisions, and open questions` and `## Sources of truth, documents, and subagents`:
      - Replace `peer-notes.md` and `skills/lesson/SKILL.md` references with the unified memory tools:
        > *"At session start and after every compaction, call `memory_init({ role: 'peer' })` before your first reply. When open questions or gaps come in, check the loaded notes and rules (and call `memory_load_scoped` for the relevant paths), the specs, and the code before asking the owner anything."*
        > *"When the owner signs off on a design or tells you to record now, log the settled choice, its reason, and any accepted trade-off as a `persistent` note via `memory_commit`, keeping anything still open in prose. When a mistake or lesson candidate survives mechanical and doc fixes, or when the owner states a `rule: <text>`, run `memory_propose` and `memory_commit` per the memory protocol."*
+   - Under `## Never` bullet 1 (line 64), replace `peer-notes.md` and forbid mutating memory calls (`memory_commit` or `memory_drain_notes`) on a question or mid-debate turn:
+     > *"- Edit any file, call `memory_commit` or `memory_drain_notes`, dump an unrequested plan, or spawn downstream work on a question or mid-debate turn, and never build a non-trivial change on an approach the owner has not seen."*

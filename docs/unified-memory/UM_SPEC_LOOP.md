@@ -1,11 +1,30 @@
 STATE
 docs                       := ["docs/unified-memory/UNIFIED_MEMORY_SPEC.md", "docs/CODING_GUIDELINES.md"]
-round                      := 1
+round                      := 2
 $verified_mechanical_fixes := []
 $verified_core_proposals   := []
 $pending_adjacent_defects  := []
-round_history              := [] (each completed round's verified mechanical fixes, queued core proposals, and rejected false-positive patterns)
-pre_remediation_sha        := "" (captured via git rev-parse HEAD when transitioning from STEP 2 to STEP 3)
+round_history              := [
+  {
+    "round": 1,
+    "pre_remediation_sha": "37a80160c0e2836d52136507d382724c0e01f725",
+    "verified_mechanical_fixes": [
+      "F1: Co-locate MemoryRecordTypeSchema & MemoryMetaSchema in memory-record.schema.ts (§3.2), import MemoryRecordTypeSchema in memory-config.schema.ts (§2.2), reference MemoryMetaSchema in §3.1, remove duplicate/self-imports in §7.1–§7.2, and update §9.2.",
+      "F2: Fix normalizeMemoryPathPattern (§4.1) for exact workspaceRoot, standalone '.', external absolute paths, and path array deduplication; fix §4.2 glob metacharacter description; and specify §7.2 Step 3 early-exit when all touchedPaths are outside workspaceRoot.",
+      "F3: Define extractProbeSuffixes & buildRelativeProbes in §4.3 and apply synthetic extension-aware probe intersection across Cases 2, 3, and 4.",
+      "F4: Require ancestor-or-equal prefix containment for every record context item in §5.2 Step 1, expand pathSpec to (pathTier, maxPrefixSegments, maxPrefixChars) in §5.2 Step 2, and define UNCAPPED bucketId & population B in §5.2 Step 3.",
+      "F5: Define SessionIdSchema & MemoryLatestRoleStateSchema, enforce session-lock-before-ledger-lock ordering in memory_init (§6.2) and memory_load_scoped (§6.3), preserve post-init seenRecordIds via 'PENDING_HOOK_EPOCH' in §7.2 Step 2, validate/fallback role to 'general' in §7.2 Step 1, and always persist updated session state in §7.2.",
+      "F6: Reconcile memory.meta.json highWaterMarks across raw records before hard-expiry purge, enforce strict multi-file write order (memory.meta.json -> memory.jsonl -> Git sync -> session-state) in §3.1 & §8.1, specify remainingReads on MemoryLoadedNoteRecord in §3.3, and unify hard-expiry & Git sync across §§6.2–6.6 and §7.2.",
+      "F7: Add bucketRecordIds to MemoryBucketStatusSchema (§6.1) and userPrompt (§6.4), restrict MemoryCapMergeProposalSchema to R/L with distinct same-prefix refine, add DistillerStructuredOutputSchema & MemoryProposeOutputSchema superRefine and delegateToSubagent.timeoutMs + DistillerProposalRequest.outputJsonSchema, enforce rule protection & choice validation in §6.4 & §6.5, and tighten validateLessonTextFormat in §6.7.",
+      "F8: Move MemoryCommitInputSchema.superRefine to outer discriminatedUnion, trim text/mergedText, union context & repos on capMerge, check capacity on bucket/repo-scope transitions during op: 'update', and specify MemoryCommitOutput field mapping in §6.5.",
+      "F9: Expand MemoryConfigSchema.superRefine (§2.2), replace git clone with in-place ensureMemoryGitCheckout under <ledgerPath>.lock (§8.2.1), add fallback commit author identity (§8.2.2), fix 3-way reconcile edge cases (unrelated histories, highWaterMark re-numbering + idRemap, numeric timestamp comparison, read-count delta merge, post-reconcile capacity check) in §8.2.3, and complete Claude Code & Antigravity hook path extraction and incremental transcript offset tracking in §7.1–§7.2.",
+      "F10: Add complete Rule 2.2 JSDoc block tags (@param, @returns, @throws) to MemoryHarnessContract (§9.1), add 6 src/internal/* phase helper modules to §9.2, and complete peer/SKILL.md integration in §10."
+    ],
+    "verified_core_proposals": [],
+    "rejected_findings": []
+  }
+]
+pre_remediation_sha        := "37a80160c0e2836d52136507d382724c0e01f725"
 
 POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop` after any `CHECKPOINT` compaction in `transcript.jsonl`)
 1. `.agents/hooks/post-compaction.mjs` injects `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md`) if present, or generates and saves the role's sequential grounding note automatically.
