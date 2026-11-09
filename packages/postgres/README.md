@@ -1,10 +1,22 @@
-# `@paraharness/postgres`
+# @paraharness/postgres
 
-Distributed PostgreSQL runtime drivers and AST builders for ParaHarness `LedgerStore`, Copy-on-Write `TopologyStore`, `LessonStore`, and relational global rules sources.
-
-- **Full API Reference:** [https://paraharness.github.io/paraharness/modules/_paraharness_postgres.html](https://paraharness.github.io/paraharness/modules/_paraharness_postgres.html)
+Distributed PostgreSQL runtime drivers and declarative `postgres.*` builders for [Paraharness](https://github.com/paraharness/paraharness). This package provides transactional multi-worker persistence for `LedgerStore`, Copy-on-Write `TopologyStore`, `LessonStore`, and relational global rules sources over PostgreSQL connection pools.
 
 ## Installation
+
+With npm:
+
+```bash
+npm install @paraharness/postgres @paraharness/core zod
+```
+
+With yarn:
+
+```bash
+yarn add @paraharness/postgres @paraharness/core zod
+```
+
+With pnpm:
 
 ```bash
 pnpm add @paraharness/postgres @paraharness/core zod
@@ -13,25 +25,42 @@ pnpm add @paraharness/postgres @paraharness/core zod
 ## Usage
 
 ```ts
-import { P } from '@paraharness/core';
+import { P, z } from '@paraharness/core';
+import { createExecutorRegistry } from '@paraharness/core/runtime';
 import { postgres, postgresExecutors } from '@paraharness/postgres';
+
+const TaskInput = z.object({
+  id: z.string(),
+  prompt: z.string(),
+});
 
 const dbUrl = P.env('DATABASE_URL');
 
-const ledger = postgres.ledger(dbUrl);
-const topologyStore = postgres.topologyStore(dbUrl);
-const lessonStore = postgres.lessonStore(dbUrl);
+const ledger = postgres
+  .ledger(dbUrl)
+  .compactWhen(($c) =>
+    $c
+      .onTerminalExit(['done', 'cancelled'], { afterGracePeriodHours: 48 })
+      .retainFailedRunsForDays(30),
+  );
+
+const repoTopology = P.topology('repo-topology')
+  .store(postgres.topologyStore(dbUrl))
+  .partitions({
+    db: {},
+    api: { dependsOn: ['db'] },
+  });
+
+const repoLessons = P.lessons('repo-lessons')
+  .store(postgres.lessonStore(dbUrl))
+  .queryFrom(TaskInput, (item) => item.prompt);
+
+const registry = createExecutorRegistry(postgresExecutors);
 ```
 
-## Key Exports
+## Documentation
 
-| Export | Description |
-| :--- | :--- |
-| `postgres.ledger(uri)` | Builds `PostgresLedgerNode` (`type: 'postgres:ledger'`) with optional `.compactWhen()` |
-| `postgres.topologyStore(uri)` | Builds `PostgresTopologyNode` (`type: 'postgres:topology'`) |
-| `postgres.lessonStore(uri)` | Builds `PostgresLessonsNode` (`type: 'postgres:lessons'`) |
-| `postgres.globalRules(uri, { table })` | Builds `PostgresRulesSourceNode` (`type: 'postgres:global-rules'`) |
-| `postgresExecutors`, `createPostgresExecutors` | Runtime store and source registrations for all `postgres:*` AST nodes |
+See the [`@paraharness/postgres` API Reference](https://paraharness.github.io/paraharness/modules/_paraharness_postgres.html) for full type and builder specifications.
 
 ## License
 

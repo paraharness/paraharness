@@ -13,7 +13,7 @@ import type { StreamNode } from '../ast/stream-node.js';
 import type { HarnessSignalNotificationBuilder } from './harness-signal-notification-builder.js';
 
 /**
- * Fluent builder for the root ParaHarness application (`P.harness(id)`).
+ * Fluent builder for the root Paraharness application (`P.harness(id)`).
  *
  * Binds the durable state ledger, capacity and runner pools, inbound event streams,
  * execution lanes, signal notification rules, and exposed control-plane servers.

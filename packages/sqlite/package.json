@@ -1,7 +1,7 @@
 {
   "name": "@paraharness/sqlite",
   "version": "0.1.0",
-  "description": "WAL-mode SQLite runtime drivers for ParaHarness LedgerStore, Copy-on-Write TopologyStore, LessonStore, and global rules sources.",
+  "description": "WAL-mode SQLite runtime drivers for Paraharness LedgerStore, Copy-on-Write TopologyStore, LessonStore, and global rules sources.",
   "keywords": [
     "paraharness",
     "sqlite",

@@ -1,7 +1,7 @@
 {
   "name": "@paraharness/gemini",
   "version": "0.1.0",
-  "description": "Google Gemini generateContent ModelDriver and AST builders for ParaHarness supporting API key and CLI/ADC seats, thoughtSignature preservation, and structured outputs.",
+  "description": "Google Gemini generateContent ModelDriver and AST builders for Paraharness supporting API key and CLI/ADC seats, thoughtSignature preservation, and structured outputs.",
   "keywords": [
     "paraharness",
     "gemini",

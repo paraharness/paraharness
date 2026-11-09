@@ -1,7 +1,7 @@
 {
   "name": "@paraharness/openai",
   "version": "0.1.0",
-  "description": "OpenAI Responses API and Codex CLI ModelDriver and AST builders for ParaHarness supporting previous_response_id branching, cross-seat failover, and structured outputs.",
+  "description": "OpenAI Responses API and Codex CLI ModelDriver and AST builders for Paraharness supporting previous_response_id branching, cross-seat failover, and structured outputs.",
   "keywords": [
     "paraharness",
     "openai",

@@ -1,10 +1,22 @@
-# `@paraharness/github`
+# @paraharness/github
 
-GitHub Issues tracker adapter, HMAC-SHA256 webhook event stream source, and idempotent pull-request step executor for ParaHarness.
-
-- **Full API Reference:** [https://paraharness.github.io/paraharness/modules/_paraharness_github.html](https://paraharness.github.io/paraharness/modules/_paraharness_github.html)
+GitHub Issues tracker adapter, HMAC-SHA256 webhook event stream source, and idempotent pull-request step executor for [Paraharness](https://github.com/paraharness/paraharness). This package connects `P.lane` work queues to GitHub Issues, streams verified repository webhook events into `P.stream` signal pipelines, and publishes or updates pull requests inside `P.flow`.
 
 ## Installation
+
+With npm:
+
+```bash
+npm install @paraharness/github @paraharness/core zod
+```
+
+With yarn:
+
+```bash
+yarn add @paraharness/github @paraharness/core zod
+```
+
+With pnpm:
 
 ```bash
 pnpm add @paraharness/github @paraharness/core zod
@@ -13,8 +25,17 @@ pnpm add @paraharness/github @paraharness/core zod
 ## Usage
 
 ```ts
-import { P } from '@paraharness/core';
+import { P, z } from '@paraharness/core';
+import { createExecutorRegistry } from '@paraharness/core/runtime';
 import { github, githubExecutors } from '@paraharness/github';
+
+const TaskInput = z.object({
+  id: z.string(),
+  title: z.string(),
+  summary: z.string(),
+});
+
+const prMergedSignal = P.signal('pr-merged', z.object({ ref: z.string() }));
 
 const issueTracker = github.issues({
   repo: 'acme/platform',
@@ -22,31 +43,35 @@ const issueTracker = github.issues({
   labels: ['agent-ready'],
 });
 
-const webhookStream = github.webhookStream({
-  repo: 'acme/platform',
-  port: 3000,
-  path: '/webhooks/github',
-  secret: P.env('GITHUB_WEBHOOK_SECRET'),
-  events: ['pull_request', 'issue_comment'],
-});
+const mergeStream = P.stream('github-merge-events')
+  .source(
+    github.webhookStream({
+      repo: 'acme/platform',
+      port: 3000,
+      path: '/webhooks/github',
+      secret: P.env('GITHUB_WEBHOOK_SECRET'),
+      events: ['pull_request.closed'],
+    }),
+  )
+  .filter((ev) => ev.pull_request.merged === true)
+  .emitSignal(prMergedSignal, (ev) => ({
+    ref: ev.pull_request.head.ref,
+  }));
 
 const publishPr = github.createOrUpdatePr('publish-pr', {
   repo: 'acme/platform',
   token: P.env('GITHUB_TOKEN'),
-  branch: (item: { id: string }) => `feat/${item.id}`,
-  title: (item: { title: string }) => item.title,
-  body: (item: { summary: string }) => item.summary,
+  branch: (item: z.infer<typeof TaskInput>) => `feat/${item.id}`,
+  title: (item: z.infer<typeof TaskInput>) => item.title,
+  body: (item: z.infer<typeof TaskInput>) => item.summary,
 });
+
+const registry = createExecutorRegistry(githubExecutors);
 ```
 
-## Key Exports
+## Documentation
 
-| Export | Description |
-| :--- | :--- |
-| `github.issues(opts)` | Builds `GithubIssuesTrackerNode` (`type: 'github:issues'`) for `P.lane.tracker()` |
-| `github.webhookStream(opts)` | Builds `GithubWebhookStreamNode` (`type: 'github:webhook-stream'`) for `P.stream.source()` |
-| `github.createOrUpdatePr(id, opts)` | Builds idempotent PR creation/update step (`type: 'github:create-or-update-pr'`) |
-| `githubExecutors`, `createGithubExecutors` | Runtime tracker, stream source, and step registrations for all `github:*` AST nodes |
+See the [`@paraharness/github` API Reference](https://paraharness.github.io/paraharness/modules/_paraharness_github.html) for full type and builder specifications.
 
 ## License
 

@@ -1,7 +1,7 @@
 {
   "name": "@paraharness/postgres",
   "version": "0.1.0",
-  "description": "Distributed PostgreSQL runtime drivers for ParaHarness LedgerStore, Copy-on-Write TopologyStore, LessonStore, and global rules sources.",
+  "description": "Distributed PostgreSQL runtime drivers for Paraharness LedgerStore, Copy-on-Write TopologyStore, LessonStore, and global rules sources.",
   "keywords": [
     "paraharness",
     "postgres",

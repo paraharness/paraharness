@@ -1,46 +1,63 @@
-# `@paraharness/claude`
+# @paraharness/claude
 
-Anthropic Claude `/v1/messages` `ModelDriver` and passive AST builders for ParaHarness.
-
-- **Full API Reference:** [https://paraharness.github.io/paraharness/modules/_paraharness_claude.html](https://paraharness.github.io/paraharness/modules/_paraharness_claude.html)
+Anthropic Claude model driver and declarative `claude.*` builders for [Paraharness](https://github.com/paraharness/paraharness). This package connects `P.agent` actors and `P.pool` seat pools to the Anthropic `/v1/messages` API and Claude CLI OAuth subscription seats (`~/.claude-*`), handling ephemeral KV-cache breakpoint injection, cryptographic `thinking` block signature preservation, native JSON-schema structured outputs, and warm-prefix downward fork preparation.
 
 ## Installation
+
+With npm:
+
+```bash
+npm install @paraharness/claude @paraharness/core zod
+```
+
+With yarn:
+
+```bash
+yarn add @paraharness/claude @paraharness/core zod
+```
+
+With pnpm:
 
 ```bash
 pnpm add @paraharness/claude @paraharness/core zod
 ```
 
-## Overview
-
-Supports both Claude CLI OAuth subscription seats (`~/.claude-*` `configDir`) and API key seats with run-sticky seat affinity, native JSON-schema structured outputs (`output_config.format`), cryptographic `thinking` signature preservation, `shared-prefix-only` and `clone-transcript` fork preparation, cross-model tombstone substitution, and ephemeral KV-cache breakpoint injection.
-
 ## Usage
 
 ```ts
-import { P } from '@paraharness/core';
+import { P, z } from '@paraharness/core';
+import { createExecutorRegistry } from '@paraharness/core/runtime';
 import { claude, claudeExecutors } from '@paraharness/claude';
 
 const seatA = claude.cliAccount('seat-a').configDir('~/.claude-seat-a');
 const apiFallback = claude.cliAccount('api-fallback').apiKey(P.env('ANTHROPIC_API_KEY'));
 
-const accountPool = P.pool('claude-seats')
+const claudeSeats = P.pool('claude-seats')
   .items(seatA)
   .strategy('soonest-reset')
   .fallback(apiFallback);
 
 const opus = claude
   .model('opus', { id: 'claude-opus-4-6', effort: 'high' })
-  .accountPool(accountPool);
+  .accountPool(claudeSeats);
+
+const reviewer = P.agent('reviewer')
+  .model(opus)
+  .instructions('Audit the pull request diff and report any security or correctness regressions.')
+  .input(z.object({ diff: z.string() }))
+  .output(
+    z.object({
+      approved: z.boolean(),
+      findings: z.array(z.string()),
+    }),
+  );
+
+const registry = createExecutorRegistry(claudeExecutors);
 ```
 
-## Key Exports
+## Documentation
 
-| Export | Description |
-| :--- | :--- |
-| `claude.cliAccount(id)` | Fluent builder for `ClaudeAccountSeatNode` (`type: 'claude:account-seat'`) |
-| `claude.model(alias, opts)` | Fluent builder for `ClaudeModelNode` (`type: 'claude:model'`) |
-| `claudeExecutors` | Runtime executor registration for `RuntimeExecutorRegistry.models['claude:model']` |
-| `ClaudeModelDriver` | Anthropic `/v1/messages` `ModelDriver` implementation |
+See the [`@paraharness/claude` API Reference](https://paraharness.github.io/paraharness/modules/_paraharness_claude.html) for full type and builder specifications.
 
 ## License
 

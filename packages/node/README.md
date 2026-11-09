@@ -1,46 +1,60 @@
-# `@paraharness/node`
+# @paraharness/node
 
-Local OS process runner pools, one-shot subprocess commands, circuit-breaking stream checks, framed PTY background daemons, and Model Context Protocol (MCP) control-plane adapters for ParaHarness.
-
-- **Full API Reference:** [https://paraharness.github.io/paraharness/modules/_paraharness_node.html](https://paraharness.github.io/paraharness/modules/_paraharness_node.html)
+Local OS subprocess runner pools, one-shot commands, circuit-breaking stream checks, framed PTY background daemons, and Model Context Protocol (MCP) control-plane adapters for [Paraharness](https://github.com/paraharness/paraharness). This package manages bounded concurrency slots for shell commands and interactive pseudo-terminal services (`node-pty`), rolling-window regex circuit breakers on `stdout`/`stderr`, and post-flight workspace mutation tracking.
 
 ## Installation
+
+With npm:
+
+```bash
+npm install @paraharness/node @paraharness/core zod
+```
+
+With yarn:
+
+```bash
+yarn add @paraharness/node @paraharness/core zod
+```
+
+With pnpm:
 
 ```bash
 pnpm add @paraharness/node @paraharness/core zod
 ```
 
-## Overview
-
-Provides separate concurrency pools for one-shot commands (`slots`) and background daemons (`maxDaemons`), rolling-window regex circuit breakers on combined `stdout`/`stderr`, pseudo-terminal (`node-pty`) interactive service sessions with collision-free hashed `scopeKey`s and TCP readiness checks, and post-flight workspace mutation tracking (`effectTracking: 'subprocess-post-flight'`).
-
 ## Usage
 
 ```ts
+import { P, z } from '@paraharness/core';
+import { createExecutorRegistry } from '@paraharness/core/runtime';
+import { claude, claudeExecutors } from '@paraharness/claude';
 import { local, mcp, nodeExecutors } from '@paraharness/node';
 
 const runner = local.runner({ id: 'local-pool', slots: 8, maxDaemons: 4 });
+const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
 
 const verifySuite = local
   .streamCheck('verify-suite')
   .runner(runner)
-  .argv(['pnpm', 'test'])
-  .circuitBreakWhenStdout(/FAIL/, { graceLinesAfterMatch: 25 });
+  .argv(['pnpm', 'test', '--run'])
+  .circuitBreakWhenStdout(/FAIL/, { graceLinesAfterMatch: 25 })
+  .timeoutMinutes(5);
 
-const controlPlane = mcp.server({ port: 4100 });
+const worker = P.agent('worker')
+  .model(sonnet)
+  .tools(verifySuite.asTool())
+  .beforeStop(verifySuite)
+  .instructions('Run verification checks and ensure all tests pass before stopping.')
+  .input(z.object({ taskId: z.string() }))
+  .output(z.object({ passed: z.boolean() }));
+
+const controlPlane = mcp.server({ port: 9100 });
+const registry = createExecutorRegistry(claudeExecutors, nodeExecutors);
 ```
 
-## Key Exports
+## Documentation
 
-| Export | Description |
-| :--- | :--- |
-| `local.runner(opts)` | Builds `NodeRunnerNode` (`type: 'node:runner'`) managing command and daemon slots |
-| `local.command(id)` | Builds `LocalCommandNode` (`type: 'node:command'`) with `.asCheck()` and `.asTool()` projections |
-| `local.streamCheck(id)` | Builds `LocalStreamCheckNode` (`type: 'node:stream-check'`) with regex circuit-breaking and `.asTool()` |
-| `local.daemon(id)` | Builds `LocalServiceNode` (`type: 'node:service'`) with dynamic ports and PTY `.interact()` tools |
-| `local.allowBinaries(bins)`, `local.denyNetwork()` | Builds process policy guard AST nodes |
-| `mcp.server(opts)`, `local.mcpStdio(name)`, `local.mcpSse(opts)` | Builds HTTP and MCP control-plane AST nodes |
-| `nodeExecutors` | Runtime executor and driver registrations for all `node:*` AST nodes |
+See the [`@paraharness/node` API Reference](https://paraharness.github.io/paraharness/modules/_paraharness_node.html) for full type and builder specifications.
 
 ## License
 

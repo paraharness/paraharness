@@ -28,7 +28,7 @@ export interface HarnessSignalNotification<TPayload = unknown> {
 }
 
 /**
- * Root passive AST node representing a complete ParaHarness application (`P.harness(id)`).
+ * Root passive AST node representing a complete Paraharness application (`P.harness(id)`).
  *
  * Composes the durable ledger store, resource and runner pools, inbound event streams,
  * execution lanes, outbound signal notifications, and exposed control-plane servers.

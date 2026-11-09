@@ -40,7 +40,7 @@ import type {
 } from './schemas/speculation-schemas.js';
 
 /**
- * Root declarative builder namespace (`P`) for constructing passive ParaHarness AST definitions.
+ * Root declarative builder namespace (`P`) for constructing passive Paraharness AST definitions.
  *
  * Exposes factory methods for every core orchestration construct alongside canonical Zod schemas.
  */
@@ -208,7 +208,7 @@ export interface PNamespace {
    */
   lane(id: string): LaneBuilder<unknown, string>;
   /**
-   * Creates a fluent `HarnessBuilder` for a root ParaHarness application (`P.harness(id)`).
+   * Creates a fluent `HarnessBuilder` for a root Paraharness application (`P.harness(id)`).
    *
    * Binds the state ledger, pools, streams, lanes, signal notifications, and control planes.
    * @param {string} id - Unique identifier of the harness application.

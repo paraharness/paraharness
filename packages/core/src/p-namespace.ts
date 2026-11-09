@@ -60,7 +60,7 @@ import {
 } from './schemas/speculation-schemas.js';
 
 /**
- * Root declarative builder namespace (`P`) for constructing passive ParaHarness AST definitions.
+ * Root declarative builder namespace (`P`) for constructing passive Paraharness AST definitions.
  *
  * All builders under `P` are pure, copy-on-write immutable, and produce deeply frozen passive AST nodes.
  */

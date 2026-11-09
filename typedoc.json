@@ -1,6 +1,6 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "name": "ParaHarness API Reference",
+  "name": "Paraharness API Reference",
   "entryPointStrategy": "packages",
   "entryPoints": [
     "packages/*"

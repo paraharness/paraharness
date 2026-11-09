@@ -1,7 +1,7 @@
 {
   "name": "@paraharness/fs",
   "version": "0.1.0",
-  "description": "Workspace-jailed filesystem tools, glob effect matchers, pre/post-flight write policy guards, quota tripwires, and atomic JSONL lesson store for ParaHarness.",
+  "description": "Workspace-jailed filesystem tools, glob effect matchers, pre/post-flight write policy guards, quota tripwires, and atomic JSONL lesson store for Paraharness.",
   "keywords": [
     "paraharness",
     "filesystem",

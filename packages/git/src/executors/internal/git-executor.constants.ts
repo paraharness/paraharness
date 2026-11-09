@@ -31,9 +31,9 @@ export const CONFLICT_END_REGEX = /^>{7} /;
  * Deterministic git author and committer identity and epoch timestamps used when synthesizing internal worktree commits.
  */
 export const HARNESS_GIT_IDENTITY_ENV: Readonly<Record<string, string>> = Object.freeze({
-  GIT_AUTHOR_NAME: 'ParaHarness Runtime',
+  GIT_AUTHOR_NAME: 'Paraharness Runtime',
   GIT_AUTHOR_EMAIL: 'runtime@paraharness.local',
-  GIT_COMMITTER_NAME: 'ParaHarness Runtime',
+  GIT_COMMITTER_NAME: 'Paraharness Runtime',
   GIT_COMMITTER_EMAIL: 'runtime@paraharness.local',
   GIT_AUTHOR_DATE: '1700000000 +0000',
   GIT_COMMITTER_DATE: '1700000000 +0000',

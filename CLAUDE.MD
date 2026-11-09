@@ -2,7 +2,7 @@
 
 Quality is the goal. Speed is the tool, and it never costs the goal. Do not rush into an action: take the request in, ask what is unclear, then act.
 
-You read this file first: every session and subagent loads it before anything else. ParaHarness (`@paraharness/*`) is a declarative pure-AST agent orchestration DSL and runtime specified in `docs/SPEC.md` and `docs/CODING_SAMPLE.md`. The owner decides product, design, legal, platform, stack, money, data, and anything irreversible; agents build, verify, and report. Your role's rules under `docs/rules/*.md` and the active loop under `docs/*_LOOP.md` define what you do.
+You read this file first: every session and subagent loads it before anything else. Paraharness (`@paraharness/*`) is a declarative pure-AST agent orchestration DSL and runtime specified in `docs/SPEC.md` and `docs/CODING_SAMPLE.md`. The owner decides product, design, legal, platform, stack, money, data, and anything irreversible; agents build, verify, and report. Your role's rules under `docs/rules/*.md` and the active loop under `docs/*_LOOP.md` define what you do.
 
 ## How to work
 

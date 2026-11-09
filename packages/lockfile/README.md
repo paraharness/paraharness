@@ -1,10 +1,22 @@
-# `@paraharness/lockfile`
+# @paraharness/lockfile
 
-Cross-process advisory lockfile utility for ParaHarness with in-process `p-queue` FIFO serialization, atomic `wx` lockfile creation, `.unref()`ed `utimes` heartbeat, and dead-PID / stale-`mtime` lock reclamation.
-
-- **Full API Reference:** [https://paraharness.github.io/paraharness/modules/_paraharness_lockfile.html](https://paraharness.github.io/paraharness/modules/_paraharness_lockfile.html)
+Cross-process advisory lockfile utility for [Paraharness](https://github.com/paraharness/paraharness). This package coordinates exclusive access to shared host files across concurrent processes and in-process async tasks using `p-queue` FIFO serialization, atomic `wx` lockfile creation, `.unref()`ed `utimes` heartbeats, and dead-PID or stale-`mtime` lock reclamation.
 
 ## Installation
+
+With npm:
+
+```bash
+npm install @paraharness/lockfile
+```
+
+With yarn:
+
+```bash
+yarn add @paraharness/lockfile
+```
+
+With pnpm:
 
 ```bash
 pnpm add @paraharness/lockfile
@@ -15,17 +27,22 @@ pnpm add @paraharness/lockfile
 ```ts
 import { withFileLock } from '@paraharness/lockfile';
 
-const result = await withFileLock('/tmp/resource.lock', async () => {
-  return 'locked-operation-complete';
-});
+const result = await withFileLock(
+  '.harness/lessons.lock',
+  async () => {
+    return { updated: true };
+  },
+  {
+    staleMs: 10_000,
+    heartbeatMs: 2_000,
+    timeoutMs: 30_000,
+  },
+);
 ```
 
-## Key Exports
+## Documentation
 
-| Export | Description |
-| :--- | :--- |
-| `withFileLock(lockPath, fn, options?)` | Executes `fn` while holding an in-process and cross-process advisory lock on `lockPath` |
-| `FileLockOptions` | Configuration for `staleMs`, `heartbeatMs`, `retryBaseMs`, `retryMaxMs`, and `timeoutMs` |
+See the [`@paraharness/lockfile` API Reference](https://paraharness.github.io/paraharness/modules/_paraharness_lockfile.html) for full type and builder specifications.
 
 ## License
 

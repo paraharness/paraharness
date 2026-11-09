@@ -1,10 +1,22 @@
-# `@paraharness/fs`
+# @paraharness/fs
 
-Workspace-jailed filesystem tools, glob effect matchers, pre/post-flight write policy guards, file-count quota tripwires, regex checks, and content-addressed JSONL lesson stores for ParaHarness.
-
-- **Full API Reference:** [https://paraharness.github.io/paraharness/modules/_paraharness_fs.html](https://paraharness.github.io/paraharness/modules/_paraharness_fs.html)
+Workspace-jailed filesystem tools, glob effect matchers, pre-flight and post-flight write policy guards, file-count quota tripwires, regex checks, and content-addressed JSONL lesson stores for [Paraharness](https://github.com/paraharness/paraharness). This package provides symlink-safe file reading, editing, and search tools alongside declarative `fs.*` guards that enforce partition boundaries and test ratchets inside `P.policy`.
 
 ## Installation
+
+With npm:
+
+```bash
+npm install @paraharness/fs @paraharness/core zod
+```
+
+With yarn:
+
+```bash
+yarn add @paraharness/fs @paraharness/core zod
+```
+
+With pnpm:
 
 ```bash
 pnpm add @paraharness/fs @paraharness/core zod
@@ -13,32 +25,38 @@ pnpm add @paraharness/fs @paraharness/core zod
 ## Usage
 
 ```ts
+import { P, z } from '@paraharness/core';
+import { createExecutorRegistry } from '@paraharness/core/runtime';
+import { claude, claudeExecutors } from '@paraharness/claude';
 import { fs, fsExecutors } from '@paraharness/fs';
-import { local } from '@paraharness/node';
+import { local, nodeExecutors } from '@paraharness/node';
 
 const runner = local.runner({ slots: 4 });
-const tools = fs.codingTools(runner);
-const protectIndex = fs.writeGuard({
-  denyGlobs: ['packages/*/src/index.ts'],
-  onlyExistingAtBaseRef: true,
-});
-const tripwire = fs.maxFilesMutated(6);
+const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
+
+const workerPolicy = P.policy('worker-policy')
+  .guard(
+    fs.protect(['packages/*/src/index.ts', 'PRODUCT_SPEC.md']),
+    fs.requireReadBeforeWrite(),
+    fs.secretLiterals(),
+  )
+  .onViolation('deny-with-error')
+  .tripwire(fs.maxFilesMutated(6));
+
+const worker = P.agent('worker')
+  .model(sonnet)
+  .policy(workerPolicy)
+  .tools(fs.codingTools(runner))
+  .instructions(fs.text('.harness/prompts/worker.md'))
+  .input(z.object({ prompt: z.string() }))
+  .output(z.object({ summary: z.string() }));
+
+const registry = createExecutorRegistry(claudeExecutors, fsExecutors, nodeExecutors);
 ```
 
-## Key Exports
+## Documentation
 
-| Export | Description |
-| :--- | :--- |
-| `fs.codingTools(runner)`, `fs.readOnlyTools(runner)` | Symlink-safe, worktree-jailed file and search tool AST tuples |
-| `fs.text(path)`, `fs.glob(pattern)` | File and glob `SourceASTNode` builders with SHA-256 content digests |
-| `fs.partitionMap(topology, map)`, `fs.inPartition(map, id)` | Maps logical `P.topology` partitions to filesystem globs and boundary files |
-| `fs.writeGuard(opts)`, `fs.boundaryGuard(map)`, `fs.protect(globs)`, `fs.readOnly()`, `fs.allowOnly(globs)`, `fs.requireReadBeforeWrite()`, `fs.scopedWrite(map)`, `fs.secretLiterals(patterns?)` | Pre-flight and post-flight filesystem policy guard AST nodes |
-| `fs.allowWriteGlobs(globs)` | Produces a serializable `LeaseDelta` unlocking matching paths/globs |
-| `fs.maxFilesMutated(count)` | Builds `FsQuotaTripwireNode` (`type: 'fs:quota-tripwire'`) |
-| `fs.regexCheck(id, opts)` | Builds `FsRegexCheckNode` (`type: 'fs:regex-check'`) over mutated files |
-| `fs.jsonlLessonStore(opts)` | Builds host-root atomic `FsJsonlLessonStoreNode` (`type: 'fs:jsonl-lesson-store'`) |
-| `fs.telemetry()` | Builds `FsTelemetryCollectorNode` (`type: 'fs:telemetry'`) |
-| `fsExecutors` | Runtime executor and driver registrations for all `fs:*` AST nodes |
+See the [`@paraharness/fs` API Reference](https://paraharness.github.io/paraharness/modules/_paraharness_fs.html) for full type and builder specifications.
 
 ## License
 
