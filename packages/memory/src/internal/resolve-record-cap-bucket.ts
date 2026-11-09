@@ -44,6 +44,20 @@ export interface ResolveRecordCapBucketParams {
 }
 
 /**
+ * Parameter object for `computeCapRuleSpecificityTuple`.
+ */
+export interface ComputeCapRuleSpecificityTupleParams {
+  /** Eligible capacity rule from `config.caps`. */
+  readonly capRule: MemoryCapRule;
+  /** 0-based index of `capRule` in `config.caps`. */
+  readonly ruleIndex: number;
+  /** Record or candidate being ranked. */
+  readonly record: CapCandidateRecord;
+  /** Tracked workspace-relative POSIX file paths. */
+  readonly repoFiles: readonly string[];
+}
+
+/**
  * Normalizes a cap rule's `paths` array into canonical POSIX patterns while preserving `'*'`.
  *
  * @param {readonly string[]} rawPaths - Raw `capRule.paths` entries from `config.caps`.
@@ -192,36 +206,30 @@ export function isCapRuleEligibleForRecord(
  * Computes the 6-tuple specificity ranking `(pathTier, maxPrefixSegments, maxPrefixChars, roleSpec, typeSpec, -ruleIndex)`
  * for an eligible `capRule` at `ruleIndex` against `record` per §5.2.2.
  *
- * @param {MemoryCapRule}      capRule   - Eligible capacity rule.
- * @param {number}             ruleIndex - 0-based index of `capRule` in `config.caps`.
- * @param {CapCandidateRecord} record    - Record or candidate being ranked.
- * @param {readonly string[]}  repoFiles - Tracked workspace-relative POSIX file paths.
+ * @param {ComputeCapRuleSpecificityTupleParams} params - Eligible capacity rule, rule index, candidate record, and `repoFiles`.
  *
  * @returns {readonly [number, number, number, number, number, number]} 6-tuple specificity score.
  */
 function computeCapRuleSpecificityTuple(
-  capRule: MemoryCapRule,
-  ruleIndex: number,
-  record: CapCandidateRecord,
-  repoFiles: readonly string[],
+  params: ComputeCapRuleSpecificityTupleParams,
 ): readonly [number, number, number, number, number, number] {
-  const roleSpec = capRule.roles.includes(record.role) ? 2 : 1;
-  const typeSpec = capRule.types.length === 1 ? 2 : 1;
-  const hasContext = record.context !== undefined && record.context.length > 0;
+  const roleSpec = params.capRule.roles.includes(params.record.role) ? 2 : 1;
+  const typeSpec = params.capRule.types.length === 1 ? 2 : 1;
+  const hasContext = params.record.context !== undefined && params.record.context.length > 0;
   if (!hasContext) {
-    return [2, 0, 0, roleSpec, typeSpec, -ruleIndex];
+    return [2, 0, 0, roleSpec, typeSpec, -params.ruleIndex];
   }
-  if (capRule.paths.includes('*')) {
-    return [1, 0, 0, roleSpec, typeSpec, -ruleIndex];
+  if (params.capRule.paths.includes('*')) {
+    return [1, 0, 0, roleSpec, typeSpec, -params.ruleIndex];
   }
-  const normalizedCapPaths = normalizeCapRulePaths(capRule.paths);
+  const normalizedCapPaths = normalizeCapRulePaths(params.capRule.paths);
   let minBestSegments = Number.POSITIVE_INFINITY;
   let minBestChars = Number.POSITIVE_INFINITY;
-  for (const contextPattern of record.context) {
+  for (const contextPattern of params.record.context) {
     let bestSegmentsForC = -1;
     let bestCharsForC = -1;
     for (const capPattern of normalizedCapPaths) {
-      if (!isContextCoveredByCapPattern(capPattern, contextPattern, repoFiles)) {
+      if (!isContextCoveredByCapPattern(capPattern, contextPattern, params.repoFiles)) {
         continue;
       }
       const pDirPrefix = isGlobPattern(capPattern)
@@ -247,7 +255,7 @@ function computeCapRuleSpecificityTuple(
   }
   const resolvedSegs = Number.isFinite(minBestSegments) ? minBestSegments : 0;
   const resolvedChars = Number.isFinite(minBestChars) ? minBestChars : 0;
-  return [2, resolvedSegs, resolvedChars, roleSpec, typeSpec, -ruleIndex];
+  return [2, resolvedSegs, resolvedChars, roleSpec, typeSpec, -params.ruleIndex];
 }
 
 /**
@@ -293,7 +301,12 @@ function resolveWinningRuleAndBucketId(
     if (rule === undefined || !isCapRuleEligibleForRecord(rule, record, repoFiles)) {
       continue;
     }
-    const tuple = computeCapRuleSpecificityTuple(rule, i, record, repoFiles);
+    const tuple = computeCapRuleSpecificityTuple({
+      capRule: rule,
+      ruleIndex: i,
+      record,
+      repoFiles,
+    });
     if (winningTuple === null || compareSpecificityTuples(tuple, winningTuple) > 0) {
       winningIdx = i;
       winningTuple = tuple;

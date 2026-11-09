@@ -1,5 +1,6 @@
 import {
   CONSECUTIVE_SLASHES_REGEX,
+  FILE_INTERACTION_TOOL_NAMES,
   LEADING_SLASHES_REGEX,
   TRAILING_SLASHES_REGEX,
   WINDOWS_DRIVE_SLASH_REGEX,
@@ -36,9 +37,9 @@ function toNonEmptyStrings(value: unknown): readonly string[] {
   }
   if (Array.isArray(value)) {
     const out: string[] = [];
-    for (const item of value) {
-      if (typeof item === 'string' && item.trim().length > 0) {
-        out.push(item.trim());
+    for (const element of value) {
+      if (typeof element === 'string' && element.trim().length > 0) {
+        out.push(element.trim());
       }
     }
     return out;
@@ -53,8 +54,8 @@ function toNonEmptyStrings(value: unknown): readonly string[] {
  * `write_file`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`,
  * `find_by_name`, `grep_search`) tool invocations (§7.1.1–§7.1.2).
  *
- * @param {string}                  toolName  - Tool identifier (`tool_name`, `toolName`, or `name`).
- * @param {Record<string, unknown>} toolInput - Tool input arguments object.
+ * @param {string}                            toolName  - Tool identifier (`tool_name`, `toolName`, or `name`).
+ * @param {Readonly<Record<string, unknown>>} toolInput - Tool input arguments object.
  *
  * @returns {readonly string[]} Raw candidate path or glob strings prior to workspace normalization.
  */
@@ -118,22 +119,7 @@ function extractRawCandidatesForTool(
       ...toNonEmptyStrings(toolInput['file_path']),
     ];
   }
-  const fileToolNames = new Set([
-    'Read',
-    'Edit',
-    'MultiEdit',
-    'Write',
-    'read_file',
-    'view_file',
-    'view_file_outline',
-    'view_code_item',
-    'edit_file',
-    'write_file',
-    'write_to_file',
-    'replace_file_content',
-    'multi_replace_file_content',
-  ]);
-  if (fileToolNames.has(toolName) || toolName.length === 0) {
+  if (FILE_INTERACTION_TOOL_NAMES.has(toolName) || toolName.length === 0) {
     return [
       ...toNonEmptyStrings(toolInput['file_path']),
       ...toNonEmptyStrings(toolInput['notebook_path']),
@@ -149,6 +135,45 @@ function extractRawCandidatesForTool(
 }
 
 /**
+ * Resolves a tool input object from `nestedInputRaw` (parsing JSON strings when valid) or falls back
+ * to `rec` when `toolName` is present on the record itself.
+ *
+ * @param {unknown}                           nestedInputRaw - Candidate `tool_input` / `input` / `arguments` property.
+ * @param {string}                            toolName       - Resolved tool name on `rec`.
+ * @param {Readonly<Record<string, unknown>>} rec            - Enclosing record object.
+ *
+ * @returns {Readonly<Record<string, unknown>> | null} Resolved tool input record, or `null` if none applies.
+ */
+function resolveToolInputObject(
+  nestedInputRaw: unknown,
+  toolName: string,
+  rec: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> | null {
+  if (typeof nestedInputRaw === 'string') {
+    try {
+      const parsedArgs: unknown = JSON.parse(nestedInputRaw);
+      if (parsedArgs !== null && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
+        return parsedArgs as Readonly<Record<string, unknown>>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  if (
+    nestedInputRaw !== null &&
+    typeof nestedInputRaw === 'object' &&
+    !Array.isArray(nestedInputRaw)
+  ) {
+    return nestedInputRaw as Readonly<Record<string, unknown>>;
+  }
+  if (toolName.length > 0) {
+    return rec;
+  }
+  return null;
+}
+
+/**
  * Recursively collects raw path/glob candidates from hook payloads or transcript step objects.
  *
  * @param {unknown}  node - Hook input object or transcript JSON entry.
@@ -161,8 +186,8 @@ function collectRawCandidatesFromPayload(node: unknown, out: string[]): void {
     return;
   }
   if (Array.isArray(node)) {
-    for (const item of node) {
-      collectRawCandidatesFromPayload(item, out);
+    for (const childNode of node) {
+      collectRawCandidatesFromPayload(childNode, out);
     }
     return;
   }
@@ -171,33 +196,9 @@ function collectRawCandidatesFromPayload(node: unknown, out: string[]): void {
   const toolName = typeof toolNameRaw === 'string' ? toolNameRaw.trim() : '';
   const nestedInputRaw =
     rec['tool_input'] ?? rec['toolInput'] ?? rec['input'] ?? rec['arguments'] ?? rec['args'];
-  if (typeof nestedInputRaw === 'string') {
-    try {
-      const parsedArgs: unknown = JSON.parse(nestedInputRaw);
-      if (parsedArgs !== null && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
-        for (const candidate of extractRawCandidatesForTool(
-          toolName,
-          parsedArgs as Readonly<Record<string, unknown>>,
-        )) {
-          out.push(candidate);
-        }
-      }
-    } catch {
-      return;
-    }
-  } else if (
-    nestedInputRaw !== null &&
-    typeof nestedInputRaw === 'object' &&
-    !Array.isArray(nestedInputRaw)
-  ) {
-    for (const candidate of extractRawCandidatesForTool(
-      toolName,
-      nestedInputRaw as Readonly<Record<string, unknown>>,
-    )) {
-      out.push(candidate);
-    }
-  } else if (toolName.length > 0) {
-    for (const candidate of extractRawCandidatesForTool(toolName, rec)) {
+  const resolvedInput = resolveToolInputObject(nestedInputRaw, toolName, rec);
+  if (resolvedInput !== null) {
+    for (const candidate of extractRawCandidatesForTool(toolName, resolvedInput)) {
       out.push(candidate);
     }
   }

@@ -10,7 +10,7 @@ import {
 } from '../src/index.js';
 import { ensureMemoryGitCheckout } from '../src/internal/ensure-memory-git-checkout.js';
 import { execGitCommand } from '../src/internal/exec-git-command.js';
-import { createEmptyBranchLedgerState } from '../src/internal/git-checkout-helpers.js';
+import { createEmptyBranchLedgerState } from '../src/internal/create-empty-branch-ledger-state.js';
 import { initializeMetaFromGitHistory } from '../src/internal/initialize-meta-from-git-history.js';
 import { readMemoryLedger } from '../src/internal/read-memory-ledger.js';
 import {
@@ -33,6 +33,8 @@ describe('Git checkout initialization, 3-way diverged ledger reconciliation & po
   let attachConfig: MemoryConfig;
   let pullWorkspaceRoot = '';
   let pullConfig: MemoryConfig;
+  let divergedPullWorkspaceRoot = '';
+  let divergedPullConfig: MemoryConfig;
   let unrelatedWorkspaceRoot = '';
   let unrelatedConfig: MemoryConfig;
   let pushWorkspaceBRoot = '';
@@ -275,6 +277,52 @@ describe('Git checkout initialization, 3-way diverged ledger reconciliation & po
     await ensureMemoryGitCheckout({
       workspaceRoot: pushWorkspaceBRoot,
       config: pushConfigB,
+    });
+
+    divergedPullWorkspaceRoot = path.join(suiteRoot, 'diverged-pull-ws');
+    divergedPullConfig = MemoryConfigSchema.parse({
+      repoId: 'diverged-pull-ws',
+      allowedRoles: ['general', 'builder'],
+      storage: {
+        ledgerPath: '.memory/memory.jsonl',
+        git: {
+          enabled: true,
+          checkoutDir: '.memory',
+          remoteUrl: bareRemoteTwo,
+          branch: 'main',
+          autoCommit: true,
+          autoPush: false,
+          autoPullOnInit: true,
+        },
+      },
+    });
+    await ensureMemoryGitCheckout({
+      workspaceRoot: divergedPullWorkspaceRoot,
+      config: divergedPullConfig,
+    });
+    await writeMemoryLedger({
+      ledgerPath: path.join(divergedPullWorkspaceRoot, '.memory', 'memory.jsonl'),
+      records: [
+        {
+          id: 'R1',
+          type: 'rule',
+          role: 'general',
+          text: 'Base rule R1',
+          createdAt: '2026-11-09T10:00:00.000Z',
+        },
+        {
+          id: 'L1',
+          type: 'lesson',
+          role: 'builder',
+          text: 'Local lesson L1 committed before autoPullOnInit, because diverged from shared ancestor R1.',
+          createdAt: '2026-11-09T10:04:00.000Z',
+        },
+      ],
+    });
+    await syncMemoryGit({
+      workspaceRoot: divergedPullWorkspaceRoot,
+      config: divergedPullConfig,
+      opSummary: 'commit local L1 before remote push',
     });
 
     await writeMemoryLedger({
@@ -659,14 +707,14 @@ describe('Git checkout initialization, 3-way diverged ledger reconciliation & po
   });
 
   it('initializes .memory git checkout in-place with .gitignore entries, preserves .session-state/, reconciles pre-existing local memory.jsonl against origin/main, and remaps <otherSid>.json after lock release', async () => {
-    const res = await ensureMemoryGitCheckout({
+    const checkoutResult = await ensureMemoryGitCheckout({
       workspaceRoot: attachWorkspaceRoot,
       config: attachConfig,
     });
-    expect(res.initializedNewGitRepo).toBe(true);
-    expect(res.reconciledWithRemote).toBe(true);
-    expect(res.gitCommitted).toBe(true);
-    expect(Object.fromEntries(res.cumulativeIdRemap)).toEqual({ L1: 'L2' });
+    expect(checkoutResult.initializedNewGitRepo).toBe(true);
+    expect(checkoutResult.reconciledWithRemote).toBe(true);
+    expect(checkoutResult.gitCommitted).toBe(true);
+    expect(Object.fromEntries(checkoutResult.cumulativeIdRemap)).toEqual({ L1: 'L2' });
 
     const gitignoreText = await readFile(
       path.join(attachWorkspaceRoot, '.memory', '.gitignore'),
@@ -683,7 +731,7 @@ describe('Git checkout initialization, 3-way diverged ledger reconciliation & po
 
     const remappedSids = await remapOtherSessionStatesAfterLockRelease(
       attachWorkspaceRoot,
-      res.cumulativeIdRemap,
+      checkoutResult.cumulativeIdRemap,
     );
     expect(remappedSids).toEqual(['s1']);
     const s1Raw = await readFile(
@@ -775,6 +823,19 @@ describe('Git checkout initialization, 3-way diverged ledger reconciliation & po
       path.join(unrelatedWorkspaceRoot, '.memory', 'memory.jsonl'),
     );
     expect(unrelatedSnap.records.map((r) => r.id)).toEqual(['R1', 'L1', 'N1']);
+
+    const divergedPull = await ensureMemoryGitCheckout({
+      workspaceRoot: divergedPullWorkspaceRoot,
+      config: divergedPullConfig,
+      isInitCall: true,
+    });
+    expect(divergedPull.reconciledWithRemote).toBe(true);
+    expect(divergedPull.gitCommitted).toBe(true);
+    expect(Object.fromEntries(divergedPull.cumulativeIdRemap)).toEqual({ L1: 'L2' });
+    const divergedPullSnap = await readMemoryLedger(
+      path.join(divergedPullWorkspaceRoot, '.memory', 'memory.jsonl'),
+    );
+    expect(divergedPullSnap.records.map((r) => r.id)).toEqual(['R1', 'L1', 'L2']);
   });
 
   it('reconciles concurrent diverged multi-repo autoPush with fallback author identity and re-numbers colliding local additions', async () => {

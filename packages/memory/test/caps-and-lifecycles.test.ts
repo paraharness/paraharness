@@ -86,17 +86,38 @@ describe('Capacity bucket specificity ranking, atomic ledger persistence & note 
       ],
     });
 
-    const sampleRule0 = config.caps[0];
-    expect(sampleRule0).toBeDefined();
-    if (sampleRule0 !== undefined) {
-      expect(
-        isCapRuleEligibleForRecord(sampleRule0, {
+    expect(
+      isCapRuleEligibleForRecord(
+        {
+          roles: ['*'],
+          paths: ['*'],
+          types: ['lesson', 'note'],
+          softCap: 10,
+          hardCap: 20,
+        },
+        {
           type: 'lesson',
           role: 'builder',
           context: ['packages/memory/src/index.ts'],
-        }),
-      ).toBe(true);
-    }
+        },
+      ),
+    ).toBe(true);
+    expect(
+      isCapRuleEligibleForRecord(
+        {
+          roles: ['*'],
+          paths: ['*'],
+          types: ['lesson', 'note'],
+          softCap: 10,
+          hardCap: 20,
+        },
+        {
+          type: 'rule',
+          role: 'builder',
+          context: ['packages/memory/src/index.ts'],
+        },
+      ),
+    ).toBe(false);
 
     const baseRecords: MemoryRecord[] = [
       {

@@ -3,14 +3,26 @@ import type {
   MemoryNoteRecord,
   MemoryRecord,
 } from '../schemas/memory-record.schema.js';
-import type {
-  MemoryBranchLedgerState,
-  ReconciledMemoryLedgerResult,
-} from './reconciled-memory-ledger-result.js';
+import type { MemoryBranchLedgerState } from './memory-branch-ledger-state.js';
+import type { ReconciledMemoryLedgerResult } from './reconciled-memory-ledger-result.js';
 import {
   parseRecordNumericId,
   sortMemoryRecordsCanonically,
 } from './sort-memory-records-canonically.js';
+
+/**
+ * Parameter object for `renumberCollidingLocalAdditions`.
+ */
+export interface RenumberCollidingLocalAdditionsParams {
+  /** Common ancestor ledger state. */
+  readonly base: MemoryBranchLedgerState;
+  /** Local `HEAD` ledger state. */
+  readonly local: MemoryBranchLedgerState;
+  /** Remote `origin/<branch>` ledger state. */
+  readonly remote: MemoryBranchLedgerState;
+  /** Mutable per-prefix high-water-mark floor updated in-place. */
+  readonly nextFloor: { R: number; L: number; N: number };
+}
 
 /**
  * Computes the maximum numeric ID for `prefix` across `records`.
@@ -86,24 +98,18 @@ function isSameAddedRecordInRemote(
  * Re-numbers newly added local records that collide with `remote` records or fall at or below
  * `remote.meta.highWaterMarks` (§8.2.3 Step 2).
  *
- * @param {MemoryBranchLedgerState}         base       - Common ancestor state.
- * @param {MemoryBranchLedgerState}         local      - Local `HEAD` state.
- * @param {MemoryBranchLedgerState}         remote     - Remote `origin/<branch>` state.
- * @param {{ R: number; L: number; N: number }} nextFloor - Mutable per-prefix high-water-mark floor.
+ * @param {RenumberCollidingLocalAdditionsParams} params - Ancestor, local, and remote ledger states plus mutable `nextFloor`.
  *
  * @returns {{ readonly remappedLocal: readonly MemoryRecord[]; readonly idRemap: Map<string, string> }} Re-numbered local records and `oldId -> newId` map.
  */
 function renumberCollidingLocalAdditions(
-  base: MemoryBranchLedgerState,
-  local: MemoryBranchLedgerState,
-  remote: MemoryBranchLedgerState,
-  nextFloor: { R: number; L: number; N: number },
+  params: RenumberCollidingLocalAdditionsParams,
 ): { readonly remappedLocal: readonly MemoryRecord[]; readonly idRemap: Map<string, string> } {
   const baseById = new Map<string, MemoryRecord>();
-  for (const rec of base.records) baseById.set(rec.id, rec);
+  for (const rec of params.base.records) baseById.set(rec.id, rec);
   const remoteById = new Map<string, MemoryRecord>();
-  for (const rec of remote.records) remoteById.set(rec.id, rec);
-  const sortedLocal = sortMemoryRecordsCanonically(local.records);
+  for (const rec of params.remote.records) remoteById.set(rec.id, rec);
+  const sortedLocal = sortMemoryRecordsCanonically(params.local.records);
   const remappedLocal: MemoryRecord[] = [];
   const idRemap = new Map<string, string>();
   for (const locRec of sortedLocal) {
@@ -116,13 +122,14 @@ function renumberCollidingLocalAdditions(
       remappedLocal.push(locRec);
       continue;
     }
-    const prefix = locRec.id[0] as 'R' | 'L' | 'N';
+    const prefix: 'R' | 'L' | 'N' =
+      locRec.type === 'rule' ? 'R' : locRec.type === 'lesson' ? 'L' : 'N';
     const numericId = parseRecordNumericId(locRec.id);
     const collidesWithRemoteAddition = remRec !== undefined && !baseById.has(locRec.id);
-    const belowRemoteMark = numericId <= remote.meta.highWaterMarks[prefix];
+    const belowRemoteMark = numericId <= params.remote.meta.highWaterMarks[prefix];
     if (belowRemoteMark || collidesWithRemoteAddition) {
-      nextFloor[prefix] += 1;
-      const newId = `${prefix}${nextFloor[prefix]}`;
+      params.nextFloor[prefix] += 1;
+      const newId = `${prefix}${params.nextFloor[prefix]}`;
       idRemap.set(locRec.id, newId);
       remappedLocal.push(Object.freeze({ ...locRec, id: newId }));
       continue;
@@ -237,12 +244,12 @@ export function reconcileDivergedMemoryLedgers(
       maxNumericIdForPrefix(remote.records, 'N'),
     ),
   };
-  const { remappedLocal, idRemap } = renumberCollidingLocalAdditions(
+  const { remappedLocal, idRemap } = renumberCollidingLocalAdditions({
     base,
     local,
     remote,
     nextFloor,
-  );
+  });
   const baseById = new Map<string, MemoryRecord>();
   for (const rec of base.records) baseById.set(rec.id, rec);
   const localById = new Map<string, MemoryRecord>();

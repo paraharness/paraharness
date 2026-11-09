@@ -412,6 +412,21 @@ describe('Memory protocol generation, KV-cached Distiller prompts, hook path ext
     for (const testCase of antigravityCases) {
       expect(extractTouchedPathsFromHookInput(testCase.payload, root)).toEqual(testCase.expected);
     }
+
+    expect(
+      extractTouchedPathsFromHookInput(
+        {
+          input: 'non-json-user-prompt-text',
+          toolCalls: [
+            {
+              tool_name: 'Read',
+              tool_input: { file_path: '/workspace/packages/memory/src/nested-from-envelope.ts' },
+            },
+          ],
+        },
+        root,
+      ),
+    ).toEqual(['packages/memory/src/nested-from-envelope.ts']);
   });
 
   it('resolves session epoch state under <sessionId>.lock across full/incremental transcript scans, boundary ID fallback chain, truncation/path-change triggers, PENDING_HOOK_EPOCH, and role fallback precedence', async () => {

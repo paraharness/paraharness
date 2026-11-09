@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { GIT_COMMAND_TIMEOUT_MS } from './memory-protocol.constants.js';
 
 /**
- * Execution options and result shape for `execGitCommand`.
+ * Execution options for `execGitCommand`.
  */
 export interface ExecGitCommandOptions {
   /** Working directory or `-C` target directory for the git invocation. */
@@ -13,15 +13,6 @@ export interface ExecGitCommandOptions {
   readonly timeoutMs?: number;
   /** Whether to prepend `-C <cwd>` automatically (defaults to `true`). */
   readonly useDashC?: boolean;
-  /** Structured result captured from the git process. */
-  readonly resultShape?: {
-    /** Exit status code (`0` on success). */
-    readonly exitCode: number;
-    /** Captured UTF-8 standard output. */
-    readonly stdout: string;
-    /** Captured UTF-8 standard error. */
-    readonly stderr: string;
-  };
 }
 
 /**

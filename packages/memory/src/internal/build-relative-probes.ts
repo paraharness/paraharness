@@ -1,9 +1,16 @@
 import { extractStaticDirPrefix } from './extract-static-dir-prefix.js';
 import {
   BRACE_GROUP_REGEX,
+  CHAR_CLASS_CAPTURE_REGEX,
   DEFAULT_RELATIVE_PROBES,
+  EXTGLOB_SEGMENT_REGEX,
+  LEADING_BANG_REGEX,
+  NEGATED_CHAR_CLASS_REGEX,
   PROBE_FILE_SEGMENT,
   PROBE_SUBDIR_SEGMENT,
+  QUESTION_MARK_REGEX,
+  STAR_RUN_REGEX,
+  WILDCARD_RUN_REGEX,
 } from './memory-protocol.constants.js';
 
 /**
@@ -41,25 +48,46 @@ function expandBraceAlternatives(pattern: string): readonly string[] {
  */
 function buildSegmentProbes(segment: string): readonly string[] {
   const primary = segment
-    .replace(/[@+*?!]\([^)]*\)/gu, PROBE_FILE_SEGMENT)
-    .replace(/\[[^\]]*\]/gu, PROBE_FILE_SEGMENT)
-    .replace(/[*?]+/gu, PROBE_FILE_SEGMENT)
-    .replace(/^!+/u, '');
+    .replace(EXTGLOB_SEGMENT_REGEX, PROBE_FILE_SEGMENT)
+    .replace(CHAR_CLASS_CAPTURE_REGEX, PROBE_FILE_SEGMENT)
+    .replace(WILDCARD_RUN_REGEX, PROBE_FILE_SEGMENT)
+    .replace(LEADING_BANG_REGEX, '');
   const variants = new Set<string>();
   variants.add(primary.length > 0 ? primary : PROBE_FILE_SEGMENT);
   if (segment.includes('?') || segment.includes('[')) {
     const singleCharVariant = segment
-      .replace(/[@+*?!]\([^)]*\)/gu, 'a')
-      .replace(/\[\^?![^\]]*\]/gu, 'z')
-      .replace(/\[([^\]]+)\]/gu, (_m, chars: string) => chars[0] ?? 'a')
-      .replace(/\?/gu, 'a')
-      .replace(/\*+/gu, PROBE_FILE_SEGMENT)
-      .replace(/^!+/u, '');
+      .replace(EXTGLOB_SEGMENT_REGEX, 'a')
+      .replace(NEGATED_CHAR_CLASS_REGEX, 'z')
+      .replace(CHAR_CLASS_CAPTURE_REGEX, (_m, chars: string) => chars[0] ?? 'a')
+      .replace(QUESTION_MARK_REGEX, 'a')
+      .replace(STAR_RUN_REGEX, PROBE_FILE_SEGMENT)
+      .replace(LEADING_BANG_REGEX, '');
     if (singleCharVariant.length > 0) {
       variants.add(singleCharVariant);
     }
   }
   return [...variants];
+}
+
+/**
+ * Appends each variant in `segVariants` to every existing prefix path in `prefixes`.
+ *
+ * @param {readonly (readonly string[])[]} prefixes    - Current accumulated path segment prefixes.
+ * @param {readonly string[]}              segVariants - Variants for the next segment.
+ *
+ * @returns {string[][]} Expanded prefix array.
+ */
+function appendSegmentVariants(
+  prefixes: readonly (readonly string[])[],
+  segVariants: readonly string[],
+): string[][] {
+  const nextPrefixes: string[][] = [];
+  for (const current of prefixes) {
+    for (const variant of segVariants) {
+      nextPrefixes.push([...current, variant]);
+    }
+  }
+  return nextPrefixes;
 }
 
 /**
@@ -74,21 +102,16 @@ function expandSegmentsToProbes(segments: readonly string[]): readonly string[] 
   let prefixes: string[][] = [[]];
   for (const segment of segments) {
     if (segment.length === 0) continue;
-    const nextPrefixes: string[][] = [];
     if (segment === '**') {
+      const nextPrefixes: string[][] = [];
       for (const current of prefixes) {
         nextPrefixes.push([...current]);
         nextPrefixes.push([...current, PROBE_SUBDIR_SEGMENT]);
       }
+      prefixes = nextPrefixes;
     } else {
-      const segVariants = buildSegmentProbes(segment);
-      for (const current of prefixes) {
-        for (const variant of segVariants) {
-          nextPrefixes.push([...current, variant]);
-        }
-      }
+      prefixes = appendSegmentVariants(prefixes, buildSegmentProbes(segment));
     }
-    prefixes = nextPrefixes;
   }
   const results: string[] = [];
   for (const parts of prefixes) {
@@ -97,6 +120,24 @@ function expandSegmentsToProbes(segments: readonly string[]): readonly string[] 
     }
   }
   return results;
+}
+
+/**
+ * Expands braces and segments for `rawCandidate` and adds non-empty relative probes to `probes`.
+ *
+ * @param {string}      rawCandidate - Candidate glob pattern or static-prefix-stripped sub-pattern.
+ * @param {Set<string>} probes       - Mutable set of relative probe strings.
+ *
+ * @returns {void}
+ */
+function collectProbesForCandidatePattern(rawCandidate: string, probes: Set<string>): void {
+  for (const expanded of expandBraceAlternatives(rawCandidate)) {
+    for (const probe of expandSegmentsToProbes(expanded.split('/'))) {
+      if (probe.length > 0) {
+        probes.add(probe);
+      }
+    }
+  }
 }
 
 /**
@@ -123,13 +164,7 @@ export function buildRelativeProbes(pattern: string): readonly string[] {
     subPattern.length > 0 && subPattern !== pattern ? [subPattern, pattern] : [pattern];
   const probes = new Set<string>();
   for (const rawCandidate of candidatePatterns) {
-    for (const expanded of expandBraceAlternatives(rawCandidate)) {
-      for (const probe of expandSegmentsToProbes(expanded.split('/'))) {
-        if (probe.length > 0) {
-          probes.add(probe);
-        }
-      }
-    }
+    collectProbesForCandidatePattern(rawCandidate, probes);
   }
   for (const fallbackProbe of DEFAULT_RELATIVE_PROBES) {
     probes.add(fallbackProbe);

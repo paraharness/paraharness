@@ -20,7 +20,7 @@ import { applyIdRemapToRecordIds } from './reconcile-diverged-memory-ledgers.js'
  *
  * @returns {Promise<boolean>} `true` if `<otherSid>.json` had at least one `seenRecordIds` entry remapped.
  */
-async function remapSingleOtherSessionStateUnderLock(
+function remapSingleOtherSessionStateUnderLock(
   sessionStateDir: string,
   otherSid: string,
   cumulativeIdRemap: ReadonlyMap<string, string>,

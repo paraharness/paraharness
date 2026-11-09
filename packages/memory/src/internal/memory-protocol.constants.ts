@@ -188,6 +188,65 @@ export const GIT_LOG_ID_MATCH_REGEX = /\+[^\r\n]*"id"\s*:\s*"([RLN])([1-9]\d*)"/
 export const BRACE_GROUP_REGEX = /\{([^{}]+)\}/u;
 
 /**
+ * Pre-compiled regular expression matching LF or CRLF line breaks.
+ */
+export const LINE_SPLIT_REGEX = /\r?\n/u;
+
+/**
+ * Pre-compiled regular expression matching extglob segment expressions (`@(a|b)`, `+(a)`, etc.).
+ */
+export const EXTGLOB_SEGMENT_REGEX = /[@+*?!]\([^)]*\)/gu;
+
+/**
+ * Pre-compiled regular expression matching negated POSIX character classes (`[!a-z]`, `[^!a-z]`).
+ */
+export const NEGATED_CHAR_CLASS_REGEX = /\[\^?![^\]]*\]/gu;
+
+/**
+ * Pre-compiled regular expression capturing bracket character classes (`[abc]`).
+ */
+export const CHAR_CLASS_CAPTURE_REGEX = /\[([^\]]*)\]/gu;
+
+/**
+ * Pre-compiled regular expression matching runs of `*` or `?` wildcard characters.
+ */
+export const WILDCARD_RUN_REGEX = /[*?]+/gu;
+
+/**
+ * Pre-compiled regular expression matching single-character `?` wildcards.
+ */
+export const QUESTION_MARK_REGEX = /\?/gu;
+
+/**
+ * Pre-compiled regular expression matching runs of `*` wildcard characters.
+ */
+export const STAR_RUN_REGEX = /\*+/gu;
+
+/**
+ * Pre-compiled regular expression matching leading `!` negation prefixes on a segment.
+ */
+export const LEADING_BANG_REGEX = /^!+/u;
+
+/**
+ * Set of Claude Code and Antigravity file-interaction tool names that pass file paths directly (§7.1.1–§7.1.2).
+ */
+export const FILE_INTERACTION_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
+  'Read',
+  'Edit',
+  'MultiEdit',
+  'Write',
+  'read_file',
+  'view_file',
+  'view_file_outline',
+  'view_code_item',
+  'edit_file',
+  'write_file',
+  'write_to_file',
+  'replace_file_content',
+  'multi_replace_file_content',
+]);
+
+/**
  * Process-wide cache of pre-compiled `picomatch` glob matchers keyed by normalized glob pattern (`Rule 4.4`).
  */
 export const PICOMATCH_MATCHER_CACHE = new Map<string, (input: string) => boolean>();

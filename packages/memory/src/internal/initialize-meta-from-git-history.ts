@@ -35,6 +35,32 @@ function accumulateHighWaterMarksFromRecords(
 }
 
 /**
+ * Updates `marks` in-place with the maximum numeric IDs matched across `git log -p -S '"id":"'` output.
+ *
+ * @param {{ R: number; L: number; N: number }} marks  - Mutable high-water-mark accumulator.
+ * @param {string}                              stdout - Standard output captured from `git log -p -S`.
+ *
+ * @returns {void}
+ */
+function accumulateHighWaterMarksFromGitLogOutput(
+  marks: { R: number; L: number; N: number },
+  stdout: string,
+): void {
+  for (const match of stdout.matchAll(GIT_LOG_ID_MATCH_REGEX)) {
+    const prefix = match[1];
+    const numStr = match[2];
+    const numericId = numStr !== undefined ? Number(numStr) : Number.NaN;
+    if (
+      (prefix === 'R' || prefix === 'L' || prefix === 'N') &&
+      Number.isInteger(numericId) &&
+      numericId > marks[prefix]
+    ) {
+      marks[prefix] = numericId;
+    }
+  }
+}
+
+/**
  * Reads raw `MemoryRecord` entries from `absLedgerPath` if the file exists on disk.
  *
  * @param {string} absLedgerPath - Absolute path to `memory.jsonl`.
@@ -81,32 +107,28 @@ export async function initializeMetaFromGitHistory(
   const marks = { R: 0, L: 0, N: 0 };
   const initialRecords = rawRecords ?? readRawRecordsIfPresent(absLedgerPath);
   accumulateHighWaterMarksFromRecords(marks, initialRecords);
-  if (existsSync(ledgerDir)) {
-    const check = await execGitCommand({
-      cwd: ledgerDir,
-      args: ['rev-parse', '--is-inside-work-tree'],
+  if (!existsSync(ledgerDir)) {
+    return Object.freeze<MemoryMeta>({
+      schemaVersion: 1,
+      highWaterMarks: Object.freeze({ R: marks.R, L: marks.L, N: marks.N }),
     });
-    if (check.exitCode === 0 && check.stdout.trim() === 'true') {
-      const logResult = await execGitCommand({
-        cwd: ledgerDir,
-        args: ['log', '-p', '-S', '"id":"', '--', absLedgerPath],
-      });
-      if (logResult.exitCode === 0 && logResult.stdout.length > 0) {
-        for (const match of logResult.stdout.matchAll(GIT_LOG_ID_MATCH_REGEX)) {
-          const prefix = match[1];
-          const numStr = match[2];
-          if (
-            (prefix === 'R' || prefix === 'L' || prefix === 'N') &&
-            numStr !== undefined
-          ) {
-            const numericId = Number(numStr);
-            if (Number.isInteger(numericId) && numericId > marks[prefix]) {
-              marks[prefix] = numericId;
-            }
-          }
-        }
-      }
-    }
+  }
+  const check = await execGitCommand({
+    cwd: ledgerDir,
+    args: ['rev-parse', '--is-inside-work-tree'],
+  });
+  if (check.exitCode !== 0 || check.stdout.trim() !== 'true') {
+    return Object.freeze<MemoryMeta>({
+      schemaVersion: 1,
+      highWaterMarks: Object.freeze({ R: marks.R, L: marks.L, N: marks.N }),
+    });
+  }
+  const logResult = await execGitCommand({
+    cwd: ledgerDir,
+    args: ['log', '-p', '-S', '"id":"', '--', absLedgerPath],
+  });
+  if (logResult.exitCode === 0 && logResult.stdout.length > 0) {
+    accumulateHighWaterMarksFromGitLogOutput(marks, logResult.stdout);
   }
   return Object.freeze<MemoryMeta>({
     schemaVersion: 1,

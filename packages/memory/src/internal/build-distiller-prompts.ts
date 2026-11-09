@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { MemoryConfig } from '../schemas/memory-config.schema.js';
 import type { MemoryRecord } from '../schemas/memory-record.schema.js';
 import type { MemoryBucketStatus, MemoryProposeInput } from '../schemas/memory-tools.schema.js';
+import type { BuiltDistillerPrompts } from './built-distiller-prompts.js';
 import { isRecordActiveForRepo } from './resolve-record-cap-bucket.js';
 import { sortMemoryRecordsCanonically } from './sort-memory-records-canonically.js';
 
@@ -22,18 +23,6 @@ export interface BuildDistillerPromptsParams {
   readonly normalizedContext?: readonly string[];
   /** Evaluated capacity bucket status for the candidate. */
   readonly bucketStatus: MemoryBucketStatus;
-  /** Result shape reference for single-root reachability (`Rule 1.2`). */
-  readonly resultShape?: BuiltDistillerPrompts;
-}
-
-/**
- * Prompt pair returned by `buildDistillerPrompts` (§6.4 Step 3).
- */
-export interface BuiltDistillerPrompts {
-  /** Static KV-cacheable system prompt containing instructions, repository rules, and existing `R*`/`L*` records. */
-  readonly systemPrompt: string;
-  /** Dynamic user prompt containing the candidate payload, `bucketStatus`, and choice-scope constraints. */
-  readonly userPrompt: string;
 }
 
 /**
@@ -49,6 +38,73 @@ function compareCodeUnitOrder(left: string, right: string): number {
 }
 
 /**
+ * Reads `CLAUDE.MD` (falling back to `CLAUDE.md` when `CLAUDE.MD` is absent on disk) from
+ * `workspaceRoot` if present.
+ *
+ * @param {string} workspaceRoot - Absolute path to the workspace root directory.
+ *
+ * @returns {string | null} Formatted markdown section for the root Claude file, or `null` if absent.
+ */
+function readClaudeRuleFileSection(workspaceRoot: string): string | null {
+  if (!existsSync(workspaceRoot)) {
+    return null;
+  }
+  try {
+    const rootEntries = new Set(readdirSync(workspaceRoot));
+    const claudeFileName = rootEntries.has('CLAUDE.MD')
+      ? 'CLAUDE.MD'
+      : rootEntries.has('CLAUDE.md')
+        ? 'CLAUDE.md'
+        : null;
+    if (claudeFileName === null) {
+      return null;
+    }
+    const fullClaudePath = path.join(workspaceRoot, claudeFileName);
+    if (!statSync(fullClaudePath).isFile()) {
+      return null;
+    }
+    const content = readFileSync(fullClaudePath, 'utf8').trim();
+    return `### File: ${claudeFileName}\n${content}`;
+  } catch {
+    return '### File: (none)';
+  }
+}
+
+/**
+ * Reads all `docs/rules/*.md` files under `workspaceRoot` sorted in ascending POSIX path code-unit order.
+ *
+ * @param {string} workspaceRoot - Absolute path to the workspace root directory.
+ *
+ * @returns {readonly string[]} Formatted markdown sections for each discovered `docs/rules/*.md` file.
+ */
+function readDocsRulesFileSections(workspaceRoot: string): readonly string[] {
+  const rulesDir = path.join(workspaceRoot, 'docs', 'rules');
+  if (!existsSync(rulesDir)) {
+    return [];
+  }
+  const sections: string[] = [];
+  try {
+    const relPaths: string[] = [];
+    for (const entryName of readdirSync(rulesDir)) {
+      if (entryName.endsWith('.md')) {
+        relPaths.push(`docs/rules/${entryName}`);
+      }
+    }
+    relPaths.sort(compareCodeUnitOrder);
+    for (const relPath of relPaths) {
+      const fullRulePath = path.join(workspaceRoot, relPath);
+      if (statSync(fullRulePath).isFile()) {
+        const content = readFileSync(fullRulePath, 'utf8').trim();
+        sections.push(`### File: ${relPath}\n${content}`);
+      }
+    }
+    return sections;
+  } catch {
+    return sections;
+  }
+}
+
+/**
  * Reads `CLAUDE.MD` (falling back to `CLAUDE.md` when `CLAUDE.MD` is absent on disk) and all
  * `docs/rules/*.md` files sorted in ascending POSIX path code-unit order (§6.4 Step 3).
  *
@@ -58,41 +114,12 @@ function compareCodeUnitOrder(left: string, right: string): number {
  */
 function loadRepositoryRuleFilesSection(workspaceRoot: string): string {
   const sections: string[] = [];
-  if (existsSync(workspaceRoot)) {
-    try {
-      const rootEntries = readdirSync(workspaceRoot);
-      const claudeFileName = rootEntries.includes('CLAUDE.MD')
-        ? 'CLAUDE.MD'
-        : rootEntries.includes('CLAUDE.md')
-          ? 'CLAUDE.md'
-          : null;
-      if (claudeFileName !== null) {
-        const fullClaudePath = path.join(workspaceRoot, claudeFileName);
-        if (statSync(fullClaudePath).isFile()) {
-          const content = readFileSync(fullClaudePath, 'utf8').trim();
-          sections.push(`### File: ${claudeFileName}\n${content}`);
-        }
-      }
-    } catch {
-      sections.push('### File: (none)');
-    }
+  const claudeSection = readClaudeRuleFileSection(workspaceRoot);
+  if (claudeSection !== null) {
+    sections.push(claudeSection);
   }
-  const rulesDir = path.join(workspaceRoot, 'docs', 'rules');
-  if (existsSync(rulesDir)) {
-    try {
-      const ruleEntries = readdirSync(rulesDir).filter((name) => name.endsWith('.md'));
-      const relPaths = ruleEntries.map((name) => `docs/rules/${name}`);
-      relPaths.sort(compareCodeUnitOrder);
-      for (const relPath of relPaths) {
-        const fullRulePath = path.join(workspaceRoot, relPath);
-        if (statSync(fullRulePath).isFile()) {
-          const content = readFileSync(fullRulePath, 'utf8').trim();
-          sections.push(`### File: ${relPath}\n${content}`);
-        }
-      }
-    } catch {
-      return sections.join('\n\n');
-    }
+  for (const ruleSection of readDocsRulesFileSections(workspaceRoot)) {
+    sections.push(ruleSection);
   }
   return sections.length > 0 ? sections.join('\n\n') : '(no repository rule files found)';
 }
@@ -121,9 +148,13 @@ function buildStaticDistillerSystemPrompt(
     }
   }
   const sortedRecords = sortMemoryRecordsCanonically(activeRulesAndLessons);
+  const serializedLines: string[] = [];
+  for (const rec of sortedRecords) {
+    serializedLines.push(JSON.stringify(rec));
+  }
   const serializedRecords =
-    sortedRecords.length > 0
-      ? sortedRecords.map((rec) => JSON.stringify(rec)).join('\n')
+    serializedLines.length > 0
+      ? serializedLines.join('\n')
       : '(no active rules or lessons in ledger)';
   const ruleFilesSection = loadRepositoryRuleFilesSection(workspaceRoot);
   const customInstructionsBlock =
@@ -145,7 +176,7 @@ function buildStaticDistillerSystemPrompt(
     '- For `type: "rule"`: Rules originate from Owner mandates (`rule: <text>`). Never return `REJECTED_TIER_1_OR_2` for `type: "rule"`, and never reference `L*` records when `type === "rule"` or `R*` records when `type === "lesson"`.',
     '',
     '## Lesson Format Constraints (`config.format`)',
-    `- Template: \`${config.distiller ? config.format.template : ''}\``,
+    `- Template: \`${config.format.template}\``,
     `- Max Characters: ${config.format.maxChars}`,
     `- Require Single Sentence: ${String(config.format.requireSingleSentence)}`,
     `- Required Substrings: ${JSON.stringify(config.format.requireSubstrings)}`,

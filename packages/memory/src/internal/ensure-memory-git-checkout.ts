@@ -3,14 +3,14 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { MemoryHarnessError } from '../memory-harness-error.js';
 import type { MemoryConfig } from '../schemas/memory-config.schema.js';
+import { configureOriginRemote } from './configure-origin-remote.js';
+import { createEmptyBranchLedgerState } from './create-empty-branch-ledger-state.js';
+import type { EnsureMemoryGitCheckoutResult } from './ensure-memory-git-checkout-result.js';
+import { ensureMemoryGitignore } from './ensure-memory-gitignore.js';
 import { execGitCommand } from './exec-git-command.js';
-import {
-  configureOriginRemote,
-  createEmptyBranchLedgerState,
-  ensureMemoryGitignore,
-  readGitRevisionLedgerState,
-} from './git-checkout-helpers.js';
+import type { MemoryBranchLedgerState } from './memory-branch-ledger-state.js';
 import { MEMORY_META_FILENAME } from './memory-protocol.constants.js';
+import { readGitRevisionLedgerState } from './read-git-revision-ledger-state.js';
 import { readMemoryLedger } from './read-memory-ledger.js';
 import {
   composeCumulativeIdRemap,
@@ -31,24 +31,56 @@ export interface EnsureMemoryGitCheckoutParams {
   readonly isInitCall?: boolean;
   /** Optional UTC timestamp override in epoch milliseconds. */
   readonly nowMs?: number;
-  /** Result shape reference for single-root reachability (`Rule 1.2`). */
-  readonly resultShape?: EnsureMemoryGitCheckoutResult;
 }
 
 /**
- * Result returned by `ensureMemoryGitCheckout` (§8.2.1).
+ * Reconciles a pre-existing local ledger snapshot against `origin/<branch>` after the initial
+ * remote fetch and reset during first-time checkout attachment (§8.2.1 Step 1).
+ *
+ * @param {EnsureMemoryGitCheckoutParams} params        - Workspace root, config, and clock options.
+ * @param {string}                        absLedgerPath - Absolute path to `<ledgerPath>`.
+ * @param {MemoryBranchLedgerState}       localSnap     - Pre-fetch local ledger and metadata snapshot.
+ *
+ * @returns {Promise<EnsureMemoryGitCheckoutResult>} Reconciliation and auto-commit/push status.
  */
-export interface EnsureMemoryGitCheckoutResult {
-  /** Whether a new `.git` repository was initialized in `<checkoutDir>`. */
-  readonly initializedNewGitRepo: boolean;
-  /** Whether local records were reconciled with `origin/<branch>`. */
-  readonly reconciledWithRemote: boolean;
-  /** Whether a Git commit was created during initialization/reconciliation. */
-  readonly gitCommitted: boolean;
-  /** Whether commits were pushed to `origin/<branch>` during initialization/reconciliation. */
-  readonly gitPushed: boolean;
-  /** Cumulative ID remapping (`oldId -> newId`) produced by any 3-way reconciliation. */
-  readonly cumulativeIdRemap: ReadonlyMap<string, string>;
+async function reconcilePreExistingLocalLedgerOnAttach(
+  params: EnsureMemoryGitCheckoutParams,
+  absLedgerPath: string,
+  localSnap: MemoryBranchLedgerState,
+): Promise<EnsureMemoryGitCheckoutResult> {
+  const cumulativeIdRemap = new Map<string, string>();
+  const remoteSnap = await readMemoryLedger(absLedgerPath, params.nowMs);
+  const reconciled = reconcileDivergedMemoryLedgers(
+    createEmptyBranchLedgerState(),
+    { records: localSnap.records, meta: localSnap.meta },
+    { records: remoteSnap.records, meta: remoteSnap.meta },
+  );
+  composeCumulativeIdRemap(cumulativeIdRemap, reconciled.idRemap);
+  await writeMemoryLedger({
+    ledgerPath: absLedgerPath,
+    records: reconciled.records,
+    meta: reconciled.meta,
+  });
+  let gitCommitted = false;
+  let gitPushed = false;
+  if (params.config.storage.git.autoCommit) {
+    const syncRes = await syncMemoryGit({
+      workspaceRoot: params.workspaceRoot,
+      config: params.config,
+      opSummary: 'reconcile initial local ledger with remote',
+      nowMs: params.nowMs,
+    });
+    composeCumulativeIdRemap(cumulativeIdRemap, syncRes.cumulativeIdRemap);
+    gitCommitted = syncRes.gitCommitted;
+    gitPushed = syncRes.gitPushed;
+  }
+  return Object.freeze<EnsureMemoryGitCheckoutResult>({
+    initializedNewGitRepo: true,
+    reconciledWithRemote: true,
+    gitCommitted,
+    gitPushed,
+    cumulativeIdRemap,
+  });
 }
 
 /**
@@ -60,6 +92,8 @@ export interface EnsureMemoryGitCheckoutResult {
  * @param {string}                        absLedgerPath - Absolute path to `<ledgerPath>`.
  *
  * @returns {Promise<EnsureMemoryGitCheckoutResult>} Initialization and remote attach result.
+ *
+ * @throws {MemoryHarnessError} With `'GIT_SYNC_FAILED'` if `git init`, `ls-remote`, `fetch`, or `reset` fails.
  */
 async function initializeFreshGitCheckout(
   params: EnsureMemoryGitCheckoutParams,
@@ -80,87 +114,76 @@ async function initializeFreshGitCheckout(
     );
   }
   await ensureMemoryGitignore(checkoutDir);
-  const cumulativeIdRemap = new Map<string, string>();
-  let reconciledWithRemote = false;
-  let gitCommitted = false;
-  let gitPushed = false;
   const remoteUrl = params.config.storage.git.remoteUrl;
-  if (remoteUrl !== undefined) {
-    await configureOriginRemote(checkoutDir, remoteUrl);
-    const lsRemote = await execGitCommand({
-      cwd: checkoutDir,
-      args: ['ls-remote', '--heads', 'origin', `refs/heads/${branch}`],
+  if (remoteUrl === undefined) {
+    return Object.freeze<EnsureMemoryGitCheckoutResult>({
+      initializedNewGitRepo: true,
+      reconciledWithRemote: false,
+      gitCommitted: false,
+      gitPushed: false,
+      cumulativeIdRemap: new Map(),
     });
-    if (lsRemote.exitCode !== 0) {
-      throw new MemoryHarnessError(
-        'GIT_SYNC_FAILED',
-        `Failed to query ls-remote on '${remoteUrl}' for branch '${branch}': ${lsRemote.stderr}`,
-        { checkoutDir, remoteUrl, branch, stderr: lsRemote.stderr },
-      );
-    }
-    if (lsRemote.stdout.trim().length > 0) {
-      const hadLocalLedger = existsSync(absLedgerPath);
-      const localSnap = hadLocalLedger
-        ? await readMemoryLedger(absLedgerPath, params.nowMs)
-        : null;
-      const fetchRes = await execGitCommand({
-        cwd: checkoutDir,
-        args: ['fetch', 'origin', branch],
-      });
-      if (fetchRes.exitCode !== 0) {
-        throw new MemoryHarnessError(
-          'GIT_SYNC_FAILED',
-          `Failed to fetch 'origin/${branch}' in '${checkoutDir}': ${fetchRes.stderr}`,
-          { checkoutDir, branch, stderr: fetchRes.stderr },
-        );
-      }
-      const resetRes = await execGitCommand({
-        cwd: checkoutDir,
-        args: ['reset', '--hard', `origin/${branch}`],
-      });
-      if (resetRes.exitCode !== 0) {
-        throw new MemoryHarnessError(
-          'GIT_SYNC_FAILED',
-          `Failed to reset '${checkoutDir}' to 'origin/${branch}': ${resetRes.stderr}`,
-          { checkoutDir, branch, stderr: resetRes.stderr },
-        );
-      }
-      await ensureMemoryGitignore(checkoutDir);
-      if (localSnap !== null) {
-        const remoteSnap = await readMemoryLedger(absLedgerPath, params.nowMs);
-        const reconciled = reconcileDivergedMemoryLedgers(
-          createEmptyBranchLedgerState(),
-          { records: localSnap.records, meta: localSnap.meta },
-          { records: remoteSnap.records, meta: remoteSnap.meta },
-        );
-        composeCumulativeIdRemap(cumulativeIdRemap, reconciled.idRemap);
-        await writeMemoryLedger({
-          ledgerPath: absLedgerPath,
-          records: reconciled.records,
-          meta: reconciled.meta,
-        });
-        reconciledWithRemote = true;
-        if (params.config.storage.git.autoCommit) {
-          const syncRes = await syncMemoryGit({
-            workspaceRoot: params.workspaceRoot,
-            config: params.config,
-            opSummary: 'reconcile initial local ledger with remote',
-            nowMs: params.nowMs,
-          });
-          composeCumulativeIdRemap(cumulativeIdRemap, syncRes.cumulativeIdRemap);
-          gitCommitted = syncRes.gitCommitted;
-          gitPushed = syncRes.gitPushed;
-        }
-      }
-    }
+  }
+  await configureOriginRemote(checkoutDir, remoteUrl);
+  const lsRemote = await execGitCommand({
+    cwd: checkoutDir,
+    args: ['ls-remote', '--heads', 'origin', `refs/heads/${branch}`],
+  });
+  if (lsRemote.exitCode !== 0) {
+    throw new MemoryHarnessError(
+      'GIT_SYNC_FAILED',
+      `Failed to query ls-remote on '${remoteUrl}' for branch '${branch}': ${lsRemote.stderr}`,
+      { checkoutDir, remoteUrl, branch, stderr: lsRemote.stderr },
+    );
+  }
+  if (lsRemote.stdout.trim().length === 0) {
+    await ensureMemoryGitignore(checkoutDir);
+    return Object.freeze<EnsureMemoryGitCheckoutResult>({
+      initializedNewGitRepo: true,
+      reconciledWithRemote: false,
+      gitCommitted: false,
+      gitPushed: false,
+      cumulativeIdRemap: new Map(),
+    });
+  }
+  const localSnap = existsSync(absLedgerPath)
+    ? await readMemoryLedger(absLedgerPath, params.nowMs)
+    : null;
+  const fetchRes = await execGitCommand({
+    cwd: checkoutDir,
+    args: ['fetch', 'origin', branch],
+  });
+  if (fetchRes.exitCode !== 0) {
+    throw new MemoryHarnessError(
+      'GIT_SYNC_FAILED',
+      `Failed to fetch 'origin/${branch}' in '${checkoutDir}': ${fetchRes.stderr}`,
+      { checkoutDir, branch, stderr: fetchRes.stderr },
+    );
+  }
+  const resetRes = await execGitCommand({
+    cwd: checkoutDir,
+    args: ['reset', '--hard', `origin/${branch}`],
+  });
+  if (resetRes.exitCode !== 0) {
+    throw new MemoryHarnessError(
+      'GIT_SYNC_FAILED',
+      `Failed to reset '${checkoutDir}' to 'origin/${branch}': ${resetRes.stderr}`,
+      { checkoutDir, branch, stderr: resetRes.stderr },
+    );
   }
   await ensureMemoryGitignore(checkoutDir);
-  return Object.freeze<EnsureMemoryGitCheckoutResult>({
-    initializedNewGitRepo: true,
-    reconciledWithRemote,
-    gitCommitted,
-    gitPushed,
-    cumulativeIdRemap,
+  if (localSnap === null) {
+    return Object.freeze<EnsureMemoryGitCheckoutResult>({
+      initializedNewGitRepo: true,
+      reconciledWithRemote: false,
+      gitCommitted: false,
+      gitPushed: false,
+      cumulativeIdRemap: new Map(),
+    });
+  }
+  return reconcilePreExistingLocalLedgerOnAttach(params, absLedgerPath, {
+    records: localSnap.records,
+    meta: localSnap.meta,
   });
 }
 
@@ -237,19 +260,19 @@ async function pullAndReconcileExistingCheckoutOnInit(
     args: ['merge-base', 'HEAD', `origin/${branch}`],
   });
   const baseSha = mergeBaseRes.exitCode === 0 ? mergeBaseRes.stdout.trim() : null;
-  const baseState = await readGitRevisionLedgerState(
+  const baseState = await readGitRevisionLedgerState({
     checkoutDir,
-    baseSha,
+    gitRef: baseSha,
     relLedgerPath,
     relMetaPath,
-  );
+  });
   const localSnap = await readMemoryLedger(absLedgerPath, params.nowMs);
-  const remoteState = await readGitRevisionLedgerState(
+  const remoteState = await readGitRevisionLedgerState({
     checkoutDir,
-    `origin/${branch}`,
+    gitRef: `origin/${branch}`,
     relLedgerPath,
     relMetaPath,
-  );
+  });
   const reconciled = reconcileDivergedMemoryLedgers(
     baseState,
     { records: localSnap.records, meta: localSnap.meta },

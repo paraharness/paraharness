@@ -17,6 +17,8 @@ import {
   PENDING_HOOK_EPOCH,
   SESSION_STATE_REL_DIR,
 } from './memory-protocol.constants.js';
+import type { ResolvedSessionEpochStateResult } from './resolved-session-epoch-state-result.js';
+import type { ResolvedTranscriptScanResult } from './resolved-transcript-scan-result.js';
 
 /**
  * Parameter object for `resolveTranscriptEpochAndRole`.
@@ -28,24 +30,6 @@ export interface ResolveTranscriptEpochAndRoleParams {
   readonly transcriptPath?: string;
   /** Existing session epoch state loaded from `<sessionId>.json`, if present. */
   readonly existingState?: MemorySessionEpochState;
-  /** Result shape reference for single-root reachability (`Rule 1.2`). */
-  readonly transcriptResultShape?: ResolvedTranscriptScanResult;
-}
-
-/**
- * Result returned by `resolveTranscriptEpochAndRole` (§7.1.2, §7.2 Step 1).
- */
-export interface ResolvedTranscriptScanResult {
-  /** Resolved compaction checkpoint ID (`'epoch-0'` or the latest compaction boundary ID). */
-  readonly currentCheckpointId: string;
-  /** Latest `memory_init` role argument discovered in the scanned transcript slice, if any. */
-  readonly transcriptInitRole: string | undefined;
-  /** Normalized touched paths extracted from Antigravity tool steps in the scanned slice (§7.1.2). */
-  readonly extractedTouchedPaths: readonly string[];
-  /** Current byte length of `transcriptPath` when readable (`undefined` when omitted or unreadable). */
-  readonly transcriptByteLength: number | undefined;
-  /** Whether a full rescan from byte offset `0` was performed. */
-  readonly performedFullScan: boolean;
 }
 
 /**
@@ -66,28 +50,22 @@ export interface ResolveSessionEpochStateParams {
   readonly persistState?: boolean;
   /** Optional UTC timestamp override in epoch milliseconds. */
   readonly nowMs?: number;
-  /** Sub-interface reference for single-root reachability (`Rule 1.2`). */
-  readonly transcriptParamsShape?: ResolveTranscriptEpochAndRoleParams;
-  /** Result shape reference for single-root reachability (`Rule 1.2`). */
-  readonly resultShape?: ResolvedSessionEpochStateResult;
 }
 
 /**
- * Result returned by `resolveSessionEpochState` (§7.2 Steps 1–2).
+ * Parameter object for `selectFallbackRole`.
  */
-export interface ResolvedSessionEpochStateResult {
-  /** Updated per-session compaction epoch state. */
-  readonly state: MemorySessionEpochState;
-  /** Resolved active role for this session and hook invocation. */
-  readonly resolvedRole: string;
-  /** Active compaction checkpoint identifier. */
-  readonly compactionEpochId: string;
-  /** Normalized touched paths extracted from `transcript.jsonl` tool steps during the scan (§7.1.2). */
-  readonly transcriptTouchedPaths: readonly string[];
-  /** Whether `seenRecordIds` was reset due to a new session or compaction epoch transition. */
-  readonly epochReset: boolean;
-  /** Whether `PENDING_HOOK_EPOCH` was bound to `compactionEpochId` while preserving `seenRecordIds`. */
-  readonly boundPendingHookEpoch: boolean;
+export interface SelectFallbackRoleParams {
+  /** Validated unified memory configuration. */
+  readonly config: MemoryConfig;
+  /** Optional explicit role passed by caller. */
+  readonly explicitRole?: string;
+  /** Role discovered from `memory_init` in `transcript.jsonl`, if any. */
+  readonly transcriptInitRole?: string;
+  /** Existing `<sessionId>.json` state, if any. */
+  readonly existingState?: MemorySessionEpochState;
+  /** Absolute path to `.memory/.session-state`. */
+  readonly sessionStateDir: string;
 }
 
 /**
@@ -96,29 +74,86 @@ export interface ResolvedSessionEpochStateResult {
  * and returns its stable boundary identifier using the fallback chain
  * `step_index ?? uuid ?? timestamp ?? created_at ?? "offset:<lineByteOffset>"` (§7.2 Step 1).
  *
- * @param {Readonly<Record<string, unknown>>} obj            - Parsed JSON object from a transcript line.
+ * @param {Readonly<Record<string, unknown>>} entryRecord    - Parsed JSON object from a transcript line.
  * @param {number}                            lineByteOffset - 0-based UTF-8 byte offset of the line in `transcript.jsonl`.
  *
  * @returns {string | null} Compaction boundary identifier string, or `null` if not a boundary.
  */
 function extractCompactionBoundaryId(
-  obj: Readonly<Record<string, unknown>>,
+  entryRecord: Readonly<Record<string, unknown>>,
   lineByteOffset: number,
 ): string | null {
   const isCheckpoint =
-    obj['type'] === 'CHECKPOINT' ||
-    obj['type'] === 'compact_boundary' ||
-    obj['subtype'] === 'compact_boundary';
+    entryRecord['type'] === 'CHECKPOINT' ||
+    entryRecord['type'] === 'compact_boundary' ||
+    entryRecord['subtype'] === 'compact_boundary';
   if (!isCheckpoint) {
     return null;
   }
   const candidateId =
-    obj['step_index'] ??
-    obj['uuid'] ??
-    obj['timestamp'] ??
-    obj['created_at'] ??
+    entryRecord['step_index'] ??
+    entryRecord['uuid'] ??
+    entryRecord['timestamp'] ??
+    entryRecord['created_at'] ??
     `offset:${lineByteOffset}`;
   return String(candidateId);
+}
+
+/**
+ * Resolves a candidate tool input value (JSON string or plain object) into a plain record object,
+ * returning `null` if parsing fails or the value is not a non-array object.
+ *
+ * @param {unknown} rawInput - Candidate `tool_input` / `input` / `arguments` property value.
+ *
+ * @returns {Readonly<Record<string, unknown>> | null} Plain record object or `null`.
+ */
+function parseRecordObjectCandidate(
+  rawInput: unknown,
+): Readonly<Record<string, unknown>> | null {
+  if (typeof rawInput === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(rawInput);
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Readonly<Record<string, unknown>>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  if (rawInput !== null && typeof rawInput === 'object' && !Array.isArray(rawInput)) {
+    return rawInput as Readonly<Record<string, unknown>>;
+  }
+  return null;
+}
+
+/**
+ * Extracts a direct `memory_init` `role` argument from a single record object when its tool name
+ * matches `memory_init` or `*__memory_init`.
+ *
+ * @param {Readonly<Record<string, unknown>>} rec - Record object to inspect.
+ *
+ * @returns {string | undefined} Trimmed `role` string, or `undefined` if not a `memory_init` call.
+ */
+function extractDirectMemoryInitRole(
+  rec: Readonly<Record<string, unknown>>,
+): string | undefined {
+  const rawName = rec['tool_name'] ?? rec['toolName'] ?? rec['name'] ?? rec['tool'];
+  const toolName = typeof rawName === 'string' ? rawName.trim() : '';
+  if (toolName !== 'memory_init' && !toolName.endsWith('__memory_init')) {
+    return undefined;
+  }
+  const rawInput =
+    rec['tool_input'] ?? rec['toolInput'] ?? rec['input'] ?? rec['arguments'] ?? rec['args'] ?? rec;
+  const parsedObj = parseRecordObjectCandidate(rawInput);
+  if (parsedObj === null) {
+    return undefined;
+  }
+  const roleVal = parsedObj['role'];
+  if (typeof roleVal === 'string' && roleVal.trim().length > 0) {
+    return roleVal.trim();
+  }
+  return undefined;
 }
 
 /**
@@ -135,8 +170,8 @@ function extractMemoryInitRoleFromNode(node: unknown): string | undefined {
   }
   if (Array.isArray(node)) {
     let latest: string | undefined;
-    for (const item of node) {
-      const found = extractMemoryInitRoleFromNode(item);
+    for (const childNode of node) {
+      const found = extractMemoryInitRoleFromNode(childNode);
       if (found !== undefined) {
         latest = found;
       }
@@ -144,29 +179,9 @@ function extractMemoryInitRoleFromNode(node: unknown): string | undefined {
     return latest;
   }
   const rec = node as Readonly<Record<string, unknown>>;
-  const rawName = rec['tool_name'] ?? rec['toolName'] ?? rec['name'] ?? rec['tool'];
-  const toolName = typeof rawName === 'string' ? rawName.trim() : '';
-  if (toolName === 'memory_init' || toolName.endsWith('__memory_init')) {
-    const rawInput =
-      rec['tool_input'] ?? rec['toolInput'] ?? rec['input'] ?? rec['arguments'] ?? rec['args'] ?? rec;
-    if (typeof rawInput === 'string') {
-      try {
-        const parsed: unknown = JSON.parse(rawInput);
-        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          const roleVal = (parsed as Readonly<Record<string, unknown>>)['role'];
-          if (typeof roleVal === 'string' && roleVal.trim().length > 0) {
-            return roleVal.trim();
-          }
-        }
-      } catch {
-        return undefined;
-      }
-    } else if (rawInput !== null && typeof rawInput === 'object' && !Array.isArray(rawInput)) {
-      const roleVal = (rawInput as Readonly<Record<string, unknown>>)['role'];
-      if (typeof roleVal === 'string' && roleVal.trim().length > 0) {
-        return roleVal.trim();
-      }
-    }
+  const directRole = extractDirectMemoryInitRole(rec);
+  if (directRole !== undefined) {
+    return directRole;
   }
   const nestedKeys = ['message', 'content', 'toolCalls', 'tool_calls', 'step', 'steps'];
   let latestNested: string | undefined;
@@ -265,18 +280,18 @@ export function resolveTranscriptEpochAndRole(
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       continue;
     }
-    const obj = parsed as Readonly<Record<string, unknown>>;
-    const boundaryId = extractCompactionBoundaryId(obj, currentLineOffset);
+    const entryRecord = parsed as Readonly<Record<string, unknown>>;
+    const boundaryId = extractCompactionBoundaryId(entryRecord, currentLineOffset);
     if (boundaryId !== null) {
       latestBoundaryId = boundaryId;
       touchedSet = new Set<string>();
     }
-    const initRole = extractMemoryInitRoleFromNode(obj);
+    const initRole = extractMemoryInitRoleFromNode(entryRecord);
     if (initRole !== undefined) {
       latestInitRole = initRole;
     }
     if (currentLineOffset >= toolTouchMinimumOffset) {
-      const stepPaths = extractTouchedPathsFromHookInput(obj, params.workspaceRoot);
+      const stepPaths = extractTouchedPathsFromHookInput(entryRecord, params.workspaceRoot);
       for (const p of stepPaths) {
         touchedSet.add(p);
       }
@@ -321,41 +336,31 @@ function readLatestRoleFallback(sessionStateDir: string): string | undefined {
  * explicit `input.role` -> (a) transcript `memory_init` role -> (b) non-`'general'` `state.role` ->
  * (c) `latest-role.json` -> (d) `state.role` -> (e) `'general'`.
  *
- * @param {MemoryConfig}            config             - Validated unified memory configuration.
- * @param {string | undefined}      explicitRole       - Optional explicit role passed by caller.
- * @param {string | undefined}      transcriptInitRole - Role discovered from `memory_init` in `transcript.jsonl`.
- * @param {MemorySessionEpochState} [existingState]    - Existing `<sessionId>.json` state, if any.
- * @param {string}                  sessionStateDir    - Absolute path to `.memory/.session-state`.
+ * @param {SelectFallbackRoleParams} params - Config, explicit/transcript/existing roles, and `sessionStateDir`.
  *
  * @returns {string} Validated role present in `config.allowedRoles`.
  */
-function selectFallbackRole(
-  config: MemoryConfig,
-  explicitRole: string | undefined,
-  transcriptInitRole: string | undefined,
-  existingState: MemorySessionEpochState | undefined,
-  sessionStateDir: string,
-): string {
-  if (explicitRole !== undefined) {
-    return explicitRole;
+function selectFallbackRole(params: SelectFallbackRoleParams): string {
+  if (params.explicitRole !== undefined) {
+    return params.explicitRole;
   }
-  const allowed = new Set(config.allowedRoles);
-  if (transcriptInitRole !== undefined && allowed.has(transcriptInitRole)) {
-    return transcriptInitRole;
+  const allowed = new Set(params.config.allowedRoles);
+  if (params.transcriptInitRole !== undefined && allowed.has(params.transcriptInitRole)) {
+    return params.transcriptInitRole;
   }
   if (
-    existingState !== undefined &&
-    existingState.role !== 'general' &&
-    allowed.has(existingState.role)
+    params.existingState !== undefined &&
+    params.existingState.role !== 'general' &&
+    allowed.has(params.existingState.role)
   ) {
-    return existingState.role;
+    return params.existingState.role;
   }
-  const latestRole = readLatestRoleFallback(sessionStateDir);
+  const latestRole = readLatestRoleFallback(params.sessionStateDir);
   if (latestRole !== undefined && allowed.has(latestRole)) {
     return latestRole;
   }
-  if (existingState !== undefined && allowed.has(existingState.role)) {
-    return existingState.role;
+  if (params.existingState !== undefined && allowed.has(params.existingState.role)) {
+    return params.existingState.role;
   }
   return 'general';
 }
@@ -429,13 +434,13 @@ export async function resolveSessionEpochState(
     transcriptPath: params.transcriptPath,
     existingState,
   });
-  const resolvedRole = selectFallbackRole(
-    params.config,
-    params.role,
-    scanResult.transcriptInitRole,
+  const resolvedRole = selectFallbackRole({
+    config: params.config,
+    explicitRole: params.role,
+    transcriptInitRole: scanResult.transcriptInitRole,
     existingState,
     sessionStateDir,
-  );
+  });
   const currentCheckpointId = scanResult.currentCheckpointId;
   let seenRecordIds: string[];
   let epochReset = false;
