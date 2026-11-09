@@ -3,6 +3,7 @@ wave                       := "Wave 1: UM-1" ("Wave 1: UM-1" | "Wave 2: UM-2"; W
 unit                       := "UM-1" ("UM-1" | "UM-2" from docs/unified-memory/UM_PLAN.md)
 plan_file                  := "docs/unified-memory/UM_PLAN.md"
 spec_file                  := "docs/unified-memory/UNIFIED_MEMORY_SPEC.md"
+precedence                 := "CLAUDE.MD > spec_file > docs/CODING_GUIDELINES.md > plan_file (spec_file occupies the docs/SPEC.md & docs/CODING_SAMPLE.md tier of docs/rules/GENERAL.md Rule 2 for every role in this loop)"
 owned_dirs                 := Owned Files & Directories defined in plan_file §1.1 for unit
 forbidden_dirs             := Forbidden Directories defined in plan_file §1.1 for unit
 baseline_dirty             := repo-wide pre-existing dirty/untracked paths recorded via $(git status --porcelain) at Step 0.0 before the wave/unit starts (paths under .memory/post-compaction*.md written by .agents/hooks/post-compaction.mjs are never stray edits and are excluded from every status/diff check)
