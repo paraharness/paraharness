@@ -41,9 +41,16 @@ round_history              := [
       "R2-P1: Add optional autoPullOnInit: z.boolean().default(true) to MemoryGitStorageConfigSchema (§2.2) and fetch+reconcile origin/<branch> during memory_init (§6.2, §8.2.1) so multi-repo sessions receive newly pushed remote rules, lessons, and handoff notes at session startup."
     ],
     "rejected_findings": []
+  },
+  {
+    "round": 3,
+    "pre_remediation_sha": "3df6e4d3d43ccfba2756c53d4733e1b42d87ce6f",
+    "verified_mechanical_fixes": [],
+    "verified_core_proposals": [],
+    "rejected_findings": []
   }
 ]
-pre_remediation_sha        := "ee991795c1d0709e0850e5a37b4b6f4cd14fa6ad"
+pre_remediation_sha        := "3df6e4d3d43ccfba2756c53d4733e1b42d87ce6f"
 
 POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop` after any `CHECKPOINT` compaction in `transcript.jsonl`)
 1. `.agents/hooks/post-compaction.mjs` injects `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md`) if present, or generates and saves the role's sequential grounding note automatically.
