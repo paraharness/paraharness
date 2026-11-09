@@ -99,7 +99,7 @@ export type { TopologyBuilder } from './ast/topology-builder.js';
 export type { TopologyCommitOverlayConfig, TopologyNode, TopologyPartitionConstraint, TopologySignalCorrelation } from './ast/topology-node.js';
 export type { AgentBuilder } from './builders/agent-builder.js';
 export type { AgentCapabilitiesBuilder } from './builders/agent-capabilities-builder.js';
-export { DEFAULT_AGENT_MAX_TURNS, DEFAULT_LESSON_MIN_SCORE, DEFAULT_LESSON_SCORING, DEFAULT_LESSON_TOP_K, DEFAULT_LESSON_WEIGHTS } from './builders/builder-defaults.constants.js';
+export { DEFAULT_AGENT_MAX_TURNS, DEFAULT_LESSON_MIN_SCORE, DEFAULT_LESSON_SCORING, DEFAULT_LESSON_TOP_K, DEFAULT_LESSON_WEIGHTS, DEFAULT_NODE_RUNNER_AST_NODE } from './builders/builder-defaults.constants.js';
 export type { ChildInterruptHandlerBuilder, ChildInterruptHandlerBuilder as ChildInterruptBuilder } from './builders/child-interrupt-handler-builder.js';
 export type { CommandBuilder } from './builders/command-builder.js';
 export type { CommandConfigOptions, CommandConfigOptions as DirectCommandConfig } from './builders/command-config-options.js';

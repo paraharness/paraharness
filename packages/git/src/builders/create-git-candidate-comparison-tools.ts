@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   type GitCandidateComparisonToolNode,
   type GitWorktreeHandle,
@@ -12,17 +13,18 @@ import {
 } from '../schemas/git-receipts.schema.js';
 
 /**
- * Creates the speculative candidate comparison and benchmark tool bundle (`git.candidateComparisonTools(runner)`).
+ * Creates the speculative candidate comparison and benchmark tool bundle (`git.candidateComparisonTools(runner?)`).
  *
  * Emits passive `GitCandidateComparisonToolNode` descriptors for `diffCandidates`, `readCandidateFile`,
- * and checkpoint-sandboxed `evalInCandidates` over `refs/harness/candidates/<run-id>/<branch-index>`.
+ * and checkpoint-sandboxed `evalInCandidates` over `refs/harness/candidates/<run-id>/<branch-index>`,
+ * defaulting `runner` to `DEFAULT_NODE_RUNNER_AST_NODE` when omitted.
  *
- * @param {MaybeBuilder<NodeRunnerNode>} runner - Subprocess runner pool governing git and benchmark command slots.
+ * @param {MaybeBuilder<NodeRunnerNode>} [runner=DEFAULT_NODE_RUNNER_AST_NODE] - Optional subprocess runner pool governing git and benchmark command slots.
  *
  * @returns {readonly GitCandidateComparisonToolNode<GitWorktreeHandle>[]} Frozen tuple of candidate comparison tool AST nodes.
  */
 export function createGitCandidateComparisonTools(
-  runner: MaybeBuilder<NodeRunnerNode>,
+  runner: MaybeBuilder<NodeRunnerNode> = DEFAULT_NODE_RUNNER_AST_NODE,
 ): readonly GitCandidateComparisonToolNode<GitWorktreeHandle>[] {
   const runnerNode = extractAST(runner);
   const diffCandidatesNode = Object.freeze<GitCandidateComparisonToolNode<GitWorktreeHandle>>({

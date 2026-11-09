@@ -171,12 +171,12 @@ export interface GitNamespace {
    *
    * Enables actors to inspect `refs/harness/aborted/<run-id>/<stepExecId>` snapshots against the object store.
    *
-   * @param {MaybeBuilder<NodeRunnerNode>} runner - Subprocess runner pool governing git command slots.
+   * @param {MaybeBuilder<NodeRunnerNode>} [runner] - Optional subprocess runner pool governing git command slots (defaults to `DEFAULT_NODE_RUNNER_AST_NODE`).
    *
    * @returns {readonly GitRefReaderToolNode<GitWorktreeHandle>[]} Frozen tuple of ref reader tool AST nodes.
    */
   refReaderTools(
-    runner: MaybeBuilder<NodeRunnerNode>,
+    runner?: MaybeBuilder<NodeRunnerNode>,
   ): readonly GitRefReaderToolNode<GitWorktreeHandle>[];
 
   /**
@@ -184,11 +184,11 @@ export interface GitNamespace {
    *
    * Enables `candidateArbiter` and `.refineWinnerWhen()` to compare candidate refs and run sandboxed benchmarks.
    *
-   * @param {MaybeBuilder<NodeRunnerNode>} runner - Subprocess runner pool governing git and benchmark command slots.
+   * @param {MaybeBuilder<NodeRunnerNode>} [runner] - Optional subprocess runner pool governing git and benchmark command slots (defaults to `DEFAULT_NODE_RUNNER_AST_NODE`).
    *
    * @returns {readonly GitCandidateComparisonToolNode<GitWorktreeHandle>[]} Frozen tuple of candidate comparison tool AST nodes.
    */
   candidateComparisonTools(
-    runner: MaybeBuilder<NodeRunnerNode>,
+    runner?: MaybeBuilder<NodeRunnerNode>,
   ): readonly GitCandidateComparisonToolNode<GitWorktreeHandle>[];
 }

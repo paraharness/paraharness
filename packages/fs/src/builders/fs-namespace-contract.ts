@@ -178,11 +178,11 @@ export interface FsNamespace {
    *
    * Enforces `realpath` symlink jailing and `node_modules` write denial at runtime.
    * @template THandle Runtime handle type of the active isolation scope.
-   * @param {MaybeBuilder<NodeRunnerNode>} runner - Runner pool AST node or builder.
+   * @param {MaybeBuilder<NodeRunnerNode>} [runner] - Optional runner pool AST node or builder (defaults to `DEFAULT_NODE_RUNNER_AST_NODE`).
    * @returns {readonly [FsReadToolNode<THandle>, FsEditToolNode<THandle>, FsWriteToolNode<THandle>, FsGlobToolNode<THandle>, FsGrepToolNode<THandle>]} Frozen 5-tuple of coding tools.
    */
   codingTools<THandle = unknown>(
-    runner: MaybeBuilder<NodeRunnerNode>,
+    runner?: MaybeBuilder<NodeRunnerNode>,
   ): readonly [
     FsReadToolNode<THandle>,
     FsEditToolNode<THandle>,
@@ -195,11 +195,11 @@ export interface FsNamespace {
    *
    * Emits read-only `FsToolEffect` records with `mutatesScope: false`.
    * @template THandle Runtime handle type of the active isolation scope.
-   * @param {MaybeBuilder<NodeRunnerNode>} runner - Runner pool AST node or builder.
+   * @param {MaybeBuilder<NodeRunnerNode>} [runner] - Optional runner pool AST node or builder (defaults to `DEFAULT_NODE_RUNNER_AST_NODE`).
    * @returns {readonly [FsReadToolNode<THandle>, FsGlobToolNode<THandle>, FsGrepToolNode<THandle>]} Frozen 3-tuple of read-only tools.
    */
   readOnlyTools<THandle = unknown>(
-    runner: MaybeBuilder<NodeRunnerNode>,
+    runner?: MaybeBuilder<NodeRunnerNode>,
   ): readonly [FsReadToolNode<THandle>, FsGlobToolNode<THandle>, FsGrepToolNode<THandle>];
   /**
    * Compiles a passive `FsTelemetryCollectorNode` collecting `filesRead` and `filesMutated`.

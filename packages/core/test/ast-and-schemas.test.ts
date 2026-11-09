@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BudgetApprovalSchema,
   type CustomDomainAST,
+  DEFAULT_NODE_RUNNER_AST_NODE,
   GlobalRuleSchema,
   P,
   type IsolationScopeASTNode,
@@ -34,6 +35,13 @@ describe('AST extraction, symbolic EnvRef, and CustomDomainASTRegistry merging',
     });
     expect(fromNode).toBe(fromBuilder);
     expect(Object.isFrozen(fromBuilder)).toBe(true);
+    expect(DEFAULT_NODE_RUNNER_AST_NODE).toEqual({
+      type: 'node:runner',
+      id: 'default-runner',
+      slots: 4,
+      maxDaemons: 4,
+    });
+    expect(Object.isFrozen(DEFAULT_NODE_RUNNER_AST_NODE)).toBe(true);
   });
 
   it('creates symbolic EnvRef descriptors via P.env(key) without reading process.env', () => {

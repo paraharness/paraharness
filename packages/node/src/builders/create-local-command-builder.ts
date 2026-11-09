@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   z,
   type BivariantCallback,
@@ -44,12 +45,7 @@ export function createLocalCommandBuilder<TIn = unknown, TOut = unknown, THandle
   }
   const state: LocalCommandBuilderState<TIn, TOut, THandle> = existingState ?? {
     id,
-    runner: Object.freeze<NodeRunnerNode>({
-      type: 'node:runner',
-      id: 'default-runner',
-      slots: 4,
-      maxDaemons: 4,
-    }),
+    runner: DEFAULT_NODE_RUNNER_AST_NODE,
     argv: undefined,
     stdinMode: 'closed',
     env: undefined,

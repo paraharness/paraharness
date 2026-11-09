@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   z,
   type EnvRef,
@@ -58,12 +59,7 @@ export function createGitCommitAndPushBuilder<TIn = unknown>(
       const resolvedRunner: NodeRunnerNode =
         options.runner !== undefined
           ? extractAST(options.runner)
-          : Object.freeze<NodeRunnerNode>({
-              type: 'node:runner',
-              id: 'git-default-runner',
-              slots: 4,
-              maxDaemons: 2,
-            });
+          : DEFAULT_NODE_RUNNER_AST_NODE;
       const inputSchema: z.ZodType<TIn> =
         options.inputSchema ?? z.custom<TIn>(() => true);
       return Object.freeze<GitCommitAndPushNode<TIn>>({

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   type LocalServiceNode,
   type MaybeBuilder,
@@ -36,12 +37,7 @@ export function createLocalDaemonBuilder(
   }
   const state: LocalDaemonBuilderState = existingState ?? {
     id,
-    runner: Object.freeze<NodeRunnerNode>({
-      type: 'node:runner',
-      id: 'default-runner',
-      slots: 4,
-      maxDaemons: 4,
-    }),
+    runner: DEFAULT_NODE_RUNNER_AST_NODE,
     lifecycle: 'skill',
     ports: Object.freeze([]),
     startArgv: undefined,

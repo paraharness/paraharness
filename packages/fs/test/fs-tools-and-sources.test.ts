@@ -3,6 +3,7 @@ import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/pro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   type NodeRunnerNode,
   type ResolutionContext,
   type StepExecutionContext,
@@ -92,6 +93,20 @@ describe('@paraharness/fs tools and sources', () => {
 
     const readOnly = fs.readOnlyTools(dummyRunner);
     expect(readOnly.map((t) => t.type)).toEqual(['fs:read', 'fs:glob', 'fs:grep']);
+
+    const defaultCoding = fs.codingTools();
+    const explicitDefaultCoding = fs.codingTools(DEFAULT_NODE_RUNNER_AST_NODE);
+    expect(defaultCoding).toEqual(explicitDefaultCoding);
+    for (const tool of defaultCoding) {
+      expect(tool.runner).toEqual(DEFAULT_NODE_RUNNER_AST_NODE);
+    }
+
+    const defaultReadOnly = fs.readOnlyTools();
+    const explicitDefaultReadOnly = fs.readOnlyTools(DEFAULT_NODE_RUNNER_AST_NODE);
+    expect(defaultReadOnly).toEqual(explicitDefaultReadOnly);
+    for (const tool of defaultReadOnly) {
+      expect(tool.runner).toEqual(DEFAULT_NODE_RUNNER_AST_NODE);
+    }
   });
 
   it('executes read_file, glob_files, and grep_files inside the workspace', async () => {

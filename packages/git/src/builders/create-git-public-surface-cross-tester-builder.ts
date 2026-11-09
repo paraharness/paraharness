@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   z,
   type CrossVerifierBuilder,
@@ -50,7 +51,10 @@ export function createGitPublicSurfaceCrossTesterBuilder(
         type: 'git:public-surface-cross-tester',
         id,
         reportSchema,
-        runner: extractAST(options.runner),
+        runner:
+          options.runner !== undefined
+            ? extractAST(options.runner)
+            : DEFAULT_NODE_RUNNER_AST_NODE,
         partitionMap: extractAST(options.partitionMap),
       });
     },

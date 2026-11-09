@@ -13,8 +13,8 @@ import type {
 export interface GitPublicSurfaceCrossTesterOptions {
   /** Optional unique identifier for the cross-verifier node (defaults to `'git-public-surface-cross-tester'`). */
   readonly id?: string;
-  /** Runner pool governing subprocess slot concurrency during cross-testing. */
-  readonly runner: MaybeBuilder<NodeRunnerNode>;
+  /** Optional runner pool governing subprocess slot concurrency during cross-testing (defaults to `DEFAULT_NODE_RUNNER_AST_NODE`). */
+  readonly runner?: MaybeBuilder<NodeRunnerNode>;
   /** Filesystem partition map defining public `boundaryGlobs` per partition. */
   readonly partitionMap: MaybeBuilder<FsPartitionMapNode<string>>;
 }

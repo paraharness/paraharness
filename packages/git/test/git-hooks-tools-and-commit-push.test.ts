@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { P, z, type BaseCheckASTNode, type FsPartitionMapNode, type GitWorktreeHandle, type NodeRunnerNode, type StepExecutionContext } from '@paraharness/core';
+import { DEFAULT_NODE_RUNNER_AST_NODE, P, z, type BaseCheckASTNode, type FsPartitionMapNode, type GitWorktreeHandle, type NodeRunnerNode, type StepExecutionContext } from '@paraharness/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   GitCowWorktreeScopeDriver, createGitCandidateComparisonToolDrivers, createGitRefReaderToolDrivers,
@@ -99,6 +99,9 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
     expect(abortMeta2.abortedSnapshotRef).toBe(abortMeta1.abortedSnapshotRef);
 
     const [readRefTool, diffRefsTool, listRefFilesTool] = git.refReaderTools(TEST_RUNNER);
+    const defaultRefReaderTools = git.refReaderTools();
+    expect(defaultRefReaderTools).toEqual(git.refReaderTools(DEFAULT_NODE_RUNNER_AST_NODE));
+    expect(git.candidateComparisonTools()).toEqual(git.candidateComparisonTools(DEFAULT_NODE_RUNNER_AST_NODE));
     const refDriver = createGitRefReaderToolDrivers();
     if (readRefTool === undefined || diffRefsTool === undefined || listRefFilesTool === undefined) {
       throw new Error('Expected 3 refReaderTools');
@@ -240,6 +243,8 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       runner: TEST_RUNNER,
       partitionMap,
     });
+    const defaultCrossTester = git.publicSurfaceCrossTester({ partitionMap }).toAST();
+    expect(defaultCrossTester.runner).toEqual(DEFAULT_NODE_RUNNER_AST_NODE);
     expect(crossTesterBuilder.id).toBe('git-public-surface-cross-tester');
     const sampleReport = {
       branchIndex: 0,
@@ -342,6 +347,14 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       .env({ CUSTOM_VAR: P.env('SECRET_TOKEN') })
       .toAST();
     expect(commitPushNode).toEqual(explicitCommitPushNode);
+    const defaultRunnerCommitPush = git
+      .commitAndPush('push-default-runner', {
+        inputSchema: commitInputSchema,
+        branch: branchMapper,
+        message: messageMapper,
+      })
+      .toAST();
+    expect(defaultRunnerCommitPush.runner).toEqual(DEFAULT_NODE_RUNNER_AST_NODE);
 
     const failCtx: StepExecutionContext<GitWorktreeHandle> = {
       ...buildStepCtx(root, scope),

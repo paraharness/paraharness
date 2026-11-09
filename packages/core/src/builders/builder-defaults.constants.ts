@@ -1,5 +1,14 @@
+import type { NodeRunnerNode } from '../ast/domain/node-runner-node.js';
 import type { LessonScoringConfig } from '../ast/lessons-node.js';
 import { deepFreeze } from './internal/deep-freeze.js';
+
+/** Default subprocess and PTY runner pool AST descriptor (`id: 'default-runner'`, `slots: 4`, `maxDaemons: 4`). */
+export const DEFAULT_NODE_RUNNER_AST_NODE: NodeRunnerNode = Object.freeze<NodeRunnerNode>({
+  type: 'node:runner',
+  id: 'default-runner',
+  slots: 4,
+  maxDaemons: 4,
+});
 
 /** Default maximum number of turns allowed per agent invocation when unspecified (`25`). */
 export const DEFAULT_AGENT_MAX_TURNS = 25;

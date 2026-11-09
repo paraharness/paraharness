@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   type FsEditToolNode,
   type FsGlobToolNode,
@@ -17,19 +18,20 @@ import {
 } from './internal/build-fs-tool-nodes.js';
 
 /**
- * Compiles the 5-tool workspace-jailed coding bundle (`fs.codingTools(runner)`).
+ * Compiles the 5-tool workspace-jailed coding bundle (`fs.codingTools(runner?)`).
  *
  * Returns passive `ToolASTNode` descriptors (`read_file`, `edit_file`, `write_file`,
- * `glob_files`, `grep_files`) with `effectTracking: 'declared'`.
+ * `glob_files`, `grep_files`) with `effectTracking: 'declared'`, defaulting `runner` to
+ * `DEFAULT_NODE_RUNNER_AST_NODE` when omitted.
  *
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {MaybeBuilder<NodeRunnerNode>} runner - Runner pool AST node or builder.
+ * @param {MaybeBuilder<NodeRunnerNode>} [runner=DEFAULT_NODE_RUNNER_AST_NODE] - Optional runner pool AST node or builder.
  *
  * @returns {readonly [FsReadToolNode<THandle>, FsEditToolNode<THandle>, FsWriteToolNode<THandle>, FsGlobToolNode<THandle>, FsGrepToolNode<THandle>]} Frozen 5-tuple of filesystem coding tool AST nodes.
  */
 export function createFsCodingTools<THandle = unknown>(
-  runner: MaybeBuilder<NodeRunnerNode>,
+  runner: MaybeBuilder<NodeRunnerNode> = DEFAULT_NODE_RUNNER_AST_NODE,
 ): readonly [
   FsReadToolNode<THandle>,
   FsEditToolNode<THandle>,

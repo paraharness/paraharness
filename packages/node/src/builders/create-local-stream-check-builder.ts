@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   type EnvRef,
   type LocalStreamCheckNode,
@@ -38,12 +39,7 @@ export function createLocalStreamCheckBuilder<THandle = unknown>(
   }
   const state: LocalStreamCheckBuilderState = existingState ?? {
     id,
-    runner: Object.freeze<NodeRunnerNode>({
-      type: 'node:runner',
-      id: 'default-runner',
-      slots: 4,
-      maxDaemons: 4,
-    }),
+    runner: DEFAULT_NODE_RUNNER_AST_NODE,
     argv: undefined,
     env: undefined,
     timeoutMinutes: undefined,

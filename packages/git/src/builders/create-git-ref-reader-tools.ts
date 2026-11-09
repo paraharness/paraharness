@@ -1,4 +1,5 @@
 import {
+  DEFAULT_NODE_RUNNER_AST_NODE,
   extractAST,
   type GitRefReaderToolNode,
   type GitWorktreeHandle,
@@ -12,17 +13,18 @@ import {
 } from '../schemas/git-receipts.schema.js';
 
 /**
- * Creates the read-only git object store inspection tool bundle (`git.refReaderTools(runner)`).
+ * Creates the read-only git object store inspection tool bundle (`git.refReaderTools(runner?)`).
  *
  * Emits passive `GitRefReaderToolNode` descriptors for `readRefFile`, `diffRefs`, and `listRefFiles`
- * with `effectTracking: 'declared'` so actors can inspect `refs/harness/aborted/<run-id>/<stepExecId>`.
+ * with `effectTracking: 'declared'` so actors can inspect `refs/harness/aborted/<run-id>/<stepExecId>`,
+ * defaulting `runner` to `DEFAULT_NODE_RUNNER_AST_NODE` when omitted.
  *
- * @param {MaybeBuilder<NodeRunnerNode>} runner - Subprocess runner pool governing git command slots.
+ * @param {MaybeBuilder<NodeRunnerNode>} [runner=DEFAULT_NODE_RUNNER_AST_NODE] - Optional subprocess runner pool governing git command slots.
  *
  * @returns {readonly GitRefReaderToolNode<GitWorktreeHandle>[]} Frozen tuple of `readRefFile`, `diffRefs`, and `listRefFiles` tool AST nodes.
  */
 export function createGitRefReaderTools(
-  runner: MaybeBuilder<NodeRunnerNode>,
+  runner: MaybeBuilder<NodeRunnerNode> = DEFAULT_NODE_RUNNER_AST_NODE,
 ): readonly GitRefReaderToolNode<GitWorktreeHandle>[] {
   const runnerNode = extractAST(runner);
   const readRefFileNode = Object.freeze<GitRefReaderToolNode<GitWorktreeHandle>>({
