@@ -405,9 +405,18 @@ describe('Static build-time validation rejections', () => {
       P.flow('incomplete-branch').input(SimpleSchema).scope(SAMPLE_TIER1_SCOPE_NODE).branch('b', ($b) => $b.output(SimpleSchema)),
     ).toThrowError("Flow branch 'b' requires at least one .when(...) case and an .otherwise(...) fallback.");
 
-    expect(() =>
-      SimpleAgent.onChildInterrupt(EscalationInterrupt, ($ci) => $ci.pauseSiblingForksInPartitions(() => ['db'])),
-    ).toThrowError("Child interrupt handler for 'normative-esc' requires .suspendAndReturnToParent().");
+    const pausedChildHandlerAgent = SimpleAgent.onChildInterrupt(
+      EscalationInterrupt,
+      ($ci) => $ci.pauseSiblingForksInPartitions(() => ['db']),
+    ).toAST();
+    expect(pausedChildHandlerAgent.onChildInterruptHandlers[0]?.mode).toBe(
+      'suspend-and-return-to-parent',
+    );
+    expect(
+      pausedChildHandlerAgent.onChildInterruptHandlers[0]?.pauseSiblingForksInPartitions?.({
+        reason: 'conflict',
+      }),
+    ).toEqual(['db']);
 
     const evaluator = P.agent('eval').model(SAMPLE_MODEL_NODE).input(SimpleSchema).output(z.object({ ok: z.boolean() }));
     const untypedLoop: LoopBuilder<{ readonly id: string }, { readonly id: string }, unknown, string> = P.loop('bad-loop')

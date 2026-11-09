@@ -73,17 +73,18 @@ export function createHarnessBuilder(id: string, state?: CreateHarnessBuilderSta
     ): HarnessBuilder {
       const signalNode = extractAST(signal);
       const subBuilder = createHarnessSignalNotificationSubBuilder<TPayload>(signalNode);
-      const notification =
-        typeof configureOrHuman === 'function'
-          ? configureOrHuman(subBuilder).toAST()
-          : ((): ReturnType<typeof subBuilder.toAST> => {
-              if (typeof messageMapper !== 'function') {
-                throw new Error(
-                  `Harness '${id}' signal notification on '${signalNode.id}' requires a messageMapper function.`,
-                );
-              }
-              return subBuilder.notify(configureOrHuman, messageMapper).toAST();
-            })();
+      if (typeof configureOrHuman === 'function') {
+        return createHarnessBuilder(id, {
+          ...state,
+          onSignalNotifications: [...onSignalNotifications, configureOrHuman(subBuilder).toAST()],
+        });
+      }
+      if (typeof messageMapper !== 'function') {
+        throw new Error(
+          `Harness '${id}' signal notification on '${signalNode.id}' requires a messageMapper function.`,
+        );
+      }
+      const notification = subBuilder.notify(configureOrHuman, messageMapper).toAST();
       return createHarnessBuilder(id, {
         ...state,
         onSignalNotifications: [...onSignalNotifications, notification],

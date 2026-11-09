@@ -89,10 +89,9 @@ export function createAgentFromState<TIn = unknown, TOut = unknown, THandle = un
       const baseBuilder = createChildInterruptFromState({
         interrupt: extractAST(interrupt),
         pauseSiblingForksInPartitions: undefined,
-        suspended: false,
+        suspended: true,
       });
-      const configuredBuilder =
-        configure !== undefined ? configure(baseBuilder) : baseBuilder.suspendAndReturnToParent();
+      const configuredBuilder = configure !== undefined ? configure(baseBuilder) : baseBuilder;
       return createAgentFromState({
         ...state,
         onChildInterruptHandlers: [...state.onChildInterruptHandlers, configuredBuilder.toAST()],

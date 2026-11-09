@@ -1,20 +1,15 @@
 import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type { LedgerStoreASTNode } from '../../ast/domain-ast.types.js';
 import type { FlowNode } from '../../ast/flow-node.js';
-import { createExecutorRegistry } from '../../ports/create-executor-registry.js';
-import type { IsolationScope } from '../../ports/isolation-scope.js';
-import type { RunnerDriver } from '../../ports/runner-driver.js';
-import type { RuntimeDriverContext } from '../../ports/runtime-driver-context.js';
 import type { RuntimeExecutorRegistry } from '../../ports/runtime-executor-registry.js';
 import type { RuntimeExecutorRegistrySlice } from '../../ports/runtime-executor-registry-slice.js';
-import { ScopeLockManager } from '../locks/scope-lock-manager.js';
-import { StepContinuationQueue } from '../locks/step-continuation-queue.js';
-import { PoolManager } from '../pools/pool-manager.js';
-import { ServiceSessionRegistry } from '../services/service-session-registry.js';
 import { executeFlow } from './execute-flow.js';
-import type { FlowExecutionContext } from './flow-execution-context.js';
 import type { FlowRunResult } from './flow-run-result.js';
-import { resolveFlowRuntimeStores } from './internal/resolve-flow-runtime-stores.js';
+import {
+  bindExternalAbortSignal,
+  createStandaloneFlowExecutionContext,
+  prepareStandaloneFlowRun,
+} from './internal/prepare-standalone-flow-run.js';
 
 /**
  * Configuration options passed to `runFlow(flow, input, options)` for standalone single-flow execution (`SPEC.md` §3.1 & §3.9).
@@ -53,7 +48,7 @@ export interface FlowRunOptions {
  *
  * Unwraps `MaybeBuilder` inputs, merges `options.registry`, resolves `LedgerStore`, `IsolationScope`, `TopologyStore`,
  * `LessonStore`, and `HumanAdapter` instances from the flow AST, acquires the root scope handle, runs `executeFlow`,
- * and guarantees daemon quiescence and `scopeDriver.release(scopeHandle)` in `finally` (`Rule 5.3`).
+ * and guarantees abort-listener removal, daemon quiescence, and `scopeDriver.release(scopeHandle)` in `finally` (`Rule 5.3`).
  *
  * @template TIn     Validated flow input payload type.
  * @template THandle Runtime handle type of the active isolation scope.
@@ -71,110 +66,27 @@ export async function runFlow<TIn = unknown, THandle = unknown>(
   input: TIn,
   options: FlowRunOptions,
 ): Promise<FlowRunResult> {
-  const flowNode: FlowNode<TIn, THandle, string> = 'toAST' in flow ? flow.toAST() : flow;
-  const ledgerNode: LedgerStoreASTNode =
-    'toAST' in options.ledger ? options.ledger.toAST() : options.ledger;
-  const registry = createExecutorRegistry(options.registry);
-  const runId = options.runId ?? 'standalone-flow-run';
-  const laneId = options.laneId ?? 'standalone-lane';
-  const itemKey = options.itemKey ?? runId;
-  const env: Readonly<Record<string, string | undefined>> = options.env ?? Object.freeze({});
-  const memoizedRunners = new Map<string, RunnerDriver>();
-  const drvCtx: RuntimeDriverContext = {
-    registry,
-    resolveEnv: (v) => (typeof v === 'string' ? v : env[v.key]),
-    getRunner: (rNode) => {
-      const existing = memoizedRunners.get(rNode.id);
-      if (existing !== undefined) {
-        return existing;
-      }
-      const factory = registry.runners[rNode.type];
-      if (factory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', flow '${flowNode.id}', runId '${runId}').`,
-        );
-      }
-      const drv = factory(rNode as never);
-      memoizedRunners.set(rNode.id, drv);
-      return drv;
-    },
-  };
-  const ledgerFactory = registry.ledgers[ledgerNode.type];
-  if (ledgerFactory === undefined) {
-    throw new Error(
-      `No LedgerStore registered for '${ledgerNode.type}' in flow '${flowNode.id}' (runId '${runId}').`,
-    );
-  }
-  const scopeFactory = registry.scopes[flowNode.scope.type];
-  if (scopeFactory === undefined) {
-    throw new Error(
-      `No IsolationScope registered for '${flowNode.scope.type}' in flow '${flowNode.id}' (runId '${runId}').`,
-    );
-  }
-  const ledgerStore = ledgerFactory(ledgerNode as never, drvCtx);
-  const resolvedStores = resolveFlowRuntimeStores({
-    flows: [flowNode as FlowNode<unknown, unknown>],
-    registry,
-    drvCtx,
-    contextLabel: `flow '${flowNode.id}' (runId '${runId}')`,
-  });
-  const scopeDriver = scopeFactory(flowNode.scope as never, drvCtx) as IsolationScope<THandle>;
-  const lockManager = new ScopeLockManager();
-  const continuationQueue = new StepContinuationQueue();
-  const poolManager = new PoolManager();
-  const serviceRegistry = new ServiceSessionRegistry();
-  const activeStepAbortController = new AbortController();
+  const prepared = prepareStandaloneFlowRun(flow, options);
   let onExternalAbort: (() => void) | undefined;
-  if (options.signal !== undefined) {
-    if (options.signal.aborted) {
-      activeStepAbortController.abort(options.signal.reason);
-    } else {
-      onExternalAbort = (): void => {
-        activeStepAbortController.abort(options.signal?.reason);
-      };
-      options.signal.addEventListener('abort', onExternalAbort, { once: true });
-    }
-  }
-  const scopeHandle = await scopeDriver.acquireRoot(runId);
+  let scopeHandle: THandle | undefined;
+  let scopeAcquired = false;
   try {
-    const flowCtx: FlowExecutionContext<TIn, THandle> = {
-      runId,
-      laneId,
-      itemKey,
-      flow: flowNode,
-      currentInput: input,
-      scopeHandle,
-      scopeDriver: scopeDriver as never,
-      registry,
-      env,
-      ledgerStore,
-      topologyStore: resolvedStores.topologyStore,
-      lessonStore: resolvedStores.lessonStore,
-      lockManager,
-      continuationQueue,
-      poolManager,
-      serviceRegistry,
-      humanAdaptersById: resolvedStores.humanAdaptersById,
-      prefixGroups: undefined,
-      wirePrefixesByGroupId: new Map(),
-      completedStepOutputs: new Map(),
-      stepBaseCheckpointsByStepId: new Map(),
-      observedRunEffects: [],
-      activeStepId: null,
-      activeStepExecId: null,
-      activeReplacementExecutable: undefined,
-      resumeContinuationStack: undefined,
-      activeStepAbortController,
-      pendingRewindToStepId: undefined,
-      retryConfig: undefined,
-    };
+    onExternalAbort = bindExternalAbortSignal(
+      options.signal,
+      prepared.activeStepAbortController,
+    );
+    scopeHandle = await prepared.scopeDriver.acquireRoot(prepared.runId);
+    scopeAcquired = true;
+    const flowCtx = createStandaloneFlowExecutionContext(prepared, input, scopeHandle);
     return await executeFlow(flowCtx);
   } finally {
     if (onExternalAbort !== undefined && options.signal !== undefined) {
       options.signal.removeEventListener('abort', onExternalAbort);
     }
-    poolManager.releaseRunSeats(runId);
-    await serviceRegistry.quiesceScopeServices();
-    await scopeDriver.release(scopeHandle);
+    prepared.poolManager.releaseRunSeats(prepared.runId);
+    await prepared.serviceRegistry.quiesceScopeServices();
+    if (scopeAcquired) {
+      await prepared.scopeDriver.release(scopeHandle as THandle);
+    }
   }
 }

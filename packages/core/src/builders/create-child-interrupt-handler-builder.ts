@@ -22,6 +22,6 @@ export function createChildInterruptHandlerBuilder<TPayload = unknown>(
   return createChildInterruptFromState({
     interrupt: extractAST(interrupt),
     pauseSiblingForksInPartitions: undefined,
-    suspended: false,
+    suspended: true,
   });
 }

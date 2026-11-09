@@ -9,7 +9,6 @@ import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
 import { createExecutorRegistry } from '../../ports/create-executor-registry.js';
 import type { IsolationScope } from '../../ports/isolation-scope.js';
-import type { LeaseDelta } from '../../ports/lease-delta.js';
 import type { RunnerDriver } from '../../ports/runner-driver.js';
 import type { RuntimeExecutorRegistry } from '../../ports/runtime-executor-registry.js';
 import type { RuntimeExecutorRegistrySlice } from '../../ports/runtime-executor-registry-slice.js';
@@ -30,9 +29,6 @@ import { createEphemeralStepLedgerStore } from './internal/create-ephemeral-step
  * @template THandle Runtime handle type of the active isolation scope.
  */
 export interface StepRunOptions<THandle = unknown> {
-  /** Active isolation scope handle passed to the step and its mounted tools. */
-  readonly scopeHandle: THandle;
-
   /** Executor registry, single adapter slice, or array of adapter slices used to dispatch the step and its tools/models. */
   readonly registry:
     | Partial<RuntimeExecutorRegistry>
@@ -42,20 +38,8 @@ export interface StepRunOptions<THandle = unknown> {
   /** Optional explicit environment variable map for resolving symbolic `P.env(key)` references (defaults to `{}`). */
   readonly env?: Readonly<Record<string, string | undefined>>;
 
-  /** Optional run identifier (defaults to `'standalone-run'`). */
-  readonly runId?: string;
-
-  /** Optional step execution identifier (defaults to `'standalone-step-1'`). */
-  readonly stepExecId?: string;
-
-  /** Optional active partition identifiers (derived from `node.extractPartitions(input)` when omitted). */
-  readonly activePartitions?: readonly string[];
-
-  /** Optional capability lease deltas granted to the step (defaults to `[]`). */
-  readonly activeLeases?: readonly LeaseDelta[];
-
-  /** Optional cancellation signal for aborting in-flight step operations. */
-  readonly signal?: AbortSignal;
+  /** Optional active isolation scope handle passed to the step and its mounted tools. */
+  readonly scopeHandle?: THandle;
 
   /** Optional passive AST node of the active isolation scope. */
   readonly scopeNode?: IsolationScopeASTNode<
@@ -69,6 +53,18 @@ export interface StepRunOptions<THandle = unknown> {
     | IsolationScope<THandle, Record<string, unknown>>
     | CheckpointableScope<THandle, Record<string, unknown>>
     | BranchableScope<THandle, Record<string, unknown>, Record<string, unknown>>;
+
+  /** Optional run identifier (defaults to `'standalone-run'`). */
+  readonly runId?: string;
+
+  /** Optional step execution identifier (defaults to `'standalone-step-1'`). */
+  readonly stepExecId?: string;
+
+  /** Optional active partition identifiers (derived from `node.extractPartitions(input)` when omitted). */
+  readonly activePartitions?: readonly string[];
+
+  /** Optional cancellation signal for aborting in-flight step operations. */
+  readonly signal?: AbortSignal;
 
   /** Optional map of surviving speculative candidate branch indices to their live scope handles. */
   readonly candidateHandles?: ReadonlyMap<number, THandle>;
@@ -125,13 +121,13 @@ export async function runStep<TIn = unknown, TOut = unknown, THandle = unknown>(
   const baseCtx: StepExecutionContext<THandle> = {
     runId,
     stepExecId,
-    scopeHandle: options.scopeHandle,
+    scopeHandle: options.scopeHandle as THandle,
     scopeNode: options.scopeNode,
     scope: options.scope,
     candidateHandles: options.candidateHandles,
     activeServiceSessions: options.activeServiceSessions,
     activePartitions,
-    activeLeases: options.activeLeases ?? Object.freeze([]),
+    activeLeases: Object.freeze([]),
     observedEffects,
     signal: options.signal,
     seededHistory: options.seededHistory,

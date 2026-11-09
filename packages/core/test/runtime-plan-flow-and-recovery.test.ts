@@ -7,7 +7,7 @@ import {
   executeAddDependencies, executeFlow, executeHierarchicalRewindDrain, executeReplaceWithPromotion,
   executeSpawnTasks, executeStepNode, executeUpdatePartitionContract, recoverInterruptedRunOnBoot, syncSuspendedRunPrerequisites, z,
 } from '../src/index.js';
-import { type FlowRunOptions, runFlow } from '../src/runtime/index.js';
+import { type FlowRunOptions, runFlow, runStep } from '../src/runtime/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import { InMemoryLessonStore } from './fixtures/in-memory-lesson-store.js';
 import { InMemoryTopologyStore } from './fixtures/in-memory-topology-store.js';
@@ -643,6 +643,183 @@ describe('M2 Runtime — controller.emitSignal with SignalBuilder and SignalNode
     ).rejects.toThrow();
 
     await runtime.stop();
+  });
+
+  it('validates all TopologyNode, LessonsNode, and nested flow-step interrupt HumanNode declarations, allows omitting scopeHandle in runStep, and cleans up abort listeners if acquireRoot rejects (VF-2, VF-3, VF-5)', async () => {
+    const cmdStep = P.command('vf3-cmd')
+      .input(z.object({ x: z.number() }))
+      .output(z.object({ doubled: z.number() }))
+      .run(async (input: { readonly x: number }) => ({
+        doubled: input.x * 2,
+      }));
+    const stepOut = await runStep(cmdStep, { x: 21 }, { registry: {} });
+    expect(stepOut).toEqual({ doubled: 42 });
+
+    const ledgerStore = new InMemoryLedgerStore();
+    const topologyStore = new InMemoryTopologyStore({ api: { contractText: 'v1', epoch: 1 } });
+    const lessonStore = new InMemoryLessonStore();
+    const scope = new ScriptedBranchableScope();
+    const primaryTopo = P.topology('topo-1')
+      .store(SAMPLE_TOPOLOGY_STORE_NODE)
+      .partitions({ api: {} });
+    const secondaryTopo = P.topology('topo-2')
+      .store({ type: 'postgres:topology', uri: 'postgres://localhost:5432/db' })
+      .partitions({ api: {} });
+    const primaryLessons = P.lessons('lessons-1')
+      .store(SAMPLE_LESSON_STORE_NODE)
+      .queryFrom(z.object({ x: z.number() }), (v) => String(v.x))
+      .distillWith(SAMPLE_MODEL_NODE, ($d) => $d.onLoopRecovery());
+    const secondaryLessons = P.lessons('lessons-2')
+      .store({
+        type: 'fs:jsonl-lesson-store',
+        definitionsDir: '.paraharness/lessons',
+        statsPath: '.paraharness/lessons-stats.json',
+        lockFile: '.paraharness/lessons.lock',
+      })
+      .queryFrom(z.object({ x: z.number() }), (v) => String(v.x))
+      .distillWith(SAMPLE_MODEL_NODE, ($d) => $d.onLoopRecovery());
+
+    const step1 = P.agent('agent-1')
+      .model(SAMPLE_MODEL_NODE)
+      .topology(primaryTopo)
+      .lessons(primaryLessons)
+      .input(z.object({ x: z.number() }))
+      .output(z.object({ x: z.number() }));
+    const step2 = P.agent('agent-2')
+      .model(SAMPLE_MODEL_NODE)
+      .topology(secondaryTopo)
+      .lessons(secondaryLessons)
+      .input(z.object({ x: z.number() }))
+      .output(z.object({ x: z.number() }));
+    const flowWithTwoTopos = P.flow('flow-two-topos')
+      .input(z.object({ x: z.number() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('s1', step1)
+      .step('s2', step2)
+      .exit('s2');
+
+    await expect(
+      runFlow(
+        flowWithTwoTopos,
+        { x: 1 },
+        {
+          ledger: SAMPLE_LEDGER_NODE,
+          registry: {
+            ledgers: { 'sqlite:ledger': () => ledgerStore },
+            scopes: { 'git:cow-worktree': () => scope as never },
+            topologies: { 'sqlite:topology': () => topologyStore },
+            lessons: { 'sqlite:lessons': () => lessonStore },
+          },
+        },
+      ),
+    ).rejects.toThrow(/No TopologyStore registered for 'postgres:topology'/);
+
+    await expect(
+      runFlow(
+        flowWithTwoTopos,
+        { x: 1 },
+        {
+          ledger: SAMPLE_LEDGER_NODE,
+          registry: {
+            ledgers: { 'sqlite:ledger': () => ledgerStore },
+            scopes: { 'git:cow-worktree': () => scope as never },
+            topologies: {
+              'sqlite:topology': () => topologyStore,
+              'postgres:topology': () => topologyStore,
+            },
+            lessons: { 'sqlite:lessons': () => lessonStore },
+          },
+        },
+      ),
+    ).rejects.toThrow(/No LessonStore registered for 'fs:jsonl-lesson-store'/);
+
+    const intr = P.interrupt('flow-intr', z.object({ reason: z.string() }));
+    const humanInReplace = P.human('replace-human').notify(
+      SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE,
+    );
+    const replacementAgent = P.agent('replacement-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ x: z.number() }))
+      .output(z.object({ x: z.number() }))
+      .onInterrupt(intr, ($i) =>
+        $i
+          .ask(humanInReplace, z.object({ approved: z.boolean() }))
+          .resumeWith((res) => String(res.approved)),
+      );
+    const workerRaising = P.agent('worker-raising')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ x: z.number() }))
+      .output(z.object({ x: z.number() }))
+      .canRaise(intr);
+    const flowWithReplaceHuman = P.flow('flow-replace-human')
+      .input(z.object({ x: z.number() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('s1', workerRaising, ($edge) =>
+        $edge.onInterrupt(intr, ($i) =>
+          $i.replaceWith(replacementAgent, (inVal) => inVal),
+        ),
+      )
+      .exit('s1');
+
+    await expect(
+      runFlow(
+        flowWithReplaceHuman,
+        { x: 1 },
+        {
+          ledger: SAMPLE_LEDGER_NODE,
+          registry: {
+            ledgers: { 'sqlite:ledger': () => ledgerStore },
+            scopes: { 'git:cow-worktree': () => scope as never },
+          },
+        },
+      ),
+    ).rejects.toThrow(/No HumanAdapter registered for 'slack:approver'/);
+
+    const abortController = new AbortController();
+    let activeAbortListeners = 0;
+    const origAdd = abortController.signal.addEventListener.bind(abortController.signal);
+    const origRemove = abortController.signal.removeEventListener.bind(abortController.signal);
+    abortController.signal.addEventListener = ((
+      ...args: Parameters<AbortSignal['addEventListener']>
+    ): void => {
+      activeAbortListeners += 1;
+      origAdd(...args);
+    }) as AbortSignal['addEventListener'];
+    abortController.signal.removeEventListener = ((
+      ...args: Parameters<AbortSignal['removeEventListener']>
+    ): void => {
+      activeAbortListeners -= 1;
+      origRemove(...args);
+    }) as AbortSignal['removeEventListener'];
+
+    const simpleFlow = P.flow('simple-abort-leak-flow')
+      .input(z.object({ x: z.number() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('s1', cmdStep)
+      .exit('s1');
+
+    await expect(
+      runFlow(
+        simpleFlow,
+        { x: 5 },
+        {
+          ledger: SAMPLE_LEDGER_NODE,
+          signal: abortController.signal,
+          registry: {
+            ledgers: { 'sqlite:ledger': () => ledgerStore },
+            scopes: {
+              'git:cow-worktree': () => ({
+                acquireRoot: async () => {
+                  throw new Error('acquireRoot boom');
+                },
+                release: async () => {},
+              }) as never,
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow('acquireRoot boom');
+    expect(activeAbortListeners).toBe(0);
   });
 });
 

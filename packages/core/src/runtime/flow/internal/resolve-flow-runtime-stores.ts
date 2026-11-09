@@ -1,9 +1,5 @@
-import type { StepASTNode } from '../../../ast/domain-ast.types.js';
-import type { FlowBranchNode } from '../../../ast/flow-branch-node.js';
 import type { FlowNode } from '../../../ast/flow-node.js';
-import type { FlowStepNode } from '../../../ast/flow-step-node.js';
 import type { HumanNode } from '../../../ast/human-node.js';
-import type { InterruptHandlerNode } from '../../../ast/interrupt-handler-node.types.js';
 import type { LessonsNode } from '../../../ast/lessons-node.js';
 import type { TopologyNode } from '../../../ast/topology-node.js';
 import type { HumanAdapter } from '../../../ports/human-adapter.js';
@@ -11,6 +7,7 @@ import type { LessonStore } from '../../../ports/lesson-store.js';
 import type { RuntimeDriverContext } from '../../../ports/runtime-driver-context.js';
 import type { RuntimeExecutorRegistry } from '../../../ports/runtime-executor-registry.js';
 import type { TopologyStore } from '../../../ports/topology-store.js';
+import { collectFlowStoreAstNodes } from './collect-flow-store-ast-nodes.js';
 
 /**
  * Parameters passed to `resolveFlowRuntimeStores` (`SPEC.md` §3.1 & §3.9).
@@ -47,91 +44,70 @@ export interface ResolveFlowRuntimeStoresParams {
 }
 
 /**
- * Recursively collects `TopologyNode`, `LessonsNode`, and `HumanNode` declarations from a `StepASTNode` and its nested capabilities or interrupt handlers.
+ * Validates all collected `TopologyNode` definitions against `params.registry.topologies` and returns the primary `TopologyStore` instance.
  *
- * @template THandle Runtime handle type of the active isolation scope.
+ * @param {ResolveFlowRuntimeStoresParams}              params         - Store resolution parameters.
+ * @param {ReadonlyMap<string, TopologyNode<string>>} topologiesById - Collected topology AST nodes keyed by ID.
  *
- * @param {StepASTNode<unknown, unknown, THandle>} step      - Step executable to traverse.
- * @param {Set<string>}                            visited   - Set of already-visited step IDs to guard against cycles.
- * @param {{ topologyNode: TopologyNode<string> | undefined; lessonsNode: LessonsNode | undefined; humansById: Map<string, HumanNode<'bidirectional' | 'notify-only'>> }} collected - Mutable accumulator of discovered AST nodes.
+ * @returns {TopologyStore | undefined} Instantiated or pre-supplied primary topology store.
  */
-function collectStepStoreNodes<THandle = unknown>(
-  step: StepASTNode<unknown, unknown, THandle>,
-  visited: Set<string>,
-  collected: {
-    topologyNode: TopologyNode<string> | undefined;
-    lessonsNode: LessonsNode | undefined;
-    readonly humansById: Map<
-      string,
-      HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode
-    >;
-  },
-): void {
-  const visitHandlers = (
-    handlers: readonly InterruptHandlerNode<unknown, unknown, THandle>[],
-  ): void => {
-    for (const handler of handlers) {
-      if (handler.mode === 'ask') {
-        collected.humansById.set(handler.human.id, handler.human);
-      } else if (handler.mode === 'adjudicate') {
-        collectStepStoreNodes(handler.adjudicator, visited, collected);
-        visitHandlers(handler.onInterruptHandlers);
-      } else if (handler.mode === 'replace') {
-        collectStepStoreNodes(handler.replacementExecutable, visited, collected);
-      }
-    }
-  };
-  if (step.type === 'harness:agent') {
-    if (visited.has(`agent:${step.id}:${step.roleKey}`)) {
-      return;
-    }
-    visited.add(`agent:${step.id}:${step.roleKey}`);
-    if (collected.topologyNode === undefined && step.topology !== undefined) {
-      collected.topologyNode = step.topology;
-    }
-    if (collected.lessonsNode === undefined && step.lessons !== undefined) {
-      collected.lessonsNode = step.lessons.node;
-    }
-    if (
-      collected.topologyNode === undefined &&
-      step.capabilities?.mutatePlan?.topologyToUpdate !== undefined
-    ) {
-      collected.topologyNode = step.capabilities.mutatePlan.topologyToUpdate;
-    }
-    for (const esc of step.capabilities?.escalations ?? []) {
-      collected.humansById.set(esc.human.id, esc.human);
-    }
-    for (const fCap of step.capabilities?.forks ?? []) {
-      collectStepStoreNodes(fCap.childExecutable, visited, collected);
-    }
-    for (const sCap of step.capabilities?.speculations ?? []) {
-      collectStepStoreNodes(sCap.workerExecutable, visited, collected);
-      collectStepStoreNodes(sCap.arbiter.actor, visited, collected);
-      if (sCap.verifyWinnerWith !== undefined) {
-        collectStepStoreNodes(sCap.verifyWinnerWith.evaluator, visited, collected);
-      }
-      if (sCap.refineWinnerWhen !== undefined) {
-        collectStepStoreNodes(sCap.refineWinnerWhen.refinementExecutable, visited, collected);
-      }
-    }
-    visitHandlers(step.onInterruptHandlers);
-  } else if (step.type === 'harness:loop') {
-    if (visited.has(`loop:${step.id}`)) {
-      return;
-    }
-    visited.add(`loop:${step.id}`);
-    if (collected.lessonsNode === undefined && step.distillLessons !== undefined) {
-      collected.lessonsNode = step.distillLessons;
-    }
-    collectStepStoreNodes(step.actStep.actor, visited, collected);
-    collectStepStoreNodes(step.evaluateStep.evaluator, visited, collected);
+function instantiateFlowTopologyStores(
+  params: ResolveFlowRuntimeStoresParams,
+  topologiesById: ReadonlyMap<string, TopologyNode<string>>,
+): TopologyStore | undefined {
+  if (params.existingTopologyStore !== undefined) {
+    return params.existingTopologyStore;
   }
+  let topologyStore: TopologyStore | undefined;
+  for (const topoNode of topologiesById.values()) {
+    const topoStoreType = topoNode.store.type as keyof RuntimeExecutorRegistry['topologies'];
+    const topoFactory = params.registry.topologies[topoStoreType];
+    if (topoFactory === undefined) {
+      throw new Error(
+        `No TopologyStore registered for '${topoNode.store.type}' (topology id '${topoNode.id}', ${params.contextLabel}).`,
+      );
+    }
+    if (topologyStore === undefined) {
+      topologyStore = topoFactory(topoNode.store as never, params.drvCtx);
+    }
+  }
+  return topologyStore;
+}
+
+/**
+ * Validates all collected `LessonsNode` definitions against `params.registry.lessons` and returns the primary `LessonStore` instance.
+ *
+ * @param {ResolveFlowRuntimeStoresParams}     params      - Store resolution parameters.
+ * @param {ReadonlyMap<string, LessonsNode>} lessonsById - Collected lessons AST nodes keyed by ID.
+ *
+ * @returns {LessonStore | undefined} Instantiated or pre-supplied primary lesson store.
+ */
+function instantiateFlowLessonStores(
+  params: ResolveFlowRuntimeStoresParams,
+  lessonsById: ReadonlyMap<string, LessonsNode>,
+): LessonStore | undefined {
+  if (params.existingLessonStore !== undefined) {
+    return params.existingLessonStore;
+  }
+  let lessonStore: LessonStore | undefined;
+  for (const lNode of lessonsById.values()) {
+    const lessonFactory = params.registry.lessons[lNode.store.type];
+    if (lessonFactory === undefined) {
+      throw new Error(
+        `No LessonStore registered for '${lNode.store.type}' (lessons id '${lNode.id}', ${params.contextLabel}).`,
+      );
+    }
+    if (lessonStore === undefined) {
+      lessonStore = lessonFactory(lNode.store as never, params.drvCtx);
+    }
+  }
+  return lessonStore;
 }
 
 /**
  * Traverses one or more `FlowNode` AST trees (and optional extra `HumanNode` declarations) and instantiates their `TopologyStore`, `LessonStore`, and `HumanAdapter` instances via `registry` (`SPEC.md` §3.1 & §3.9).
  *
- * Throws actionable fail-closed errors (`Rule 5.4`) when a referenced store or human channel factory is missing from `registry`.
+ * Validates every declared `TopologyNode`, `LessonsNode`, and `HumanNode` across all steps, nested capabilities, and flow-step interrupt handlers, throwing actionable fail-closed errors (`Rule 5.4`) when a referenced store or human channel factory is missing from `registry`.
  *
  * @param {ResolveFlowRuntimeStoresParams} params - Flows, registry, driver context, diagnostic label, and optional extra humans.
  *
@@ -144,110 +120,32 @@ export function resolveFlowRuntimeStores(params: ResolveFlowRuntimeStoresParams)
   readonly lessonStore: LessonStore | undefined;
   readonly humanAdaptersById: Map<string, HumanAdapter>;
 } {
-  const {
-    flows,
-    registry,
-    drvCtx,
-    contextLabel,
-    extraHumans = [],
-    existingTopologyNode,
-    existingTopologyStore,
-    existingLessonStore,
-    existingHumanAdaptersById,
-  } = params;
-  const visited = new Set<string>();
-  const collected: {
-    topologyNode: TopologyNode<string> | undefined;
-    lessonsNode: LessonsNode | undefined;
-    readonly humansById: Map<
-      string,
-      HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode
-    >;
-  } = {
-    topologyNode: existingTopologyNode,
-    lessonsNode: undefined,
-    humansById: new Map<
-      string,
-      HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode
-    >(),
-  };
-  for (const h of extraHumans) {
-    collected.humansById.set(h.id, h);
-  }
-  const visitFlowNodes = (
-    items: ReadonlyArray<
-      FlowStepNode<unknown, unknown, unknown> | FlowBranchNode<unknown, unknown, unknown>
-    >,
-  ): void => {
-    for (const item of items) {
-      if (item.type !== 'harness:flow-step') {
-        for (const branchCase of item.cases) {
-          visitFlowNodes(branchCase.steps);
-        }
-        visitFlowNodes(item.otherwiseSteps);
-        continue;
-      }
-      collectStepStoreNodes(item.step, visited, collected);
-      for (const h of item.onInterruptHandlers) {
-        if (h.mode === 'ask') {
-          collected.humansById.set(h.human.id, h.human);
-        } else if (h.mode === 'adjudicate') {
-          collectStepStoreNodes(h.adjudicator, visited, collected);
-          for (const nested of h.onInterruptHandlers) {
-            if (nested.mode === 'ask') {
-              collected.humansById.set(nested.human.id, nested.human);
-            }
-          }
-        } else if (h.mode === 'replace') {
-          collectStepStoreNodes(h.replacementExecutable, visited, collected);
-        }
-      }
-    }
-  };
-  for (const flow of flows) {
-    visitFlowNodes(flow.nodes);
-  }
-  let topologyStore: TopologyStore | undefined = existingTopologyStore;
-  if (topologyStore === undefined && collected.topologyNode !== undefined) {
-    const topoStoreType = collected.topologyNode.store
-      .type as keyof RuntimeExecutorRegistry['topologies'];
-    const topoFactory = registry.topologies[topoStoreType];
-    if (topoFactory === undefined) {
-      throw new Error(
-        `No TopologyStore registered for '${collected.topologyNode.store.type}' (topology id '${collected.topologyNode.id}', ${contextLabel}).`,
-      );
-    }
-    topologyStore = topoFactory(collected.topologyNode.store as never, drvCtx);
-  }
-  let lessonStore: LessonStore | undefined = existingLessonStore;
-  if (lessonStore === undefined && collected.lessonsNode !== undefined) {
-    const lessonFactory = registry.lessons[collected.lessonsNode.store.type];
-    if (lessonFactory === undefined) {
-      throw new Error(
-        `No LessonStore registered for '${collected.lessonsNode.store.type}' (lessons id '${collected.lessonsNode.id}', ${contextLabel}).`,
-      );
-    }
-    lessonStore = lessonFactory(collected.lessonsNode.store as never, drvCtx);
-  }
+  const collected = collectFlowStoreAstNodes({
+    flows: params.flows,
+    extraHumans: params.extraHumans,
+    existingTopologyNode: params.existingTopologyNode,
+  });
+  const topologyStore = instantiateFlowTopologyStores(params, collected.topologiesById);
+  const lessonStore = instantiateFlowLessonStores(params, collected.lessonsById);
   const humanAdaptersById = new Map<string, HumanAdapter>(
-    existingHumanAdaptersById?.entries() ?? [],
+    params.existingHumanAdaptersById?.entries() ?? [],
   );
   for (const humanNode of collected.humansById.values()) {
     if (humanAdaptersById.has(humanNode.id)) {
       continue;
     }
-    const chFactory = registry.humanChannels[humanNode.channel.type];
+    const chFactory = params.registry.humanChannels[humanNode.channel.type];
     if (chFactory === undefined) {
       throw new Error(
-        `No HumanAdapter registered for '${humanNode.channel.type}' (human id '${humanNode.id}', ${contextLabel}).`,
+        `No HumanAdapter registered for '${humanNode.channel.type}' (human id '${humanNode.id}', ${params.contextLabel}).`,
       );
     }
-    humanAdaptersById.set(humanNode.id, chFactory(humanNode.channel as never, drvCtx));
+    humanAdaptersById.set(humanNode.id, chFactory(humanNode.channel as never, params.drvCtx));
   }
   return {
-    topologyNode: collected.topologyNode,
+    topologyNode: collected.primaryTopologyNode,
     topologyStore,
-    lessonsNode: collected.lessonsNode,
+    lessonsNode: collected.primaryLessonsNode,
     lessonStore,
     humanAdaptersById,
   };

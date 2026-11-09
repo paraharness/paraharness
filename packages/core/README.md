@@ -268,12 +268,12 @@ const repoLessons = P.lessons('repo-lessons')
 
 ### Custom Domain AST Extensions (`CustomDomainASTRegistry`)
 
-Third-party adapter packages extend `@paraharness/core` AST unions without casting via module augmentation on `CustomDomainASTRegistry` and the exported `Base*ASTNode` interfaces (`BaseStepASTNode`, `BaseToolASTNode`, `BaseGroundingASTNode`, `BaseRuleSourceASTNode`, `BasePolicyClauseASTNode`, `BaseSkillASTNode`, `BaseCheckASTNode`, `BaseIsolationScopeASTNode`, `BaseTrackerASTNode`, `BaseStreamSourceASTNode`, `BaseHumanChannelASTNode`, `BaseControlPlaneASTNode`, `BaseModelDriverASTNode`, `BaseAccountSeatASTNode`, `BaseRunnerASTNode`, `BaseServiceASTNode`, `BaseStoreDriverASTNode`):
+Third-party adapter packages extend `@paraharness/core` AST unions without casting via module augmentation on `CustomDomainASTRegistry` and the exported `Base*ASTNode` interfaces (`BaseAbortHookASTNode`, `BaseAccountSeatASTNode`, `BaseCheckASTNode`, `BaseControlPlaneASTNode`, `BaseCrossVerifierASTNode`, `BaseDomainStepASTNode`, `BaseEffectMatcherASTNode`, `BaseHumanChannelASTNode`, `BaseIsolationScopeASTNode`, `BaseLedgerStoreASTNode`, `BaseLessonStoreASTNode`, `BaseModelASTNode`, `BasePolicyGuardASTNode`, `BaseQuotaTripwireASTNode`, `BaseRunnerPoolASTNode`, `BaseScopeRewindHookASTNode`, `BaseServiceASTNode`, `BaseSourceASTNode`, `BaseStepASTNode`, `BaseStreamSourceASTNode`, `BaseTelemetryCollectorASTNode`, `BaseToolASTNode`, `BaseTopologyStoreASTNode`, `BaseTrackerASTNode`):
 
 ```ts
 import type { BaseToolASTNode } from '@paraharness/core';
 
-export interface CustomSearchToolNode extends BaseToolASTNode {
+export interface CustomSearchToolNode extends BaseToolASTNode<'custom:search-tool', 'declared'> {
   readonly type: 'custom:search-tool';
   readonly indexName: string;
 }

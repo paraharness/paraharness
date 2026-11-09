@@ -1,29 +1,24 @@
 import type { AstBuilder } from '../../ast/ast-builder.js';
-import type { HarnessNode } from '../../ast/harness-node.js';
-import type { HumanNode } from '../../ast/human-node.js';
 import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
+import type { HarnessNode } from '../../ast/harness-node.js';
 import type { SignalNode } from '../../ast/signal-node.js';
 import type { TopologyNode } from '../../ast/topology-node.js';
 import type { ActiveRunSummary } from '../../ports/active-run-summary.js';
 import type { ControlPlaneHandle } from '../../ports/control-plane-handle.js';
-import { createExecutorRegistry } from '../../ports/create-executor-registry.js';
 import type { HarnessRuntime } from '../../ports/harness-runtime.js';
 import type { HarnessRuntimeController } from '../../ports/harness-runtime-controller.js';
 import type { HarnessRuntimeOptions } from '../../ports/harness-runtime-options.js';
 import type { HumanAdapter } from '../../ports/human-adapter.js';
 import type { LessonStore } from '../../ports/lesson-store.js';
-import type { RunnerDriver } from '../../ports/runner-driver.js';
-import type { RuntimeDriverContext } from '../../ports/runtime-driver-context.js';
-import type { RuntimeExecutorRegistry } from '../../ports/runtime-executor-registry.js';
 import type { StreamSubscriptionHandle } from '../../ports/stream-subscription-handle.js';
 import type { TopologyStore } from '../../ports/topology-store.js';
-import { resolveFlowRuntimeStores } from '../flow/internal/resolve-flow-runtime-stores.js';
-import { LaneScheduler } from '../lane/lane-scheduler.js';
-import { ScopeLockManager } from '../locks/scope-lock-manager.js';
-import { StepContinuationQueue } from '../locks/step-continuation-queue.js';
-import { PoolManager } from '../pools/pool-manager.js';
-import { ServiceSessionRegistry } from '../services/service-session-registry.js';
 import { handleEmittedRuntimeSignal } from './internal/handle-emitted-runtime-signal.js';
+import {
+  collectActiveRunSummaries,
+  startHarnessSubscriptions,
+  stopHarnessSubscriptions,
+} from './internal/manage-harness-runtime-lifecycle.js';
+import { prepareHarnessRuntimeState } from './internal/prepare-harness-runtime-state.js';
 
 /**
  * Instantiates a `HarnessRuntime` from a declarative `HarnessNode` AST (or `P.harness` builder) (`SPEC.md` §3.1 & §3.10).
@@ -46,112 +41,7 @@ export function createRuntime(
     readonly humanAdaptersById?: ReadonlyMap<string, HumanAdapter>;
   },
 ): HarnessRuntime {
-  const node: HarnessNode = 'toAST' in harness ? harness.toAST() : harness;
-  const env = options?.env ?? {};
-  const registry: RuntimeExecutorRegistry =
-    options?.registry !== undefined
-      ? createExecutorRegistry(options.registry)
-      : createExecutorRegistry();
-  const memoizedRunners = new Map<string, RunnerDriver>();
-  const drvCtx: RuntimeDriverContext = {
-    registry,
-    resolveEnv: (v) => (typeof v === 'string' ? v : env[v.key]),
-    getRunner: (rNode) => {
-      const existing = memoizedRunners.get(rNode.id);
-      if (existing !== undefined) {
-        return existing;
-      }
-      const factory = registry.runners[rNode.type];
-      if (factory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', harness '${node.id}').`,
-        );
-      }
-      const drv = factory(rNode as never);
-      memoizedRunners.set(rNode.id, drv);
-      return drv;
-    },
-  };
-  const ledgerFactory = registry.ledgers[node.ledger.type];
-  if (ledgerFactory === undefined) {
-    throw new Error(
-      `No LedgerStore registered for '${node.ledger.type}' in harness '${node.id}' (registered ledgers: [${Object.keys(registry.ledgers).join(', ')}]).`,
-    );
-  }
-  const ledgerStore = ledgerFactory(node.ledger as never, drvCtx);
-  for (const sNode of node.streams) {
-    if (registry.streamSources[sNode.source.type] === undefined) {
-      throw new Error(
-        `No StreamSource registered for '${sNode.source.type}' on stream '${sNode.id}' in harness '${node.id}' (registered streamSources: [${Object.keys(registry.streamSources).join(', ')}]).`,
-      );
-    }
-  }
-  for (const cpNode of node.exposedControlPlanes) {
-    if (registry.controlPlanes[cpNode.type] === undefined) {
-      throw new Error(
-        `No ControlPlaneAdapter registered for '${cpNode.type}' in harness '${node.id}' (registered controlPlanes: [${Object.keys(registry.controlPlanes).join(', ')}]).`,
-      );
-    }
-  }
-  const lockManager = new ScopeLockManager();
-  const continuationQueue = new StepContinuationQueue();
-  const poolManager = new PoolManager();
-  const serviceRegistry = new ServiceSessionRegistry();
-  const extraHumans: Array<
-    HumanNode<'bidirectional'> | HumanNode<'notify-only'> | HumanNode
-  > = [];
-  for (const notif of node.onSignalNotifications) {
-    extraHumans.push(notif.human);
-  }
-  for (const lane of node.lanes) {
-    if (
-      lane.tracker !== undefined &&
-      registry.trackers[lane.tracker.adapter.type] === undefined
-    ) {
-      throw new Error(
-        `No TrackerAdapter registered for '${lane.tracker.adapter.type}' on lane '${lane.id}' (registered trackers: [${Object.keys(registry.trackers).join(', ')}]).`,
-      );
-    }
-    if (lane.maxCostUsd !== undefined) {
-      extraHumans.push(lane.maxCostUsd.approver.human);
-    }
-  }
-  const {
-    topologyNode: resolvedTopologyNode,
-    topologyStore: resolvedTopologyStore,
-    lessonStore: resolvedLessonStore,
-    humanAdaptersById,
-  } = resolveFlowRuntimeStores({
-    flows: node.lanes.map((l) => l.flow),
-    registry,
-    drvCtx,
-    contextLabel: `harness '${node.id}'`,
-    extraHumans,
-    existingTopologyNode: options?.topologyNode,
-    existingTopologyStore: options?.topologyStore,
-    existingLessonStore: options?.lessonStore,
-    existingHumanAdaptersById: options?.humanAdaptersById,
-  });
-  const laneSchedulers = new Map<string, LaneScheduler<unknown>>();
-  for (const lane of node.lanes) {
-    laneSchedulers.set(
-      lane.id,
-      new LaneScheduler({
-        lane,
-        registry,
-        env,
-        ledgerStore,
-        topologyStore: resolvedTopologyStore,
-        topologyNode: resolvedTopologyNode,
-        lessonStore: resolvedLessonStore,
-        lockManager,
-        continuationQueue,
-        poolManager,
-        serviceRegistry,
-        humanAdaptersById,
-      }),
-    );
-  }
+  const prepared = prepareHarnessRuntimeState(harness, options);
   const streamHandles: StreamSubscriptionHandle[] = [];
   const controlPlaneHandles: ControlPlaneHandle[] = [];
   const controller: HarnessRuntimeController = {
@@ -171,87 +61,36 @@ export function createRuntime(
       await handleEmittedRuntimeSignal({
         signalId,
         payload: validatedPayload,
-        node,
-        ledgerStore,
-        topologyNode: resolvedTopologyNode,
-        topologyStore: resolvedTopologyStore,
-        lessonStore: resolvedLessonStore,
-        humanAdaptersById,
-        laneSchedulers,
+        node: prepared.node,
+        ledgerStore: prepared.ledgerStore,
+        topologyNode: prepared.topologyNode,
+        topologyStore: prepared.topologyStore,
+        lessonStore: prepared.lessonStore,
+        humanAdaptersById: prepared.humanAdaptersById,
+        laneSchedulers: prepared.laneSchedulers,
       });
     },
     async getActiveRuns(): Promise<ReadonlyArray<ActiveRunSummary>> {
-      const summaries: ActiveRunSummary[] = [];
-      for (const scheduler of laneSchedulers.values()) {
-        for (const item of scheduler.getItemsByKey().values()) {
-          if (
-            item.status === 'QUEUED' ||
-            item.status === 'WAITING' ||
-            item.status === 'RUNNING' ||
-            item.status === 'SUSPENDED'
-          ) {
-            summaries.push(
-              Object.freeze<ActiveRunSummary>({
-                runId: item.runId,
-                laneId: item.laneId,
-                itemKey: item.itemKey,
-                status: item.status,
-              }),
-            );
-          }
-        }
-      }
-      return Object.freeze(summaries);
+      return collectActiveRunSummaries(prepared.laneSchedulers);
     },
+  };
+  const lifecycleParams = {
+    node: prepared.node,
+    registry: prepared.registry,
+    drvCtx: prepared.drvCtx,
+    ledgerStore: prepared.ledgerStore,
+    controller,
+    serviceRegistry: prepared.serviceRegistry,
+    streamHandles,
+    controlPlaneHandles,
   };
   return Object.freeze<HarnessRuntime>({
     controller,
     async start(): Promise<void> {
-      try {
-        await ledgerStore.getInterruptedStepsOnBoot();
-        for (const sNode of node.streams) {
-          const sFactory = registry.streamSources[sNode.source.type];
-          if (sFactory === undefined) {
-            throw new Error(
-              `No StreamSource registered for '${sNode.source.type}' on stream '${sNode.id}' in harness '${node.id}' (registered streamSources: [${Object.keys(registry.streamSources).join(', ')}]).`,
-            );
-          }
-          streamHandles.push(
-            await sFactory(sNode.source as never, drvCtx).subscribe(async (rawEvt: unknown) => {
-              if (sNode.filterFn === undefined || sNode.filterFn(rawEvt)) {
-                await controller.emitSignal(sNode.signal.id, sNode.mapPayload(rawEvt));
-              }
-            }),
-          );
-        }
-        for (const cpNode of node.exposedControlPlanes) {
-          const cpFactory = registry.controlPlanes[cpNode.type];
-          if (cpFactory === undefined) {
-            throw new Error(
-              `No ControlPlaneAdapter registered for '${cpNode.type}' in harness '${node.id}' (registered controlPlanes: [${Object.keys(registry.controlPlanes).join(', ')}]).`,
-            );
-          }
-          controlPlaneHandles.push(await cpFactory(cpNode as never, drvCtx).start(controller));
-        }
-      } catch (err) {
-        await Promise.allSettled([
-          ...controlPlaneHandles.splice(0).map((cph) => cph.close()),
-          ...streamHandles.splice(0).map((sh) => sh.close()),
-        ]);
-        throw err;
-      }
+      await startHarnessSubscriptions(lifecycleParams);
     },
     async stop(): Promise<void> {
-      const settled = await Promise.allSettled([
-        ...streamHandles.splice(0).map((sh) => sh.close()),
-        ...controlPlaneHandles.splice(0).map((cph) => cph.close()),
-        serviceRegistry.quiesceScopeServices(),
-      ]);
-      for (const outcome of settled) {
-        if (outcome.status === 'rejected') {
-          throw outcome.reason;
-        }
-      }
+      await stopHarnessSubscriptions(lifecycleParams);
     },
   });
 }
