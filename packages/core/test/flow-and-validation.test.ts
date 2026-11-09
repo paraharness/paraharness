@@ -461,4 +461,80 @@ describe('Static build-time validation rejections', () => {
       "Lane 'out-of-order-bad-rewind' signal handler on 'ci-failed' rewinds to unknown step ID 'non-existent-step' not present in flow 'valid-flow'.",
     );
   });
+
+  it('infers TEvalIn, TEvalOut, and TReceipt on SpeculateCapabilityBuilder.verifyWinnerWith and preserves TAdjIn on AdjudicateInterruptBuilder.onInterrupt (P11)', () => {
+    const baseWorker = P.agent<GitWorktreeHandle>('p11-worker')
+      .model(SAMPLE_MODEL_NODE)
+      .input(FlowInputSchema)
+      .output(StepOutputSchema);
+    const soleEvaluator = P.agent<GitWorktreeHandle>('p11-evaluator')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ prUrl: z.string(), headRef: z.string() }))
+      .output(z.object({ accepted: z.boolean() }));
+    const arbiterInputSchema = SpeculationInputSchema(
+      FlowInputSchema,
+      StepOutputSchema,
+      SAMPLE_SCOPE_RECEIPT_SCHEMA,
+    );
+    const arbiterAgent = P.agent<GitWorktreeHandle>('p11-arbiter')
+      .model(SAMPLE_MODEL_NODE)
+      .input(arbiterInputSchema)
+      .output(z.object({ winnerBranchIndex: z.number() }));
+    const adjudicator = P.agent<GitWorktreeHandle>('p11-adjudicator')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ partition: z.string(), glob: z.string() }))
+      .output(z.object({ grant: z.boolean() }));
+    const subAdjudicator = P.agent<GitWorktreeHandle>('p11-sub-adjudicator')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ partition: z.string(), question: z.string() }))
+      .output(z.object({ answer: z.string() }));
+
+    const parent = P.agent<GitWorktreeHandle>('p11-parent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(FlowInputSchema)
+      .output(StepOutputSchema)
+      .capabilities(($cap) =>
+        $cap.speculate('raceP11', ($s) =>
+          $s
+            .requestSchema(z.object({ count: z.number() }))
+            .worker(baseWorker)
+            .branches(2, (parentIn) => [parentIn, parentIn])
+            .arbiter(arbiterAgent, {
+              resolveDecision: (v) => ({
+                decision: 'select-winner',
+                winnerBranchIndex: v.winnerBranchIndex,
+              }),
+            })
+            .verifyWinnerWith(soleEvaluator, {
+              mapInput: (_bIn, bOut, receipt) => ({
+                prUrl: bOut.prUrl,
+                headRef: receipt.headRef,
+              }),
+              acceptWhen: (evalOut) => evalOut.accepted,
+            }),
+        ),
+      )
+      .onInterrupt(LeaseRequestInterrupt, ($i) =>
+        $i
+          .adjudicateWith(adjudicator, (_in, payload) => payload)
+          .onInterrupt(EscalationInterrupt, ($sub) =>
+            $sub
+              .adjudicateWith(subAdjudicator, (adjIn, subPayload) => ({
+                partition: adjIn.partition,
+                question: subPayload.question,
+              }))
+              .resumeWith((_adjIn, _subPayload, subVerdict) => subVerdict.answer),
+          )
+          .resumeWith((_in, _payload, verdict) => String(verdict.grant)),
+      );
+
+    const ast = parent.toAST();
+    expect(ast.capabilities?.speculations[0]?.verifyWinnerWith?.evaluator.id).toBe('p11-evaluator');
+    const handler = ast.onInterruptHandlers[0];
+    expect(handler?.mode).toBe('adjudicate');
+    if (handler?.mode === 'adjudicate') {
+      expect(handler.onInterruptHandlers).toHaveLength(1);
+    }
+  });
 });
+

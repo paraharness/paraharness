@@ -207,6 +207,35 @@ describe('Built-in Zod schemas and SpeculationInputSchema', () => {
     expect(parsedArbiterInput.candidates.length).toBe(2);
     expect(parsedArbiterInput.failedBranches).toEqual([]);
     expect(parsedArbiterInput.humanRulingsHistory).toEqual([]);
+
+    const threeArgCandidateSchema = SpeculationCandidateSchema(
+      branchInSchema,
+      branchOutSchema,
+      SAMPLE_SCOPE_RECEIPT_SCHEMA,
+    );
+    const threeArgInputSchema = SpeculationInputSchema(
+      branchInSchema,
+      branchOutSchema,
+      SAMPLE_SCOPE_RECEIPT_SCHEMA,
+    );
+    const parsedThreeArg = threeArgInputSchema.parse({
+      candidates: [
+        threeArgCandidateSchema.parse({
+          status: 'COMPLETED',
+          branchIndex: 0,
+          input: { approach: 'no-cross-verifier' },
+          output: { summary: 'Done' },
+          scopeReceipt: {
+            headRef: 'sha-head-0',
+            baseRef: 'sha-base',
+            diffStat: '1 file changed',
+            mutatedFiles: ['src/index.ts'],
+          },
+        }),
+      ],
+    });
+    expect(parsedThreeArg.candidates).toHaveLength(1);
+    expect(parsedThreeArg.candidates[0]?.status).toBe('COMPLETED');
   });
 });
 

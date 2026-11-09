@@ -131,21 +131,39 @@ export interface SpeculateCapabilityBuilder<
    *
    * Short-circuits the arbiter when the sole completed branch is accepted by `options.acceptWhen`.
    *
+   * @template TEvalIn  Evaluator input payload type.
    * @template TEvalOut Evaluator output payload type.
    * @template TReceipt Inspected scope receipt type.
    *
-   * @param {MaybeBuilder<AgentNode<unknown, TEvalOut, THandle>>}                                                                                                             evaluator - Read-only evaluator agent.
-   * @param {{ readonly mapInput: (branchInput: TChildIn, branchOutput: TChildOut, scopeReceipt: TReceipt) => unknown; readonly acceptWhen: (evalOut: TEvalOut) => boolean }} options   - Input mapper and acceptance predicate.
+   * @param {MaybeBuilder<AgentNode<TEvalIn, TEvalOut, THandle>>}                                                                                                             evaluator - Read-only evaluator agent.
+   * @param {{ readonly mapInput: (branchInput: TChildIn, branchOutput: TChildOut, scopeReceipt: TReceipt) => TEvalIn; readonly acceptWhen: (evalOut: TEvalOut) => boolean }} options   - Input mapper and acceptance predicate.
    *
    * @returns {SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>} New immutable speculate builder.
    */
-  verifyWinnerWith<TEvalOut, TReceipt = unknown>(
-    evaluator: MaybeBuilder<AgentNode<unknown, TEvalOut, THandle>>,
+  verifyWinnerWith<
+    TEvalIn,
+    TEvalOut,
+    TReceipt = TCandidate extends { readonly scopeReceipt: infer R } ? R : unknown,
+  >(
+    evaluator: MaybeBuilder<AgentNode<TEvalIn, TEvalOut, THandle>>,
     options: {
-      readonly mapInput: (branchInput: TChildIn, branchOutput: TChildOut, scopeReceipt: TReceipt) => unknown;
+      readonly mapInput: (
+        branchInput: TChildIn,
+        branchOutput: TChildOut,
+        scopeReceipt: TReceipt,
+      ) => TEvalIn;
       readonly acceptWhen: (evalOut: TEvalOut) => boolean;
     },
-  ): SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>;
+  ): SpeculateCapabilityBuilder<
+    TParentIn,
+    TReq,
+    TChildIn,
+    TChildOut,
+    THandle,
+    TCrossReport,
+    TVerdict,
+    TCandidate
+  >;
 
   /**
    * Binds the read-only arbiter agent and decision projector for judging candidate branches.

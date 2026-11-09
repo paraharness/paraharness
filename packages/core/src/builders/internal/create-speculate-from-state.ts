@@ -39,11 +39,11 @@ export function createSpeculateFromState<
 ): SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate> {
   return Object.freeze<SpeculateCapabilityBuilder<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>>({
     requestSchema: <TNewReq>(schema: z.ZodType<TNewReq>) =>
-      createSpeculateFromState({ ...state, requestSchema: schema, mapBranches: undefined }),
+      createSpeculateFromState<TParentIn, TNewReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({ ...state, requestSchema: schema, mapBranches: undefined }),
     worker: <TNewChildIn, TNewChildOut>(
       workerExecutable: MaybeBuilder<AgentNode<TNewChildIn, TNewChildOut, THandle> | LoopNode<TNewChildIn, TNewChildOut, THandle, string>>,
     ) =>
-      createSpeculateFromState({
+      createSpeculateFromState<TParentIn, TReq, TNewChildIn, TNewChildOut, THandle, TCrossReport, TVerdict, TCandidate>({
         ...state,
         workerExecutable: extractAST(workerExecutable),
         mapBranches: undefined,
@@ -54,19 +54,23 @@ export function createSpeculateFromState<
       if (!Number.isInteger(branchCount) || branchCount < 2) {
         throw new Error(`Speculate capability '${state.toolName}' requires branchCount >= 2 (received ${branchCount}).`);
       }
-      return createSpeculateFromState({ ...state, branchCount, mapBranches });
+      return createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({ ...state, branchCount, mapBranches });
     },
     crossVerifyWith: <TNewCrossReport>(
       crossVerifier: MaybeBuilder<CrossVerifierASTNode<THandle, Record<string, unknown>, TNewCrossReport>>,
-    ) => createSpeculateFromState({ ...state, crossVerifier: extractAST(crossVerifier) }),
-    verifyWinnerWith: <TEvalOut, TReceipt = unknown>(
-      evaluator: MaybeBuilder<AgentNode<unknown, TEvalOut, THandle>>,
+    ) => createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TNewCrossReport, TVerdict, TCandidate>({ ...state, crossVerifier: extractAST(crossVerifier) }),
+    verifyWinnerWith: <
+      TEvalIn,
+      TEvalOut,
+      TReceipt = TCandidate extends { readonly scopeReceipt: infer R } ? R : unknown,
+    >(
+      evaluator: MaybeBuilder<AgentNode<TEvalIn, TEvalOut, THandle>>,
       verifyOptions: {
-        readonly mapInput: (branchInput: TChildIn, branchOutput: TChildOut, scopeReceipt: TReceipt) => unknown;
+        readonly mapInput: (branchInput: TChildIn, branchOutput: TChildOut, scopeReceipt: TReceipt) => TEvalIn;
         readonly acceptWhen: (evalOut: TEvalOut) => boolean;
       },
     ) =>
-      createSpeculateFromState({
+      createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({
         ...state,
         verifyWinnerWith: { evaluator: extractAST(evaluator), mapInput: verifyOptions.mapInput, acceptWhen: verifyOptions.acceptWhen },
       }),
@@ -83,7 +87,7 @@ export function createSpeculateFromState<
       predicate: (verdict: TVerdict) => boolean,
       refinementExecutable: MaybeBuilder<AgentNode<TChildIn, TChildOut, THandle> | LoopNode<TChildIn, TChildOut, THandle, string>>,
       mapInput: (parentInput: TParentIn, verdict: TVerdict, candidates: readonly TCandidate[]) => TChildIn,
-    ) => createSpeculateFromState({ ...state, refineWinnerWhen: { predicate, refinementExecutable: extractAST(refinementExecutable), mapInput } }),
+    ) => createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({ ...state, refineWinnerWhen: { predicate, refinementExecutable: extractAST(refinementExecutable), mapInput } }),
     toAST: (): SpeculateCapabilityNode<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict> => {
       if (state.requestSchema === undefined || state.workerExecutable === undefined || state.branchCount === undefined || state.mapBranches === undefined || state.arbiter === undefined) {
         throw new Error(`Speculate capability '${state.toolName}' is missing required .requestSchema(), .worker(), .branches(), or .arbiter() configuration.`);

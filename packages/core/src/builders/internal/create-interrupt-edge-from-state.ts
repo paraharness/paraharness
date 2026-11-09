@@ -49,7 +49,7 @@ export function createInterruptEdgeFromState<
     adjudicateWith<TAdjIn, TVerdict>(
       adjudicator: MaybeBuilder<StepASTNode<TAdjIn, TVerdict, THandle>>,
       mapInput: (input: TIn, payload: TPayload) => TAdjIn,
-    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict> {
+    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn> {
       return createAdjudicateEdgeFromState(
         {
           interrupt: state.interrupt,
@@ -60,7 +60,7 @@ export function createInterruptEdgeFromState<
           resumeWith: undefined,
         },
         <TSubPayload>(subInterrupt: InterruptNode<TSubPayload>) =>
-          createInterruptEdgeFromState<unknown, TSubPayload, THandle>({
+          createInterruptEdgeFromState<TAdjIn, TSubPayload, THandle>({
             interrupt: subInterrupt,
             abortHook: undefined,
           }),

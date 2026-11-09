@@ -22,12 +22,14 @@ import type { ExtractAbortMeta } from './flow-extraction.types.js';
  * @template TPayload Validated interrupt payload type.
  * @template THandle  Runtime handle type of the active isolation scope.
  * @template TVerdict Validated adjudicator output verdict type.
+ * @template TAdjIn   Adjudicator input payload type preserved for nested `.onInterrupt(...)` handlers.
  */
 export interface AdjudicateInterruptBuilder<
   TIn = unknown,
   TPayload = unknown,
   THandle = unknown,
   TVerdict = unknown,
+  TAdjIn = unknown,
 > extends AstBuilder<AdjudicateInterruptHandlerNode<TIn, TPayload, THandle, TVerdict>> {
   /**
    * Registers a nested interrupt handler for interrupts raised while the adjudicator step is executing.
@@ -37,16 +39,16 @@ export interface AdjudicateInterruptBuilder<
    * @template TSubPayload Nested interrupt payload type.
    *
    * @param {MaybeBuilder<InterruptNode<TSubPayload>>}                                                                                subInterrupt - Nested interrupt AST node or builder.
-   * @param {($sub: InterruptEdgeBuilder<unknown, TSubPayload, THandle>) => AstBuilder<InterruptHandlerNode<unknown, TSubPayload, THandle>>} configure    - Nested interrupt edge configurator.
+   * @param {($sub: InterruptEdgeBuilder<TAdjIn, TSubPayload, THandle>) => AstBuilder<InterruptHandlerNode<TAdjIn, TSubPayload, THandle>>} configure    - Nested interrupt edge configurator.
    *
-   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>} New immutable adjudicate builder.
+   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>} New immutable adjudicate builder.
    */
   onInterrupt<TSubPayload>(
     subInterrupt: MaybeBuilder<InterruptNode<TSubPayload>>,
     configure: (
-      $sub: InterruptEdgeBuilder<unknown, TSubPayload, THandle>,
-    ) => AstBuilder<InterruptHandlerNode<unknown, TSubPayload, THandle>>,
-  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>;
+      $sub: InterruptEdgeBuilder<TAdjIn, TSubPayload, THandle>,
+    ) => AstBuilder<InterruptHandlerNode<TAdjIn, TSubPayload, THandle>>,
+  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>;
 
   /**
    * Conditionally elevates the paused actor's write lease when `predicate(input, payload, verdict)` returns `true`.
@@ -56,12 +58,12 @@ export interface AdjudicateInterruptBuilder<
    * @param {(input: TIn, payload: TPayload, verdict: TVerdict) => boolean}    predicate   - Lease elevation condition.
    * @param {(input: TIn, payload: TPayload, verdict: TVerdict) => LeaseDelta} leaseMapper - Lease delta factory.
    *
-   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>} New immutable adjudicate builder.
+   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>} New immutable adjudicate builder.
    */
   elevateLeaseWhen(
     predicate: (input: TIn, payload: TPayload, verdict: TVerdict) => boolean,
     leaseMapper: (input: TIn, payload: TPayload, verdict: TVerdict) => LeaseDelta,
-  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>;
+  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>;
 
   /**
    * Binds the synchronous formatter producing the resume note injected into the paused actor's tool result.
@@ -70,11 +72,11 @@ export interface AdjudicateInterruptBuilder<
    *
    * @param {(input: TIn, payload: TPayload, verdict: TVerdict) => string} formatter - Resume note formatter callback.
    *
-   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>} New immutable adjudicate builder.
+   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>} New immutable adjudicate builder.
    */
   resumeWith(
     formatter: (input: TIn, payload: TPayload, verdict: TVerdict) => string,
-  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>;
+  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>;
 }
 
 /**
@@ -145,12 +147,12 @@ export interface InterruptEdgeBuilder<
    * @param {MaybeBuilder<StepASTNode<TAdjIn, TVerdict, THandle>>} adjudicator - Adjudicator step AST node or builder.
    * @param {(input: TIn, payload: TPayload) => TAdjIn}            mapInput    - Input mapper for the adjudicator.
    *
-   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>} Fluent adjudicate interrupt builder.
+   * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>} Fluent adjudicate interrupt builder.
    */
   adjudicateWith<TAdjIn, TVerdict>(
     adjudicator: MaybeBuilder<StepASTNode<TAdjIn, TVerdict, THandle>>,
     mapInput: (input: TIn, payload: TPayload) => TAdjIn,
-  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>;
+  ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>;
 
   /**
    * Routes the interrupt to a bidirectional human authority and validates the response with `responseSchema`.

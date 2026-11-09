@@ -22,17 +22,19 @@ import { deepFreeze } from './deep-freeze.js';
  * @template TPayload Interrupt payload type.
  * @template THandle  Isolation scope handle type.
  * @template TVerdict Adjudicator verdict output type.
+ * @template TAdjIn   Adjudicator input payload type.
  *
  * @param {object}   state            - Adjudicate interrupt handler state.
  * @param {Function} createSubEdge    - Factory callback creating a nested `InterruptEdgeBuilder`.
  *
- * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>} Frozen adjudicate builder.
+ * @returns {AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>} Frozen adjudicate builder.
  */
 export function createAdjudicateEdgeFromState<
   TIn = unknown,
   TPayload = unknown,
   THandle = unknown,
   TVerdict = unknown,
+  TAdjIn = unknown,
 >(
   state: {
     readonly interrupt: InterruptNode<TPayload>;
@@ -44,15 +46,15 @@ export function createAdjudicateEdgeFromState<
   },
   createSubEdge: <TSubPayload>(
     subInterrupt: InterruptNode<TSubPayload>,
-  ) => InterruptEdgeBuilder<unknown, TSubPayload, THandle>,
-): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict> {
-  return Object.freeze<AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict>>({
+  ) => InterruptEdgeBuilder<TAdjIn, TSubPayload, THandle>,
+): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn> {
+  return Object.freeze<AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn>>({
     onInterrupt<TSubPayload>(
       subInterrupt: MaybeBuilder<InterruptNode<TSubPayload>>,
       configure: (
-        $sub: InterruptEdgeBuilder<unknown, TSubPayload, THandle>,
-      ) => AstBuilder<InterruptHandlerNode<unknown, TSubPayload, THandle>>,
-    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict> {
+        $sub: InterruptEdgeBuilder<TAdjIn, TSubPayload, THandle>,
+      ) => AstBuilder<InterruptHandlerNode<TAdjIn, TSubPayload, THandle>>,
+    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn> {
       const subHandler = configure(createSubEdge(extractAST(subInterrupt))).toAST();
       return createAdjudicateEdgeFromState(
         {
@@ -65,7 +67,7 @@ export function createAdjudicateEdgeFromState<
     elevateLeaseWhen(
       predicate: (input: TIn, payload: TPayload, verdict: TVerdict) => boolean,
       leaseMapper: (input: TIn, payload: TPayload, verdict: TVerdict) => LeaseDelta,
-    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict> {
+    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn> {
       return createAdjudicateEdgeFromState(
         {
           ...state,
@@ -76,7 +78,7 @@ export function createAdjudicateEdgeFromState<
     },
     resumeWith(
       formatter: (input: TIn, payload: TPayload, verdict: TVerdict) => string,
-    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict> {
+    ): AdjudicateInterruptBuilder<TIn, TPayload, THandle, TVerdict, TAdjIn> {
       return createAdjudicateEdgeFromState({ ...state, resumeWith: formatter }, createSubEdge);
     },
     toAST(): AdjudicateInterruptHandlerNode<TIn, TPayload, THandle, TVerdict> {

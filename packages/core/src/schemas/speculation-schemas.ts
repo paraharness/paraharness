@@ -15,7 +15,7 @@ import { z } from 'zod';
  * @param {TIn}         inSchema           - Zod schema for branch input payloads.
  * @param {TOut}        outSchema          - Zod schema for completed branch outputs.
  * @param {TReceipt}    receiptSchema      - Zod schema for inspected isolation scope receipts.
- * @param {TCross}      crossSchema        - Zod schema for cross-verification reports.
+ * @param {TCross}      [crossSchema]      - Optional Zod schema for cross-verification reports.
  * @param {TEscPayload} [escalationSchema] - Optional Zod schema for parked escalation payloads.
  *
  * @returns {z.ZodTypeAny} Discriminated union schema for a tournament candidate.
@@ -24,13 +24,13 @@ export const SpeculationCandidateSchema = <
   TIn extends z.ZodTypeAny,
   TOut extends z.ZodTypeAny,
   TReceipt extends z.ZodTypeAny,
-  TCross extends z.ZodTypeAny,
+  TCross extends z.ZodTypeAny = z.ZodTypeAny,
   TEscPayload extends z.ZodTypeAny = z.ZodTypeAny,
 >(
   inSchema: TIn,
   outSchema: TOut,
   receiptSchema: TReceipt,
-  crossSchema: TCross,
+  crossSchema?: TCross,
   escalationSchema?: TEscPayload,
 ) =>
   z.discriminatedUnion('status', [
@@ -40,7 +40,7 @@ export const SpeculationCandidateSchema = <
       input: inSchema,
       output: outSchema,
       scopeReceipt: receiptSchema,
-      crossVerifyReport: crossSchema.optional(),
+      crossVerifyReport: (crossSchema ?? z.unknown()).optional(),
     }),
     z.object({
       status: z.literal('PARKED_ON_ESCALATION'),
@@ -67,7 +67,7 @@ export const SpeculationCandidateSchema = <
  * @param {TIn}         inSchema           - Zod schema for branch input payloads.
  * @param {TOut}        outSchema          - Zod schema for completed branch outputs.
  * @param {TReceipt}    receiptSchema      - Zod schema for inspected isolation scope receipts.
- * @param {TCross}      crossSchema        - Zod schema for cross-verification reports.
+ * @param {TCross}      [crossSchema]      - Optional Zod schema for cross-verification reports.
  * @param {TEscPayload} [escalationSchema] - Optional Zod schema for parked escalation payloads.
  *
  * @returns {z.ZodTypeAny} Complete arbiter input Zod schema.
@@ -76,13 +76,13 @@ export const SpeculationInputSchema = <
   TIn extends z.ZodTypeAny,
   TOut extends z.ZodTypeAny,
   TReceipt extends z.ZodTypeAny,
-  TCross extends z.ZodTypeAny,
+  TCross extends z.ZodTypeAny = z.ZodTypeAny,
   TEscPayload extends z.ZodTypeAny = z.ZodTypeAny,
 >(
   inSchema: TIn,
   outSchema: TOut,
   receiptSchema: TReceipt,
-  crossSchema: TCross,
+  crossSchema?: TCross,
   escalationSchema?: TEscPayload,
 ) =>
   z.object({
