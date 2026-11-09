@@ -249,7 +249,7 @@ Every file, class, method, and function in `packages/lockfile/src/**`, `packages
 | `src/ports/create-executor-registry.ts` | `function` | `createExecutorRegistry(...slices: ReadonlyArray<RuntimeExecutorRegistrySlice \| readonly RuntimeExecutorRegistrySlice[]>): RuntimeExecutorRegistry` |
 | `src/ports/harness-runtime.ts` | `interface` | `HarnessRuntime` |
 | `src/ports/harness-execution-engine.ts` | `interface` | `HarnessExecutionEngine` (plus `TSMethodSignature` sub-interface `HarnessRuntimeOptions`) |
-| `src/ports/harness-runtime-controller.ts` | `interface` | `HarnessRuntimeController` |
+| `src/ports/harness-runtime-controller.ts` | `interface` | `HarnessRuntimeController` (with `emitSignal<TPayload = unknown>(signal: MaybeBuilder<SignalNode<TPayload>> \| string, payload: TPayload, filter?: { laneId?: string; runId?: string }): Promise<void>`) |
 | `src/ports/resolution-context.ts` | `interface` | `ResolutionContext` |
 | `src/ports/tool-effect.ts` | `interface` | `ToolEffect` |
 | `src/ports/lease-delta.ts` | `interface` | `LeaseDelta` |
