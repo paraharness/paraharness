@@ -132,4 +132,19 @@ describe('local.streamCheck rolling multi-line circuit breaker and post-flight t
     expect(excerpt).toContain('trace-line-1');
     expect(excerpt).not.toContain('trace-line-2');
   });
+
+  it('defaults graceLinesAfterMatch to 25 when options are omitted on circuitBreakWhenStdout', () => {
+    const shorthand = local
+      .streamCheck('default-grace-check')
+      .argv(['pnpm', 'test'])
+      .circuitBreakWhenStdout(/FAIL\s+packages\//);
+    const explicit = local
+      .streamCheck('default-grace-check')
+      .argv(['pnpm', 'test'])
+      .circuitBreakWhenStdout(/FAIL\s+packages\//, { graceLinesAfterMatch: 25 });
+
+    expect(shorthand.toAST()).toEqual(explicit.toAST());
+    expect(shorthand.toAST().circuitBreaker?.graceLinesAfterMatch).toBe(25);
+  });
 });
+

@@ -64,7 +64,7 @@ export function createLocalStreamCheckBuilder<THandle = unknown>(
     },
     circuitBreakWhenStdout(
       pattern: RegExp | string,
-      options: LocalStreamCheckCircuitBreakerOptions,
+      options?: LocalStreamCheckCircuitBreakerOptions,
     ): LocalStreamCheckBuilder<THandle> {
       return createLocalStreamCheckBuilder(id, {
         ...state,

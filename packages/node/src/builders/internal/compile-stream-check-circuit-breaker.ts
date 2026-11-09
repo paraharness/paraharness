@@ -4,11 +4,11 @@ import type { LocalStreamCheckCircuitBreakerOptions } from '../local-stream-chec
 /**
  * Validates and compiles a `LocalStreamCheckCircuitBreakerConfig` from `pattern` and `options`.
  *
- * Ensures `graceLinesAfterMatch` is a non-negative integer and extracts regex pattern and flags.
+ * Ensures `graceLinesAfterMatch` (defaulting to `25`) is a non-negative integer and extracts regex pattern and flags.
  *
- * @param {string}                                id      - Streaming check identifier for error diagnostics.
- * @param {RegExp | string}                       pattern - Regular expression or pattern string to match.
- * @param {LocalStreamCheckCircuitBreakerOptions} options - Trailing grace line capture configuration.
+ * @param {string}                                id        - Streaming check identifier for error diagnostics.
+ * @param {RegExp | string}                       pattern   - Regular expression or pattern string to match.
+ * @param {LocalStreamCheckCircuitBreakerOptions} [options] - Optional trailing grace line capture configuration.
  *
  * @returns {LocalStreamCheckCircuitBreakerConfig} Frozen circuit-breaker AST configuration.
  *
@@ -17,9 +17,10 @@ import type { LocalStreamCheckCircuitBreakerOptions } from '../local-stream-chec
 export function compileStreamCheckCircuitBreaker(
   id: string,
   pattern: RegExp | string,
-  options: LocalStreamCheckCircuitBreakerOptions,
+  options?: LocalStreamCheckCircuitBreakerOptions,
 ): LocalStreamCheckCircuitBreakerConfig {
-  if (!Number.isInteger(options.graceLinesAfterMatch) || options.graceLinesAfterMatch < 0) {
+  const graceLinesAfterMatch = options?.graceLinesAfterMatch ?? 25;
+  if (!Number.isInteger(graceLinesAfterMatch) || graceLinesAfterMatch < 0) {
     throw new Error(
       `local.streamCheck('${id}').circuitBreakWhenStdout requires non-negative integer graceLinesAfterMatch.`,
     );
@@ -30,6 +31,6 @@ export function compileStreamCheckCircuitBreaker(
   return Object.freeze<LocalStreamCheckCircuitBreakerConfig>({
     pattern: source,
     flags,
-    graceLinesAfterMatch: options.graceLinesAfterMatch,
+    graceLinesAfterMatch,
   });
 }

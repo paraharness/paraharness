@@ -222,8 +222,8 @@ export interface FsNamespace {
    * Compiles a passive `FsJsonlLessonStoreNode` configuring the crash-safe hybrid lesson store.
    *
    * Resolves `definitionsDir`, `statsPath`, and `lockFile` against the immutable host repository root.
-   * @param {FsJsonlLessonStoreOptions} options - Lesson store host-root path options.
+   * @param {FsJsonlLessonStoreOptions} [options] - Optional lesson store host-root path options.
    * @returns {FsJsonlLessonStoreNode} Frozen `FsJsonlLessonStoreNode` descriptor.
    */
-  jsonlLessonStore(options: FsJsonlLessonStoreOptions): FsJsonlLessonStoreNode;
+  jsonlLessonStore(options?: FsJsonlLessonStoreOptions): FsJsonlLessonStoreNode;
 }

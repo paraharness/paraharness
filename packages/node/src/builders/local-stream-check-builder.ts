@@ -14,8 +14,8 @@ import type {
  * before terminating the streaming subprocess group.
  */
 export interface LocalStreamCheckCircuitBreakerOptions {
-  /** Number of additional output lines to collect after a circuit-breaker regex match. */
-  readonly graceLinesAfterMatch: number;
+  /** Number of additional output lines to collect after a circuit-breaker regex match (defaults to `25`). */
+  readonly graceLinesAfterMatch?: number;
 }
 
 /**
@@ -79,16 +79,16 @@ export interface LocalStreamCheckBuilder<THandle = unknown>
    * Configures a rolling-window regular expression circuit breaker over combined `stdout` and `stderr`.
    *
    * When `pattern` matches across the rolling stream buffer, collects `options.graceLinesAfterMatch`
-   * trailing lines, kills the process group, and fails the check immediately.
+   * (defaulting to `25`) trailing lines, kills the process group, and fails the check immediately.
    *
    * @param {RegExp | string}                       pattern - Regular expression or pattern string to match.
-   * @param {LocalStreamCheckCircuitBreakerOptions} options - Trailing grace line capture configuration.
+   * @param {LocalStreamCheckCircuitBreakerOptions} [options] - Optional trailing grace line capture configuration.
    *
    * @returns {LocalStreamCheckBuilder<THandle>} Updated immutable stream check builder.
    */
   circuitBreakWhenStdout(
     pattern: RegExp | string,
-    options: LocalStreamCheckCircuitBreakerOptions,
+    options?: LocalStreamCheckCircuitBreakerOptions,
   ): LocalStreamCheckBuilder<THandle>;
 
   /**

@@ -1,5 +1,9 @@
-import { z, type LocalStreamCheckNode } from '@paraharness/core';
+import type { LocalStreamCheckNode } from '@paraharness/core';
 import type { LocalStreamCheckBuilderState } from './local-stream-check-builder-state.js';
+import {
+  LOCAL_STREAM_CHECK_INPUT_SCHEMA,
+  LOCAL_STREAM_CHECK_OUTPUT_SCHEMA,
+} from './local-stream-check.schema.js';
 
 /**
  * Compiles `LocalStreamCheckBuilderState` into a deeply frozen `LocalStreamCheckNode`.
@@ -21,15 +25,11 @@ export function compileLocalStreamCheckNode<THandle = unknown>(
   if (state.argv === undefined || state.argv.length === 0) {
     throw new Error(`local.streamCheck('${state.id}') requires a non-empty .argv(...) array.`);
   }
-  const outputSchema = z.object({
-    ok: z.boolean(),
-    deficits: z.array(z.string()).readonly(),
-  });
   return Object.freeze<LocalStreamCheckNode<THandle>>({
     type: 'node:stream-check',
     id: state.id,
-    inputSchema: z.unknown(),
-    outputSchema,
+    inputSchema: LOCAL_STREAM_CHECK_INPUT_SCHEMA,
+    outputSchema: LOCAL_STREAM_CHECK_OUTPUT_SCHEMA,
     runner: state.runner,
     argv: Object.freeze([...state.argv]),
     env: state.env !== undefined ? Object.freeze({ ...state.env }) : undefined,

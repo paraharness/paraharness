@@ -181,4 +181,35 @@ describe('@paraharness/fs FsJsonlLessonStore', () => {
     expect(bm25Ranked.map((c) => c.id)).toEqual([dbLessonId, fuzzyAndPrefixRank]);
     expect((bm25Ranked[0]?.relevanceScore ?? 0) > (bm25Ranked[1]?.relevanceScore ?? 0)).toBe(true);
   });
+
+  it('defaults definitionsDir, statsPath, and lockFile on fs.jsonlLessonStore(options?) and rejects blank paths', () => {
+    const zeroArg = fs.jsonlLessonStore();
+    const explicitDefault = fs.jsonlLessonStore({
+      definitionsDir: '.paraharness/lessons',
+      statsPath: '.paraharness/lessons-stats.json',
+      lockFile: '.paraharness/lessons.lock',
+    });
+    expect(zeroArg).toEqual(explicitDefault);
+
+    const customDirOnly = fs.jsonlLessonStore({
+      definitionsDir: '.harness/lessons/',
+    });
+    expect(customDirOnly).toEqual({
+      type: 'fs:jsonl-lesson-store',
+      definitionsDir: '.harness/lessons/',
+      statsPath: '.harness/lessons-stats.json',
+      lockFile: '.harness/lessons.lock',
+    });
+
+    expect(() => fs.jsonlLessonStore({ definitionsDir: '   ' })).toThrow(
+      'fs.jsonlLessonStore requires a non-empty definitionsDir path.',
+    );
+    expect(() => fs.jsonlLessonStore({ statsPath: '   ' })).toThrow(
+      'fs.jsonlLessonStore requires a non-empty statsPath.',
+    );
+    expect(() => fs.jsonlLessonStore({ lockFile: '   ' })).toThrow(
+      'fs.jsonlLessonStore requires a non-empty lockFile path.',
+    );
+  });
 });
+
