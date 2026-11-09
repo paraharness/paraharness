@@ -61,9 +61,10 @@ const mergeStream = P.stream('github-merge-events')
 const publishPr = github.createOrUpdatePr('publish-pr', {
   repo: 'acme/platform',
   token: P.env('GITHUB_TOKEN'),
-  branch: (item: z.infer<typeof TaskInput>) => `feat/${item.id}`,
-  title: (item: z.infer<typeof TaskInput>) => item.title,
-  body: (item: z.infer<typeof TaskInput>) => item.summary,
+  inputSchema: TaskInput,
+  branch: (item) => `feat/${item.id}`,
+  title: (item) => item.title,
+  body: (item) => item.summary,
 });
 
 const registry = createExecutorRegistry(githubExecutors);

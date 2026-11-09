@@ -348,18 +348,35 @@ describe('@paraharness/github adapter', () => {
         html_url: z.string(),
       });
 
+      const branchMapper = (item: z.infer<typeof prInputSchema>) => `fix/${item.ref}`;
+      const baseBranchMapper = (item: z.infer<typeof prInputSchema>) => item.targetBase;
+      const titleMapper = (item: z.infer<typeof prInputSchema>) => item.title;
+      const bodyMapper = (item: z.infer<typeof prInputSchema>) => item.summary;
       const prStepNode = github
         .createOrUpdatePr('open-or-update-pr', {
           repo: 'acme/app',
           token: P.env('GITHUB_TOKEN'),
-          branch: (item: z.infer<typeof prInputSchema>) => `fix/${item.ref}`,
-          baseBranch: (item: z.infer<typeof prInputSchema>) => item.targetBase,
-          title: (item: z.infer<typeof prInputSchema>) => item.title,
-          body: (item: z.infer<typeof prInputSchema>) => item.summary,
+          inputSchema: prInputSchema,
+          branch: branchMapper,
+          baseBranch: baseBranchMapper,
+          title: titleMapper,
+          body: bodyMapper,
+        })
+        .output(prOutputSchema)
+        .toAST();
+      const explicitPrStepNode = github
+        .createOrUpdatePr('open-or-update-pr', {
+          repo: 'acme/app',
+          token: P.env('GITHUB_TOKEN'),
+          branch: branchMapper,
+          baseBranch: baseBranchMapper,
+          title: titleMapper,
+          body: bodyMapper,
         })
         .input(prInputSchema)
         .output(prOutputSchema)
         .toAST();
+      expect(prStepNode).toEqual(explicitPrStepNode);
 
       expect(prStepNode.type).toBe('github:create-or-update-pr');
       expect(prStepNode.id).toBe('open-or-update-pr');

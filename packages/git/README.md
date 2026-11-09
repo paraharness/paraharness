@@ -45,10 +45,10 @@ const worktreeScope = git
 
 const landChanges = git
   .commitAndPush('land-changes', {
-    branch: (item: z.infer<typeof TaskInput>) => `feat/${item.id}`,
-    message: (item: z.infer<typeof TaskInput>) => `feat(${item.id}): ${item.title}`,
+    inputSchema: TaskInput,
+    branch: (item) => `feat/${item.id}`,
+    message: (item) => `feat(${item.id}): ${item.title}`,
   })
-  .input(TaskInput)
   .runner(runner);
 
 const flow = P.flow('git-delivery-flow')

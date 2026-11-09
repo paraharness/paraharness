@@ -320,15 +320,28 @@ describe('git hooks, refReader/candidateComparison tools, cross-verifiers, commi
       })
       .toAST();
 
+    const commitInputSchema = z.object({ branch: z.string() });
+    const branchMapper = (inp: { readonly branch: string }) => inp.branch;
+    const messageMapper = () => 'feat: add feature';
     const commitPushNode = git
       .commitAndPush('push-feature', {
-        branch: (inp: { readonly branch: string }) => inp.branch,
-        message: () => 'feat: add feature',
+        inputSchema: commitInputSchema,
+        branch: branchMapper,
+        message: messageMapper,
       })
-      .input(z.object({ branch: z.string() }))
       .runner(TEST_RUNNER)
       .env({ CUSTOM_VAR: P.env('SECRET_TOKEN') })
       .toAST();
+    const explicitCommitPushNode = git
+      .commitAndPush('push-feature', {
+        branch: branchMapper,
+        message: messageMapper,
+      })
+      .input(commitInputSchema)
+      .runner(TEST_RUNNER)
+      .env({ CUSTOM_VAR: P.env('SECRET_TOKEN') })
+      .toAST();
+    expect(commitPushNode).toEqual(explicitCommitPushNode);
 
     const failCtx: StepExecutionContext<GitWorktreeHandle> = {
       ...buildStepCtx(root, scope),
