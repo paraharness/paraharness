@@ -92,8 +92,19 @@ export function createCommandBuilder<TIn = unknown, TOut = unknown, THandle = un
       });
     },
     toAST(): CommandNode<TIn, TOut, THandle> {
-      if (state.inputSchema === undefined || state.outputSchema === undefined || state.fn === undefined) {
-        throw new Error(`Command '${id}' is missing required .input(schema), .output(schema), or .run(fn) configuration.`);
+      const missing: string[] = [];
+      if (state.inputSchema === undefined) missing.push('.input(schema)');
+      if (state.outputSchema === undefined) missing.push('.output(schema)');
+      if (state.fn === undefined) missing.push('.run(fn)');
+      if (
+        missing.length > 0 ||
+        state.inputSchema === undefined ||
+        state.outputSchema === undefined ||
+        state.fn === undefined
+      ) {
+        throw new Error(
+          `Command '${id}' is missing required ${missing.join(', ')} configuration before .toAST().`,
+        );
       }
       return deepFreeze<CommandNode<TIn, TOut, THandle>>({
         type: 'harness:command',

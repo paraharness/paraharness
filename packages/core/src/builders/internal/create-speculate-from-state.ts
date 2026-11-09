@@ -94,8 +94,24 @@ export function createSpeculateFromState<
       mapInput: (parentInput: TParentIn, verdict: TVerdict, candidates: readonly TCandidate[]) => TChildIn,
     ) => createSpeculateFromState<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict, TCandidate>({ ...state, refineWinnerWhen: { predicate, refinementExecutable: extractAST(refinementExecutable), mapInput } }),
     toAST: (): SpeculateCapabilityNode<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict> => {
-      if (state.requestSchema === undefined || state.workerExecutable === undefined || state.branchCount === undefined || state.mapBranches === undefined || state.arbiter === undefined) {
-        throw new Error(`Speculate capability '${state.toolName}' is missing required .requestSchema(), .worker(), .branches(), or .arbiter() configuration.`);
+      const missing: string[] = [];
+      if (state.requestSchema === undefined) missing.push('.requestSchema(schema)');
+      if (state.workerExecutable === undefined) missing.push('.worker(executable)');
+      if (state.branchCount === undefined || state.mapBranches === undefined) {
+        missing.push('.branches(count, mapper)');
+      }
+      if (state.arbiter === undefined) missing.push('.arbiter(actor)');
+      if (
+        missing.length > 0 ||
+        state.requestSchema === undefined ||
+        state.workerExecutable === undefined ||
+        state.branchCount === undefined ||
+        state.mapBranches === undefined ||
+        state.arbiter === undefined
+      ) {
+        throw new Error(
+          `Speculate capability '${state.toolName}' is missing required ${missing.join(', ')} configuration before .toAST().`,
+        );
       }
       return deepFreeze<SpeculateCapabilityNode<TParentIn, TReq, TChildIn, TChildOut, THandle, TCrossReport, TVerdict>>({
         type: 'harness:speculate-capability',

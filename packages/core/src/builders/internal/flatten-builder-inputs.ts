@@ -88,13 +88,18 @@ export function flattenSourceStrings(
 export function compileAgentStateToNode<TIn, TOut, THandle>(
   state: AgentBuilderState<TIn, TOut, THandle>,
 ): AgentNode<TIn, TOut, THandle> {
+  const missing: string[] = [];
+  if (state.model === undefined) missing.push('.model(...)');
+  if (state.inputSchema === undefined) missing.push('.input(schema)');
+  if (state.outputSchema === undefined) missing.push('.output(schema)');
   if (
+    missing.length > 0 ||
     state.model === undefined ||
     state.inputSchema === undefined ||
     state.outputSchema === undefined
   ) {
     throw new Error(
-      `Agent '${state.id}' is missing required .model(...), .input(schema), or .output(schema) configuration.`,
+      `Agent '${state.id}' is missing required ${missing.join(', ')} configuration before .toAST().`,
     );
   }
   const node = deepFreeze<AgentNode<TIn, TOut, THandle>>({

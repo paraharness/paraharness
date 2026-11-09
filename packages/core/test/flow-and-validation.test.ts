@@ -689,9 +689,80 @@ describe('Static build-time validation rejections', () => {
           ),
         )
         .toAST(),
-    ).toThrow(/custom-req-missing-map/);
+    ).toThrow(
+      "Fork capability 'custom-req-missing-map' is missing required .mapInput(fn) configuration before .toAST().",
+    );
+  });
+
+  it('produces pinpoint missing-method diagnostics on .toAST() across AgentBuilder, FlowBuilder, LoopBuilder, LaneBuilder, CommandBuilder, SpeculateCapabilityBuilder, and ForkCapabilityBuilder (P16)', () => {
+    expect(() =>
+      P.agent('triage')
+        .model(SAMPLE_MODEL_NODE)
+        .input(FlowInputSchema)
+        .toAST(),
+    ).toThrow(
+      "Agent 'triage' is missing required .output(schema) configuration before .toAST().",
+    );
+
+    expect(() =>
+      P.flow('incomplete-flow')
+        .input(FlowInputSchema)
+        .scope(SAMPLE_TIER1_SCOPE_NODE)
+        .toAST(),
+    ).toThrow(
+      "Flow 'incomplete-flow' is missing required .exit(state) configuration before .toAST().",
+    );
+
+    const worker = P.agent('loop-worker')
+      .model(SAMPLE_MODEL_NODE)
+      .input(FlowInputSchema)
+      .output(StepOutputSchema);
+    expect(() =>
+      P.loop('incomplete-loop')
+        .act('work', worker)
+        .toAST(),
+    ).toThrow(
+      "Loop 'incomplete-loop' is missing required .evaluate(stepId, evaluator, options) configuration before .toAST().",
+    );
+
+    expect(() =>
+      P.lane('incomplete-lane')
+        .input(FlowInputSchema)
+        .key((i) => i.id)
+        .toAST(),
+    ).toThrow(
+      "Lane 'incomplete-lane' is missing required .flow(flow) configuration before .toAST().",
+    );
+
+    expect(() =>
+      P.command('incomplete-cmd')
+        .input(FlowInputSchema)
+        .output(StepOutputSchema)
+        .toAST(),
+    ).toThrow(
+      "Command 'incomplete-cmd' is missing required .run(fn) configuration before .toAST().",
+    );
+
+    expect(() =>
+      P.agent<GitWorktreeHandle>('incomplete-spec')
+        .model(SAMPLE_MODEL_NODE)
+        .input(FlowInputSchema)
+        .output(StepOutputSchema)
+        .capabilities(($cap) =>
+          $cap.speculate('race-incomplete', ($s) =>
+            $s
+              .requestSchema(z.object({ tasks: z.array(z.string()) }))
+              .worker(worker)
+              .branches(2, () => []),
+          ),
+        )
+        .toAST(),
+    ).toThrow(
+      "Speculate capability 'race-incomplete' is missing required .arbiter(actor) configuration before .toAST().",
+    );
   });
 });
+
 
 
 

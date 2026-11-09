@@ -68,9 +68,16 @@ export function createForkCapabilityFromState<
       return createForkCapabilityFromState({ ...state, modelRouting: configured });
     },
     toAST(): ForkCapabilityNode<TParentIn, TReq, TChildIn, TChildOut, THandle> {
-      if (state.requestSchema === undefined || state.mapInput === undefined) {
+      const missing: string[] = [];
+      if (state.requestSchema === undefined) missing.push('.requestSchema(schema)');
+      if (state.mapInput === undefined) missing.push('.mapInput(fn)');
+      if (
+        missing.length > 0 ||
+        state.requestSchema === undefined ||
+        state.mapInput === undefined
+      ) {
         throw new Error(
-          `Fork capability '${state.toolName}' requires both .requestSchema(schema) and .mapInput(fn).`,
+          `Fork capability '${state.toolName}' is missing required ${missing.join(', ')} configuration before .toAST().`,
         );
       }
       return deepFreeze<ForkCapabilityNode<TParentIn, TReq, TChildIn, TChildOut, THandle>>({

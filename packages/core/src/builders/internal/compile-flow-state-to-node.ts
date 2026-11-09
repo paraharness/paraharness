@@ -22,13 +22,18 @@ import { validateFlowScopeCapabilities } from './validate-flow-capabilities.js';
 export function compileFlowStateToNode<TIn, THandle, TStepIds extends string>(
   state: FlowBuilderState<TIn, THandle, TStepIds>,
 ): FlowNode<TIn, THandle, TStepIds> {
+  const missing: string[] = [];
+  if (state.inputSchema === undefined) missing.push('.input(schema)');
+  if (state.scope === undefined) missing.push('.scope(scope)');
+  if (state.exitState === undefined) missing.push('.exit(state)');
   if (
+    missing.length > 0 ||
     state.inputSchema === undefined ||
     state.scope === undefined ||
     state.exitState === undefined
   ) {
     throw new Error(
-      `Flow '${state.id}' is missing required .input(schema), .scope(scope), or .exit(state) configuration.`,
+      `Flow '${state.id}' is missing required ${missing.join(', ')} configuration before .toAST().`,
     );
   }
   const flowNode = deepFreeze<FlowNode<TIn, THandle, TStepIds>>({

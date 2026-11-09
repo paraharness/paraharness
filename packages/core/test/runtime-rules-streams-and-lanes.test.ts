@@ -485,6 +485,64 @@ describe('M2 Runtime — runStep standalone step runner (P1)', () => {
     await expect(
       runStep(missingRunnerStep, {}, { scopeHandle: SAMPLE_HANDLE, registry: {} }),
     ).rejects.toThrow("No RunnerDriver registered for 'node:runner' (runner id 'local-runner', runId 'standalone-run').");
+
+    const ledgerStore = new InMemoryLedgerStore();
+    const webhookSig = P.signal('p16-webhook', z.object({ pr: z.number() }));
+    const stream = P.stream('p16-stream')
+      .source<unknown>(SAMPLE_STREAM_SOURCE_NODE)
+      .emitSignal(webhookSig, () => ({ pr: 1 }));
+    const cpNode: NodeHttpControlPlaneNode = Object.freeze({
+      type: 'node:http-control-plane',
+      id: 'cp-1',
+      port: 0,
+    });
+    const flow = P.flow('p16-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .exit('done');
+    const trackerLane = P.lane('p16-tracker-lane')
+      .input(z.object({ id: z.string() }))
+      .key((i) => i.id)
+      .tracker(SAMPLE_TRACKER_NODE, ($t) =>
+        $t
+          .everySeconds(10)
+          .from((raw: { readonly id: string }) => raw)
+          .onQueued('queued')
+          .onRunning('in-progress')
+          .onWaiting('needs-human')
+          .onErrored('errored')
+          .onCancelled('cancelled')
+          .onExit('done', 'pr-open'),
+      )
+      .runs(flow);
+
+    expect(() =>
+      createRuntime(
+        P.harness('p16-missing-stream').ledger(SAMPLE_LEDGER_NODE).streams(stream),
+        { registry: { ledgers: { 'sqlite:ledger': () => ledgerStore } } },
+      ),
+    ).toThrow(
+      "No StreamSource registered for 'github:webhook-stream' on stream 'p16-stream' in harness 'p16-missing-stream' (registered streamSources: []).",
+    );
+
+    expect(() =>
+      createRuntime(
+        P.harness('p16-missing-cp').ledger(SAMPLE_LEDGER_NODE).expose(cpNode),
+        { registry: { ledgers: { 'sqlite:ledger': () => ledgerStore } } },
+      ),
+    ).toThrow(
+      "No ControlPlaneAdapter registered for 'node:http-control-plane' in harness 'p16-missing-cp' (registered controlPlanes: []).",
+    );
+
+    expect(() =>
+      createRuntime(
+        P.harness('p16-missing-tracker').ledger(SAMPLE_LEDGER_NODE).lanes(trackerLane),
+        { registry: { ledgers: { 'sqlite:ledger': () => ledgerStore } } },
+      ),
+    ).toThrow(
+      "No TrackerAdapter registered for 'github:issues' on lane 'p16-tracker-lane' (registered trackers: []).",
+    );
   });
 });
+
 

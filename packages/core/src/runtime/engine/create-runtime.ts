@@ -75,10 +75,24 @@ export function createRuntime(
   const ledgerFactory = registry.ledgers[node.ledger.type];
   if (ledgerFactory === undefined) {
     throw new Error(
-      `No LedgerStore registered for '${node.ledger.type}' in harness '${node.id}'.`,
+      `No LedgerStore registered for '${node.ledger.type}' in harness '${node.id}' (registered ledgers: [${Object.keys(registry.ledgers).join(', ')}]).`,
     );
   }
   const ledgerStore = ledgerFactory(node.ledger as never, drvCtx);
+  for (const sNode of node.streams) {
+    if (registry.streamSources[sNode.source.type] === undefined) {
+      throw new Error(
+        `No StreamSource registered for '${sNode.source.type}' on stream '${sNode.id}' in harness '${node.id}' (registered streamSources: [${Object.keys(registry.streamSources).join(', ')}]).`,
+      );
+    }
+  }
+  for (const cpNode of node.exposedControlPlanes) {
+    if (registry.controlPlanes[cpNode.type] === undefined) {
+      throw new Error(
+        `No ControlPlaneAdapter registered for '${cpNode.type}' in harness '${node.id}' (registered controlPlanes: [${Object.keys(registry.controlPlanes).join(', ')}]).`,
+      );
+    }
+  }
   const lockManager = new ScopeLockManager();
   const continuationQueue = new StepContinuationQueue();
   const poolManager = new PoolManager();
@@ -90,6 +104,14 @@ export function createRuntime(
     extraHumans.push(notif.human);
   }
   for (const lane of node.lanes) {
+    if (
+      lane.tracker !== undefined &&
+      registry.trackers[lane.tracker.adapter.type] === undefined
+    ) {
+      throw new Error(
+        `No TrackerAdapter registered for '${lane.tracker.adapter.type}' on lane '${lane.id}' (registered trackers: [${Object.keys(registry.trackers).join(', ')}]).`,
+      );
+    }
     if (lane.maxCostUsd !== undefined) {
       extraHumans.push(lane.maxCostUsd.approver.human);
     }
@@ -189,21 +211,27 @@ export function createRuntime(
         await ledgerStore.getInterruptedStepsOnBoot();
         for (const sNode of node.streams) {
           const sFactory = registry.streamSources[sNode.source.type];
-          if (sFactory !== undefined) {
-            streamHandles.push(
-              await sFactory(sNode.source as never, drvCtx).subscribe(async (rawEvt: unknown) => {
-                if (sNode.filterFn === undefined || sNode.filterFn(rawEvt)) {
-                  await controller.emitSignal(sNode.signal.id, sNode.mapPayload(rawEvt));
-                }
-              }),
+          if (sFactory === undefined) {
+            throw new Error(
+              `No StreamSource registered for '${sNode.source.type}' on stream '${sNode.id}' in harness '${node.id}' (registered streamSources: [${Object.keys(registry.streamSources).join(', ')}]).`,
             );
           }
+          streamHandles.push(
+            await sFactory(sNode.source as never, drvCtx).subscribe(async (rawEvt: unknown) => {
+              if (sNode.filterFn === undefined || sNode.filterFn(rawEvt)) {
+                await controller.emitSignal(sNode.signal.id, sNode.mapPayload(rawEvt));
+              }
+            }),
+          );
         }
         for (const cpNode of node.exposedControlPlanes) {
           const cpFactory = registry.controlPlanes[cpNode.type];
-          if (cpFactory !== undefined) {
-            controlPlaneHandles.push(await cpFactory(cpNode as never, drvCtx).start(controller));
+          if (cpFactory === undefined) {
+            throw new Error(
+              `No ControlPlaneAdapter registered for '${cpNode.type}' in harness '${node.id}' (registered controlPlanes: [${Object.keys(registry.controlPlanes).join(', ')}]).`,
+            );
           }
+          controlPlaneHandles.push(await cpFactory(cpNode as never, drvCtx).start(controller));
         }
       } catch (err) {
         await Promise.allSettled([

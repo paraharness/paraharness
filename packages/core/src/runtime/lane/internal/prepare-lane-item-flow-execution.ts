@@ -53,7 +53,9 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
 }> {
   const scopeFactory = cfg.registry.scopes[cfg.lane.flow.scope.type];
   if (scopeFactory === undefined) {
-    throw new Error(`No IsolationScope registered for '${cfg.lane.flow.scope.type}'.`);
+    throw new Error(
+      `No IsolationScope registered for '${cfg.lane.flow.scope.type}' on lane '${cfg.lane.id}' (registered scopes: [${Object.keys(cfg.registry.scopes).join(', ')}]).`,
+    );
   }
   const scopeDriver = scopeFactory(cfg.lane.flow.scope as never, {
     registry: cfg.registry,

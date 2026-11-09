@@ -20,7 +20,14 @@ import type { LoopBuilderState } from './loop-builder-state.js';
 export function compileLoopStateToNode<TIn, TOut, THandle, TActStepId extends string>(
   state: LoopBuilderState<TIn, TOut, THandle, TActStepId>,
 ): LoopNode<TIn, TOut, THandle, TActStepId> {
+  const missing: string[] = [];
+  if (state.inputSchema === undefined) missing.push('.input(schema)');
+  if (state.outputSchema === undefined) missing.push('.output(schema)');
+  if (state.actStep === undefined) missing.push('.act(stepId, actor)');
+  if (state.evaluateStep === undefined) missing.push('.evaluate(stepId, evaluator, options)');
+  if (state.returnOutputFromStepId === undefined) missing.push('.returnOutputFrom(stepId)');
   if (
+    missing.length > 0 ||
     state.inputSchema === undefined ||
     state.outputSchema === undefined ||
     state.actStep === undefined ||
@@ -28,7 +35,7 @@ export function compileLoopStateToNode<TIn, TOut, THandle, TActStepId extends st
     state.returnOutputFromStepId === undefined
   ) {
     throw new Error(
-      `Loop '${state.id}' is missing required .input(), .output(), .act(), .evaluate(), or .returnOutputFrom() configuration.`,
+      `Loop '${state.id}' is missing required ${missing.join(', ')} configuration before .toAST().`,
     );
   }
   if (state.returnOutputFromStepId !== state.actStep.stepId) {

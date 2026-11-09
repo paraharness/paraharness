@@ -147,7 +147,7 @@ function selectAgentModelDriver<TIn, TOut, THandle>(
   const modelDriverFactory = ctx.registry.models[modelNode.type];
   if (modelDriverFactory === undefined) {
     throw new Error(
-      `No ModelDriver registered for '${modelNode.type}' on agent '${node.id}'.`,
+      `No ModelDriver registered for '${modelNode.type}' on agent '${node.id}' (registered models: [${Object.keys(ctx.registry.models).join(', ')}]).`,
     );
   }
   const modelDriver = modelDriverFactory(modelNode as never, {

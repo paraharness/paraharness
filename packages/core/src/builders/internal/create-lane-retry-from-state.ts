@@ -72,9 +72,18 @@ export function createLaneRetryFromState(state: {
 export function compileLaneStateToNode<TIn, TStepIds extends string>(
   state: LaneBuilderState<TIn, TStepIds>,
 ): LaneNode<TIn, TStepIds> {
-  if (state.inputSchema === undefined || state.keyMapper === undefined || state.flow === undefined) {
+  const missing: string[] = [];
+  if (state.inputSchema === undefined) missing.push('.input(schema)');
+  if (state.keyMapper === undefined) missing.push('.key(mapper)');
+  if (state.flow === undefined) missing.push('.flow(flow)');
+  if (
+    missing.length > 0 ||
+    state.inputSchema === undefined ||
+    state.keyMapper === undefined ||
+    state.flow === undefined
+  ) {
     throw new Error(
-      `Lane '${state.id}' is missing required .input(schema), .key(mapper), or .flow(flow) configuration.`,
+      `Lane '${state.id}' is missing required ${missing.join(', ')} configuration before .toAST().`,
     );
   }
   const knownStepIds = collectFlowNodeIds(state.flow);

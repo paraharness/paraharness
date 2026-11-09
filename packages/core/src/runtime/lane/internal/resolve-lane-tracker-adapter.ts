@@ -19,9 +19,14 @@ export function resolveLaneTrackerAdapter<TIn = unknown>(
     return cfg.trackerAdapter;
   }
   const node = cfg.lane.tracker?.adapter;
-  const factory = node !== undefined ? cfg.registry.trackers[node.type] : undefined;
-  if (factory === undefined || node === undefined) {
+  if (node === undefined) {
     return undefined;
+  }
+  const factory = cfg.registry.trackers[node.type];
+  if (factory === undefined) {
+    throw new Error(
+      `No TrackerAdapter registered for '${node.type}' on lane '${cfg.lane.id}' (registered trackers: [${Object.keys(cfg.registry.trackers).join(', ')}]).`,
+    );
   }
   return factory(node as never, {
     registry: cfg.registry,
