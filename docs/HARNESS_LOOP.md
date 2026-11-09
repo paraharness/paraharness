@@ -4,7 +4,7 @@
 
 `HARNESS_LOOP` is the meta-loop used to audit, evolve, and refine the harness itself—the rules, coding guidelines, lessons, hooks, and loop procedures that govern how agents plan, build, review, verify, and learn in this repository.
 
-Whereas `SPEC_LOOP`, `PLAN_LOOP`, and `IMPL_LOOP` treat the harness as fixed law and optimize the product artifacts, `HARNESS_LOOP` treats the harness files as the system under test: it evaluates how effectively the harness shapes agent behavior, autonomy, defect detection, and token/round economics, and refines the harness against empirical evidence and first-principles critique.
+Whereas `SPEC_LOOP`, `PLAN_LOOP`, `IMPL_LOOP`, and `ERGONOMICS_LOOP` treat the harness as fixed law and optimize the product artifacts, `HARNESS_LOOP` treats the harness files as the system under test: it evaluates how effectively the harness shapes agent behavior, autonomy, defect detection, and token/round economics, and refines the harness against empirical evidence and first-principles critique.
 
 ---
 
@@ -29,13 +29,16 @@ harness_files      := [
   "docs/SPEC_LOOP.md",
   "docs/PLAN_LOOP.md",
   "docs/IMPL_LOOP.md",
+  "docs/ERGONOMICS_LOOP.md",
   "docs/HARNESS_LOOP.md",
   "package.json",
   "eslint.config.mjs",
   ".agents/hooks.json",
   ".agents/hooks/post-compaction.mjs"
 ]
-baseline_evidence  := Empirical telemetry and outcomes from prior loop executions (when available):
+compaction_glob            := ".memory/post-compaction*.md" (includes `.memory/post-compaction.md`, `.memory/post-compaction-<role>.md`, and session-scoped `.memory/post-compaction-<sessionId>.md` overrides)
+baseline_dirty             := pre-existing dirty/untracked paths outside harness_files (excluding compaction_glob) recorded via `git status --porcelain` before STEP 1 starts
+baseline_evidence          := Empirical telemetry and outcomes from prior loop executions (when available in `git log`, `docs/lessons/*.md`, and any prior loop rulings/reports):
   - Rounds to convergence per milestone/loop
   - Admitted findings ($verified_findings) vs. rejected reviewer findings (false positives)
   - Escaped defects discovered in downstream waves or by the Owner
@@ -49,6 +52,10 @@ round_history              := [] (each completed round's verified changes and re
 pre_remediation_sha        := "" (captured via git rev-parse HEAD when transitioning from STEP 2 to STEP 3)
 ```
 
+**Entry Preconditions:**
+1. No other `docs/**/*_LOOP.md` is currently active on `harness_files`.
+2. `git status --porcelain -- <harness_files> docs/lessons/` is empty (zero pre-existing dirty or untracked files in `harness_files` or `docs/lessons/` so STEP 3 and DISTILLATION never stage uncommitted work-in-progress), and `baseline_dirty` (excluding `compaction_glob`) is recorded before STEP 1 starts.
+
 ---
 
 ## 3. Role Bootstrap Manifests & Loading Guarantee
@@ -57,14 +64,15 @@ Every agent in any loop must load its role manifest as its first action before i
 
 | Role | Required Bootstrap Files |
 | :--- | :--- |
-| **Head** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/HEAD.md`, `docs/lessons/GENERAL.md`, `docs/lessons/HEAD.md`, `docs/SPEC.md`, and the single active `docs/*_LOOP.md` |
+| **Head** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/HEAD.md`, `docs/lessons/GENERAL.md`, `docs/lessons/HEAD.md`, `docs/SPEC.md`, and the single active `docs/*_LOOP.md` (plus `docs/ERGONOMICS_RULINGS.md` if present when running `ERGONOMICS_LOOP`) |
 | **Builder / Remediator** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/BUILDER.md`, `docs/lessons/GENERAL.md`, `docs/lessons/BUILDER.md`, `docs/CODING_GUIDELINES.md` |
 | **Reviewer** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/REVIEWER.md`, `docs/lessons/GENERAL.md`, `docs/lessons/REVIEWER.md`, `docs/CODING_GUIDELINES.md` |
+| **Consumer-Persona (`loop-persona`, `ERGONOMICS_LOOP` Lens D)** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `README.md` |
 | **Verifier** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/VERIFIER.md`, `docs/lessons/GENERAL.md`, `docs/lessons/VERIFIER.md`, `docs/CODING_GUIDELINES.md` |
 | **Distiller** | `CLAUDE.MD`, `docs/rules/GENERAL.md`, `docs/rules/DISTILLER.md`, `docs/rules/{HEAD,BUILDER,REVIEWER,VERIFIER}.md`, `docs/lessons/GENERAL.md`, `docs/lessons/{HEAD,BUILDER,REVIEWER,VERIFIER}.md`, `docs/CODING_GUIDELINES.md` |
 
 **Subagent Registration (`define_subagent`):**
-At loop initialization, Head defines role-specific subagent types (`loop-reviewer`, `loop-verifier`, `loop-builder`, `loop-distiller`) whose system prompt mandates reading the exact bootstrap manifest for that role as Turn 1 before reading or acting on task files.
+At loop initialization, Head defines role-specific subagent types (`loop-reviewer`, `loop-persona` when running `ERGONOMICS_LOOP`, `loop-verifier`, `loop-builder`, `loop-distiller`) whose system prompt mandates reading the exact bootstrap manifest for that role as Turn 1 before reading or acting on task files.
 
 ---
 
@@ -114,7 +122,7 @@ LOOP:
             Assign each Critic an independent analytical perspective:
             - Critic A (Agent Autonomy, Spine, Incentives & Behavioral Failure Modes): Analyze how each role (`Head`, `Builder`, `Reviewer`, `Verifier`, `Distiller`) will actually behave under these rules and loops—where instructions create ambiguity, paralysis, over-escalation, sycophancy/fake concessions, blind compliance, role confusion, or incentive to cut corners.
             - Critic B (Context Economics & Signal-to-Token Density): Analyze token cost per turn across roles, cross-file redundancy, over-verbose rules or examples, and lessons that should be promoted or pruned.
-            - Critic C (Loop Topology, Escape Hatches & Verification Rigor): Analyze the state machines in `SPEC_LOOP`, `PLAN_LOOP`, `IMPL_LOOP`, and `HARNESS_LOOP` for deadlock states, unverified handoffs, defect escape paths, or false-positive amplification.
+            - Critic C (Loop Topology, Escape Hatches & Verification Rigor): Analyze the state machines in `SPEC_LOOP`, `PLAN_LOOP`, `IMPL_LOOP`, `ERGONOMICS_LOOP`, and `HARNESS_LOOP` for deadlock states, unverified handoffs, defect escape paths, or false-positive amplification.
             - Critic D (First-Principles Harness Architecture & Design Critique): Challenge the design and architecture of the harness mechanisms, role interactions, coding guidelines, and loop protocols from first principles—identifying where any current mechanism, rule, or guideline is structurally flawed, counterproductive, overly rigid, or over-engineered relative to §5 (subject to the Hard Invariants in §4).
         1.2 Wait for all 4 Critics to complete and collect/deduplicate all raw critiques and proposals, merging and draining `$pending_adjacent_defects` into `$candidates`.
 
@@ -142,10 +150,10 @@ LOOP:
             - Exit loop to DISTILLATION.
 
     STEP 3 — SURGICAL HARNESS MUTATION (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit')
-        3.1 Record `pre_remediation_sha := $(git rev-parse HEAD)` and launch 1 Harness Builder Subagent with its Builder bootstrap manifest (§3) and `$verified_changes`:
+        3.1 Record `pre_remediation_sha := $(git rev-parse HEAD)` and launch 1 Harness Builder Subagent with its Builder bootstrap manifest (§3), `baseline_dirty`, and `$verified_changes`:
             - Read its Builder bootstrap manifest (§3) as Turn 1, then read all remaining implicated files in `harness_files` not already loaded in Turn 1 in full.
             - Apply `$verified_changes` surgically across `harness_files` (pausing mid-turn via `send_message` only on a direct `SPEC_CONTRADICTION` or `UNAPPROVED_DEPENDENCY` per `docs/rules/BUILDER.md` Rule 2).
-            - Run smoke and lint verification checks (`pnpm lint`, `node --check .agents/hooks/post-compaction.mjs`, `node --check eslint.config.mjs`, JSON syntax validation of `package.json` and `.agents/hooks.json`, and `echo '{}' | node .agents/hooks/post-compaction.mjs` plus a mock transcript payload check) until exit code `0`, self-audit cross-file references, role manifests, and `git diff` to ensure zero unintended edits or broken links, commit the mutated harness files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- <mutated_harness_files> && git commit -m 'harness: remediate round <round>' -- <mutated_harness_files>"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6), and record any unrelated adjacent defects in `disclosed_adjacent_defects` (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2).
+            - Run smoke and lint verification checks (`pnpm lint`, `node --check .agents/hooks/post-compaction.mjs`, `node --check eslint.config.mjs`, JSON syntax validation of `package.json` and `.agents/hooks.json`, `echo '{}' | node .agents/hooks/post-compaction.mjs`, and a mock `CHECKPOINT` transcript smoke test verifying `POST_COMPACTION_GROUNDING_REQUIRED` is emitted on `stdout` with exit code `0`) until exit code `0`, self-audit cross-file references, role manifests, and `git diff` to ensure zero unintended edits or broken links, commit the mutated harness files locally via `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -- <mutated_harness_files> && git commit -m 'harness: remediate round <round>' -- <mutated_harness_files>"` (never running `git push` per `docs/rules/BUILDER.md` Rule 6), and record any unrelated adjacent defects in `disclosed_adjacent_defects` (which Head appends to `$pending_adjacent_defects` for the next round's Step 1.2).
         3.2 Increment `round := round + 1` and repeat LOOP at STEP 1.
 
 DISTILLATION (When `round > 1` or when verified changes / false-positive clusters occurred)
@@ -153,5 +161,6 @@ DISTILLATION (When `round > 1` or when verified changes / false-positive cluster
 2. Distiller reads its Turn-1 manifest (§3), updates `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` in-place per `docs/rules/DISTILLER.md` Rules 1–4 (`NO_LESSONS_ADDED` with zero file edits is the expected output when all findings were already covered by existing rules/guidelines), and commits any modified `docs/lessons/*.md` files locally (never running `git push`). Head audits `git diff origin/main...HEAD -- docs/lessons/` against `docs/rules/DISTILLER.md` Rules 1–4 before TERMINATION.
 
 TERMINATION (count($verified_changes) == 0)
-Head executes `git push origin main` (`docs/rules/HEAD.md` Rule 5) and presents converged harness diff summary (`git diff --stat`) and verification results to Owner.
+1. Verify `git status --porcelain -- <harness_files> docs/lessons/` is empty and `git status --porcelain` outside `harness_files` and `docs/lessons/` (excluding `compaction_glob`) matches `baseline_dirty` (reporting any difference outside `harness_files` to the Owner without reverting).
+2. If any commits were made during STEP 3 or DISTILLATION, present the final `git diff --stat origin/main...HEAD` and `git diff origin/main...HEAD` to the Owner for pre-push sign-off (`§4.1`); once confirmed, Head executes `git push origin main` (`docs/rules/HEAD.md` Rule 5).
 ```

@@ -1,5 +1,5 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Initial byte window read from the tail of the transcript file. */
@@ -19,6 +19,7 @@ const ROLE_GROUNDING_FILES = {
   head: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/HEAD.md', 'docs/lessons/GENERAL.md', 'docs/lessons/HEAD.md', 'docs/SPEC.md', 'and the single active docs/*_LOOP.md'],
   builder: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/BUILDER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/BUILDER.md', 'docs/CODING_GUIDELINES.md'],
   reviewer: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/REVIEWER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/REVIEWER.md', 'docs/CODING_GUIDELINES.md'],
+  persona: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'README.md'],
   verifier: ['CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/VERIFIER.md', 'docs/lessons/GENERAL.md', 'docs/lessons/VERIFIER.md', 'docs/CODING_GUIDELINES.md'],
   distiller: [
     'CLAUDE.MD', 'docs/rules/GENERAL.md', 'docs/rules/DISTILLER.md', 'docs/rules/HEAD.md', 'docs/rules/BUILDER.md', 'docs/rules/REVIEWER.md', 'docs/rules/VERIFIER.md',
@@ -61,8 +62,9 @@ function readRange(fd, start, end) {
  * Checks whether a parsed JSONL transcript entry contains a qualifying manifest read tool call.
  *
  * Requires a `PLANNER_RESPONSE` tool call in `GROUNDING_TOOLS` targeting the role's terminal
- * manifest file on `Stop` (`_LOOP.md` for `head`, `docs/CODING_GUIDELINES.md` for subagents),
- * or `CLAUDE.MD` / the terminal manifest file on `PreInvocation`.
+ * manifest file on `Stop` (`_LOOP.md` for `head`, `README.md` for `persona`, or
+ * `docs/CODING_GUIDELINES.md` for other subagents), or `CLAUDE.MD` / the terminal manifest file
+ * on `PreInvocation`.
  *
  * @param {unknown} entry      - Parsed JSONL transcript object.
  * @param {string}  role       - Detected harness role for the session.
@@ -75,8 +77,16 @@ function isGroundedEntry(entry, role, isStopHook) {
   return entry.tool_calls.some((tc) => {
     const rawPath = tc?.args?.Path ?? tc?.args?.AbsolutePath;
     if (!GROUNDING_TOOLS.has(tc?.name) || typeof rawPath !== 'string') return false;
-    const targetPath = rawPath.replace(/^"+|"+$/g, '');
-    const isTerminal = role === 'head' ? targetPath.endsWith('_LOOP.md') : targetPath.includes('docs/CODING_GUIDELINES.md');
+    const targetPath = rawPath.replace(/^"+|"+$/g, '').replace(/\\/g, '/');
+    const isRootReadme =
+      targetPath === 'README.md' ||
+      (targetPath.endsWith('/README.md') && !targetPath.includes('/packages/') && !targetPath.includes('/docs/'));
+    const isTerminal =
+      role === 'head'
+        ? targetPath.endsWith('_LOOP.md')
+        : role === 'persona'
+          ? isRootReadme
+          : targetPath.includes('docs/CODING_GUIDELINES.md');
     if (isStopHook) return isTerminal;
     return isTerminal || targetPath.endsWith('CLAUDE.MD') || targetPath.endsWith('CLAUDE.md');
   });
@@ -118,7 +128,7 @@ function scanCompactionState(text, role, isStopHook) {
  *
  * @param {string} headText - Opening UTF-8 bytes of `transcript.jsonl`.
  *
- * @returns {'head' | 'builder' | 'reviewer' | 'verifier' | 'distiller'} Detected role key.
+ * @returns {'head' | 'builder' | 'reviewer' | 'persona' | 'verifier' | 'distiller'} Detected role key.
  */
 function detectRoleFromHead(headText) {
   const promptLines = [];
@@ -130,6 +140,7 @@ function detectRoleFromHead(headText) {
   const roleMarkers = [
     ['distiller', ['loop-distiller', 'Distiller bootstrap manifest']],
     ['verifier', ['loop-verifier', 'Verifier bootstrap manifest']],
+    ['persona', ['loop-persona', 'Consumer-Persona bootstrap manifest']],
     ['reviewer', ['loop-reviewer', 'Reviewer bootstrap manifest']],
     ['builder', ['loop-builder', 'Builder bootstrap manifest']],
   ];
@@ -156,7 +167,7 @@ function detectRoleFromHead(headText) {
  * @param {string}  transcriptPath - Path to the active session's `transcript.jsonl` file.
  * @param {boolean} isStopHook     - Whether the current invocation is a `Stop` hook event.
  *
- * @returns {{ needed: boolean, role: 'head' | 'builder' | 'reviewer' | 'verifier' | 'distiller' }} Grounding requirement and role.
+ * @returns {{ needed: boolean, role: 'head' | 'builder' | 'reviewer' | 'persona' | 'verifier' | 'distiller' }} Grounding requirement and role.
  */
 function checkCompactionGrounding(transcriptPath, isStopHook) {
   const fd = openSync(transcriptPath, 'r');
@@ -182,17 +193,47 @@ function checkCompactionGrounding(transcriptPath, isStopHook) {
 }
 
 /**
+ * Extracts a UUID conversation identifier from `transcriptPath` when present.
+ *
+ * Matches standard 36-character UUID directory segments in the transcript path.
+ *
+ * @param {string} transcriptPath - Path to the active session's `transcript.jsonl` file.
+ *
+ * @returns {string | undefined} Extracted UUID conversation ID, or `undefined` if not found.
+ */
+function extractSessionId(transcriptPath) {
+  const segments = transcriptPath.split(/[\\/]/);
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const seg = basename(segments[i]);
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)) return seg;
+  }
+  return undefined;
+}
+
+/**
  * Loads an existing post-compaction grounding note from `.memory/` or generates and persists one.
  *
- * Reads `.memory/post-compaction.md` (for `head`) or `.memory/post-compaction-<role>.md` when
- * present; otherwise generates the role-specific sequential reading note and writes it to disk.
+ * Checks for a session-specific override `.memory/post-compaction-<sessionId>.md` first, then
+ * `.memory/post-compaction.md` (for `head`) or `.memory/post-compaction-<role>.md` when present;
+ * otherwise generates the role-specific sequential reading note and writes it to disk.
  *
- * @param {string}                                                     workspaceRoot - Absolute path to the workspace root directory.
- * @param {'head' | 'builder' | 'reviewer' | 'verifier' | 'distiller'} role          - Active agent role.
+ * @param {string}                                                                 workspaceRoot  - Absolute path to the workspace root directory.
+ * @param {'head' | 'builder' | 'reviewer' | 'persona' | 'verifier' | 'distiller'} role           - Active agent role.
+ * @param {string}                                                                 transcriptPath - Path to the active session's `transcript.jsonl` file.
  *
  * @returns {string} Complete post-compaction grounding instruction with sentinel prefix.
  */
-function loadOrGenerateGroundingNote(workspaceRoot, role) {
+function loadOrGenerateGroundingNote(workspaceRoot, role, transcriptPath) {
+  const sessionId = extractSessionId(transcriptPath);
+  if (sessionId) {
+    const sessionNotePath = resolve(workspaceRoot, '.memory', `post-compaction-${sessionId}.md`);
+    if (existsSync(sessionNotePath)) {
+      const sessionNote = readFileSync(sessionNotePath, 'utf8').trim();
+      if (sessionNote.length > 0) {
+        return sessionNote.startsWith(GROUNDING_SENTINEL_PREFIX) ? sessionNote : `${GROUNDING_SENTINEL_PREFIX} ${sessionNote}`;
+      }
+    }
+  }
   const notePath = resolve(workspaceRoot, '.memory', role === 'head' ? 'post-compaction.md' : `post-compaction-${role}.md`);
   if (existsSync(notePath)) {
     const existing = readFileSync(notePath, 'utf8').trim();
@@ -231,7 +272,7 @@ async function main() {
     return;
   }
   const workspaceRoot = payload.workspacePaths?.[0] || resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-  const note = loadOrGenerateGroundingNote(workspaceRoot, role);
+  const note = loadOrGenerateGroundingNote(workspaceRoot, role, payload.transcriptPath);
   const response = isStopHook ? { decision: 'continue', reason: note } : { injectSteps: [{ systemMessage: { systemMessage: note } }] };
   process.stdout.write(`${JSON.stringify(response)}\n`);
 }

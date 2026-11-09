@@ -1,0 +1,167 @@
+# Ergonomics Evolution Loop (`ERGONOMICS_LOOP`)
+
+## 1. Purpose & Context
+
+`ERGONOMICS_LOOP` is an Owner-gated evolution loop dedicated to making Paraharness (`@paraharness/*`) as effortless, concise, and intuitive to author as possible—from a single-agent script to a full multi-lane production harness—without sacrificing any architectural rigor, static type safety, or orchestration flexibility, halting at **STEP 3 (Owner Proposal Gate)** before any repository file is mutated and requiring Owner pre-push confirmation before `git push origin main`.
+
+---
+
+## 2. State, Preconditions & Shared Loop Primitives
+
+```
+STATE
+spec_files                 := ["docs/SPEC.md", "docs/CODING_SAMPLE.md"]
+plan_files                 := ["docs/plan/INDEX.md", "docs/plan/M1-core-contracts.md", "docs/plan/M2-core-runtime.md", "docs/plan/M3a-sqlite.md", "docs/plan/M3b-fs-markdown.md", "docs/plan/M3c-node.md", "docs/plan/M3d-git.md", "docs/plan/M3e-drivers.md", "docs/plan/M3f-connectors.md", "docs/plan/M4-integration.md"]
+package_dirs               := all public package directories matched by `git ls-files 'packages/*/package.json'` (excluding private test-only harnesses)
+consumer_workloads         := ["README.md", "packages/*/README.md", "docs/CODING_SAMPLE.md", "tests/integration/src/**", "tests/stripe/src/**", "tests/netsuite/src/**"]
+benchmark_tasks            := [
+  "Tier A (Zero-to-One): Single P.agent and single P.loop invoked on one input",
+  "Tier B (Flow): Standalone P.flow with 2 steps and an .onInterrupt() edge",
+  "Tier C (Harness): Multi-lane P.harness with ledger, model pool, tracker, and scope",
+  "Tier D (Escape Hatch): Actor with .fork(), .speculate(), and CustomDomainASTRegistry"
+]
+rulings_file               := "docs/ERGONOMICS_RULINGS.md" (stores Owner rulings, cumulative added-overloads/exports ledger per package, canonical Tier A–D benchmark snippets and metrics across rounds, and the Non-Ergonomic Defect Backlog)
+compaction_glob            := ".memory/post-compaction*.md"
+baseline_dirty             := pre-existing dirty/untracked paths outside target_scope (excluding compaction_glob) recorded via `git status --porcelain` before STEP 1 starts
+target_scope               := union of spec_files, plan_files, rulings_file, README.md, packages/*/README.md, site/, tests/, and the subset of package_dirs implicated by $approved_proposals
+gate_cmd                   := "pnpm build && pnpm docs:api && pnpm lint && pnpm typecheck && pnpm test"
+round                      := 1
+sub_round                  := 1
+active_sub_step            := ""
+owner_seed_candidates      := [] (optional pain points supplied directly by the Owner and merged into $candidates at Step 1.2 after cold discovery finishes)
+$candidates                := []
+$verified_proposals        := []
+$rejected_candidates       := []
+$approved_proposals        := []
+$pending_adjacent_defects  := []
+$verified_adjacent_defects := []
+$rejected_adjacent_defects := []
+round_history              := [] (each completed round's benchmark metrics, verified proposals, rejected candidates, verified/rejected adjacent defects, Owner rulings, and Step 4 sub-round logs, seeded on boot from rulings_file if present)
+pre_remediation_sha        := ""
+pre_proposal_sha           := {} (map of proposal_id -> git SHA recorded immediately before applying proposal_id in 4.1a and 4.2a)
+sub_pre_remediation_sha    := ""
+```
+
+**Entry Preconditions:**
+1. No other `docs/**/*_LOOP.md` is currently active on `target_scope`, and all `IMPL_LOOP` waves covering `package_dirs` and `tests/{integration,stripe,netsuite}` have passed their `IMPL_LOOP` Wave-Barrier Gate (`docs/IMPL_LOOP.md` Termination #2).
+2. `git status --porcelain -- docs/SPEC.md docs/CODING_SAMPLE.md docs/ERGONOMICS_RULINGS.md docs/plan README.md packages/ tests/ site/ docs/lessons/` is empty, `gate_cmd` exits `0` at loop start, and `baseline_dirty` (excluding `compaction_glob`) is recorded before STEP 1 begins.
+
+**Shared Loop Primitives:**
+- **`PERSIST_STATE()`:** Writes `.memory/post-compaction.md` starting with the mandatory sequential reading-list header (`POST_COMPACTION_GROUNDING_REQUIRED: You were compacted. Ground yourself immediately: read CLAUDE.MD, docs/rules/GENERAL.md, docs/rules/HEAD.md, docs/lessons/GENERAL.md, docs/lessons/HEAD.md, docs/SPEC.md, docs/ERGONOMICS_LOOP.md, and docs/ERGONOMICS_RULINGS.md (if present) in this exact sequence, one by one, each one fully. Do not load inactive *_LOOP.md files, docs/CODING_SAMPLE.md, or other roles' rule/lesson files. Do not do anything else before you finish.`) followed by the serialized `STATE` variables (`round`, `sub_round`, `active_sub_step`, `baseline_dirty`, `pre_remediation_sha`, `pre_proposal_sha`, `sub_pre_remediation_sha`, `owner_seed_candidates`, `round_history`, `$candidates`, `$verified_proposals`, `$rejected_candidates`, `$approved_proposals`, `$pending_adjacent_defects`, `$verified_adjacent_defects`, `$rejected_adjacent_defects`).
+- **`LOCKED_COMMIT(msg, paths)`:** Executes `lockf -k -t 30 .git/harness-commit.lock sh -c "git add -A -- <paths> && git commit -m '<msg>' -- <paths>"` (never running `git push`).
+
+---
+
+## 3. Non-Negotiable Quality & Flexibility Invariants
+
+Every ergonomics proposal and implementation step must preserve 100% of the following invariants:
+
+1. **Owner Proposal Gate, Up-Front Spec Diff & Pre-Push Sign-Off (Zero Blind Mutation):** No agent may edit `spec_files`, `plan_files`, `package_dirs`, `tests/**`, `README.md`, `packages/*/README.md`, `site/**`, or `docs/lessons/**` on an unapproved finding, fix an out-of-scope defect without Owner authorization, or silently alter an Owner-approved signature, AST desugaring contract, or `docs/SPEC.md` diff. Every discovery finding must pass through STEP 3 (with the exact proposed `docs/SPEC.md` diff included in item `(4)`) for an explicit Owner ruling before STEP 4 executes; within STEP 4, any `4.1b` change to `docs/SPEC.md` wording beyond what the Owner approved in item `(4)` pauses for Owner approval before `4.2a` runs, code-only `4.2b` implementation bug fixes that preserve the approved signature, AST contract, and `SPEC.md` text run autonomously and are disclosed in the Step 4 sub-round log, and all commits require Owner pre-push confirmation at `TERMINATION`.
+2. **Core Declarative Compilation, Late Binding & Type Safety Invariants:** Every shorthand overload, default value, or helper must comply with `docs/SPEC.md` §1.2 Invariants #1–#6 and `docs/CODING_GUIDELINES.md` §§1–6 (including Rules 5.1–5.4).
+3. **Fail-Closed Defaults Only:** Any optional parameter or omitted builder call that takes a default value must default to the most restrictive, fail-closed behavior defined in `docs/SPEC.md` §§2–4 and never silently grant broader permissions or hide a required security/isolation boundary; every default must be explicitly listed in item `(4)`.
+4. **Zero Loss of Expressive Power or Escape Hatches:** Simplifying the 80% common case must never remove, hide, or restrict the 20% advanced capabilities (tiered isolation scopes, `P.prefixGroup`, `.fork()`, `.speculate()`, `.mutatePlan()`, `.onInterrupt()` / `.onChildInterrupt()`, `CustomDomainASTRegistry`, custom `NodeExecutor`s, and explicit driver overrides). Every shorthand must desugar deterministically into the canonical passive AST representation.
+
+---
+
+## 4. Ergonomics Evaluation Dimensions
+
+Reviewers and Verifiers evaluate the public DSL, runtime entry points, and documentation across five neutral consumer-centric questions:
+
+1. **Progressive Disclosure & Time-to-First-Run:** Across the four `benchmark_tasks` tiers (`Tier A` through `Tier D`), does any mandatory builder call or setup step carry no genuine decision in the common case?
+2. **Fluent Builder Conciseness & Overload Ergonomics:** Does any public builder across `@paraharness/core` or `package_dirs` require nested callbacks, repetitive option keys, or multi-step chains where a direct value, literal, or overload would be unambiguous without degrading invalid-call compiler errors or bloating the API surface?
+3. **Cross-Package Composition & Wiring Friction:** Does composing `@paraharness/core` with peer adapters in `package_dirs` across `consumer_workloads` require threading identical configuration objects across multiple builder calls unnecessarily?
+4. **TypeScript Inference & Autocomplete Precision:** Do all callback parameters and step boundaries across `P.*` and peer builders infer `100%` automatically without manual generic annotations?
+5. **Build-Time/Runtime Diagnostic Clarity & Documentation Navigability:** Do invalid compositions or missing runtime registrations produce clear, actionable compile-time or runtime error messages (`docs/CODING_GUIDELINES.md` Rule 5.4), and can a user find every primitive and workflow in `README.md`, `packages/*/README.md`, and `site/index.md` without reading internal source files?
+
+---
+
+## 5. Evolution Loop Procedure
+
+```
+POST-COMPACTION GROUNDING (Triggered automatically by `.agents/hooks/post-compaction.mjs` on `PreInvocation` / `Stop`)
+Follow `docs/HARNESS_LOOP.md` §3 and `.memory/post-compaction.md` (or `.memory/post-compaction-<role>.md`) in exact sequence before taking any other action.
+
+LOOP:
+    STEP 1 — CONSUMER-FIRST ERGONOMICS DISCOVERY (3x `loop-reviewer` + 1x `loop-persona`, Model: 'inherit')
+        1.0 Round Initialization: Reset `$candidates := []`, `$verified_proposals := []`, `$rejected_candidates := []`, `$approved_proposals := []`, `$verified_adjacent_defects := []`, and `$rejected_adjacent_defects := []`.
+        1.1 Launch 4 parallel cold Ergonomics Discovery Subagents (passing `round`, `round_history`, `rulings_file` if present, `git diff --stat origin/main...HEAD`, the explicit `git ls-files` manifest for that lens below, §3, and §4—with zero leading hints and without passing `pnpm lint` or `vitest` pass status). Reviewers A, B, and C (`TypeName: 'loop-reviewer'`) read their Reviewer bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, call `view_file` (`read_file`) on `100%` of their compact public-surface manifest on every round, use targeted `grep` on internal leaf files only when needed, and route any non-ergonomic behavioral or type bugs (`IMPL_LOOP` Defect Gates `(a)–(b)`) strictly to `disclosed_adjacent_defects`:
+          - Lens A (Progressive Disclosure & Public Entry Surface — `loop-reviewer`, manifest: `git ls-files -- README.md packages/core/README.md site/index.md docs/CODING_SAMPLE.md packages/core/src/index.ts packages/core/src/p-namespace-contract.ts packages/core/src/p-namespace.ts packages/core/src/runtime/index.ts 'packages/core/src/ports/*.ts'`): Audit the public entry points and port contracts across `benchmark_tasks` Tiers A–D against §4.1 and §4.5.
+          - Lens B (Core `P.*` Fluent Builders & Schemas — `loop-reviewer`, manifest: `git ls-files -- 'packages/core/src/builders/*.ts' 'packages/core/src/schemas/*.ts' 'packages/core/src/topology/*.ts'`): Audit every public builder interface, factory, and schema exported by `@paraharness/core` against §4.2, §4.4, and §4.5.
+          - Lens C (Peer Adapter Public Surfaces & Real-Workload Call-Site Mining — `loop-reviewer`, manifest: `git ls-files -- 'packages/*/README.md' 'packages/*/src/index.ts' 'tests/integration/src/**' 'tests/stripe/src/**' 'tests/netsuite/src/**'`): Audit the public entry exports across all peer adapter packages (using `grep` to inspect leaf builder files in `packages/*/src/` as needed) and mine the real consumer call sites in `tests/{integration,stripe,netsuite}/src/**` for repeated cross-package wiring boilerplate against §4.2, §4.3, and §4.5.
+          - Lens D (Blind Consumer-Persona & Canonical Benchmark Reviewer — `TypeName: 'loop-persona'`, manifest: `git ls-files -- CLAUDE.MD docs/rules/GENERAL.md README.md 'packages/*/README.md' site/index.md docs/CODING_SAMPLE.md 'packages/*/src/index.ts'`): Begins with header `[Role: loop-persona — Consumer-Persona bootstrap manifest]` and loads **only** `CLAUDE.MD`, `docs/rules/GENERAL.md`, and root `README.md` as Turn 1, then reads the remaining files in its public-docs manifest (never reading `docs/CODING_GUIDELINES.md`, `docs/SPEC.md`, `docs/rules/REVIEWER.md`, or internal `src/**` per `docs/HARNESS_LOOP.md` §3). In an isolated `$TMPDIR/ergonomics-bench-<round>` directory linked against the workspace `packages/*/dist/*.d.ts` declarations, compiles (`tsc --noEmit`) the canonical `Tier A–D` benchmark snippets from `rulings_file` (authoring the initial canonical baseline snippets in Round 1 when `rulings_file` does not yet exist, and in Round $r \ge 2$ updating the canonical snippets only for newly landed `$approved_proposals` so only the cold `loop-persona` ever edits the benchmark snippets), deletes `$TMPDIR/ergonomics-bench-<round>` before returning, and outputs: (i) the canonical `Tier A–D` snippets and quantitative Benchmark Table (`Tier | LOC | Imports | Manual Type Annotations | Persona Guesses / Lookups | tsc Errors`), (ii) every friction point where public docs/types required guessing, manual generics, or produced unhelpful errors, and (iii) any non-ergonomic behavioral/type bugs (`IMPL_LOOP` Gates `(a)–(b)`) in `disclosed_adjacent_defects`.
+        1.2 Wait for all 4 Subagents to complete, mechanically verify against each Subagent's `transcript_full.jsonl` that `view_file` (`read_file`) covered `100%` of its assigned manifest before accepting its report (re-prompting with the exact missing file list if `missing > 0`), record Lens D's canonical Benchmark Table and snippets in `round_history`, collect/deduplicate ergonomic proposals (plus any `owner_seed_candidates` provided by the Owner, draining `owner_seed_candidates := []`) into `$candidates`, and append any `disclosed_adjacent_defects` into `$pending_adjacent_defects`.
+
+    STEP 2 — FALSIFICATION & SCRATCH-COMPILED VERIFICATION GATE (`invoke_subagent`, TypeName: 'loop-verifier', Model: 'inherit')
+        2.1 If count($candidates) == 0 and count($pending_adjacent_defects) == 0:
+            - Exit loop to DISTILLATION.
+        2.2 Launch 1 Verifier Subagent with `$candidates`, `$pending_adjacent_defects`, `round_history`, and `rulings_file` (plus `pre_remediation_sha` when `round > 1`):
+            - Read its Verifier bootstrap manifest (`docs/HARNESS_LOOP.md` §3) as Turn 1, inspect the implicated sections of `spec_files`, `consumer_workloads`, and `package_dirs`, and in an isolated `$TMPDIR/ergonomics-verify-<round>` scratch directory (deleted before returning) verify each candidate (`docs/rules/VERIFIER.md` Rule 1). Evaluate ergonomic `$candidates` under the `ERGONOMICS_LOOP` Admission & Rejection Gates below and evaluate `$pending_adjacent_defects` strictly under `docs/IMPL_LOOP.md` Step 2.2 Defect Gates `(a)–(b)` (behavioral/runtime and type/contract bugs only, draining `$pending_adjacent_defects := []` into `$verified_adjacent_defects` and `$rejected_adjacent_defects`).
+            - ADMISSION GATE (Admit a candidate from `$candidates` to `$verified_proposals` IF AND ONLY IF all of `(a)`, `(b)`, and `(c)` hold):
+              (a) Verified by category-appropriate objective evidence and net cognitive reduction:
+                  - **Type / Builder / Overload / Default Proposals (§§4.1–4.4):** Scratch `tsc --noEmit` in `$TMPDIR` confirms the `Before` friction is real, the `After` declaration prototype compiles with full type inference, and an invalid call on the `After` signature produces a clear compiler diagnostic (not an opaque multi-overload error wall), measurably reducing consumer LOC, ceremony, import count, manual type annotations, or persona guess rate by more than the cognitive/surface cost of the added overload/export.
+                  - **Build-Time / Runtime Diagnostic Proposals (§4.5):** Scratch execution in `$TMPDIR` captures the exact `Before` error output and proves the `After` diagnostic names the offending node, field, and remediation (`docs/CODING_GUIDELINES.md` Rule 5.4).
+                  - **Documentation Navigability Proposals (§4.5):** Exact `file:line` trace across `README.md`, `packages/*/README.md`, and `site/index.md` proves a public primitive or workflow is undocumented or unreachable from the entry docs.
+              (b) Preserves 100% of the Non-Negotiable Quality & Flexibility Invariants in §3.
+              (c) Not already supported by existing overloads in `package_dirs` and not previously ruled `REJECTED` by the Owner in `round_history` or `rulings_file`.
+            - EXHAUSTIVE REJECTION GATE (Every candidate in `$candidates` not admitted to `$verified_proposals` MUST be placed into `$rejected_candidates` citing the exact letter `(w)`–`(z)` or failed admission criterion `(a)`–`(c)` and a 1-line proof, so zero candidates can drop out silently):
+              (w) Violates `docs/SPEC.md` §1.2 by proposing imperative `async`/`await` closures in control-flow builders, execution/builder methods on AST nodes, or import/builder-time I/O.
+              (x) Violates any other invariant in §3 (non-fail-closed default, implicit `process.env` reads, `: any` / generic erasure, weakened build-time validation, or loss of an advanced escape hatch) or degrades invalid-call `tsc` diagnostics.
+              (y) Factually false (scratch verification shows `Before` already works as claimed or `After` fails to infer/compile, or contradicts an Owner `REJECTED` ruling in `round_history` / `rulings_file`).
+              (z) Fails Admission `(a)` because it is a cosmetic alias, subjective rename, or micro-shorthand whose added API surface/overload count outweighs a 1–2 token savings without reducing cognitive load, guesses, or type annotations.
+            - For each admitted proposal in `$verified_proposals`, Verifier outputs:
+              (1) **Title & Classification Badge:** `[ADDITIVE]` or `[BREAKING]` (with call-site counts across `packages/`, `tests/`, and `docs/`, migration path, and semver impact), plus target package(s) and exact `file:line` references.
+              (2) **Friction Point:** 1–2 sentences explaining what is clunky, repetitive, or poorly inferred today.
+              (3) **Verified `Before` vs. `After` Snippet & Diagnostic Evidence:** Side-by-side TypeScript user code (or doc trace) plus verified `tsc --noEmit` / runtime diagnostic output for both valid and invalid calls.
+              (4) **AST Desugaring Contract, Exact `docs/SPEC.md` Diff, Fail-Closed Defaults & Surface Cost:** Exact passive AST node produced, exact proposed `docs/SPEC.md` diff block (or `"No SPEC.md change required"` for doc-only updates), explicit list of any defaults and proof they are fail-closed (§3.3), proof that all escape hatches remain intact, and surface cost (added overloads/exports vs. cumulative package total, plus `Option A` vs. `Option B` when genuine trade-offs exist per `docs/rules/VERIFIER.md` Rule 3).
+              (5) **Verifier Recommendation:** Recommended option and rationale (explicitly weighing LOC/inference/guess reduction against cumulative API surface growth).
+        2.3 Head reviews the Verifier's output against §3 and `round_history`, locks in `$verified_proposals`, `$rejected_candidates`, `$verified_adjacent_defects`, and `$rejected_adjacent_defects`, and records them in `round_history`.
+
+    STEP 3 — OWNER PROPOSAL GATE (MANDATORY HARD STOP — ZERO BLIND MUTATIONS)
+        3.0 Execute `PERSIST_STATE()`.
+        3.1 Head presents the round's proposal brief to the Owner:
+            - **Executive Triage Table, Surface Ledger & Benchmark Trend:** 1-line-per-proposal table (`ID | Badge | Package | 1-Line Summary | LOC/Annotation/Guess Delta | Added Overloads/Exports (Cumulative Package Total) | Recommended Ruling`) plus Lens D's Canonical Benchmark Trend Table (`Tier A–D` metrics across rounds) and any open `DEFERRED` proposals carried forward from `rulings_file` so the Owner can scan and rule in a single reply.
+            - **Primary Proposals (`P1..Pn` from `$verified_proposals`):** Ordered by leverage, containing items `(1)–(5)` from Step 2.2 (including the exact proposed `docs/SPEC.md` diff in item `(4)`, plus Head Recommendation if different from Verifier's).
+            - **Rejected Candidates Appendix (`$rejected_candidates` and `$rejected_adjacent_defects`):** Every candidate or adjacent defect filtered out at Step 2.2/2.3 with its title, gate letter `(w)`–`(z)` / `(a)`–`(c)`, and 1-line proof, so zero findings are hidden from the Owner.
+            - **Verified Non-Ergonomic Behavioral/Type Bugs (`$verified_adjacent_defects`, with `LOG_TO_BACKLOG` vs. `IGNORE` ruling options) & Prior Round Step 4 Sub-Round Log (when `round > 1`):** Reported separately for full visibility.
+        3.2 **HARD STOP:** Head calls no mutation tools and spawns no Builder subagents until the Owner replies with explicit rulings (`APPROVED`, `APPROVED WITH MODIFICATION`, `DEFERRED`, or `REJECTED` on proposals, and `LOG_TO_BACKLOG` or `IGNORE` on adjacent defects; any unruled proposal defaults to `DEFERRED`, any Owner pain points are recorded in `owner_seed_candidates` for the next round, and any Owner question is answered in prose with zero file or state changes while keeping the gate closed per `CLAUDE.MD`).
+        3.3 Validate Modifications, Persist Rulings Ledger & Gate Exit Check:
+            - If the Owner pulled in an item from `$rejected_adjacent_defects`, move it into `$verified_adjacent_defects` with ruling `LOG_TO_BACKLOG`.
+            - If the Owner ruled `APPROVED WITH MODIFICATION` on any proposal **or** pulled in an ergonomic item from `$rejected_candidates`, run a single-item Step 2.2 Verifier check (including `$TMPDIR` verification and the exact `docs/SPEC.md` diff in item `(4)`) to produce full items `(1)–(5)` and verify §3 invariants, then present the verified `(1)–(5)` contract (or any §3 conflict) to the Owner and **return to the Step 3.2 HARD STOP** until the Owner replies with an explicit `APPROVED` on that exact `(1)–(5)` contract.
+            - Record all Owner rulings and any `LOG_TO_BACKLOG` `$verified_adjacent_defects` in `round_history`, execute `PERSIST_STATE()`, and write/commit `rulings_file` (`docs/ERGONOMICS_RULINGS.md`, updating the rulings table, the cumulative added-overloads/exports ledger per package, the canonical `Tier A–D` benchmark snippets and table from Lens D, and `## Non-Ergonomic Defect Backlog`) via `LOCKED_COMMIT("ergonomics: record owner rulings (round <round>)", "docs/ERGONOMICS_RULINGS.md")` **before** checking the exit condition.
+            - Set `$approved_proposals` to the proposals with an explicit `APPROVED` ruling on their verified `(1)–(5)` contract. If `count($approved_proposals) == 0` (or if the Owner instructs to stop the loop), exit loop to DISTILLATION.
+
+    STEP 4 — SURGICAL SPEC, IMPLEMENTATION & DOCS EXECUTION (ONLY FOR `$approved_proposals`)
+        4.0 Per-Proposal Infeasibility Rollback Protocol (`PROPOSAL_INFEASIBLE`): Record `pre_remediation_sha := $(git rev-parse HEAD)` and `active_sub_step := "4.1a"`, then execute `PERSIST_STATE()`. In 4.1a and 4.2a, the Builder commits each approved proposal `P_i` individually and records `pre_proposal_sha[P_i]`. If at any point during 4.1a, 4.1b, 4.2a, or 4.2b a proposal `P_i` hits a compiler/inference limitation or cross-document contradiction that cannot be resolved without altering `P_i`'s Owner-approved signature or AST contract, the active subagent halts with `PROPOSAL_INFEASIBLE(P_i)` (`docs/rules/BUILDER.md` Rule 2, citing exact `file:line` and proof). Head reverts only `P_i`'s commits (`git revert --no-edit <P_i_commit_shas>` under `.git/harness-commit.lock`, or `git restore --source=<pre_proposal_sha[P_i]> --staged --worktree -- <target_scope> && git clean -fd -- <target_scope>` if uncommitted), removes `P_i` from `$approved_proposals`, records the `PROPOSAL_INFEASIBLE(P_i)` diagnostic for the next Owner gate (returning immediately to STEP 3.1 / 3.2 HARD STOP if zero `$approved_proposals` remain), and executes `PERSIST_STATE()`.
+        4.1 Execute Spec & Plan Update + Inline Spec Consistency Gate:
+            - **4.1a (Spec & Plan Update):** Launch 1 Builder Subagent (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit') with `$approved_proposals` to apply the Owner-approved `docs/SPEC.md` diffs from item `(4)` and update `docs/CODING_SAMPLE.md` and `docs/plan/M*.md` (refreshing any shifted §2 line ranges) strictly for `$approved_proposals`, committing each proposal `P_i` via `LOCKED_COMMIT("ergonomics(spec): apply <P_i> (round <round>)", "docs/SPEC.md docs/CODING_SAMPLE.md docs/plan")`.
+            - **4.1b (Inline Spec Consistency Gate):** Set `active_sub_step := "4.1b"`, `sub_round := 1`, and `sub_pre_remediation_sha := pre_remediation_sha`, and execute `PERSIST_STATE()`. Repeat up to 3 sub-rounds (escalating to the Owner if not converged after 3 sub-rounds):
+              1. Launch 2 parallel cold Reviewer Subagents (`invoke_subagent`, TypeName: 'loop-reviewer', Model: 'inherit') auditing `git diff <pre_remediation_sha>..HEAD -- docs/SPEC.md docs/CODING_SAMPLE.md docs/plan` (and `git diff <sub_pre_remediation_sha>..HEAD` when `sub_round > 1`) plus implicated sections across `spec_files` and `plan_files` (Reviewer 1: AST/Port/Runtime Contract Fidelity to `$approved_proposals` and §3; Reviewer 2: Cross-Document Consistency across `SPEC.md`, `CODING_SAMPLE.md`, `CODING_GUIDELINES.md`, and `docs/plan/M*.md`).
+              2. If raw findings are non-empty, launch 1 `loop-verifier` Subagent applying the `docs/SPEC_LOOP.md` Step 2.2 Defect & Rejection Gates and record all verified and rejected sub-round findings in `round_history` (`PERSIST_STATE()`):
+                 - Any behavioral/type finding outside `$approved_proposals` is appended to `$pending_adjacent_defects` without editing files.
+                 - Any finding that would alter an Owner-approved signature or AST contract triggers the Step 4.0 `PROPOSAL_INFEASIBLE(P_i)` rollback; any finding that requires changing `docs/SPEC.md` wording beyond what the Owner approved in item `(4)` pauses for explicit Owner approval of that `SPEC.md` diff before applying.
+                 - Any verified in-scope `docs/CODING_SAMPLE.md` or `docs/plan/M*.md` consistency defect (or Owner-confirmed `SPEC.md` wording fix) is remediated by `loop-builder` (`sub_pre_remediation_sha := $(git rev-parse HEAD)`, `LOCKED_COMMIT("ergonomics(spec): remediate round <round>.<sub_round>", "docs/SPEC.md docs/CODING_SAMPLE.md docs/plan")`, `sub_round := sub_round + 1`, `PERSIST_STATE()`).
+              3. Exit 4.1b once verified in-scope spec defects equal `0`.
+        4.2 Code, Test & Docs Implementation + Inline Implementation Verification Gate:
+            - **4.2a (Test-First Implementation):** Set `active_sub_step := "4.2a"`, execute `PERSIST_STATE()`, and launch 1 Builder Subagent (`invoke_subagent`, TypeName: 'loop-builder', Model: 'inherit') with `$approved_proposals` and `baseline_dirty`:
+              - For each `P_i` in `$approved_proposals`, write failing tests in `packages/*/test/*.test.ts` (and `tests/*/test/*.test.ts` where cross-package) covering both the approved shorthand/default and its AST equivalence to the explicit form (`docs/rules/BUILDER.md` Rule 4), implement `P_i` in `packages/*/src/**` per `docs/CODING_GUIDELINES.md` §§1–6, update `README.md`, `packages/*/README.md`, and `site/index.md` where `P_i` simplifies user-facing code (never editing the canonical `Tier A–D` benchmark snippets in `rulings_file`, which are owned exclusively by the cold `loop-persona` in Step 1.1), run `gate_cmd` until exit code `0`, verify that `git status --porcelain` outside `target_scope` (excluding `compaction_glob`) matches `baseline_dirty`, and commit `P_i` via `LOCKED_COMMIT("ergonomics(impl): apply <P_i> (round <round>)", "<target_scope>")`.
+            - **4.2b (Inline Cold Code Review & Verification Gate):** Set `active_sub_step := "4.2b"`, `sub_round := 1`, and `sub_pre_remediation_sha := pre_remediation_sha`, and execute `PERSIST_STATE()`. Repeat up to 3 sub-rounds (escalating to the Owner if not converged after 3 sub-rounds):
+              1. Confirm `gate_cmd` exited `0` and `git status --porcelain` outside `target_scope` (excluding `compaction_glob`) matches `baseline_dirty`.
+              2. Compute the explicit review manifest (`git diff --name-only <pre_remediation_sha>..HEAD -- packages/ tests/ README.md site/` plus direct callers/dependents, and `git diff <sub_pre_remediation_sha>..HEAD` when `sub_round > 1`) and launch 3 parallel cold Reviewer Subagents (`invoke_subagent`, TypeName: 'loop-reviewer', Model: 'inherit')—never passing `pnpm lint` or `vitest` pass status into Reviewer prompts—auditing against Lens A (Spec & `$approved_proposals` Behavioral/AST Fidelity), Lens B (`docs/CODING_GUIDELINES.md` §§3–5 Single Responsibility, Type Rigor, Concurrency & Resource Lifecycle), and Lens C (`docs/CODING_GUIDELINES.md` §§1, 2, 6 Module Cleanliness, JSDoc Integrity & Test Authenticity).
+              3. Mechanically verify `100%` `view_file` (`read_file`) coverage of the assigned manifest in each Reviewer's `transcript_full.jsonl` before accepting its report.
+              4. If raw findings are non-empty, launch 1 `loop-verifier` Subagent applying the `docs/IMPL_LOOP.md` Step 2.2 Defect & Rejection Gates (mapping `owned_dirs := target_scope`, `plan_file := $approved_proposals`, and `upstream_patches := []`) and record all verified and rejected sub-round findings in `round_history` (`PERSIST_STATE()`):
+                 - Any behavioral/type finding outside `$approved_proposals` is appended to `$pending_adjacent_defects` without editing files.
+                 - Any finding that would require altering an Owner-approved signature, AST contract, or `docs/SPEC.md` text triggers the Step 4.0 `PROPOSAL_INFEASIBLE(P_i)` rollback.
+                 - Any verified code/test implementation defect that preserves the exact approved contract and `docs/SPEC.md` text is remediated test-first by `loop-builder` (`sub_pre_remediation_sha := $(git rev-parse HEAD)`, running `gate_cmd` until exit `0`, `LOCKED_COMMIT("ergonomics(impl): remediate round <round>.<sub_round>", "<target_scope>")`, `sub_round := sub_round + 1`, `PERSIST_STATE()`).
+              5. Exit 4.2b once verified in-scope implementation defects equal `0` and `gate_cmd` exits `0`.
+        4.3 Set `active_sub_step := ""`, increment `round := round + 1`, execute `PERSIST_STATE()`, and repeat LOOP at STEP 1.
+
+DISTILLATION (Owner-Gated Lesson Proposal when `round > 1` or when verified proposals / false-positive clusters occurred)
+1. Launch 1 Distiller Subagent (`invoke_subagent`, TypeName: 'loop-distiller', Model: 'inherit', Pass 1 read-only draft mode per `docs/rules/DISTILLER.md` Rule 4) with its Distiller bootstrap manifest (`docs/HARNESS_LOOP.md` §3) and `round_history` to draft any candidate `docs/lessons/{GENERAL,HEAD,BUILDER,REVIEWER,VERIFIER}.md` updates per `docs/rules/DISTILLER.md` Rules 1–4 without modifying files (`NO_LESSONS_ADDED` when all findings are already covered).
+2. If the Distiller proposes any lesson additions/retirements, Head audits them against `docs/rules/DISTILLER.md` Rules 1–4 and presents them to the Owner for approval; once approved, Head re-invokes `loop-distiller` (Pass 2 write mode per `docs/rules/DISTILLER.md` Rule 4) with the Owner-approved lessons to write and commit `docs/lessons/*.md` locally, and Head audits `git diff origin/main...HEAD -- docs/lessons/` before TERMINATION.
+
+TERMINATION (count($candidates) == 0 and count($pending_adjacent_defects) == 0 at Step 2.1, OR count($approved_proposals) == 0 at Step 3.3, OR explicit Owner stop)
+1. Verify `gate_cmd` exits `0`, `git status --porcelain -- <target_scope> docs/lessons/` is empty, and `git status --porcelain` outside `target_scope` and `docs/lessons/` (excluding `compaction_glob`) matches `baseline_dirty` (reporting any difference outside `target_scope` to the Owner without reverting). If `gate_cmd` fails after a Step 4 execution, restore `$approved_proposals` from the latest Step 4 entry in `round_history` and re-enter Step 4.2b remediation until green.
+2. **Final Report & Pre-Push Owner Sign-Off (`CONFIRM` vs. `DECLINE_AND_REVERT(P_i)`):** Head always presents the final ergonomics summary and Lens D's Canonical Benchmark Trend Table to the Owner (even when zero findings or zero commits occurred). If any commits were made during STEP 3.3, STEP 4, or DISTILLATION, Head includes `git diff --stat origin/main...HEAD`, the `docs/SPEC.md` diff summary, and the Step 4 sub-round log:
+   - If the Owner replies `CONFIRM`, Head executes `git push origin main` (`docs/rules/HEAD.md` Rule 5).
+   - If the Owner replies `DECLINE_AND_REVERT(P_i)` (with `REJECTED` or `DEFERRED`), Head reverts `P_i`'s commits via `lockf -k -t 30 .git/harness-commit.lock git revert --no-edit <P_i_commit_shas>`, updates `rulings_file` via `LOCKED_COMMIT`, re-runs `gate_cmd` until exit `0`, and re-presents the pre-push summary before pushing.
+```
