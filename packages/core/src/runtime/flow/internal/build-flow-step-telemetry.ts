@@ -2,11 +2,13 @@ import type { AgentContinuationFrame } from '../../../ports/agent-continuation-f
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
+import type { ToolEffect } from '../../../ports/tool-effect.js';
 import type { UniversalStepTelemetry } from '../../../ports/universal-step-telemetry.js';
 import type { FlowExecutionContext } from '../flow-execution-context.js';
 import {
   buildFlowStepExecutionContext,
   getFlowStepContinuationStack,
+  getOrCreateFlowStepObservedEffects,
 } from './build-flow-step-execution-context.js';
 
 /**
@@ -30,20 +32,23 @@ export interface BuildFlowStepTelemetryParams<TIn = unknown, THandle = unknown> 
 }
 
 /**
- * Folds observed run `ToolEffect[]` through `flow.telemetry` when configured (`SPEC.md` §3.9).
+ * Folds observed `ToolEffect[]` through `flow.telemetry` when configured (`SPEC.md` §3.9).
  *
  * Invokes the registered `TelemetryCollectorASTNode` executor in `flowCtx.registry.telemetryCollectors`
- * and returns the validated telemetry object.
+ * over `effectsOverride` (when building step-scoped `UniversalStepTelemetry.custom`) or
+ * `flowCtx.observedRunEffects` (when building run-wide `FlowRunResult.customTelemetry`).
  *
  * @template TIn     Validated flow input payload type.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {FlowExecutionContext<TIn, THandle>} flowCtx - Active flow execution context.
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx         - Active flow execution context.
+ * @param {readonly ToolEffect[]}              [effectsOverride] - Optional step-scoped `ToolEffect[]` slice.
  *
  * @returns {Promise<Readonly<Record<string, unknown>> | undefined>} Folded telemetry record, or `undefined`.
  */
 export async function foldFlowCustomTelemetry<TIn = unknown, THandle = unknown>(
   flowCtx: FlowExecutionContext<TIn, THandle>,
+  effectsOverride?: readonly ToolEffect[],
 ): Promise<Readonly<Record<string, unknown>> | undefined> {
   if (flowCtx.flow.telemetry === undefined) {
     return undefined;
@@ -65,10 +70,46 @@ export async function foldFlowCustomTelemetry<TIn = unknown, THandle = unknown>(
   );
   const rawMetrics = await telExec(
     telNode as never,
-    flowCtx.observedRunEffects,
+    effectsOverride ?? flowCtx.observedRunEffects,
     stepCtx as StepExecutionContext<unknown>,
   );
   return Object.freeze(rawMetrics);
+}
+
+/**
+ * Resolves the step-scoped `ToolEffect[]` slice for `stepExecId`, combining `stepObservedEffectsByStepExecId` with any frame-persisted `observedEffects`.
+ *
+ * @template TIn     Validated flow input payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {FlowExecutionContext<TIn, THandle>}       flowCtx    - Active flow execution context.
+ * @param {string}                                   stepExecId - Step execution identifier.
+ * @param {readonly ContinuationFrame[] | undefined} frames     - Recorded continuation stack for the step.
+ *
+ * @returns {readonly ToolEffect[]} Step-scoped `ToolEffect[]` slice.
+ */
+function resolveFlowStepObservedEffects<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+  stepExecId: string,
+  frames: readonly ContinuationFrame[] | undefined,
+): readonly ToolEffect[] {
+  const stepEffects = getOrCreateFlowStepObservedEffects(flowCtx, stepExecId);
+  const loopFrame = frames?.find(
+    (f: ContinuationFrame): f is LoopContinuationFrame => f.kind === 'loop-frame',
+  );
+  const agentFrame = frames?.find(
+    (f: ContinuationFrame): f is AgentContinuationFrame => f.kind === 'agent-frame',
+  );
+  const frameEffects = loopFrame?.observedEffects ?? agentFrame?.observedEffects ?? [];
+  for (const eff of frameEffects) {
+    if (!stepEffects.includes(eff)) {
+      stepEffects.push(eff);
+    }
+    if (!flowCtx.observedRunEffects.includes(eff)) {
+      flowCtx.observedRunEffects.push(eff);
+    }
+  }
+  return stepEffects;
 }
 
 /**
@@ -115,8 +156,8 @@ function extractContinuationFramesTelemetry(
 /**
  * Builds a canonical `UniversalStepTelemetry` object for `params.stepExecId` (`SPEC.md` §2.7, §3.8 & §3.9).
  *
- * Combines real `ContinuationFrame` counters (`turnsTaken`, `costUsd`, `durationMs`), folded `custom`
- * telemetry from `foldFlowCustomTelemetry(flowCtx) ?? {}`, and optional `abortMeta`.
+ * Combines real `ContinuationFrame` counters (`turnsTaken`, `costUsd`, `durationMs`), step-scoped `custom`
+ * telemetry from `foldFlowCustomTelemetry(flowCtx, stepEffects) ?? {}`, and optional `abortMeta`.
  *
  * @template TIn     Validated flow input payload type.
  * @template THandle Runtime handle type of the active isolation scope.
@@ -131,7 +172,8 @@ export async function buildFlowStepTelemetry<TIn = unknown, THandle = unknown>(
   const { flowCtx, stepExecId, fallbackDurationMs = 0, abortMeta } = params;
   const frames = getFlowStepContinuationStack(flowCtx, stepExecId);
   const extracted = extractContinuationFramesTelemetry(frames, fallbackDurationMs);
-  const custom = (await foldFlowCustomTelemetry(flowCtx)) ?? Object.freeze({});
+  const stepEffects = resolveFlowStepObservedEffects(flowCtx, stepExecId, frames);
+  const custom = (await foldFlowCustomTelemetry(flowCtx, stepEffects)) ?? Object.freeze({});
   const resolvedAbortMeta = abortMeta ?? extracted.abortMeta;
   return Object.freeze<UniversalStepTelemetry>({
     turnsTaken: extracted.turnsTaken,

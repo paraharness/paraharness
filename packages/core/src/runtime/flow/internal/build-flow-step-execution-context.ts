@@ -2,8 +2,10 @@ import type { AgentNode } from '../../../ast/agent-node.js';
 import type { StepASTNode } from '../../../ast/domain-ast.types.js';
 import type { InterruptHandlerNode } from '../../../ast/interrupt-handler-node.types.js';
 import type { LoopNode } from '../../../ast/loop-node.js';
+import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
 import type { LedgerStore } from '../../../ports/ledger-store.js';
+import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { ToolEffect } from '../../../ports/tool-effect.js';
 import type { StepRuntimeChildOutcomeSink } from '../../agent/step-runtime-internals.js';
@@ -63,6 +65,51 @@ export function getFlowStepContinuationStack<TIn = unknown, THandle = unknown>(
 }
 
 /**
+ * Returns or initializes the step-scoped `ToolEffect[]` accumulator for `stepExecId` on `flowCtx`.
+ *
+ * Seeds the step accumulator from any resumed `LoopContinuationFrame.observedEffects` or
+ * `AgentContinuationFrame.observedEffects` and mirrors seeded effects into `flowCtx.observedRunEffects`.
+ *
+ * @template TIn     Validated flow input payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx    - Active flow execution context.
+ * @param {string}                             stepExecId - Step execution identifier.
+ *
+ * @returns {ToolEffect[]} Mutable step-scoped `ToolEffect[]` array for `stepExecId`.
+ */
+export function getOrCreateFlowStepObservedEffects<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+  stepExecId: string,
+): ToolEffect[] {
+  const mutableCtx = flowCtx as {
+    stepObservedEffectsByStepExecId?: Map<string, ToolEffect[]>;
+  };
+  mutableCtx.stepObservedEffectsByStepExecId ??= new Map<string, ToolEffect[]>();
+  const existing = mutableCtx.stepObservedEffectsByStepExecId.get(stepExecId);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const stack =
+    getFlowStepContinuationStack(flowCtx, stepExecId) ?? flowCtx.resumeContinuationStack;
+  const loopFrame = stack?.find(
+    (f: ContinuationFrame): f is LoopContinuationFrame => f.kind === 'loop-frame',
+  );
+  const agentFrame = stack?.find(
+    (f: ContinuationFrame): f is AgentContinuationFrame => f.kind === 'agent-frame',
+  );
+  const frameEffects = loopFrame?.observedEffects ?? agentFrame?.observedEffects ?? [];
+  const seeded: ToolEffect[] = [...frameEffects];
+  for (const eff of seeded) {
+    if (!flowCtx.observedRunEffects.includes(eff)) {
+      flowCtx.observedRunEffects.push(eff);
+    }
+  }
+  mutableCtx.stepObservedEffectsByStepExecId.set(stepExecId, seeded);
+  return seeded;
+}
+
+/**
  * Wraps `flowCtx.ledgerStore` so `updateContinuationStack` automatically updates `flowCtx.stepContinuationStacks`.
  *
  * @template TIn     Validated flow input payload type.
@@ -95,6 +142,50 @@ function createTrackingStepLedgerStore<TIn = unknown, THandle = unknown>(
 }
 
 /**
+ * Merges step-level `.onInterrupt()` handlers onto an `AgentNode` or `LoopNode` executable.
+ *
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {StepASTNode<unknown, unknown, THandle> | undefined}       executable            - Target step executable.
+ * @param {readonly InterruptHandlerNode<unknown, unknown, THandle>[]} stepInterruptHandlers - Step-level interrupt handlers.
+ *
+ * @returns {StepASTNode<unknown, unknown, THandle> | undefined} Executable with merged interrupt handlers.
+ */
+function mergeStepExecutableInterruptHandlers<THandle = unknown>(
+  executable: StepASTNode<unknown, unknown, THandle> | undefined,
+  stepInterruptHandlers: readonly InterruptHandlerNode<unknown, unknown, THandle>[],
+): StepASTNode<unknown, unknown, THandle> | undefined {
+  if (executable === undefined || stepInterruptHandlers.length === 0) {
+    return executable;
+  }
+  const execType = (executable as { readonly type?: string }).type;
+  if (execType === 'harness:agent') {
+    const ag = executable as AgentNode<unknown, unknown, THandle>;
+    return Object.freeze({
+      ...ag,
+      onInterruptHandlers: Object.freeze([...ag.onInterruptHandlers, ...stepInterruptHandlers]),
+    });
+  }
+  if (execType === 'harness:loop') {
+    const lp = executable as LoopNode<unknown, unknown, THandle>;
+    return Object.freeze({
+      ...lp,
+      actStep: Object.freeze({
+        ...lp.actStep,
+        actor: Object.freeze({
+          ...lp.actStep.actor,
+          onInterruptHandlers: Object.freeze([
+            ...lp.actStep.actor.onInterruptHandlers,
+            ...stepInterruptHandlers,
+          ]),
+        }),
+      }),
+    });
+  }
+  return executable;
+}
+
+/**
  * Step-specific execution parameters passed to `buildFlowStepExecutionContext`.
  *
  * @template THandle Runtime handle type of the active isolation scope.
@@ -116,7 +207,8 @@ export interface BuildFlowStepExecutionContextStepParams<THandle = unknown> {
 /**
  * Constructs a strongly-typed `StepExecutionContext` for a flow step and merges any step-level `.onInterrupt()` handlers onto the target executable (`SPEC.md` §3.9).
  *
- * Avoids unsound type casts while attaching `_runtime` stores and step-level interrupt edges.
+ * Scopes `StepExecutionContext.observedEffects` and `_runtime.collectCustomTelemetry` to `stepParams.stepExecId`
+ * while mirroring `recordEffects` into both the step accumulator and `flowCtx.observedRunEffects`.
  *
  * @template TIn     Validated flow input payload type.
  * @template THandle Runtime handle type of the active isolation scope.
@@ -135,41 +227,11 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
   readonly executable: StepASTNode<unknown, unknown, THandle> | undefined;
   readonly stepCtx: StepExecutionContext<THandle>;
 } {
-  const execType = (executable as { readonly type?: string } | undefined)?.type;
-  let mergedExec = executable;
-  if (
-    executable !== undefined &&
-    stepParams.stepInterruptHandlers.length > 0 &&
-    execType === 'harness:agent'
-  ) {
-    const ag = executable as AgentNode<unknown, unknown, THandle>;
-    mergedExec = Object.freeze({
-      ...ag,
-      onInterruptHandlers: Object.freeze([
-        ...ag.onInterruptHandlers,
-        ...stepParams.stepInterruptHandlers,
-      ]),
-    });
-  } else if (
-    executable !== undefined &&
-    stepParams.stepInterruptHandlers.length > 0 &&
-    execType === 'harness:loop'
-  ) {
-    const lp = executable as LoopNode<unknown, unknown, THandle>;
-    mergedExec = Object.freeze({
-      ...lp,
-      actStep: Object.freeze({
-        ...lp.actStep,
-        actor: Object.freeze({
-          ...lp.actStep.actor,
-          onInterruptHandlers: Object.freeze([
-            ...lp.actStep.actor.onInterruptHandlers,
-            ...stepParams.stepInterruptHandlers,
-          ]),
-        }),
-      }),
-    });
-  }
+  const mergedExec = mergeStepExecutableInterruptHandlers(
+    executable,
+    stepParams.stepInterruptHandlers,
+  );
+  const stepObservedEffects = getOrCreateFlowStepObservedEffects(flowCtx, stepParams.stepExecId);
   const baseCtx: StepExecutionContext<THandle> = {
     runId: flowCtx.runId,
     stepExecId: stepParams.stepExecId,
@@ -178,12 +240,13 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
     scope: flowCtx.scopeDriver,
     activePartitions: stepParams.activePartitions,
     activeLeases: Object.freeze([]),
-    observedEffects: flowCtx.observedRunEffects,
+    observedEffects: stepObservedEffects,
     signal: flowCtx.activeStepAbortController.signal,
     registry: flowCtx.registry,
     resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]),
     getRunner: createMemoizedRunnerResolver(flowCtx.registry, `lane '${flowCtx.laneId}'`),
     recordEffects: (effs: readonly ToolEffect[]) => {
+      stepObservedEffects.push(...effs);
       flowCtx.observedRunEffects.push(...effs);
     },
   };
@@ -224,7 +287,7 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
         }
         const rawMetrics = await telExec(
           telNode as never,
-          flowCtx.observedRunEffects,
+          stepObservedEffects,
           stepCtx as StepExecutionContext<unknown>,
         );
         return Object.freeze(rawMetrics);

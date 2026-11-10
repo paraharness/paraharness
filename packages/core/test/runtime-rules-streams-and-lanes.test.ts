@@ -3,18 +3,18 @@ import {
   type AgentContinuationFrame, BudgetApprovalSchema, type ControlPlaneAdapter,
   DEFAULT_MAX_SEALED_AGE_HOURS, type FsGlobMatcherNode, type GitCommitAndPushNode,
   type GitWorktreeHandle, P, LaneScheduler, type LocalServiceNode, type LocalStreamCheckNode,
-  type LoopContinuationFrame, type NodeHttpControlPlaneNode,
-  ServiceSessionRegistry, type StepExecutionContext, type StreamSource, type ToolEffect,
+  type LoopContinuationFrame, type NodeHttpControlPlaneNode, PoolManager, ScopeLockManager,
+  ServiceSessionRegistry, StepContinuationQueue, type StepExecutionContext, type StreamSource, type ToolEffect,
   type TrackerAdapter, createExecutorRegistry, createRuntime, executeAgent, executeLoop, z,
 } from '../src/index.js';
 import {
-  type ExtractStepInput, type ExtractStepOutput, type StepRunOptions, runStep,
+  type ExtractStepInput, type ExtractStepOutput, type FlowExecutionContext, type StepRunOptions, executeFlow, runStep,
 } from '../src/runtime/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import {
   SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_CLEAN_TREE_CHECK_NODE, SAMPLE_DECLARED_TOOL_NODE,
   SAMPLE_EXTRA_COMPARE_TOOL_NODE, SAMPLE_LEDGER_NODE, SAMPLE_MODEL_NODE, SAMPLE_NOTIFY_ONLY_HUMAN_CHANNEL_NODE,
-  SAMPLE_RUNNER_NODE, SAMPLE_STREAM_SOURCE_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TRACKER_NODE,
+  SAMPLE_RUNNER_NODE, SAMPLE_STREAM_SOURCE_NODE, SAMPLE_TELEMETRY_COLLECTOR_NODE, SAMPLE_TIER3_SCOPE_NODE, SAMPLE_TRACKER_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 import { ScriptedBranchableScope } from './fixtures/scripted-branchable-scope.js';
 import { ScriptedHumanAdapter } from './fixtures/scripted-human-adapter.js';
@@ -624,6 +624,232 @@ describe('M2 Runtime — runStep standalone step runner (P1)', () => {
     );
     expect(streamOut.ok).toBe(true);
     expect(streamOut.deficits).toEqual(['none']);
+  });
+
+  it('scopes StepExecutionContext.observedEffects and UniversalStepTelemetry.custom per step while aggregating FlowRunResult.customTelemetry across the run', async () => {
+    const ledgerStore = new InMemoryLedgerStore();
+    const scope = new ScriptedBranchableScope();
+    let step2ObservedEffectsSnapshot: readonly ToolEffect[] = [];
+
+    const implementStep = P.command('implement-cmd')
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ implemented: z.boolean() }))
+      .run(async (_in, ctx) => {
+        ctx.recordEffects([
+          Object.freeze<ToolEffect>({
+            kind: 'fs:read',
+            mutatesScope: false,
+            attributes: Object.freeze({ path: 'src/a.ts' }),
+          }),
+          Object.freeze<ToolEffect>({
+            kind: 'fs:write',
+            mutatesScope: true,
+            attributes: Object.freeze({ path: 'src/b.ts' }),
+          }),
+        ]);
+        expect(ctx.observedEffects).toHaveLength(2);
+        return { implemented: true };
+      });
+
+    const pushStep = P.command('push-cmd')
+      .input(z.object({ implemented: z.boolean() }))
+      .output(z.object({ pushed: z.boolean() }))
+      .run(async (_in, ctx) => {
+        step2ObservedEffectsSnapshot = [...ctx.observedEffects];
+        return { pushed: true };
+      });
+
+    const multiStepFlow = P.flow('multi-step-telemetry-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .telemetry(SAMPLE_TELEMETRY_COLLECTOR_NODE)
+      .step('implement', implementStep)
+      .step('push', pushStep, ($e) =>
+        $e.inputFrom((_flowIn, steps) => steps['implement']),
+      )
+      .exit('done')
+      .toAST();
+
+    const fsTelemetryCollector = async (
+      _node: unknown,
+      effects: readonly ToolEffect[],
+    ): Promise<{ readonly filesRead: readonly string[]; readonly filesMutated: readonly string[] }> => {
+      const filesRead: string[] = [];
+      const filesMutated: string[] = [];
+      for (const eff of effects) {
+        const p = String(eff.attributes?.['path'] ?? '');
+        if (eff.kind === 'fs:read' && p.length > 0) {
+          filesRead.push(p);
+        }
+        if (eff.kind === 'fs:write' && p.length > 0) {
+          filesMutated.push(p);
+        }
+      }
+      return Object.freeze({
+        filesRead: Object.freeze(filesRead),
+        filesMutated: Object.freeze(filesMutated),
+      });
+    };
+
+    const registry = createExecutorRegistry({
+      scopes: { 'git:cow-worktree': () => scope as never },
+      telemetryCollectors: { 'fs:telemetry': fsTelemetryCollector },
+    });
+
+    await ledgerStore.createOrResumeRun({
+      runId: 'run-multi-tel',
+      laneId: 'lane-tel',
+      itemKey: 'item-tel',
+      inputJson: JSON.stringify({ id: 'item-tel' }),
+    });
+
+    const flowCtx1: FlowExecutionContext<{ readonly id: string }, GitWorktreeHandle> = {
+      runId: 'run-multi-tel',
+      laneId: 'lane-tel',
+      itemKey: 'item-tel',
+      flow: multiStepFlow,
+      currentInput: { id: 'item-tel' },
+      scopeHandle: SAMPLE_HANDLE,
+      scopeDriver: scope as never,
+      registry,
+      env: {},
+      ledgerStore,
+      lockManager: new ScopeLockManager(),
+      continuationQueue: new StepContinuationQueue(),
+      poolManager: new PoolManager(),
+      serviceRegistry: new ServiceSessionRegistry(),
+      humanAdaptersById: new Map(),
+      wirePrefixesByGroupId: new Map(),
+      completedStepOutputs: new Map(),
+      observedRunEffects: [],
+      activeStepId: null,
+      activeStepExecId: null,
+      activeStepAbortController: new AbortController(),
+    };
+    const flowRes = await executeFlow(flowCtx1);
+
+    expect(step2ObservedEffectsSnapshot).toEqual([]);
+    const step1Tel = JSON.parse(
+      ledgerStore.steps.get('run-multi-tel:implement:1')?.telemetryJson ?? '{}',
+    ) as { readonly custom: { readonly filesRead: readonly string[]; readonly filesMutated: readonly string[] } };
+    const step2Tel = JSON.parse(
+      ledgerStore.steps.get('run-multi-tel:push:1')?.telemetryJson ?? '{}',
+    ) as { readonly custom: { readonly filesRead: readonly string[]; readonly filesMutated: readonly string[] } };
+
+    expect(step1Tel.custom).toEqual({
+      filesRead: ['src/a.ts'],
+      filesMutated: ['src/b.ts'],
+    });
+    expect(step2Tel.custom).toEqual({
+      filesRead: [],
+      filesMutated: [],
+    });
+    expect(flowRes.customTelemetry).toEqual({
+      filesRead: ['src/a.ts'],
+      filesMutated: ['src/b.ts'],
+    });
+
+    let resumedObservedSnapshot: readonly ToolEffect[] = [];
+    const resumedStep = P.command('resumed-cmd')
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ ok: z.boolean() }))
+      .run(async (_in, ctx) => {
+        ctx.recordEffects([
+          Object.freeze<ToolEffect>({
+            kind: 'fs:write',
+            mutatesScope: true,
+            attributes: Object.freeze({ path: 'src/post-resume.ts' }),
+          }),
+        ]);
+        resumedObservedSnapshot = [...ctx.observedEffects];
+        return { ok: true };
+      });
+    const resumedFlow = P.flow('resumed-telemetry-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .telemetry(SAMPLE_TELEMETRY_COLLECTOR_NODE)
+      .step('work', resumedStep)
+      .exit('done')
+      .toAST();
+
+    const preResumeEffect = Object.freeze<ToolEffect>({
+      kind: 'fs:read',
+      mutatesScope: false,
+      attributes: Object.freeze({ path: 'src/pre-resume.ts' }),
+    });
+    const seededAgentFrame: AgentContinuationFrame = Object.freeze({
+      kind: 'agent-frame',
+      agentId: 'resumed-cmd',
+      roleKey: 'resumed-cmd',
+      modelId: 'claude-opus-4-6',
+      stepExecId: 'run-resumed-tel:work:1',
+      inputJson: JSON.stringify({ id: 'item-resumed' }),
+      leafMessageId: null,
+      turnsTaken: 2,
+      costUsd: 0.1,
+      elapsedDurationMs: 50,
+      activeLeases: Object.freeze([]),
+      activeSkillIds: Object.freeze([]),
+      activeSkillActivations: Object.freeze({}),
+      observedEffects: Object.freeze([preResumeEffect]),
+      injectedScopedRuleIds: Object.freeze([]),
+      pausedAtPhase: 'TOOL_BOUNDARY',
+      pauseState: Object.freeze({ kind: 'active-turn' }),
+    });
+
+    await ledgerStore.createOrResumeRun({
+      runId: 'run-resumed-tel',
+      laneId: 'lane-tel',
+      itemKey: 'item-resumed',
+      inputJson: JSON.stringify({ id: 'item-resumed' }),
+    });
+    await ledgerStore.recordStepStart({
+      runId: 'run-resumed-tel',
+      stepExecId: 'run-resumed-tel:work:1',
+      stepId: 'work',
+      executableId: 'resumed-cmd',
+      inputMsgId: null,
+      continuationStack: [seededAgentFrame],
+    });
+
+    const flowCtx2: FlowExecutionContext<{ readonly id: string }, GitWorktreeHandle> = {
+      runId: 'run-resumed-tel',
+      laneId: 'lane-tel',
+      itemKey: 'item-resumed',
+      flow: resumedFlow,
+      currentInput: { id: 'item-resumed' },
+      scopeHandle: SAMPLE_HANDLE,
+      scopeDriver: scope as never,
+      registry,
+      env: {},
+      ledgerStore,
+      lockManager: new ScopeLockManager(),
+      continuationQueue: new StepContinuationQueue(),
+      poolManager: new PoolManager(),
+      serviceRegistry: new ServiceSessionRegistry(),
+      humanAdaptersById: new Map(),
+      wirePrefixesByGroupId: new Map(),
+      completedStepOutputs: new Map(),
+      observedRunEffects: [],
+      activeStepId: 'work',
+      activeStepExecId: 'run-resumed-tel:work:1',
+      resumeContinuationStack: [seededAgentFrame],
+      activeStepAbortController: new AbortController(),
+    };
+    const resumedRes = await executeFlow(flowCtx2);
+
+    expect(resumedObservedSnapshot).toHaveLength(2);
+    const resumedStepTel = JSON.parse(
+      ledgerStore.steps.get('run-resumed-tel:work:1')?.telemetryJson ?? '{}',
+    ) as { readonly custom: { readonly filesRead: readonly string[]; readonly filesMutated: readonly string[] } };
+    expect(resumedStepTel.custom).toEqual({
+      filesRead: ['src/pre-resume.ts'],
+      filesMutated: ['src/post-resume.ts'],
+    });
+    expect(resumedRes.customTelemetry).toEqual({
+      filesRead: ['src/pre-resume.ts'],
+      filesMutated: ['src/post-resume.ts'],
+    });
   });
 });
 
