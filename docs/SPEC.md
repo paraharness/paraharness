@@ -1188,11 +1188,11 @@ export interface StepRunOptions<THandle = unknown> {
   readonly signal?: AbortSignal;
 }
 
-export declare function runStep<TIn = unknown, TOut = unknown, THandle = unknown>(
-  node: MaybeBuilder<StepASTNode<TIn, TOut, THandle>>,
-  input: TIn,
+export declare function runStep<TStep extends StepASTNode = StepASTNode, THandle = unknown>(
+  node: MaybeBuilder<TStep>,
+  input: ExtractStepInput<TStep>,
   options: StepRunOptions<THandle>,
-): Promise<TOut>;
+): Promise<ExtractStepOutput<TStep>>;
 
 export interface RuntimeExecutorRegistry {
   readonly steps: NodeExecutorMap<DomainStepASTNode, any, any, StepExecutionContext<any>>;
