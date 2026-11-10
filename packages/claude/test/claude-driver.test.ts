@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   P,
@@ -11,6 +12,7 @@ import {
   type WireFrameRecord,
 } from '@paraharness/core';
 import { describe, expect, it } from 'vitest';
+import { extractOAuthTokenFromConfigDir } from '../src/driver/internal/extract-oauth-token-from-config-dir.js';
 import { ClaudeModelDriver, claude, claudeExecutors, createClaudeExecutors } from '../src/index.js';
 import { RecordedClaudeTransport } from './fixtures/recorded-claude-transport.js';
 
@@ -119,11 +121,120 @@ describe('@paraharness/claude builders and AST invariants', () => {
 
       expect(transport.requests[0]?.authSource).toBe('cli-oauth');
       expect(transport.requests[0]?.headers['authorization']).toBe('Bearer sk-ant-oat01-live-token');
+      expect(transport.requests[0]?.headers['anthropic-beta']).toBe('oauth-2025-04-20');
       expect(transport.requests[1]?.authSource).toBe('api-key');
       expect(transport.requests[1]?.headers['x-api-key']).toBe('sk-ant-api03-fallback-secret');
+      expect(transport.requests[1]?.headers['anthropic-beta']).toBeUndefined();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('falls back to macOS Keychain credentials when disk credential files are absent', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'claude-keychain-'));
+    try {
+      const customConfigDir = join(tempDir, 'custom-claude-profile');
+      const expectedHash = createHash('sha256')
+        .update(customConfigDir.normalize('NFC'))
+        .digest('hex')
+        .slice(0, 8);
+      const queriedServices: string[] = [];
+
+      const defaultToken = extractOAuthTokenFromConfigDir('~/.claude', {
+        platform: 'darwin',
+        skipDiskLookup: true,
+        readKeychainService: (serviceName: string): string | undefined => {
+          queriedServices.push(serviceName);
+          if (serviceName === 'Claude Code-credentials') {
+            return JSON.stringify({
+              claudeAiOauth: { accessToken: 'sk-ant-oat01-keychain-default' },
+            });
+          }
+          return undefined;
+        },
+      });
+      expect(defaultToken).toBe('sk-ant-oat01-keychain-default');
+      expect(queriedServices).toEqual(['Claude Code-credentials']);
+
+      queriedServices.length = 0;
+      const customToken = extractOAuthTokenFromConfigDir(customConfigDir, {
+        platform: 'darwin',
+        readKeychainService: (serviceName: string): string | undefined => {
+          queriedServices.push(serviceName);
+          if (serviceName === `Claude Code-credentials-${expectedHash}`) {
+            return JSON.stringify({
+              claudeAiOauth: { accessToken: 'sk-ant-oat01-keychain-custom' },
+            });
+          }
+          return undefined;
+        },
+      });
+      expect(customToken).toBe('sk-ant-oat01-keychain-custom');
+      expect(queriedServices).toEqual([`Claude Code-credentials-${expectedHash}`]);
+
+      queriedServices.length = 0;
+      const fallbackDefaultToken = extractOAuthTokenFromConfigDir(customConfigDir, {
+        platform: 'darwin',
+        readKeychainService: (serviceName: string): string | undefined => {
+          queriedServices.push(serviceName);
+          if (serviceName === 'Claude Code-credentials') {
+            return 'sk-ant-oat01-keychain-fallback';
+          }
+          return undefined;
+        },
+      });
+      expect(fallbackDefaultToken).toBe('sk-ant-oat01-keychain-fallback');
+      expect(queriedServices).toEqual([
+        `Claude Code-credentials-${expectedHash}`,
+        'Claude Code-credentials',
+      ]);
+
+      const nonDarwinToken = extractOAuthTokenFromConfigDir(
+        join(homedir(), '.claude-nonexistent-test-dir'),
+        {
+          platform: 'linux',
+          readKeychainService: (): string => 'sk-ant-oat01-should-not-read',
+        },
+      );
+      expect(nonDarwinToken).toBeUndefined();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('computes model-aware costUsd for opus, sonnet, and haiku turns', async () => {
+    const transport = new RecordedClaudeTransport([
+      {
+        status: 200,
+        body: {
+          content: [{ type: 'text', text: 'opus-reply' }],
+          usage: { input_tokens: 1_000, output_tokens: 1_000 },
+        },
+      },
+      {
+        status: 200,
+        body: {
+          content: [{ type: 'text', text: 'sonnet-reply' }],
+          usage: { input_tokens: 1_000, output_tokens: 1_000 },
+        },
+      },
+      {
+        status: 200,
+        body: {
+          content: [{ type: 'text', text: 'haiku-reply' }],
+          usage: { input_tokens: 1_000, output_tokens: 1_000 },
+        },
+      },
+    ]);
+    const driver = new ClaudeModelDriver(transport);
+
+    const opusRes = await driver.invokeTurn({ modelId: 'claude-opus-4-6', history: [] });
+    const sonnetRes = await driver.invokeTurn({ modelId: 'claude-sonnet-4-6', history: [] });
+    const haikuRes = await driver.invokeTurn({ modelId: 'claude-haiku-4-5', history: [] });
+
+    expect(opusRes.usage.costUsd).toBeCloseTo(0.09, 6);
+    expect(sonnetRes.usage.costUsd).toBeCloseTo(0.018, 6);
+    expect(haikuRes.usage.costUsd).toBeCloseTo(0.006, 6);
   });
 });
 

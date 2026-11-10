@@ -95,6 +95,6 @@ export function parseAnthropicMessagesResponse(
     wireFrame,
     canonical,
     structuredOutput,
-    usage: computeAnthropicTurnUsage(responseBody),
+    usage: computeAnthropicTurnUsage(responseBody, req.modelId),
   });
 }

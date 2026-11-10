@@ -1,6 +1,6 @@
 {
   "name": "@paraharness/claude",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Anthropic Claude ModelDriver and AST builders for Paraharness supporting API key and CLI OAuth subscription seats, KV prefix caching, and thinking signature preservation.",
   "keywords": [
     "paraharness",

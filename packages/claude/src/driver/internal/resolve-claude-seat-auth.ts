@@ -3,7 +3,11 @@ import type {
   ClaudeModelNode,
   RuntimeDriverContext,
 } from '@paraharness/core';
-import { ANTHROPIC_API_VERSION } from '../default-claude-http-transport.constants.js';
+import {
+  ANTHROPIC_API_VERSION,
+  ANTHROPIC_OAUTH_BETA_HEADER,
+  CLAUDE_OAUTH_TOKEN_PREFIX,
+} from '../default-claude-http-transport.constants.js';
 import type { ClaudeSeatAuth } from './claude-seat-auth.js';
 import { extractOAuthTokenFromConfigDir } from './extract-oauth-token-from-config-dir.js';
 
@@ -23,10 +27,33 @@ export interface ResolveClaudeSeatAuthParams {
 }
 
 /**
+ * Builds a frozen `ClaudeSeatAuth` record for an OAuth bearer token seat.
+ *
+ * Includes `anthropic-beta: 'oauth-2025-04-20'` alongside `authorization: 'Bearer <token>'`.
+ *
+ * @param {string | undefined} seatId - Active account seat identifier.
+ * @param {string}             token  - OAuth bearer token value.
+ *
+ * @returns {ClaudeSeatAuth} Frozen OAuth seat authentication record.
+ */
+function buildClaudeOAuthSeatAuth(seatId: string | undefined, token: string): ClaudeSeatAuth {
+  return Object.freeze<ClaudeSeatAuth>({
+    seatId,
+    authSource: 'cli-oauth',
+    headers: Object.freeze({
+      'content-type': 'application/json',
+      'anthropic-version': ANTHROPIC_API_VERSION,
+      'anthropic-beta': ANTHROPIC_OAUTH_BETA_HEADER,
+      authorization: `Bearer ${token}`,
+    }),
+  });
+}
+
+/**
  * Attempts to resolve OAuth bearer authentication from `candidateSeat.configDir`.
  *
- * Returns `undefined` when `configDir` is absent or when `configDir` is missing on disk and a fallback
- * `apiKey` is configured on either the seat or the model pool's `fallbackItem`.
+ * Returns `undefined` when `configDir` is absent or when `configDir` has no credential on disk or
+ * macOS Keychain and a fallback `apiKey` is configured on either the seat or the model pool's `fallbackItem`.
  *
  * @param {ClaudeAccountSeatNode | undefined} candidateSeat - Active candidate account seat.
  * @param {ClaudeAccountSeatNode | undefined} fallbackSeat  - Pool fallback account seat, if configured.
@@ -42,28 +69,15 @@ function tryResolveClaudeOAuthSeat(
   }
   const diskToken = extractOAuthTokenFromConfigDir(candidateSeat.configDir);
   if (diskToken !== undefined) {
-    return Object.freeze<ClaudeSeatAuth>({
-      seatId: candidateSeat.id,
-      authSource: 'cli-oauth',
-      headers: Object.freeze({
-        'content-type': 'application/json',
-        'anthropic-version': ANTHROPIC_API_VERSION,
-        authorization: `Bearer ${diskToken}`,
-      }),
-    });
+    return buildClaudeOAuthSeatAuth(candidateSeat.id, diskToken);
   }
   if (candidateSeat.apiKey !== undefined || fallbackSeat?.apiKey !== undefined) {
     return undefined;
   }
-  return Object.freeze<ClaudeSeatAuth>({
-    seatId: candidateSeat.id,
-    authSource: 'cli-oauth',
-    headers: Object.freeze({
-      'content-type': 'application/json',
-      'anthropic-version': ANTHROPIC_API_VERSION,
-      authorization: `Bearer oauth:${candidateSeat.id}:${candidateSeat.configDir}`,
-    }),
-  });
+  return buildClaudeOAuthSeatAuth(
+    candidateSeat.id,
+    `oauth:${candidateSeat.id}:${candidateSeat.configDir}`,
+  );
 }
 
 /**
@@ -92,6 +106,9 @@ export function resolveClaudeSeatAuth(params: ResolveClaudeSeatAuthParams): Clau
     const resolvedKey =
       typeof rawKey === 'string' ? rawKey : params.driverCtx?.resolveEnv(rawKey);
     if (resolvedKey !== undefined && resolvedKey.length > 0) {
+      if (resolvedKey.startsWith(CLAUDE_OAUTH_TOKEN_PREFIX)) {
+        return buildClaudeOAuthSeatAuth(apiKeySeat?.id, resolvedKey);
+      }
       return Object.freeze<ClaudeSeatAuth>({
         seatId: apiKeySeat?.id,
         authSource: 'api-key',
