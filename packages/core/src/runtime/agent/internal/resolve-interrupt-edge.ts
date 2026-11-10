@@ -281,6 +281,21 @@ export async function resolveInterruptEdge<TIn, TOut, THandle>(
 ): Promise<InterruptEdgeResolution<THandle>> {
   const handler = session.node.onInterruptHandlers.find((h) => h.interrupt.id === interruptId);
   if (handler === undefined) {
+    const escCap = session.escalationsByInterruptId.get(interruptId);
+    if (escCap !== undefined) {
+      const validatedEscPayload = escCap.interrupt.schema.parse(rawPayload);
+      const synthesizedAskHandler: AskInterruptHandlerNode = Object.freeze({
+        type: 'harness:interrupt-handler',
+        mode: 'ask',
+        interrupt: escCap.interrupt,
+        human: escCap.human,
+        responseSchema: escCap.responseSchema,
+        elevateLeaseWhen: escCap.elevateLeaseWhen,
+        resumeWith: (decision: unknown): string =>
+          typeof decision === 'string' ? decision : JSON.stringify(decision),
+      });
+      return runHumanAskEdge(session, synthesizedAskHandler, validatedEscPayload);
+    }
     return Object.freeze<InterruptEdgeResolution<THandle>>({
       status: 'unhandled',
       grantedLeases: Object.freeze([]),

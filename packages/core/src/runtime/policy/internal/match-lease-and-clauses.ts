@@ -139,11 +139,19 @@ async function evaluateTrailingCallAgainstInterruptClause<THandle = unknown>(
   ) {
     return undefined;
   }
-  const effects = await driver.describeEffects(
-    node as never,
-    JSON.parse(call.argsJson || '{}'),
-    batchParams.ctx.scopeHandle,
-  );
+  let effects: readonly ToolEffect[];
+  try {
+    effects = await driver.describeEffects(
+      node as never,
+      JSON.parse(call.argsJson || '{}'),
+      batchParams.ctx.scopeHandle,
+    );
+  } catch (err) {
+    if (batchParams.ctx.signal?.aborted === true) {
+      throw err;
+    }
+    return undefined;
+  }
   for (const c of batchParams.policy.clauses) {
     if (c.mode !== 'deny-with-error') {
       continue;

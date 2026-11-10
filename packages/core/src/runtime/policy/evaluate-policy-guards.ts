@@ -40,15 +40,25 @@ export async function evaluatePreFlightToolBatch<THandle = unknown>(
   const primaryNode = params.toolsByName.get(primary.toolName);
   const primaryDriver =
     primaryNode !== undefined ? params.ctx.registry.tools[primaryNode.type] : undefined;
-  const primaryEffects =
-    overrideEffects ??
-    (primaryNode !== undefined && primaryDriver?.describeEffects !== undefined
-      ? await primaryDriver.describeEffects(
-          primaryNode as never,
-          JSON.parse(primary.argsJson || '{}'),
-          params.ctx.scopeHandle,
-        )
-      : Object.freeze([]));
+  let primaryEffects: readonly ToolEffect[] = overrideEffects ?? Object.freeze([]);
+  if (
+    overrideEffects === undefined &&
+    primaryNode !== undefined &&
+    primaryDriver?.describeEffects !== undefined
+  ) {
+    try {
+      primaryEffects = await primaryDriver.describeEffects(
+        primaryNode as never,
+        JSON.parse(primary.argsJson || '{}'),
+        params.ctx.scopeHandle,
+      );
+    } catch (err) {
+      if (params.ctx.signal?.aborted === true) {
+        throw err;
+      }
+      primaryEffects = Object.freeze([]);
+    }
+  }
   if (params.policy === undefined) {
     return Object.freeze<PolicyEvaluationResult>({ status: 'allowed', primaryEffects });
   }

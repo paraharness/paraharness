@@ -367,5 +367,18 @@ describe('SqliteLedgerStore durability, DAG mutation, wire frames, and compactio
 
     const activeChain = await store.getMessageChain('m-active-1');
     expect(new TextDecoder().decode(activeChain[0]?.rawWireFrame)).toBe('active-frame');
+
+    await store.appendMessageFrame('run-active', {
+      ...fActive,
+      rawWireFrame: new TextEncoder().encode('active-frame-idempotent-upsert'),
+      canonical: {
+        ...fActive.canonical,
+        visibleText: 'active-frame-idempotent-upsert',
+      },
+    });
+    const upsertedChain = await store.getMessageChain('m-active-1');
+    expect(new TextDecoder().decode(upsertedChain[0]?.rawWireFrame)).toBe(
+      'active-frame-idempotent-upsert',
+    );
   });
 });

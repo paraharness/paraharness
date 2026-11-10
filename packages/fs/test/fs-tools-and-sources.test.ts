@@ -393,4 +393,53 @@ describe('@paraharness/fs tools and sources', () => {
     ]);
     expect(globArtifact.digest).toMatch(/^[a-f0-9]{64}$/);
   });
+
+  it('returns isError: true tool results for ENOENT, EISDIR, and missing oldString in read_file and edit_file', async () => {
+    const ws = await createTempFsWorkspace({
+      files: {
+        'src/existing.ts': 'export const count = 1;\n',
+      },
+    });
+    workspaces.push(ws);
+    const [readNode, editNode] = fs.codingTools(dummyRunner);
+    const ctx = createStepContext(ws.worktreePath);
+    const readDriver = createFsReadToolDriver();
+    const editDriver = createFsEditToolDriver();
+
+    const missingRead = await readDriver.execute(
+      readNode,
+      { path: 'packages/api/src/validation/parse-with-schema.ts' },
+      ctx,
+    );
+    expect(missingRead.isError).toBe(true);
+    expect(missingRead.content).toContain('ENOENT');
+
+    const dirRead = await readDriver.execute(readNode, { path: 'src' }, ctx);
+    expect(dirRead.isError).toBe(true);
+    expect(dirRead.content).toContain('EISDIR');
+
+    const missingEdit = await editDriver.execute(
+      editNode,
+      { path: 'src/does-not-exist.ts', oldString: 'a', newString: 'b' },
+      ctx,
+    );
+    expect(missingEdit.isError).toBe(true);
+    expect(missingEdit.content).toContain('ENOENT');
+
+    const dirEdit = await editDriver.execute(
+      editNode,
+      { path: 'src', oldString: 'a', newString: 'b' },
+      ctx,
+    );
+    expect(dirEdit.isError).toBe(true);
+    expect(dirEdit.content).toContain('EISDIR');
+
+    const missingOldStr = await editDriver.execute(
+      editNode,
+      { path: 'src/existing.ts', oldString: 'non-existent-substring', newString: 'count = 2' },
+      ctx,
+    );
+    expect(missingOldStr.isError).toBe(true);
+    expect(missingOldStr.content).toContain('target oldString was not found in file');
+  });
 });

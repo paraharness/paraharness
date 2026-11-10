@@ -69,10 +69,26 @@ export async function escalateLoopActorModelIfNeeded<TIn, TOut, THandle>(
   let newLeafId = state.loopFrame.preservedActLeafMessageId;
   for (let idx = 0; idx < forkedHistory.length; idx += 1) {
     const oldFrame = sourceHistory[idx];
-    const newFrame = forkedHistory[idx] as WireFrameRecord;
+    const rawFrame = forkedHistory[idx] as WireFrameRecord;
+    const finalMsgId =
+      oldFrame !== undefined && rawFrame.messageId === oldFrame.messageId
+        ? `${rawFrame.messageId}:escalated:${String(state.loopFrame.iteration)}`
+        : rawFrame.messageId;
+    const remappedParentId =
+      rawFrame.parentMessageId !== null
+        ? (msgIdMap.get(rawFrame.parentMessageId) ?? rawFrame.parentMessageId)
+        : null;
     if (oldFrame !== undefined) {
-      msgIdMap.set(oldFrame.messageId, newFrame.messageId);
+      msgIdMap.set(oldFrame.messageId, finalMsgId);
     }
+    const newFrame =
+      finalMsgId === rawFrame.messageId && remappedParentId === rawFrame.parentMessageId
+        ? rawFrame
+        : Object.freeze<WireFrameRecord>({
+            ...rawFrame,
+            messageId: finalMsgId,
+            parentMessageId: remappedParentId,
+          });
     await state.ledgerStore.appendMessageFrame(state.ctx.runId, newFrame);
     newLeafId = newFrame.messageId;
   }

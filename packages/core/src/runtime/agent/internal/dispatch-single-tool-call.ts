@@ -3,6 +3,7 @@ import type { AgentContinuationFrame } from '../../../ports/agent-continuation-f
 import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { PendingToolBatch, RemainingToolCallRecord } from '../../../ports/pending-tool-batch.js';
 import type { ToolEffect } from '../../../ports/tool-effect.js';
+import type { PolicyEvaluationResult } from '../../policy/policy-evaluation-result.js';
 import { evaluatePreFlightToolBatch } from '../../policy/evaluate-policy-guards.js';
 import type { AgentTurnSessionState } from '../agent-turn-session-state.js';
 import type { InterruptEdgeResolution } from '../interrupt-edge-resolution.js';
@@ -131,33 +132,55 @@ async function executeDeclaredEffectToolCall<TIn, TOut, THandle>(
   readonly isError: boolean;
   readonly newEffects: readonly ToolEffect[];
 }> {
-  const preEval = await evaluatePreFlightToolBatch({
-    policy: undefined,
-    remainingCalls: [call],
-    toolsByName: session.toolsByName,
-    activeLeases: session.agentFrame.activeLeases,
-    ctx: session.ctx,
-  });
-  const mutates = preEval.primaryEffects.some((e) => e.mutatesScope === true);
-  const runTool = (): Promise<unknown> =>
-    Promise.resolve(
-      execution.toolDriver.execute(
-        execution.toolNode as never,
-        execution.validatedArgs as never,
-        session.ctx as never,
-      ),
-    );
-  const rawOut = mutates
-    ? await session.lockManager.withWriteLock(
-        session.ctx.scopeHandle,
-        runTool,
-        session.ctx.signal,
-      )
-    : await session.lockManager.withReadLock(
-        session.ctx.scopeHandle,
-        runTool,
-        session.ctx.signal,
+  let preEval: PolicyEvaluationResult;
+  let rawOut: unknown;
+  try {
+    preEval = await evaluatePreFlightToolBatch({
+      policy: undefined,
+      remainingCalls: [call],
+      toolsByName: session.toolsByName,
+      activeLeases: session.agentFrame.activeLeases,
+      ctx: session.ctx,
+    });
+    const mutates = preEval.primaryEffects.some((e) => e.mutatesScope === true);
+    const runTool = (): Promise<unknown> =>
+      Promise.resolve(
+        execution.toolDriver.execute(
+          execution.toolNode as never,
+          execution.validatedArgs as never,
+          session.ctx as never,
+        ),
       );
+    rawOut = mutates
+      ? await session.lockManager.withWriteLock(
+          session.ctx.scopeHandle,
+          runTool,
+          session.ctx.signal,
+        )
+      : await session.lockManager.withReadLock(
+          session.ctx.scopeHandle,
+          runTool,
+          session.ctx.signal,
+        );
+  } catch (err) {
+    const hasErrnoCode =
+      typeof (err as { readonly code?: unknown } | undefined)?.code === 'string';
+    const isFsMessage =
+      err instanceof Error &&
+      (err.message.startsWith('ENOENT:') ||
+        err.message.startsWith('EISDIR:') ||
+        err.message.startsWith('ENOTDIR:') ||
+        err.message.startsWith('EACCES:'));
+    if (session.ctx.signal?.aborted === true || (!hasErrnoCode && !isFsMessage)) {
+      throw err;
+    }
+    return Object.freeze({
+      status: 'completed',
+      content: err instanceof Error ? err.message : String(err),
+      isError: true,
+      newEffects: Object.freeze([]),
+    });
+  }
   let outStr: string;
   if (typeof rawOut === 'string') {
     outStr = rawOut;
@@ -165,6 +188,15 @@ async function executeDeclaredEffectToolCall<TIn, TOut, THandle>(
     outStr = (rawOut as { readonly content: string }).content;
   } else {
     outStr = JSON.stringify(rawOut);
+  }
+  const isError = Boolean((rawOut as { readonly isError?: boolean })?.isError);
+  if (isError) {
+    return Object.freeze({
+      status: 'completed',
+      content: outStr,
+      isError: true,
+      newEffects: Object.freeze([]),
+    });
   }
   const contentWithRules = await applyReactiveScopedRulesAndRecordEffects(
     session,
@@ -174,7 +206,7 @@ async function executeDeclaredEffectToolCall<TIn, TOut, THandle>(
   return Object.freeze({
     status: 'completed',
     content: contentWithRules,
-    isError: Boolean((rawOut as { readonly isError?: boolean })?.isError),
+    isError: false,
     newEffects: preEval.primaryEffects,
   });
 }
@@ -281,7 +313,17 @@ export async function dispatchSingleToolCall<TIn, TOut, THandle>(
       isError: true,
     });
   }
-  const validatedArgs = toolNode.inputSchema.parse(JSON.parse(call.argsJson || '{}'));
+  let validatedArgs: unknown;
+  try {
+    validatedArgs = toolNode.inputSchema.parse(JSON.parse(call.argsJson || '{}'));
+  } catch (err) {
+    return Object.freeze({
+      status: 'completed',
+      content: err instanceof Error ? err.message : String(err),
+      isError: true,
+      newEffects: Object.freeze([]),
+    });
+  }
   if (toolNode.effectTracking === 'declared') {
     return executeDeclaredEffectToolCall(session, call, {
       toolNode,

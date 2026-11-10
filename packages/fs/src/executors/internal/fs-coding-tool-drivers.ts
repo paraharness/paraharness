@@ -34,8 +34,15 @@ export async function readFsToolFile<THandle = unknown>(
 ): Promise<ToolExecutionResult> {
   const parsed = node.inputSchema.parse(args) as { readonly path: string };
   const { absolutePath } = resolveJailedWorktreePath(ctx.scopeHandle, parsed.path, 'read');
-  const content = await readFile(absolutePath, 'utf8');
-  return Object.freeze<ToolExecutionResult>({ content });
+  try {
+    const content = await readFile(absolutePath, 'utf8');
+    return Object.freeze<ToolExecutionResult>({ content, isError: false });
+  } catch (err) {
+    return Object.freeze<ToolExecutionResult>({
+      content: err instanceof Error ? err.message : String(err),
+      isError: true,
+    });
+  }
 }
 
 /**

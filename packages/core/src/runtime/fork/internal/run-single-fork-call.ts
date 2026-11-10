@@ -215,11 +215,45 @@ async function seedForkedChildTranscript<THandle = unknown>(
     },
     { modelId: childModelId, substituteTombstones: childModelId !== parentModelId },
   );
-  for (const frame of forkedFrames) {
-    await params.ledgerStore.appendMessageFrame(params.ctx.runId, frame);
+  const parentMessageIds = new Set<string>();
+  for (const pf of parentChain) {
+    parentMessageIds.add(pf.messageId);
   }
-  if (call.capability.historyMode === 'clone-transcript' && forkedFrames.length > 0) {
-    return forkedFrames;
+  const msgIdMap = new Map<string, string>();
+  const persistedFrames: WireFrameRecord[] = [];
+  for (let idx = 0; idx < forkedFrames.length; idx += 1) {
+    const rawFrame = forkedFrames[idx] as WireFrameRecord;
+    const oldFrame = parentChain[idx];
+    const collidesWithParent = parentMessageIds.has(rawFrame.messageId);
+    const collidesAcrossSiblingForks =
+      (params.siblingForkCallIds?.length ?? 0) > 0 &&
+      oldFrame !== undefined &&
+      rawFrame.messageId === `${oldFrame.messageId}:fork`;
+    const finalMsgId =
+      collidesWithParent || collidesAcrossSiblingForks
+        ? `${rawFrame.messageId}:fork:${call.callId}`
+        : rawFrame.messageId;
+    const remappedParentId =
+      rawFrame.parentMessageId !== null
+        ? (msgIdMap.get(rawFrame.parentMessageId) ?? rawFrame.parentMessageId)
+        : null;
+    if (oldFrame !== undefined) {
+      msgIdMap.set(oldFrame.messageId, finalMsgId);
+    }
+    msgIdMap.set(rawFrame.messageId, finalMsgId);
+    const frameToPersist =
+      finalMsgId === rawFrame.messageId && remappedParentId === rawFrame.parentMessageId
+        ? rawFrame
+        : Object.freeze<WireFrameRecord>({
+            ...rawFrame,
+            messageId: finalMsgId,
+            parentMessageId: remappedParentId,
+          });
+    await params.ledgerStore.appendMessageFrame(params.ctx.runId, frameToPersist);
+    persistedFrames.push(frameToPersist);
+  }
+  if (call.capability.historyMode === 'clone-transcript' && persistedFrames.length > 0) {
+    return Object.freeze(persistedFrames);
   }
   return undefined;
 }

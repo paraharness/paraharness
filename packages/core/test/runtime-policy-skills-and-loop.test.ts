@@ -429,4 +429,289 @@ describe('P.skill reference-counted ServiceSession lifecycle and P.loop cross-mo
     const leaseDelta: LeaseDelta = Object.freeze({ type: 'harness:lease-delta', id: 'loop-inherited-lease', grantedMatchers: Object.freeze([GLOB_MATCHER_NODE]) });
     expect([await executeLoop(freshLoopNode, { goal: 'fresh' }, { ...ctx, stepExecId: 'step-loop-fresh', activeLeases: [leaseDelta] }), modelDriver.recordedForks.length]).toEqual([{ patch: 'fresh-iter-1' }, 1]);
   });
+
+  it('handles in-band declared tool errors without recording effects or tripping quota tripwires, synthesizes distinct messageIds on prepareFork when driver preserves parent IDs, and resolves standalone .escalate() capabilities with lease elevation', async () => {
+    const tripIntr = P.interrupt('quota-trip', z.object({ reason: z.string() }));
+    const tripPolicy = P.policy<GitWorktreeHandle>('trip-policy')
+      .tripwire(MAX_FILES_TRIPWIRE_NODE)
+      .onLimitExceeded(($l: PolicyLimitExceededBuilder<GitWorktreeHandle>) => $l.flushWithInterrupt(tripIntr))
+      .guard(WRITE_GUARD_NODE)
+      .onViolation('deny-with-error', () => 'Blocked by write guard; escalate to owner.')
+      .toAST();
+
+    const normativeIntr = P.interrupt('normative-tradeoff', z.object({ question: z.string() }));
+    const ownerDecisionSchema = z.object({
+      approveSpecMutation: z.boolean(),
+      selectedOptionId: z.string(),
+    });
+    const ownerHuman = P.human('owner').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE);
+    const specLeaseDelta: LeaseDelta = Object.freeze({
+      type: 'harness:lease-delta',
+      id: 'owner-spec-lease',
+      grantedMatchers: Object.freeze([GLOB_MATCHER_NODE]),
+    });
+
+    const coordinator = P.agent<GitWorktreeHandle>('coordinator')
+      .model(SAMPLE_MODEL_NODE)
+      .policy(tripPolicy)
+      .tools(SAMPLE_DECLARED_TOOL_NODE)
+      .input(z.object({ task: z.string() }))
+      .output(z.object({ status: z.string() }))
+      .capabilities(($c) =>
+        $c.escalate(normativeIntr, ($esc) =>
+          $esc
+            .to(ownerHuman)
+            .response(ownerDecisionSchema)
+            .elevateLeaseWhen(
+              (d) => d.approveSpecMutation,
+              () => specLeaseDelta,
+            ),
+        ),
+      )
+      .toAST();
+
+    const modelDriver = new ScriptedModelDriver([
+      makeTurn('probe missing and invalid args', [
+        { id: 'c-bad-args', name: 'fs_read', argsJson: JSON.stringify({ wrongField: 123 }) },
+        { id: 'c-enoent', name: 'fs_read', argsJson: JSON.stringify({ path: 'missing.ts' }) },
+        { id: 'c-is-err', name: 'fs_read', argsJson: JSON.stringify({ path: 'soft-error.ts' }) },
+      ]),
+      makeTurn('escalate to owner', [
+        { id: 'c-esc', name: 'normative-tradeoff', argsJson: JSON.stringify({ question: 'Unlock secrets?' }) },
+      ]),
+      makeTurn('write unlocked secret after lease elevation', [
+        { id: 'c-write-sec', name: 'fs_read', argsJson: JSON.stringify({ path: 'secrets/token.txt' }) },
+      ]),
+      makeTurn(JSON.stringify({ status: 'completed-with-owner-lease' }), [], {
+        status: 'completed-with-owner-lease',
+      }),
+    ]);
+
+    const recordedEffects: ToolEffect[] = [];
+    const toolDriver = new ScriptedToolDriver<GitWorktreeHandle>({
+      describeEffects: (_node, args) => {
+        const p = String((args as { readonly path?: string } | undefined)?.path ?? '');
+        return [
+          Object.freeze<ToolEffect>({
+            kind: 'fs:write',
+            mutatesScope: true,
+            attributes: Object.freeze({ path: p, paths: Object.freeze([p]) }),
+          }),
+        ];
+      },
+      handler: (_node, args) => {
+        const p = (args as { readonly path: string }).path;
+        if (p === 'missing.ts') {
+          throw new Error("ENOENT: no such file or directory, open 'missing.ts'");
+        }
+        if (p === 'soft-error.ts') {
+          return { content: 'Soft error reading file', isError: true };
+        }
+        return { content: `wrote:${p}`, isError: false };
+      },
+    });
+
+    const humanAdapter = new ScriptedHumanAdapter([
+      { approveSpecMutation: true, selectedOptionId: 'opt-a' },
+    ]);
+
+    const ledger = new InMemoryLedgerStore();
+    await ledger.createOrResumeRun({
+      runId: 'run-coord',
+      laneId: 'l1',
+      itemKey: 'k1',
+      inputJson: '{}',
+    });
+    await ledger.recordStepStart({
+      runId: 'run-coord',
+      stepExecId: 'step-coord',
+      stepId: 's1',
+      executableId: 'coordinator',
+      inputMsgId: null,
+      continuationStack: [],
+    });
+
+    const registry = createExecutorRegistry({
+      models: { 'claude:model': () => modelDriver },
+      tools: { 'fs:read': toolDriver },
+      policyGuards: {
+        'fs:protect': (_g, input) => {
+          const hit = input.proposedEffects.filter((e) =>
+            String(e.attributes?.['path'] ?? '').startsWith('secrets/'),
+          );
+          return {
+            allowed: hit.length === 0,
+            violatedEffects: hit,
+            violationSummary: hit.length > 0 ? 'Protected secret path' : '',
+          };
+        },
+      },
+      effectMatchers: {
+        'fs:match-globs': (_m, eff) => String(eff.attributes?.['path'] ?? '').startsWith('secrets/'),
+      },
+      quotaTripwires: {
+        'fs:quota-tripwire': (_t, input) => ({
+          tripped: input.accumulatedEffects.length + input.newEffects.length > 1,
+          reason: `Mutated ${String(input.accumulatedEffects.length + input.newEffects.length)} files`,
+        }),
+      },
+    });
+
+    const humanAdaptersById = new Map([['owner', humanAdapter]]);
+    const coordCtx: StepExecutionContext<GitWorktreeHandle> & { readonly _runtime: unknown } = {
+      runId: 'run-coord',
+      stepExecId: 'step-coord',
+      scopeHandle: SAMPLE_HANDLE,
+      activePartitions: [],
+      activeLeases: [],
+      observedEffects: recordedEffects,
+      registry,
+      resolveEnv: () => '',
+      getRunner: throwUnusedRunner,
+      recordEffects: (effs) => {
+        recordedEffects.push(...effs);
+      },
+      _runtime: {
+        ledgerStore: ledger,
+        humanAdaptersById,
+      },
+    };
+
+    const coordOut = await executeAgent(coordinator, { task: 'ship' }, coordCtx);
+    expect(coordOut).toEqual({ status: 'completed-with-owner-lease' });
+    expect(humanAdapter.decisionRequests).toHaveLength(1);
+    expect(humanAdapter.decisionRequests[0]?.payload).toEqual({ question: 'Unlock secrets?' });
+    expect(recordedEffects).toHaveLength(1);
+    expect(recordedEffects[0]?.attributes?.['path']).toBe('secrets/token.txt');
+
+    const turn1ToolFrame = ledger.frames.get('msg:step-coord:tools:1');
+    expect(turn1ToolFrame?.canonical.toolResults).toEqual([
+      expect.objectContaining({ callId: 'c-bad-args', isError: true }),
+      expect.objectContaining({
+        callId: 'c-enoent',
+        content: expect.stringContaining('ENOENT'),
+        isError: true,
+      }),
+      expect.objectContaining({
+        callId: 'c-is-err',
+        content: 'Soft error reading file',
+        isError: true,
+      }),
+    ]);
+    const turn2ToolFrame = ledger.frames.get('msg:step-coord:tools:2');
+    expect(turn2ToolFrame?.canonical.toolResults).toEqual([
+      {
+        callId: 'c-esc',
+        content: JSON.stringify({ approveSpecMutation: true, selectedOptionId: 'opt-a' }),
+        isError: false,
+      },
+    ]);
+
+    const sonnet: ClaudeModelNode = Object.freeze({
+      type: 'claude:model',
+      vendor: 'anthropic',
+      modelId: 'claude-sonnet',
+      alias: 'sonnet',
+    });
+    const opus: ClaudeModelNode = Object.freeze({
+      type: 'claude:model',
+      vendor: 'anthropic',
+      modelId: 'claude-opus',
+      alias: 'opus',
+    });
+    const escalatePool = P.pool<ModelASTNode>('esc-pool')
+      .with(sonnet as ModelASTNode, opus as ModelASTNode)
+      .strategy(($s: PoolStrategyConfigurator<ModelASTNode>) => $s.escalateOnRetry())
+      .toAST();
+    const skillA = P.skill<GitWorktreeHandle>('skill-a')
+      .description('SA')
+      .instructions('Inst A')
+      .unlocksTools(SAMPLE_DECLARED_TOOL_NODE)
+      .toAST();
+    const loopActor = P.agent<GitWorktreeHandle>('esc-loop-actor')
+      .model(escalatePool)
+      .skills(skillA)
+      .input(z.object({ x: z.number() }))
+      .output(z.object({ y: z.number() }));
+    const loopEval = P.agent<GitWorktreeHandle>('esc-loop-eval')
+      .model(sonnet)
+      .input(z.object({ y: z.number() }))
+      .output(z.object({ ok: z.boolean() }));
+    const loopAst = P.loop<GitWorktreeHandle>('esc-loop')
+      .maxIterations(2)
+      .preserveActorSession(true)
+      .act('act', loopActor)
+      .evaluate('eval', loopEval, {
+        mapInput: (_in, out) => out,
+        acceptWhen: (ev) => ev.ok,
+        feedbackMapper: () => 'fix it',
+      })
+      .toAST();
+
+    const sameIdDriver = new ScriptedModelDriver([
+      makeTurn('', [
+        { id: 'act-sk', name: 'activateSkill', argsJson: JSON.stringify({ skillId: 'skill-a' }) },
+      ]),
+      makeTurn(JSON.stringify({ y: 1 }), [], { y: 1 }),
+      makeTurn(JSON.stringify({ ok: false }), [], { ok: false }),
+      makeTurn('', [
+        {
+          id: 'comp-sk',
+          name: 'completeSkill',
+          argsJson: JSON.stringify({ skillId: 'skill-a', summary: 'COMPACTED_A' }),
+        },
+      ]),
+      makeTurn(JSON.stringify({ y: 2 }), [], { y: 2 }),
+      makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
+    ]);
+    sameIdDriver.prepareFork = async (fCtx) =>
+      Object.freeze(fCtx.parentChain.map((f) => Object.freeze({ ...f })));
+
+    const strictLedger = new InMemoryLedgerStore();
+    const origAppend = strictLedger.appendMessageFrame.bind(strictLedger);
+    strictLedger.appendMessageFrame = async (rId, frame) => {
+      if (strictLedger.frames.has(frame.messageId)) {
+        throw new Error(`UNIQUE constraint failed: harness_wire_frames.message_id (${frame.messageId})`);
+      }
+      return origAppend(rId, frame);
+    };
+    await strictLedger.createOrResumeRun({
+      runId: 'run-esc-loop',
+      laneId: 'l1',
+      itemKey: 'k2',
+      inputJson: '{}',
+    });
+    const scope = new ScriptedBranchableScope();
+    await scope.acquireRoot('run-esc-loop');
+    const escRegistry = createExecutorRegistry({
+      models: { 'claude:model': () => sameIdDriver },
+      tools: { 'fs:read': new ScriptedToolDriver() },
+      scopes: { 'git:cow-worktree': () => scope as never },
+    });
+    const loopRes = await executeLoop(
+      loopAst,
+      { x: 1 },
+      {
+        runId: 'run-esc-loop',
+        stepExecId: 'step-esc-loop',
+        scopeHandle: SAMPLE_HANDLE,
+        scopeNode: SAMPLE_TIER3_SCOPE_NODE as never,
+        scope: scope as never,
+        activePartitions: [],
+        activeLeases: [],
+        observedEffects: [],
+        registry: escRegistry,
+        resolveEnv: () => '',
+        getRunner: throwUnusedRunner,
+        recordEffects: () => undefined,
+        _runtime: {
+          ledgerStore: strictLedger,
+          poolManager: new PoolManager(),
+        },
+      } as StepExecutionContext<GitWorktreeHandle> & { readonly _runtime: unknown },
+    );
+    expect(loopRes).toEqual({ y: 2 });
+    const tombKey = Array.from(strictLedger.tombstones.keys()).find((k) => k.endsWith(':act-sk'));
+    expect(tombKey).toMatch(/:escalated:1:act-sk$/u);
+  });
 });

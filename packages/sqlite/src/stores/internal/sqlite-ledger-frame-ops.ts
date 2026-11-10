@@ -25,7 +25,7 @@ export function appendMessageFrameInSqlite(
 ): void {
   const tombstonesJson = serializeFrameTombstonesJson(frame);
   db.prepare(
-    'INSERT INTO harness_wire_frames (message_id, run_id, parent_message_id, vendor_id, raw_wire_frame, canonical_json, prefix_digest, compacted_tombstones_json, is_compacted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)',
+    'INSERT OR REPLACE INTO harness_wire_frames (message_id, run_id, parent_message_id, vendor_id, raw_wire_frame, canonical_json, prefix_digest, compacted_tombstones_json, is_compacted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)',
   ).run(
     frame.messageId,
     runId,
