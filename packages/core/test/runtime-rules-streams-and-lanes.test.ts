@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   type AgentContinuationFrame, BudgetApprovalSchema, type ControlPlaneAdapter,
-  DEFAULT_MAX_SEALED_AGE_HOURS, type FsGlobMatcherNode, type GitWorktreeHandle, P, LaneScheduler,
-  type LocalServiceNode, type LoopContinuationFrame, type NodeHttpControlPlaneNode,
+  DEFAULT_MAX_SEALED_AGE_HOURS, type FsGlobMatcherNode, type GitCommitAndPushNode,
+  type GitWorktreeHandle, P, LaneScheduler, type LocalServiceNode, type LocalStreamCheckNode,
+  type LoopContinuationFrame, type NodeHttpControlPlaneNode,
   ServiceSessionRegistry, type StepExecutionContext, type StreamSource, type ToolEffect,
   type TrackerAdapter, createExecutorRegistry, createRuntime, executeAgent, executeLoop, z,
 } from '../src/index.js';
-import { type StepRunOptions, runStep } from '../src/runtime/index.js';
+import {
+  type ExtractStepInput, type ExtractStepOutput, type StepRunOptions, runStep,
+} from '../src/runtime/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import {
   SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_CLEAN_TREE_CHECK_NODE, SAMPLE_DECLARED_TOOL_NODE,
@@ -542,6 +545,77 @@ describe('M2 Runtime — runStep standalone step runner (P1)', () => {
     ).toThrow(
       "No TrackerAdapter registered for 'github:issues' on lane 'p16-tracker-lane' (registered trackers: []).",
     );
+  });
+
+  it('infers ExtractStepInput and ExtractStepOutput across P.agent, P.loop, P.command, GitCommitAndPushNode, and LocalStreamCheckNode without explicit type arguments', async () => {
+    const loopActAgent = P.agent<GitWorktreeHandle>('r2-p3-act')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ ticket: z.string() }))
+      .output(z.object({ summary: z.string() }));
+    const loopEvalAgent = P.agent<GitWorktreeHandle>('r2-p3-eval')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ summary: z.string() }))
+      .output(z.object({ accepted: z.boolean() }));
+    const loopBuilder = P.loop<GitWorktreeHandle>('r2-p3-loop')
+      .act('execute', loopActAgent)
+      .evaluate('verify', loopEvalAgent, {
+        mapInput: (_in: { readonly ticket: string }, actOut: { readonly summary: string }) => ({ summary: actOut.summary }),
+        acceptWhen: (v: { readonly accepted: boolean }) => v.accepted,
+        feedbackMapper: () => 'retry',
+      })
+      .maxIterations(1);
+    const commitNode: GitCommitAndPushNode<{ readonly branch: string }> = Object.freeze({
+      type: 'git:commit-and-push',
+      id: 'r2-p3-commit',
+      inputSchema: z.object({ branch: z.string() }),
+      outputSchema: z.void(),
+      branch: (input: { readonly branch: string }) => input.branch,
+      message: (input: { readonly branch: string }) => `feat: ${input.branch}`,
+      runner: SAMPLE_RUNNER_NODE,
+    });
+    const streamCheckNode: LocalStreamCheckNode<GitWorktreeHandle> = Object.freeze({
+      type: 'node:stream-check',
+      id: 'r2-p3-stream-check',
+      inputSchema: z.unknown(),
+      outputSchema: z.object({ ok: z.boolean(), deficits: z.array(z.string()) }),
+      runner: SAMPLE_RUNNER_NODE,
+      argv: Object.freeze(['pnpm', 'test']),
+    });
+
+    const modelDriver = new ScriptedModelDriver([
+      makeTurn(JSON.stringify({ summary: 'shipped' }), [], { summary: 'shipped' }),
+      makeTurn(JSON.stringify({ accepted: true }), [], { accepted: true }),
+    ]);
+    const options: StepRunOptions<GitWorktreeHandle> = {
+      scopeHandle: SAMPLE_HANDLE,
+      registry: {
+        models: { 'claude:model': () => modelDriver },
+        checks: {
+          'git:clean-working-tree': async () => ({ ok: true, deficits: [] }),
+        },
+        steps: {
+          'git:commit-and-push': async () => undefined,
+          'node:stream-check': async () => ({ ok: true, deficits: ['none'] }),
+        },
+      },
+    };
+
+    const loopInput: ExtractStepInput<ReturnType<typeof loopBuilder.toAST>> = { ticket: 'T-42' };
+    const loopOut = await runStep(loopBuilder, loopInput, options);
+    expect(loopOut.summary).toBe('shipped');
+
+    const commitInput: ExtractStepInput<typeof commitNode> = { branch: 'feat/r2-p3' };
+    const commitOut = await runStep(commitNode, commitInput, options);
+    const voidCheck: void = commitOut;
+    expect(voidCheck).toBeUndefined();
+
+    const streamOut = await runStep(
+      streamCheckNode,
+      undefined,
+      options,
+    );
+    expect(streamOut.ok).toBe(true);
+    expect(streamOut.deficits).toEqual(['none']);
   });
 });
 

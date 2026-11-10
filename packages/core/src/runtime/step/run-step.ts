@@ -4,6 +4,10 @@ import type {
   RunnerPoolASTNode,
   StepASTNode,
 } from '../../ast/domain-ast.types.js';
+import type {
+  ExtractStepInput,
+  ExtractStepOutput,
+} from '../../builders/flow-extraction.types.js';
 import type { BranchableScope } from '../../ports/branchable-scope.js';
 import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
@@ -86,24 +90,23 @@ export interface StepRunOptions<THandle = unknown> {
  * from `node.extractPartitions` when omitted, memoizes `RunnerDriver` instances per `runnerNode.id`, and
  * delegates to `executeStepNode`.
  *
- * @template TIn     Validated step input payload type.
- * @template TOut    Validated step output payload type.
+ * @template TStep   Passive `StepASTNode` type invoked by `runStep`.
  * @template THandle Runtime handle type of the active isolation scope.
  *
- * @param {MaybeBuilder<StepASTNode<TIn, TOut, THandle>>} node    - Passive step AST node or fluent builder.
- * @param {TIn}                                           input   - Raw or pre-validated step input payload.
- * @param {StepRunOptions<THandle>}                       options - Standalone step execution options.
+ * @param {MaybeBuilder<TStep>}     node    - Passive step AST node or fluent builder.
+ * @param {ExtractStepInput<TStep>} input   - Raw or pre-validated step input payload.
+ * @param {StepRunOptions<THandle>} options - Standalone step execution options.
  *
- * @returns {Promise<TOut>} Schema-validated step output payload.
+ * @returns {Promise<ExtractStepOutput<TStep>>} Schema-validated step output payload.
  *
  * @throws {Error} If no `StepExecutor` or `RunnerDriver` is registered for the invoked node types.
  */
-export async function runStep<TIn = unknown, TOut = unknown, THandle = unknown>(
-  node: MaybeBuilder<StepASTNode<TIn, TOut, THandle>>,
-  input: TIn,
+export async function runStep<TStep extends StepASTNode = StepASTNode, THandle = unknown>(
+  node: MaybeBuilder<TStep>,
+  input: ExtractStepInput<TStep>,
   options: StepRunOptions<THandle>,
-): Promise<TOut> {
-  const stepNode: StepASTNode<TIn, TOut, THandle> = 'toAST' in node ? node.toAST() : node;
+): Promise<ExtractStepOutput<TStep>> {
+  const stepNode: TStep = 'toAST' in node ? node.toAST() : node;
   const registry = createExecutorRegistry(options.registry);
   const runId = options.runId ?? 'standalone-run';
   const stepExecId = options.stepExecId ?? 'standalone-step-1';
@@ -162,5 +165,5 @@ export async function runStep<TIn = unknown, TOut = unknown, THandle = unknown>(
       },
     }),
   );
-  return executeStepNode(stepNode, input, ctx);
+  return executeStepNode(stepNode, input, ctx) as Promise<ExtractStepOutput<TStep>>;
 }

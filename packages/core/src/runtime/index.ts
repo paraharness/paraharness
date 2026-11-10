@@ -161,4 +161,8 @@ export type { SpeculateTournamentParams } from './speculate/speculate-tournament
 export type { SpeculateTournamentResult } from './speculate/speculate-tournament-result.js';
 export { executeCommand } from './step/execute-command.js';
 export { executeStepNode } from './step/execute-step-node.js';
+export type {
+  ExtractStepInput,
+  ExtractStepOutput,
+} from '../builders/flow-extraction.types.js';
 export { type StepRunOptions, runStep } from './step/run-step.js';
