@@ -2,17 +2,21 @@ import type { AgentNode } from '../../../ast/agent-node.js';
 import type { ModelASTNode, StepASTNode } from '../../../ast/domain-ast.types.js';
 import type { LoopNode } from '../../../ast/loop-node.js';
 import type { PoolNode } from '../../../ast/pool-node.js';
+import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
 import type { ForkBatchEntryRecord } from '../../../ports/fork-batch-continuation-frame.js';
 import type { HumanAdapter } from '../../../ports/human-adapter.js';
 import type { LedgerStore } from '../../../ports/ledger-store.js';
 import type { LessonOutcome } from '../../../ports/lesson-outcome.types.js';
 import type { LessonStore } from '../../../ports/lesson-store.js';
+import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { SuspendedForkRecord } from '../../../ports/suspended-fork-record.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
+import type { AgentTurnSessionState } from '../../agent/agent-turn-session-state.js';
 import { executeAgent } from '../../agent/execute-agent.js';
 import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
+import type { StepRuntimeChildOutcomeSink } from '../../agent/step-runtime-internals.js';
 import type { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import type { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
 import { executeLoop } from '../../loop/execute-loop.js';
@@ -23,6 +27,186 @@ import type {
   ForkBatchExecutionParams,
   ForkDispatchCallItem,
 } from '../fork-batch-execution-params.js';
+
+/**
+ * Incremental child turn, cost, and duration metrics rolled up into parent `outerFrames`.
+ */
+export interface RollUpChildMetricsDeltaParams {
+  /** Number of additional model turns consumed by the child invocation. */
+  readonly turnsTaken: number;
+  /** Additional USD cost incurred by the child invocation. */
+  readonly costUsd: number;
+  /** Additional elapsed wall-clock milliseconds consumed by the child invocation. */
+  readonly elapsedDurationMs: number;
+}
+
+/**
+ * Adds incremental child execution metrics (`turnsTaken`, `costUsd`, `elapsedDurationMs`) into every `'agent-frame'` and `'loop-frame'` in `outerFrames`.
+ *
+ * Mutates `outerFrames` in place by replacing matching frame entries with frozen updated records.
+ *
+ * @param {readonly ContinuationFrame[] | undefined} outerFrames - Outer continuation frames array to update in place.
+ * @param {RollUpChildMetricsDeltaParams}            delta       - Incremental turns, cost, and duration to roll up.
+ */
+export function rollUpChildMetricsIntoOuterFrames(
+  outerFrames: readonly ContinuationFrame[] | undefined,
+  delta: RollUpChildMetricsDeltaParams,
+): void {
+  if (
+    outerFrames === undefined ||
+    (delta.turnsTaken <= 0 && delta.costUsd <= 0 && delta.elapsedDurationMs <= 0)
+  ) {
+    return;
+  }
+  const mutableOuterFrames = outerFrames as ContinuationFrame[];
+  for (let idx = 0; idx < mutableOuterFrames.length; idx += 1) {
+    const outer = mutableOuterFrames[idx];
+    if (outer?.kind === 'agent-frame') {
+      mutableOuterFrames[idx] = Object.freeze<AgentContinuationFrame>({
+        ...outer,
+        turnsTaken: outer.turnsTaken + delta.turnsTaken,
+        costUsd: outer.costUsd + delta.costUsd,
+        elapsedDurationMs: outer.elapsedDurationMs + delta.elapsedDurationMs,
+      });
+    } else if (outer?.kind === 'loop-frame') {
+      const isAct = outer.phase === 'act';
+      mutableOuterFrames[idx] = Object.freeze<LoopContinuationFrame>({
+        ...outer,
+        actTurnsTaken: isAct ? outer.actTurnsTaken + delta.turnsTaken : outer.actTurnsTaken,
+        actCostUsd: isAct ? outer.actCostUsd + delta.costUsd : outer.actCostUsd,
+        actElapsedDurationMs: isAct
+          ? outer.actElapsedDurationMs + delta.elapsedDurationMs
+          : outer.actElapsedDurationMs,
+        turnsTaken: outer.turnsTaken + delta.turnsTaken,
+        costUsd: outer.costUsd + delta.costUsd,
+        elapsedDurationMs: outer.elapsedDurationMs + delta.elapsedDurationMs,
+      });
+    }
+  }
+}
+
+/**
+ * Synchronizes a parent `AgentTurnSessionState`'s `outerFrames` and `agentFrame` after a child `.fork()`, `resumeFork()`, or `.speculate()` batch settles.
+ *
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>} session           - Parent agent turn session state.
+ * @param {readonly ContinuationFrame[]}              sharedOuterFrames - Shared outer frames array passed to the child batch (`[...session.outerFrames, session.agentFrame]`).
+ */
+export function syncParentSessionFromOuterFrames<TIn, TOut, THandle>(
+  session: AgentTurnSessionState<TIn, TOut, THandle>,
+  sharedOuterFrames: readonly ContinuationFrame[],
+): void {
+  for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
+    const updatedOuter = sharedOuterFrames[idx];
+    if (updatedOuter !== undefined) {
+      session.outerFrames[idx] = updatedOuter;
+    }
+  }
+  const updatedParentAgent = sharedOuterFrames[session.outerFrames.length];
+  if (updatedParentAgent?.kind === 'agent-frame') {
+    session.agentFrame = Object.freeze<AgentContinuationFrame>({
+      ...session.agentFrame,
+      turnsTaken: updatedParentAgent.turnsTaken,
+      costUsd: updatedParentAgent.costUsd,
+      elapsedDurationMs: updatedParentAgent.elapsedDurationMs,
+    });
+  }
+}
+
+/**
+ * Wraps a child step runner so incremental child `turnsTaken`, `costUsd`, and `elapsedDurationMs` roll up into `outerFrames` in `finally`.
+ *
+ * @template THandle Runtime handle type of the active `BranchableScope`.
+ *
+ * @param {(childNode: StepASTNode<unknown, unknown, THandle>, childInput: unknown, childCtx: StepExecutionContext<THandle>) => Promise<ChildForkExecutionOutcome<unknown>>} baseRunner  - Underlying child step runner.
+ * @param {readonly ContinuationFrame[]}                                                                                                                                      outerFrames - Enclosing outer continuation frames to update.
+ *
+ * @returns {(childNode: StepASTNode<unknown, unknown, THandle>, childInput: unknown, childCtx: StepExecutionContext<THandle>) => Promise<ChildForkExecutionOutcome<unknown>>} Wrapped child step runner.
+ */
+export function wrapChildStepRunnerWithOuterFrameRollup<THandle = unknown>(
+  baseRunner: (
+    childNode: StepASTNode<unknown, unknown, THandle>,
+    childInput: unknown,
+    childCtx: StepExecutionContext<THandle>,
+  ) => Promise<ChildForkExecutionOutcome<unknown>>,
+  outerFrames: readonly ContinuationFrame[],
+): (
+  childNode: StepASTNode<unknown, unknown, THandle>,
+  childInput: unknown,
+  childCtx: StepExecutionContext<THandle>,
+) => Promise<ChildForkExecutionOutcome<unknown>> {
+  return async (
+    childNode: StepASTNode<unknown, unknown, THandle>,
+    childInput: unknown,
+    childCtx: StepExecutionContext<THandle>,
+  ): Promise<ChildForkExecutionOutcome<unknown>> => {
+    const existingRt = getStepRuntimeInternals(childCtx);
+    const prevLoop = existingRt?.existingLoopFrame;
+    const prevAgent = existingRt?.existingAgentFrame;
+    const sink: StepRuntimeChildOutcomeSink = {};
+    const ctxWithSink = Object.freeze({
+      ...childCtx,
+      _runtime: {
+        ...(existingRt ?? {}),
+        childOutcomeSink: sink,
+      },
+    }) as StepExecutionContext<THandle>;
+    let settledOutcome: ChildForkExecutionOutcome<unknown> | undefined;
+    try {
+      settledOutcome = await baseRunner(childNode, childInput, ctxWithSink);
+      return settledOutcome;
+    } finally {
+      const stack = settledOutcome?.continuationStack ?? sink.continuationStack;
+      const nodeType = (childNode as { readonly type?: string }).type;
+      if (nodeType === 'harness:loop') {
+        let finalLoop: LoopContinuationFrame | undefined;
+        if (stack !== undefined) {
+          for (let idx = stack.length - 1; idx >= 0; idx -= 1) {
+            const frame = stack[idx];
+            if (frame?.kind === 'loop-frame') {
+              finalLoop = frame;
+              break;
+            }
+          }
+        }
+        if (finalLoop !== undefined) {
+          rollUpChildMetricsIntoOuterFrames(outerFrames, {
+            turnsTaken: Math.max(0, finalLoop.turnsTaken - (prevLoop?.turnsTaken ?? 0)),
+            costUsd: Math.max(0, finalLoop.costUsd - (prevLoop?.costUsd ?? 0)),
+            elapsedDurationMs: Math.max(
+              0,
+              finalLoop.elapsedDurationMs - (prevLoop?.elapsedDurationMs ?? 0),
+            ),
+          });
+        }
+      } else {
+        let finalAgent: AgentContinuationFrame | undefined;
+        if (stack !== undefined) {
+          for (let idx = stack.length - 1; idx >= 0; idx -= 1) {
+            const frame = stack[idx];
+            if (frame?.kind === 'agent-frame') {
+              finalAgent = frame;
+              break;
+            }
+          }
+        }
+        if (finalAgent !== undefined) {
+          rollUpChildMetricsIntoOuterFrames(outerFrames, {
+            turnsTaken: Math.max(0, finalAgent.turnsTaken - (prevAgent?.turnsTaken ?? 0)),
+            costUsd: Math.max(0, finalAgent.costUsd - (prevAgent?.costUsd ?? 0)),
+            elapsedDurationMs: Math.max(
+              0,
+              finalAgent.elapsedDurationMs - (prevAgent?.elapsedDurationMs ?? 0),
+            ),
+          });
+        }
+      }
+    }
+  };
+}
 
 /**
  * Environment and shared runtime store parameters for `executeDefaultForkOrTournamentChild`.
@@ -67,14 +251,8 @@ export async function executeDefaultForkOrTournamentChild<THandle = unknown>(
   childIn: unknown,
   env: ExecuteDefaultForkOrTournamentChildEnvParams<THandle>,
 ): Promise<ChildForkExecutionOutcome<unknown>> {
-  const childOutcomeSink: {
-    continuationStack?: readonly ContinuationFrame[];
-    leafMessageId?: string | null;
-    accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>;
-    raisedByPhase?: 'act' | 'evaluate';
-    suspendedAtCallId?: string;
-  } = {};
   const existingRuntime = getStepRuntimeInternals(env.childCtx) ?? {};
+  const childOutcomeSink: StepRuntimeChildOutcomeSink = existingRuntime.childOutcomeSink ?? {};
   const enrichedCtx = Object.freeze({
     ...env.childCtx,
     _runtime: {

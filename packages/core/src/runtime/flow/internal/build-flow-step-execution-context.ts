@@ -292,6 +292,7 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
         );
         return Object.freeze(rawMetrics);
       },
+      enforceRunBudget: flowCtx.enforceRunBudget,
     },
   });
   return { executable: mergedExec, stepCtx: Object.freeze(stepCtx) };

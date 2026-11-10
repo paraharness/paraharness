@@ -37,6 +37,11 @@ export interface PrepareLaneItemFlowExecutionManagersParams<TIn = unknown> {
 
   /** Optional callback invoked after `LedgerStore.mutateLanePlan` commits spawned items or added dependencies. */
   readonly onPlanMutated?: (req: MutateLanePlanRequest) => Promise<void>;
+
+  /** Optional callback enforcing enclosing lane `maxCostUsd` budget after each model turn (`SPEC.md` §1.18 & §3.6). */
+  readonly enforceRunBudget?: (
+    addedCostUsd: number,
+  ) => Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }>;
 }
 
 /**
@@ -175,6 +180,7 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
     activeStepAbortController,
     pendingRewindToStepId: undefined,
     retryConfig: cfg.lane.retry,
+    enforceRunBudget: managers.enforceRunBudget,
   };
   if (pendingBootRecord !== undefined) {
     await recoverInterruptedRunOnBoot({

@@ -2,9 +2,11 @@ import type { AgentNode } from '../../../ast/agent-node.js';
 import type { SpeculateCapabilityNode } from '../../../ast/speculate-capability-node.js';
 import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
 import type { BranchableScope } from '../../../ports/branchable-scope.js';
+import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
 import type { PendingToolBatch, RemainingToolCallRecord } from '../../../ports/pending-tool-batch.js';
 import type { RuntimeDriverContext } from '../../../ports/runtime-driver-context.js';
 import { executeResumeForkBatch } from '../../fork/execute-fork-batch.js';
+import { syncParentSessionFromOuterFrames } from '../../fork/internal/run-single-fork-call.js';
 import {
   executeAddDependencies,
   executeSpawnTasks,
@@ -83,29 +85,35 @@ async function handleResumeForkToolCall<TIn, TOut, THandle>(
   scopeDriver: BranchableScope<THandle, Record<string, unknown>, Record<string, unknown>>,
 ): Promise<{ readonly status: 'completed'; readonly content: string; readonly isError: boolean }> {
   const args = JSON.parse(call.argsJson || '{}') as Record<string, unknown>;
-  const fRes = await executeResumeForkBatch({
-    parentNode: session.node as AgentNode<unknown, unknown, THandle>,
-    parentInput: session.validatedInput,
-    parentLeafMessageId: session.agentFrame.leafMessageId,
-    outerFrames: [...session.outerFrames, session.agentFrame],
-    resumeRequest: {
-      callId: call.callId,
-      suspendedForkIds: (args['suspendedForkIds'] as readonly string[] | undefined) ?? [],
-      action: (args['action'] as 'resume' | 'abort' | undefined) ?? 'resume',
-      resolutionSummary: String(args['resolutionSummary'] ?? ''),
-    },
-    branchableScope: scopeDriver,
-    lockManager: session.lockManager,
-    continuationQueue: session.continuationQueue,
-    ledgerStore: session.ledgerStore as NonNullable<typeof session.ledgerStore>,
-    lessonStore: session.lessonStore,
-    poolManager: session.poolManager,
-    modelDriver: session.modelDriver,
-    wirePrefix: session.wirePrefix,
-    humanAdaptersById: session.humanAdaptersById,
-    ctx: session.ctx,
-    executeChildStep: session.executeChildStep,
-  });
+  const sharedOuterFrames: ContinuationFrame[] = [...session.outerFrames, session.agentFrame];
+  let fRes: Awaited<ReturnType<typeof executeResumeForkBatch<THandle>>>;
+  try {
+    fRes = await executeResumeForkBatch({
+      parentNode: session.node as AgentNode<unknown, unknown, THandle>,
+      parentInput: session.validatedInput,
+      parentLeafMessageId: session.agentFrame.leafMessageId,
+      outerFrames: sharedOuterFrames,
+      resumeRequest: {
+        callId: call.callId,
+        suspendedForkIds: (args['suspendedForkIds'] as readonly string[] | undefined) ?? [],
+        action: (args['action'] as 'resume' | 'abort' | undefined) ?? 'resume',
+        resolutionSummary: String(args['resolutionSummary'] ?? ''),
+      },
+      branchableScope: scopeDriver,
+      lockManager: session.lockManager,
+      continuationQueue: session.continuationQueue,
+      ledgerStore: session.ledgerStore as NonNullable<typeof session.ledgerStore>,
+      lessonStore: session.lessonStore,
+      poolManager: session.poolManager,
+      modelDriver: session.modelDriver,
+      wirePrefix: session.wirePrefix,
+      humanAdaptersById: session.humanAdaptersById,
+      ctx: session.ctx,
+      executeChildStep: session.executeChildStep,
+    });
+  } finally {
+    syncParentSessionFromOuterFrames(session, sharedOuterFrames);
+  }
   if (fRes.batchFrame.forks.some((f) => f.conflictCheckArmed)) {
     session.agentFrame = Object.freeze<AgentContinuationFrame>({
       ...session.agentFrame,
@@ -153,24 +161,30 @@ async function handleSpeculateToolCall<TIn, TOut, THandle>(
     >;
   },
 ): Promise<{ readonly status: 'completed'; readonly content: string; readonly isError: boolean }> {
-  const sRes = await executeSpeculateTournament({
-    parentNode: session.node as AgentNode<unknown, unknown, THandle>,
-    parentInput: session.validatedInput,
-    callId: call.callId,
-    capability: specCapAsUnknown(specCtx.specCap),
-    argsJson: call.argsJson,
-    outerFrames: [...session.outerFrames, session.agentFrame],
-    branchableScope: specCtx.scopeDriver,
-    lockManager: session.lockManager,
-    continuationQueue: session.continuationQueue,
-    ledgerStore: session.ledgerStore as NonNullable<typeof session.ledgerStore>,
-    lessonStore: session.lessonStore,
-    modelDriver: session.modelDriver,
-    wirePrefix: session.wirePrefix,
-    humanAdaptersById: session.humanAdaptersById,
-    ctx: session.ctx,
-    executeChildStep: session.executeChildStep,
-  });
+  const sharedOuterFrames: ContinuationFrame[] = [...session.outerFrames, session.agentFrame];
+  let sRes: Awaited<ReturnType<typeof executeSpeculateTournament<THandle>>>;
+  try {
+    sRes = await executeSpeculateTournament({
+      parentNode: session.node as AgentNode<unknown, unknown, THandle>,
+      parentInput: session.validatedInput,
+      callId: call.callId,
+      capability: specCapAsUnknown(specCtx.specCap),
+      argsJson: call.argsJson,
+      outerFrames: sharedOuterFrames,
+      branchableScope: specCtx.scopeDriver,
+      lockManager: session.lockManager,
+      continuationQueue: session.continuationQueue,
+      ledgerStore: session.ledgerStore as NonNullable<typeof session.ledgerStore>,
+      lessonStore: session.lessonStore,
+      modelDriver: session.modelDriver,
+      wirePrefix: session.wirePrefix,
+      humanAdaptersById: session.humanAdaptersById,
+      ctx: session.ctx,
+      executeChildStep: session.executeChildStep,
+    });
+  } finally {
+    syncParentSessionFromOuterFrames(session, sharedOuterFrames);
+  }
   if (sRes.tournamentFrame.conflictCheckArmed) {
     session.agentFrame = Object.freeze<AgentContinuationFrame>({
       ...session.agentFrame,

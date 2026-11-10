@@ -1,6 +1,6 @@
 {
   "name": "@paraharness/core",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Declarative pure-AST agent orchestration DSL (P.*), capability-tiered isolation scope ports, and durable continuation-stack execution runtime.",
   "keywords": [
     "paraharness",

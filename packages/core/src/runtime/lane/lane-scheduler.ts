@@ -330,6 +330,8 @@ export class LaneScheduler<TIn = unknown> {
             ]);
           }
         },
+        enforceRunBudget: (addedCostUsd: number) =>
+          this.enforceRunBudget(item.runId, addedCostUsd),
       },
     );
     item.activeFlowCtx = flowCtx;
@@ -352,6 +354,20 @@ export class LaneScheduler<TIn = unknown> {
       await this.syncTrackerState(item.itemKey, `exit:${res.exitState}`, res.exitState);
       return res;
     } catch (err) {
+      if (
+        (item as { readonly status: string }).status === 'CANCELLED' ||
+        (err as { readonly code?: string } | undefined)?.code === 'HARNESS_RUN_CANCELLED'
+      ) {
+        if (this.cfg.topologyStore !== undefined) {
+          await this.cfg.topologyStore.discardRunOverlay(item.runId);
+        }
+        return Object.freeze<FlowRunResult>({
+          runId: item.runId,
+          exitState: item.terminalExitState ?? 'cancelled',
+          scopeReceipt: {},
+          stepOutputs: Object.freeze({}),
+        });
+      }
       item.status = 'FAILED';
       if (this.cfg.topologyStore !== undefined) {
         await this.cfg.topologyStore.discardRunOverlay(item.runId);
@@ -403,8 +419,10 @@ export class LaneScheduler<TIn = unknown> {
     if (item === undefined) {
       throw new Error(`Unknown run '${runId}' in lane '${this.cfg.lane.id}'.`);
     }
-    item.costUsd += addedCostUsd;
-    return evaluateLaneItemBudget(this.cfg, item, (k, s) => this.syncTrackerState(k, s));
+    return this.continuationQueue.enqueueUpdate(`budget:${runId}`, async () => {
+      item.costUsd += addedCostUsd;
+      return evaluateLaneItemBudget(this.cfg, item, (k, s) => this.syncTrackerState(k, s));
+    });
   }
 
   /**

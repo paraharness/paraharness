@@ -4,7 +4,10 @@ import type {
   SpeculateBufferedLessonOutcomeRecord,
   SpeculateContinuationFrame,
 } from '../../ports/speculate-continuation-frame.js';
-import { executeDefaultForkOrTournamentChild } from '../fork/internal/run-single-fork-call.js';
+import {
+  executeDefaultForkOrTournamentChild,
+  wrapChildStepRunnerWithOuterFrameRollup,
+} from '../fork/internal/run-single-fork-call.js';
 import {
   executeWinnerRefinementAndCommit,
   resolvePostRaceCases,
@@ -112,19 +115,19 @@ function resolveTournamentChildStepRunner<THandle = unknown>(
   params: SpeculateTournamentParams<THandle>,
   initialFrame: SpeculateContinuationFrame,
 ): NonNullable<SpeculateTournamentParams<THandle>['executeChildStep']> {
-  if (params.executeChildStep !== undefined) {
-    return params.executeChildStep;
-  }
-  return (cNode, cIn, cCtx) =>
-    executeDefaultForkOrTournamentChild(cNode, cIn, {
-      childCtx: cCtx,
-      ledgerStore: params.ledgerStore,
-      lessonStore: params.lessonStore,
-      lockManager: params.lockManager,
-      continuationQueue: params.continuationQueue,
-      humanAdaptersById: params.humanAdaptersById,
-      outerFrames: [...params.outerFrames, initialFrame],
-    });
+  const baseRunner: NonNullable<SpeculateTournamentParams<THandle>['executeChildStep']> =
+    params.executeChildStep ??
+    ((cNode, cIn, cCtx) =>
+      executeDefaultForkOrTournamentChild(cNode, cIn, {
+        childCtx: cCtx,
+        ledgerStore: params.ledgerStore,
+        lessonStore: params.lessonStore,
+        lockManager: params.lockManager,
+        continuationQueue: params.continuationQueue,
+        humanAdaptersById: params.humanAdaptersById,
+        outerFrames: [...params.outerFrames, initialFrame],
+      }));
+  return wrapChildStepRunnerWithOuterFrameRollup(baseRunner, params.outerFrames);
 }
 
 /**
@@ -241,6 +244,9 @@ async function raceOrReattachSpeculateBranches<THandle = unknown>(
             continuationStack: outcome.continuationStack,
           });
         } catch (err) {
+          if ((err as { readonly code?: string } | undefined)?.code === 'HARNESS_RUN_CANCELLED') {
+            throw err;
+          }
           return Object.freeze<SpeculateBranchEntryRecord>({
             branchIndex: idx,
             forkId,

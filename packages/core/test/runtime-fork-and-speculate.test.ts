@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-  type AgentContinuationFrame, type ForkBatchEntryRecord, P, type LoopContinuationFrame,
+  type AgentContinuationFrame, type ForkBatchEntryRecord, LaneScheduler, P, type LoopContinuationFrame,
   ScopeLockManager, type SpeculateBranchEntryRecord, StepContinuationQueue, type StepExecutionContext,
   type WireFrameRecord, createExecutorRegistry, executeAgent, executeForkBatch,
   executeLoop, executeResumeForkBatch, executeSpeculateTournament, resolvePostRaceCases,
 } from '../src/index.js';
+import { runFlow } from '../src/runtime/index.js';
 import { InMemoryLedgerStore } from './fixtures/in-memory-ledger-store.js';
 import { InMemoryLessonStore } from './fixtures/in-memory-lesson-store.js';
 import {
   SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE, SAMPLE_CLEAN_TREE_CHECK_NODE, SAMPLE_CROSS_VERIFIER_NODE,
-  SAMPLE_DECLARED_TOOL_NODE, SAMPLE_LESSON_STORE_NODE, SAMPLE_MODEL_NODE,
+  SAMPLE_DECLARED_TOOL_NODE, SAMPLE_LEDGER_NODE, SAMPLE_LESSON_STORE_NODE, SAMPLE_MODEL_NODE, SAMPLE_TIER3_SCOPE_NODE,
 } from './fixtures/sample-domain-nodes.constants.js';
 import { ScriptedBranchableScope } from './fixtures/scripted-branchable-scope.js';
 import { ScriptedHumanAdapter } from './fixtures/scripted-human-adapter.js';
@@ -426,3 +427,212 @@ describe('.speculate() tournament: Post-Race Cases 1-4, real child/arbiter execu
     ]);
   });
 });
+
+describe('Agent timeoutMinutes, live LaneScheduler maxCostUsd enforcement, and child fork/speculate telemetry rollup', () => {
+  it('aborts in-flight AgentNode turns and rejects with a timeout error when timeoutMinutes is exceeded', async () => {
+    const timedAgent = P.agent<string>('timed-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .timeoutMinutes(0.0005)
+      .input(z.object({ q: z.string() }))
+      .output(z.object({ a: z.string() }))
+      .toAST();
+    let observedAbort = false;
+    const hangingDriver = Object.freeze({
+      invokeTurn: (req: { readonly signal?: AbortSignal }) =>
+        new Promise<never>((_resolve, reject) => {
+          if (req.signal?.aborted === true) {
+            observedAbort = true;
+            reject(req.signal.reason instanceof Error ? req.signal.reason : new Error('aborted'));
+            return;
+          }
+          req.signal?.addEventListener(
+            'abort',
+            () => {
+              observedAbort = true;
+              reject(req.signal?.reason instanceof Error ? req.signal.reason : new Error('aborted'));
+            },
+            { once: true },
+          );
+        }),
+    });
+    const registry = createExecutorRegistry({ models: { 'claude:model': () => hangingDriver as never } });
+    const ctx: StepExecutionContext<string> = Object.freeze({
+      runId: 'run-timeout',
+      stepExecId: 'step-timeout',
+      scopeHandle: 'root:run-timeout',
+      activePartitions: ['core'],
+      activeLeases: [],
+      observedEffects: [],
+      registry,
+      resolveEnv: () => '',
+      getRunner: throwUnusedRunner,
+      recordEffects: () => undefined,
+    });
+
+    await expect(executeAgent(timedAgent, { q: 'slow' }, ctx)).rejects.toThrow(
+      "Agent 'timed-agent' timed out after 0.0005 minute(s)",
+    );
+    expect(observedAbort).toBe(true);
+  });
+
+  it('rolls child .fork() and .speculate() turns and costUsd into outerFrames and parent UniversalStepTelemetry', async () => {
+    const childWorker = P.agent<string>('fork-cost-worker')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ task: z.string() }))
+      .output(z.object({ ok: z.boolean() }));
+    const arbiter = P.agent<string>('fork-cost-arbiter')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({}))
+      .output(z.object({ idx: z.number() }));
+    const parentAgent = P.agent<string>('fork-cost-parent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ task: z.string() }))
+      .output(z.object({ summary: z.string() }))
+      .capabilities(($c) =>
+        $c
+          .fork('delegateTask', childWorker, ($f) =>
+            $f
+              .requestSchema(z.object({ task: z.string() }))
+              .mapInput((_p, req) => ({ task: req.task }))
+              .historyMode('shared-prefix-only'),
+          )
+          .speculate('raceTask', ($s) =>
+            $s
+              .requestSchema(z.object({ task: z.string() }))
+              .worker(childWorker)
+              .branches(2, (_p, req) => [{ task: `${req.task}-0` }, { task: `${req.task}-1` }])
+              .arbiter(arbiter, {
+                resolveDecision: (v) => ({
+                  decision: 'select-winner',
+                  winnerBranchIndex: v.idx,
+                  rationale: 'arb',
+                }),
+              }),
+          ),
+      );
+    const flow = P.flow('fork-cost-flow')
+      .input(z.object({ task: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('runParent', parentAgent)
+      .exit('done');
+
+    const ledger = new InMemoryLedgerStore();
+    const scope = new ScriptedBranchableScope();
+    const driver = new ScriptedModelDriver([
+      makeTurn('forking and speculating', [
+        { id: 'c-fork', name: 'delegateTask', argsJson: JSON.stringify({ task: 'sub' }) },
+        { id: 'c-spec', name: 'raceTask', argsJson: JSON.stringify({ task: 'race' }) },
+      ]),
+      makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
+      makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
+      makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
+      makeTurn(JSON.stringify({ idx: 0 }), [], { idx: 0 }),
+      makeTurn(JSON.stringify({ summary: 'all-done' }), [], { summary: 'all-done' }),
+    ]);
+    const registry = createExecutorRegistry({
+      ledgers: { 'sqlite:ledger': () => ledger },
+      models: { 'claude:model': () => driver },
+      scopes: { 'git:cow-worktree': () => scope as never },
+    });
+
+    const res = await runFlow(flow, { task: 'main' }, {
+      runId: 'run-fork-cost',
+      ledger: SAMPLE_LEDGER_NODE,
+      registry,
+    });
+    expect(res.exitState).toBe('done');
+    const parentStepRow = [...ledger.steps.values()].find((t) => t.stepId === 'runParent');
+    const parentTelemetry = JSON.parse(parentStepRow?.telemetryJson ?? '{}') as {
+      readonly turnsTaken?: number;
+      readonly costUsd?: number;
+    };
+    expect(parentTelemetry.turnsTaken).toBe(6);
+    expect(parentTelemetry.costUsd).toBeCloseTo(0.06, 5);
+  });
+
+  it('invokes LaneScheduler.enforceRunBudget during live turns (including child .fork() turns), updating approvedMaxCostUsd on approval and cancelling the run on denial', async () => {
+    const childWorker = P.agent<string>('budget-child')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ task: z.string() }))
+      .output(z.object({ ok: z.boolean() }));
+    const parentAgent = P.agent<string>('budget-parent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ task: z.string() }))
+      .output(z.object({ done: z.boolean() }))
+      .capabilities(($c) =>
+        $c.fork('delegateChild', childWorker, ($f) =>
+          $f
+            .requestSchema(z.object({ task: z.string() }))
+            .mapInput((_p, req) => ({ task: req.task })),
+        ),
+      );
+    const flow = P.flow('budget-flow')
+      .input(z.object({ task: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('work', parentAgent)
+      .exit('done');
+    const lane = P.lane('budget-lane')
+      .input(z.object({ task: z.string() }))
+      .key((inVal) => inVal.task)
+      .concurrency(1)
+      .maxCostUsd(0.015, P.human('budget-approver').notify(SAMPLE_BIDIRECTIONAL_HUMAN_CHANNEL_NODE))
+      .retry(($r) => $r.tries(2))
+      .flow(flow)
+      .toAST();
+
+    const approvedHuman = new ScriptedHumanAdapter([
+      { approved: true, increaseLimitToUsd: 0.1 },
+    ]);
+    const approveDriver = new ScriptedModelDriver([
+      makeTurn('forking child', [{ id: 'f1', name: 'delegateChild', argsJson: JSON.stringify({ task: 'c1' }) }]),
+      makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
+      makeTurn(JSON.stringify({ done: true }), [], { done: true }),
+    ]);
+    const approveLedger = new InMemoryLedgerStore();
+    const approveScope = new ScriptedBranchableScope();
+    const approveScheduler = new LaneScheduler({
+      lane,
+      registry: createExecutorRegistry({
+        models: { 'claude:model': () => approveDriver },
+        scopes: { 'git:cow-worktree': () => approveScope as never },
+      }),
+      env: {},
+      ledgerStore: approveLedger,
+      humanAdaptersById: new Map([['budget-approver', approvedHuman]]),
+    });
+    await approveScheduler.enqueueItem({ input: { task: 'go' } });
+    const [approvedRes] = await approveScheduler.scheduleNextReadyRuns();
+    expect([
+      approvedRes?.exitState,
+      approvedHuman.decisionRequests.length,
+      approveLedger.runs.get('run:budget-lane:go')?.approvedMaxCostUsd,
+    ]).toEqual(['done', 1, 0.1]);
+
+    const deniedHuman = new ScriptedHumanAdapter([{ approved: false }]);
+    const denyDriver = new ScriptedModelDriver([
+      makeTurn('forking child', [{ id: 'f2', name: 'delegateChild', argsJson: JSON.stringify({ task: 'c2' }) }]),
+      makeTurn(JSON.stringify({ ok: true }), [], { ok: true }),
+      makeTurn(JSON.stringify({ done: true }), [], { done: true }),
+    ]);
+    const denyLedger = new InMemoryLedgerStore();
+    const denyScope = new ScriptedBranchableScope();
+    const denyScheduler = new LaneScheduler({
+      lane,
+      registry: createExecutorRegistry({
+        models: { 'claude:model': () => denyDriver },
+        scopes: { 'git:cow-worktree': () => denyScope as never },
+      }),
+      env: {},
+      ledgerStore: denyLedger,
+      humanAdaptersById: new Map([['budget-approver', deniedHuman]]),
+    });
+    await denyScheduler.enqueueItem({ input: { task: 'stop' } });
+    const [deniedRes] = await denyScheduler.scheduleNextReadyRuns();
+    expect([
+      deniedRes?.exitState,
+      deniedHuman.decisionRequests.length,
+      denyLedger.terminalReceipts.get('stop')?.terminalState,
+    ]).toEqual(['cancelled', 1, 'cancelled']);
+  });
+});
+

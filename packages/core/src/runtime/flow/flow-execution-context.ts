@@ -95,4 +95,8 @@ export interface FlowExecutionContext<TIn = unknown, THandle = unknown> {
     readonly exponentialBaseMs: number;
     readonly orFailState: string;
   };
+  /** Optional callback enforcing enclosing lane `maxCostUsd` budget after each model turn (`SPEC.md` §1.18 & §3.6). */
+  readonly enforceRunBudget?: (
+    addedCostUsd: number,
+  ) => Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }>;
 }

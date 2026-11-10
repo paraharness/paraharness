@@ -16,6 +16,74 @@ import { initializeAgentContinuationFrame } from './initialize-agent-turn-sessio
 import { resolveInterruptEdge } from './resolve-interrupt-edge.js';
 
 /**
+ * Throws the active `AbortSignal` reason if `session.ctx.signal` has already aborted.
+ *
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>} session - Active agent turn session state.
+ */
+function throwIfSessionAborted<TIn, TOut, THandle>(
+  session: AgentTurnSessionState<TIn, TOut, THandle>,
+): void {
+  if (session.ctx.signal?.aborted !== true) {
+    return;
+  }
+  const reason: unknown = session.ctx.signal.reason;
+  throw reason instanceof Error
+    ? reason
+    : new Error(
+        `Agent '${session.node.id}' aborted in run '${session.ctx.runId}' (step '${session.ctx.stepExecId}').`,
+      );
+}
+
+/**
+ * Races `workPromise` against `session.ctx.signal` abort and deterministically removes the abort listener in `finally` (`Rule 5.3`).
+ *
+ * @template TResult Resolved promise value type.
+ * @template TIn     Validated agent input payload type.
+ * @template TOut    Validated agent output payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {AgentTurnSessionState<TIn, TOut, THandle>} session     - Active agent turn session state.
+ * @param {Promise<TResult>}                          workPromise - In-flight async operation to race against `session.ctx.signal`.
+ *
+ * @returns {Promise<TResult>} Resolved result of `workPromise`.
+ */
+async function awaitWithSessionAbortSignal<TResult, TIn, TOut, THandle>(
+  session: AgentTurnSessionState<TIn, TOut, THandle>,
+  workPromise: Promise<TResult>,
+): Promise<TResult> {
+  throwIfSessionAborted(session);
+  const signal = session.ctx.signal;
+  if (signal === undefined) {
+    return workPromise;
+  }
+  let onAbort: (() => void) | undefined;
+  try {
+    const abortPromise = new Promise<never>((_resolve, reject) => {
+      onAbort = (): void => {
+        const reason: unknown = signal.reason;
+        reject(
+          reason instanceof Error
+            ? reason
+            : new Error(
+                `Agent '${session.node.id}' aborted in run '${session.ctx.runId}' (step '${session.ctx.stepExecId}').`,
+              ),
+        );
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    return await Promise.race([workPromise, abortPromise]);
+  } finally {
+    if (onAbort !== undefined) {
+      signal.removeEventListener('abort', onAbort);
+    }
+  }
+}
+
+/**
  * Invokes `ModelDriver.invokeTurn` with `PoolManager` seat affinity, HTTP `429` failover, and loop-aware telemetry accounting (`SPEC.md` §3.2 & §3.8).
  *
  * Appends the returned assistant `WireFrameRecord` to `LedgerStore` and updates `agentFrame` and any enclosing `loop-frame`.
@@ -62,18 +130,21 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
   const startMs = Date.now();
   let response: ModelTurnResponse;
   try {
-    response = await session.modelDriver.invokeTurn({
-      modelId: session.modelNode.modelId,
-      accountConfig: seat as never,
-      effort: session.modelNode.effort,
-      toolChoice: 'auto',
-      wirePrefix: session.wirePrefix,
-      roleKey: session.agentFrame.roleKey,
-      history,
-      wireToolSchemas,
-      outputSchema: session.node.outputSchema,
-      signal: session.ctx.signal,
-    });
+    response = await awaitWithSessionAbortSignal(
+      session,
+      session.modelDriver.invokeTurn({
+        modelId: session.modelNode.modelId,
+        accountConfig: seat as never,
+        effort: session.modelNode.effort,
+        toolChoice: 'auto',
+        wirePrefix: session.wirePrefix,
+        roleKey: session.agentFrame.roleKey,
+        history,
+        wireToolSchemas,
+        outputSchema: session.node.outputSchema,
+        signal: session.ctx.signal,
+      }),
+    );
   } catch (err) {
     const rateErr = err as { readonly status?: number; readonly resetAtMs?: number };
     if (
@@ -87,18 +158,21 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
         rateErr.resetAtMs ?? Date.now() + 60_000,
       );
       seat = session.poolManager.selectSeat(seatPool as never, session.ctx.runId, Date.now());
-      response = await session.modelDriver.invokeTurn({
-        modelId: session.modelNode.modelId,
-        accountConfig: seat as never,
-        effort: session.modelNode.effort,
-        toolChoice: 'auto',
-        wirePrefix: session.wirePrefix,
-        roleKey: session.agentFrame.roleKey,
-        history,
-        wireToolSchemas,
-        outputSchema: session.node.outputSchema,
-        signal: session.ctx.signal,
-      });
+      response = await awaitWithSessionAbortSignal(
+        session,
+        session.modelDriver.invokeTurn({
+          modelId: session.modelNode.modelId,
+          accountConfig: seat as never,
+          effort: session.modelNode.effort,
+          toolChoice: 'auto',
+          wirePrefix: session.wirePrefix,
+          roleKey: session.agentFrame.roleKey,
+          history,
+          wireToolSchemas,
+          outputSchema: session.node.outputSchema,
+          signal: session.ctx.signal,
+        }),
+      );
     } else {
       throw err;
     }
@@ -127,7 +201,11 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
   });
   for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
     const outer = session.outerFrames[idx];
-    if (outer?.kind === 'loop-frame') {
+    if (
+      outer?.kind === 'loop-frame' &&
+      (outer.stepExecId === session.ctx.stepExecId ||
+        session.ctx.stepExecId.startsWith(`${outer.stepExecId}:eval:`))
+    ) {
       const isAct = outer.phase === 'act';
       session.outerFrames[idx] = Object.freeze<LoopContinuationFrame>({
         ...outer,
@@ -145,6 +223,19 @@ export async function invokeModelTurnWithFailover<TIn, TOut, THandle>(
         costUsd: outer.costUsd + response.usage.costUsd,
         elapsedDurationMs: outer.elapsedDurationMs + latencyMs,
       });
+    }
+  }
+  if (response.usage.costUsd > 0) {
+    const budgetOutcome = await getStepRuntimeInternals(session.ctx)?.enforceRunBudget?.(
+      response.usage.costUsd,
+    );
+    if (budgetOutcome?.allowed === false) {
+      throw Object.assign(
+        new Error(
+          `Run '${session.ctx.runId}' cancelled after exceeding lane maxCostUsd budget.`,
+        ),
+        { code: 'HARNESS_RUN_CANCELLED' },
+      );
     }
   }
   return response;
@@ -532,6 +623,7 @@ export async function runAgentTurnLoop<TIn, TOut, THandle>(
     return resumedRep;
   }
   for (;;) {
+    throwIfSessionAborted(session);
     const limitReplacement = await enforceTurnQuantitativeLimits(session);
     if (limitReplacement !== undefined) {
       return limitReplacement;

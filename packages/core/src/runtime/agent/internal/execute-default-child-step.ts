@@ -57,7 +57,7 @@ export async function executeDefaultChildStep<TIn, TOut, THandle>(
     accumulatedLessonOutcomes?: Readonly<Record<string, LessonOutcome>>;
     raisedByPhase?: 'act' | 'evaluate';
     suspendedAtCallId?: string;
-  } = {};
+  } = existingRuntime.childOutcomeSink ?? {};
   const enrichedCtx = Object.freeze({
     ...childCtx,
     _runtime: {

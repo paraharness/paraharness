@@ -12,6 +12,7 @@ import type { ToolEffect } from '../../../ports/tool-effect.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
 import { executeForkBatch } from '../../fork/execute-fork-batch.js';
 import type { ForkDispatchCallItem } from '../../fork/fork-batch-execution-params.js';
+import { syncParentSessionFromOuterFrames } from '../../fork/internal/run-single-fork-call.js';
 import {
   evaluatePreFlightToolBatch,
   evaluateQuotaTripwires,
@@ -128,26 +129,32 @@ export async function drainContiguousForkSlice<TIn, TOut, THandle>(
   for (const fc of forkCalls) {
     siblingIds.push(fc.callId);
   }
-  const fRes = await executeForkBatch({
-    parentNode: session.node as AgentNode<unknown, unknown, THandle>,
-    parentInput: session.validatedInput,
-    parentLeafMessageId: session.agentFrame.leafMessageId,
-    outerFrames: [...session.outerFrames, session.agentFrame],
-    forkCalls,
-    precedingCompletedResults: Object.freeze(precedingResults),
-    siblingForkCallIds: Object.freeze(siblingIds),
-    branchableScope: scopeDriver,
-    lockManager: session.lockManager,
-    continuationQueue: session.continuationQueue,
-    ledgerStore: session.ledgerStore as NonNullable<typeof session.ledgerStore>,
-    lessonStore: session.lessonStore,
-    poolManager: session.poolManager,
-    modelDriver: session.modelDriver,
-    wirePrefix: session.wirePrefix,
-    humanAdaptersById: session.humanAdaptersById,
-    ctx: session.ctx,
-    executeChildStep: session.executeChildStep,
-  });
+  const sharedOuterFrames: ContinuationFrame[] = [...session.outerFrames, session.agentFrame];
+  let fRes: Awaited<ReturnType<typeof executeForkBatch<THandle>>>;
+  try {
+    fRes = await executeForkBatch({
+      parentNode: session.node as AgentNode<unknown, unknown, THandle>,
+      parentInput: session.validatedInput,
+      parentLeafMessageId: session.agentFrame.leafMessageId,
+      outerFrames: sharedOuterFrames,
+      forkCalls,
+      precedingCompletedResults: Object.freeze(precedingResults),
+      siblingForkCallIds: Object.freeze(siblingIds),
+      branchableScope: scopeDriver,
+      lockManager: session.lockManager,
+      continuationQueue: session.continuationQueue,
+      ledgerStore: session.ledgerStore as NonNullable<typeof session.ledgerStore>,
+      lessonStore: session.lessonStore,
+      poolManager: session.poolManager,
+      modelDriver: session.modelDriver,
+      wirePrefix: session.wirePrefix,
+      humanAdaptersById: session.humanAdaptersById,
+      ctx: session.ctx,
+      executeChildStep: session.executeChildStep,
+    });
+  } finally {
+    syncParentSessionFromOuterFrames(session, sharedOuterFrames);
+  }
   if (fRes.batchFrame.forks.some((f) => f.conflictCheckArmed)) {
     session.agentFrame = Object.freeze<AgentContinuationFrame>({
       ...session.agentFrame,

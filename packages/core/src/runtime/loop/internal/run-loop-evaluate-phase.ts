@@ -4,6 +4,7 @@ import type { LoopContinuationFrame } from '../../../ports/loop-continuation-fra
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { WireFrameRecord } from '../../../ports/wire-frame-record.js';
 import { executeAgent } from '../../agent/execute-agent.js';
+import { getStepRuntimeInternals } from '../../agent/internal/get-step-runtime-internals.js';
 import type { ContrastiveDistillationTrajectoryPair } from '../../lessons/lesson-distillation-params.js';
 import { runContrastiveLessonDistillation } from '../../lessons/lesson-distiller-runner.js';
 import { mergeLessonOutcomePrecedence } from '../../lessons/lesson-scoring.js';
@@ -167,11 +168,13 @@ export async function runLoopEvaluatePhase<TIn, TOut, THandle>(
   const resumeSuffix =
     state.ctx.resumeContinuationStack !== undefined ? `:r${String(state.loopFrame.turnsTaken)}` : '';
   const evalStepExecId = `${state.ctx.stepExecId}:eval:${String(state.loopFrame.iteration)}${resumeSuffix}`;
+  const parentRt = getStepRuntimeInternals(state.ctx);
   const evalCtx = Object.freeze({
     ...state.ctx,
     stepExecId: evalStepExecId,
     resumeContinuationStack: undefined,
     _runtime: {
+      ...parentRt,
       ledgerStore: state.ledgerStore,
       topologyStore: state.topologyStore,
       lessonStore: state.lessonStore,

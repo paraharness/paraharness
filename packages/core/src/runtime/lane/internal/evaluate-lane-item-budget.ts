@@ -21,6 +21,9 @@ export async function evaluateLaneItemBudget<TIn = unknown>(
   item: LaneQueuedItemState<TIn>,
   syncTracker: (itemKey: string, state: string) => Promise<void>,
 ): Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }> {
+  if (item.status === 'CANCELLED') {
+    return Object.freeze({ allowed: false });
+  }
   const maxCfg = cfg.lane.maxCostUsd;
   const currentLimit = item.approvedMaxCostUsd ?? maxCfg?.limitUsd;
   if (maxCfg === undefined || currentLimit === undefined || item.costUsd <= currentLimit) {

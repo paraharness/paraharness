@@ -16,12 +16,14 @@ import {
   abortSuspendedForkRecord,
   executeDefaultForkOrTournamentChild,
   prepareForkCallContext,
+  wrapChildStepRunnerWithOuterFrameRollup,
 } from './internal/run-single-fork-call.js';
 
 /**
  * Resolves the child step executor for `params`, defaulting to `executeDefaultForkOrTournamentChild`.
  *
- * Wires `ledgerStore`, `lessonStore`, `lockManager`, `continuationQueue`, `poolManager`, and `humanAdaptersById`.
+ * Wires `ledgerStore`, `lessonStore`, `lockManager`, `continuationQueue`, `poolManager`, and `humanAdaptersById`,
+ * and rolls incremental child turns, cost, and duration up into `params.outerFrames`.
  *
  * @template THandle Runtime handle type of the active `BranchableScope`.
  *
@@ -32,19 +34,19 @@ import {
 function resolveForkChildStepRunner<THandle = unknown>(
   params: ForkBatchExecutionParams<THandle>,
 ): NonNullable<ForkBatchExecutionParams<THandle>['executeChildStep']> {
-  if (params.executeChildStep !== undefined) {
-    return params.executeChildStep;
-  }
-  return (childNode, childIn, childCtx) =>
-    executeDefaultForkOrTournamentChild(childNode, childIn, {
-      childCtx,
-      ledgerStore: params.ledgerStore,
-      lessonStore: params.lessonStore,
-      lockManager: params.lockManager,
-      continuationQueue: params.continuationQueue,
-      poolManager: params.poolManager,
-      humanAdaptersById: params.humanAdaptersById,
-    });
+  const baseRunner: NonNullable<ForkBatchExecutionParams<THandle>['executeChildStep']> =
+    params.executeChildStep ??
+    ((childNode, childIn, childCtx) =>
+      executeDefaultForkOrTournamentChild(childNode, childIn, {
+        childCtx,
+        ledgerStore: params.ledgerStore,
+        lessonStore: params.lessonStore,
+        lockManager: params.lockManager,
+        continuationQueue: params.continuationQueue,
+        poolManager: params.poolManager,
+        humanAdaptersById: params.humanAdaptersById,
+      }));
+  return wrapChildStepRunnerWithOuterFrameRollup(baseRunner, params.outerFrames);
 }
 
 /**

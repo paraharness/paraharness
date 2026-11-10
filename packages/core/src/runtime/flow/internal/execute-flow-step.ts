@@ -277,6 +277,9 @@ async function handleFlowStepAttemptError<TIn = unknown, THandle = unknown>(
   if (typedErr.code === 'HARNESS_STEP_SUSPENDED') {
     return 'suspended';
   }
+  if (typedErr.code === 'HARNESS_RUN_CANCELLED') {
+    throw err;
+  }
   if (flowCtx.pendingRewindToStepId !== undefined) {
     return 'rewound';
   }

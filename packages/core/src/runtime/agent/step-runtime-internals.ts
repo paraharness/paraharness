@@ -140,4 +140,9 @@ export interface StepRuntimeInternals<THandle = unknown> {
 
   /** Optional callback folding flow-scoped `ToolEffect[]` through `flow.telemetry` (`SPEC.md` §3.9). */
   readonly collectCustomTelemetry?: () => Promise<Readonly<Record<string, unknown>>>;
+
+  /** Optional callback enforcing enclosing lane `maxCostUsd` budget after each model turn (`SPEC.md` §1.18 & §3.6). */
+  readonly enforceRunBudget?: (
+    addedCostUsd: number,
+  ) => Promise<{ readonly allowed: boolean; readonly newLimitUsd?: number }>;
 }
