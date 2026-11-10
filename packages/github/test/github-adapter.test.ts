@@ -14,6 +14,8 @@ import {
   createGithubExecutors,
   defaultGithubHttpTransport,
   github,
+  type GithubCreateOrUpdatePrNode,
+  type GithubCreateOrUpdatePrOptions,
 } from '../src/index.js';
 import { RecordedGithubHttpTransport } from './fixtures/recorded-github-http-transport.js';
 
@@ -352,17 +354,20 @@ describe('@paraharness/github adapter', () => {
       const baseBranchMapper = (item: z.infer<typeof prInputSchema>) => item.targetBase;
       const titleMapper = (item: z.infer<typeof prInputSchema>) => item.title;
       const bodyMapper = (item: z.infer<typeof prInputSchema>) => item.summary;
-      const prStepNode = github
+      const prStepNode: GithubCreateOrUpdatePrNode<
+        z.infer<typeof prInputSchema>,
+        z.infer<typeof prOutputSchema>
+      > = github
         .createOrUpdatePr('open-or-update-pr', {
           repo: 'acme/app',
           token: P.env('GITHUB_TOKEN'),
           inputSchema: prInputSchema,
+          outputSchema: prOutputSchema,
           branch: branchMapper,
           baseBranch: baseBranchMapper,
           title: titleMapper,
           body: bodyMapper,
         })
-        .output(prOutputSchema)
         .toAST();
       const explicitPrStepNode = github
         .createOrUpdatePr('open-or-update-pr', {
@@ -447,6 +452,21 @@ describe('@paraharness/github adapter', () => {
           base: 'fix/#41',
         },
       });
+    });
+
+    it('rejects invalid outputSchema in github.createOrUpdatePr with a fail-closed error', () => {
+      const invalidOptions: GithubCreateOrUpdatePrOptions<unknown> = {
+        repo: 'acme/app',
+        token: P.env('GITHUB_TOKEN'),
+        branch: () => 'fix/#1',
+        title: () => 'Title',
+        body: () => 'Body',
+      };
+      Reflect.set(invalidOptions, 'outputSchema', { invalid: true });
+
+      expect(() => github.createOrUpdatePr('bad-output-schema', invalidOptions)).toThrow(
+        "Invalid outputSchema in github.createOrUpdatePr 'bad-output-schema'",
+      );
     });
   });
 });

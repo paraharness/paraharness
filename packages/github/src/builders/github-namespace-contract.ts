@@ -53,13 +53,13 @@ export interface GithubNamespace {
    * @template TOut    Validated step output payload type.
    * @template THandle Runtime handle type of the enclosing isolation scope.
    *
-   * @param {string}                             id      - Unique step node identifier.
-   * @param {GithubCreateOrUpdatePrOptions<TIn>} options - Repository, token, and PR field projections.
+   * @param {string}                                   id      - Unique step node identifier.
+   * @param {GithubCreateOrUpdatePrOptions<TIn, TOut>} options - Repository, token, and PR field projections.
    *
    * @returns {GithubCreateOrUpdatePrBuilder<TIn, TOut, THandle>} Fluent pull-request step builder.
    */
   createOrUpdatePr<TIn = unknown, TOut = unknown, THandle = unknown>(
     id: string,
-    options: GithubCreateOrUpdatePrOptions<TIn>,
+    options: GithubCreateOrUpdatePrOptions<TIn, TOut>,
   ): GithubCreateOrUpdatePrBuilder<TIn, TOut, THandle>;
 }

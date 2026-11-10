@@ -6,9 +6,10 @@ import type { BivariantCallback, EnvRef, z } from '@paraharness/core';
  * Binds the target repository, API token, synchronous input-to-PR field projections,
  * and optional initial input/output Zod validation schemas.
  *
- * @template TIn Step input payload type projected into pull request fields.
+ * @template TIn  Step input payload type projected into pull request fields.
+ * @template TOut Step output payload type validated on step completion.
  */
-export interface GithubCreateOrUpdatePrOptions<TIn = unknown> {
+export interface GithubCreateOrUpdatePrOptions<TIn = unknown, TOut = unknown> {
   /** GitHub repository slug in `owner/repo` format. */
   readonly repo: string;
   /** GitHub API token or symbolic `P.env(...)` reference. */
@@ -24,5 +25,5 @@ export interface GithubCreateOrUpdatePrOptions<TIn = unknown> {
   /** Optional Zod schema validating the step input payload. */
   readonly inputSchema?: z.ZodType<TIn>;
   /** Optional Zod schema validating the step output payload. */
-  readonly outputSchema?: z.ZodTypeAny;
+  readonly outputSchema?: z.ZodType<TOut>;
 }
