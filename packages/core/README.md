@@ -172,8 +172,6 @@ const evaluator = P.agent('evaluator')
   );
 
 const verifiedWorkerLoop = P.loop('verified-worker-loop')
-  .input(TaskInput)
-  .output(z.object({ summary: z.string() }))
   .maxIterations(3)
   .preserveActorSession(true)
   .act('execute', worker.withPolicy(workerPolicy))
@@ -181,8 +179,7 @@ const verifiedWorkerLoop = P.loop('verified-worker-loop')
     mapInput: (task, candidate, scopeReceipt) => ({ task, candidate, scopeReceipt }),
     acceptWhen: (ev) => ev.accepted && ev.deficits.length === 0,
     feedbackMapper: (ev) => `Resolve these deficits:\n- ${ev.deficits.join('\n- ')}`,
-  })
-  .returnOutputFrom('execute');
+  });
 ```
 
 ### Parallel Subagent Forks & Speculative Tournaments
@@ -192,6 +189,31 @@ Equip coordinator agents with `.fork()` for isolated child worktree delegation a
 ```ts
 import { P, z } from '@paraharness/core';
 import { git } from '@paraharness/git';
+
+const candidateArbiter = P.agent('candidate-arbiter')
+  .model(sonnet)
+  .tools(fs.readOnlyTools(runner), git.candidateComparisonTools(runner))
+  .instructions('Select the strongest candidate branch or reject all.')
+  .input(
+    P.SpeculationInputSchema(
+      TaskInput,
+      z.object({ summary: z.string() }),
+      git.ScopeReceiptSchema,
+    ),
+  )
+  .output(
+    z.discriminatedUnion('decision', [
+      z.object({
+        decision: z.literal('select-winner'),
+        winnerBranchIndex: z.union([z.literal(0), z.literal(1)]),
+        rationale: z.string(),
+      }),
+      z.object({
+        decision: z.literal('reject-all'),
+        rationale: z.string(),
+      }),
+    ]),
+  );
 
 const coordinator = P.agent('coordinator')
   .model(sonnet)
@@ -223,9 +245,7 @@ const coordinator = P.agent('coordinator')
             { taskId: parent.taskId, prompt: req.strategyA },
             { taskId: parent.taskId, prompt: req.strategyB },
           ])
-          .arbiter(candidateArbiter, {
-            resolveDecision: (verdict) => verdict,
-          }),
+          .arbiter(candidateArbiter),
       ),
   );
 ```
