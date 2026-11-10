@@ -51,6 +51,10 @@ export {
   createFsWriteGuardBuilder,
   type FsWriteGuardOptions,
 } from './builders/create-fs-write-guard-builder.js';
+export {
+  extractFsViolatedPaths,
+  extractFsViolatedPaths as violatedPaths,
+} from './builders/extract-fs-violated-paths.js';
 export type { FsNamespace } from './builders/fs-namespace-contract.js';
 export { fs } from './builders/fs-namespace.js';
 export { createFsExecutors } from './executors/create-fs-executors.js';

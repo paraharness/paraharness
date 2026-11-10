@@ -34,6 +34,14 @@ import { local, nodeExecutors } from '@paraharness/node';
 const runner = local.runner({ slots: 4 });
 const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
 
+const leaseRequest = P.interrupt(
+  'lease-request',
+  z.object({
+    requestedPaths: z.array(z.string()),
+    justification: z.string(),
+  }),
+);
+
 const workerPolicy = P.policy('worker-policy')
   .guard(
     fs.protect(['packages/*/src/index.ts', 'PRODUCT_SPEC.md']),
@@ -41,6 +49,16 @@ const workerPolicy = P.policy('worker-policy')
     fs.secretLiterals(),
   )
   .onViolation('deny-with-error')
+  .guard(
+    fs.writeGuard({
+      denyGlobs: ['**/*.test.ts', '**/*.test.tsx'],
+      onlyExistingAtBaseRef: true,
+    }),
+  )
+  .onViolation('raise-interrupt', leaseRequest, (violation) => ({
+    requestedPaths: fs.violatedPaths(violation),
+    justification: violation.violationSummary,
+  }))
   .tripwire(fs.maxFilesMutated(6));
 
 const worker = P.agent('worker')

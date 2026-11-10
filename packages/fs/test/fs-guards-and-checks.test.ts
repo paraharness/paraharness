@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   P,
   type PolicyGuardEvaluationInput,
+  type PolicyViolation,
   type QuotaTripwireEvaluationInput,
   type StepExecutionContext,
   type ToolEffect,
@@ -23,8 +24,10 @@ import {
   evaluateFsSecretLiteralsGuard,
   evaluateFsWriteGuard,
   executeFsRegexCheck,
+  extractFsViolatedPaths,
   fs,
   fsExecutors,
+  violatedPaths,
 } from '../src/index.js';
 import { compileActiveLeaseWriteMatcher } from '../src/executors/internal/compile-active-lease-write-matcher.js';
 import {
@@ -415,5 +418,45 @@ describe('@paraharness/fs guards, matchers, checks, tripwires, and telemetry', (
     expect(gitUnionResult.deficits).toEqual([
       'packages/api/git-dirty.ts: Direct drizzle-orm imports are forbidden in packages/api.',
     ]);
+  });
+
+  it('extracts deduplicated first-seen filesystem paths via fs.violatedPaths and ignores non-fs or malformed effects', () => {
+    const violation: PolicyViolation = {
+      blockedCalls: [],
+      violatedEffects: [
+        makeWriteEffect(['packages/api/a.test.ts', 'packages/api/b.test.ts']),
+        {
+          kind: 'billing:effect',
+          mutatesScope: true,
+          attributes: { paths: ['ignored/non-fs.ts'] },
+        },
+        {
+          kind: 'fs:effect',
+          mutatesScope: true,
+          attributes: { paths: 'not-an-array' },
+        },
+        {
+          kind: 'fs:effect',
+          mutatesScope: true,
+        },
+        {
+          kind: 'fs:effect',
+          mutatesScope: true,
+          attributes: {
+            paths: ['packages/api/b.test.ts', 42, 'packages/db/c.test.ts', 'packages/api/a.test.ts'],
+          },
+        },
+      ],
+      violationSummary: 'Write blocked by fs.writeGuard',
+    };
+
+    const expectedPaths = [
+      'packages/api/a.test.ts',
+      'packages/api/b.test.ts',
+      'packages/db/c.test.ts',
+    ];
+    expect(fs.violatedPaths(violation)).toEqual(expectedPaths);
+    expect(violatedPaths(violation)).toEqual(expectedPaths);
+    expect(extractFsViolatedPaths(violation)).toEqual(expectedPaths);
   });
 });

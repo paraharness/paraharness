@@ -130,9 +130,7 @@ const workerPolicy = P.policy('worker-policy')
     }),
   )
   .onViolation('raise-interrupt', leaseRequest, (violation) => ({
-    requestedPaths: violation.violatedEffects.flatMap(
-      (eff) => (eff.attributes?.paths as string[] | undefined) ?? [],
-    ),
+    requestedPaths: fs.violatedPaths(violation),
     justification: violation.violationSummary,
   }))
   .tripwire(fs.maxFilesMutated(6))

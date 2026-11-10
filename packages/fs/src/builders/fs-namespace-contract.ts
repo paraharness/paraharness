@@ -24,6 +24,7 @@ import type {
   LeaseDelta,
   MaybeBuilder,
   NodeRunnerNode,
+  PolicyViolation,
   ScopePredicate,
   TopologyNode,
 } from '@paraharness/core';
@@ -165,6 +166,14 @@ export interface FsNamespace {
    * @returns {LeaseDelta} Frozen `LeaseDelta` record.
    */
   allowWriteGlobs(globs: readonly string[]): LeaseDelta;
+  /**
+   * Extracts deduplicated filesystem paths in first-seen order from `violation.violatedEffects`.
+   *
+   * Inspects `'fs:effect'` records in `violation.violatedEffects` and returns unique string path entries.
+   * @param {PolicyViolation} violation - Policy violation emitted by a pre-flight or post-flight guard.
+   * @returns {string[]} Deduplicated array of violated filesystem paths in first-seen order.
+   */
+  violatedPaths(violation: PolicyViolation): string[];
   /**
    * Compiles a passive `FsQuotaTripwireNode` tripping when distinct mutated files exceed `count`.
    *

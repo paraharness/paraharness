@@ -18,6 +18,7 @@ import { createFsSecretLiteralsGuardBuilder } from './create-fs-secret-literals-
 import { createFsTelemetryBuilder } from './create-fs-telemetry-builder.js';
 import { createFsTextSourceBuilder } from './create-fs-text-source-builder.js';
 import { createFsWriteGuardBuilder } from './create-fs-write-guard-builder.js';
+import { extractFsViolatedPaths } from './extract-fs-violated-paths.js';
 import type { FsNamespace } from './fs-namespace-contract.js';
 
 /**
@@ -42,6 +43,7 @@ export const fs: FsNamespace = Object.freeze<FsNamespace>({
   scopedWrite: createFsScopedWriteGuardBuilder,
   secretLiterals: createFsSecretLiteralsGuardBuilder,
   allowWriteGlobs: createFsAllowWriteGlobsLeaseDelta,
+  violatedPaths: extractFsViolatedPaths,
   maxFilesMutated: createFsMaxFilesMutatedBuilder,
   codingTools: createFsCodingTools,
   readOnlyTools: createFsReadOnlyTools,
