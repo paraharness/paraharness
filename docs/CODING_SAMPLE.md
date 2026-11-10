@@ -673,9 +673,7 @@ const workerBasePolicy = P.policy('worker-base')
     }),
   )
   .onViolation('raise-interrupt', leaseRequest, (violation) => ({
-    requestedPaths: violation.violatedEffects.flatMap(
-      (eff) => (eff.attributes?.paths as string[] | undefined) ?? [],
-    ),
+    requestedPaths: fs.violatedPaths(violation),
     justification: violation.violationSummary,
   }))
   .onAbort(git.snapshotAndReset());
