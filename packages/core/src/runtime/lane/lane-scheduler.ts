@@ -353,6 +353,9 @@ export class LaneScheduler<TIn = unknown> {
       return res;
     } catch (err) {
       item.status = 'FAILED';
+      if (this.cfg.topologyStore !== undefined) {
+        await this.cfg.topologyStore.discardRunOverlay(item.runId);
+      }
       if (this.cfg.lane.retry !== undefined) {
         item.terminalExitState = this.cfg.lane.retry.orFailState;
         await this.cfg.ledgerStore.recordRunTerminalReceipt(

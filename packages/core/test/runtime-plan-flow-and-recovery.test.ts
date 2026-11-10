@@ -458,6 +458,24 @@ describe('M2 Runtime — runFlow standalone flow runner (P2)', () => {
         structuredOutput: { done: true },
         usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.01 },
       },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: { role: 'assistant', visibleText: JSON.stringify({ done: true }), toolCalls: [] },
+        structuredOutput: { done: true },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: { role: 'assistant', visibleText: JSON.stringify({ done: true }), toolCalls: [] },
+        structuredOutput: { done: true },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: { role: 'assistant', visibleText: JSON.stringify({ done: true }), toolCalls: [] },
+        structuredOutput: { done: true },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 },
+      },
     ]);
 
     const topo = P.topology('flow-topo').store(SAMPLE_TOPOLOGY_STORE_NODE).partitions({ core: { dependsOn: [] } });
@@ -505,24 +523,114 @@ describe('M2 Runtime — runFlow standalone flow runner (P2)', () => {
     expect(modelDriver.recordedRequests[0]?.history[0]?.canonical.visibleText).toContain('Contract v1');
     expect(modelDriver.recordedRequests[0]?.history[0]?.canonical.visibleText).toContain('Remember lesson 1');
     expect(humanAdapter.decisionRequests).toHaveLength(1);
+    expect(
+      (await ledgerStore.getRunTerminalReceipts(['standalone-flow-run'])).get(
+        'standalone-flow-run',
+      ),
+    ).toEqual({
+      runId: 'standalone-flow-run',
+      terminalState: 'done',
+      scopeReceiptJson: JSON.stringify(res.scopeReceipt),
+    });
+
+    const directLandingStep = P.command<string>('direct-land-step')
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ ok: z.boolean() }))
+      .run(async (_in, ctx) => {
+        await topologyStore.updateContract(ctx.runId, 'core', 'Contract v2 direct', ctx.stepExecId);
+        await lessonStore.admit({
+          partition: 'core',
+          directive: 'Direct landing lesson',
+          epochAtCreation: 0,
+          createdByRunId: ctx.runId,
+        });
+        return { ok: true };
+      });
+    const directLandingFlow = P.flow('direct-landing-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE as never)
+      .step('work', worker)
+      .step('mutate-topo', directLandingStep)
+      .exit('done');
+    const directRes = await runFlow(
+      directLandingFlow,
+      { id: 'item-direct' },
+      { ...options, runId: 'direct-run-1', itemKey: 'item-direct' },
+    );
+    expect(directRes.exitState).toBe('done');
+    expect((await topologyStore.getPartitions()).get('core')?.contractText).toBe(
+      'Contract v2 direct',
+    );
+    expect((await topologyStore.getPartitions()).get('core')?.epoch).toBe(2);
+    expect(lessonStore.lessons.get('lesson-2')?.epochAtCreation).toBe(2);
+    expect((await ledgerStore.getRunTerminalReceipts(['item-direct'])).get('item-direct')).toEqual({
+      runId: 'direct-run-1',
+      terminalState: 'done',
+      scopeReceiptJson: JSON.stringify(directRes.scopeReceipt),
+    });
+
+    const failExitStep = P.command<string>('fail-exit-step')
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ ok: z.boolean() }))
+      .run(async (_in, ctx) => {
+        await topologyStore.updateContract(
+          ctx.runId,
+          'core',
+          'Discarded on failed exit',
+          ctx.stepExecId,
+        );
+        return { ok: false };
+      });
+    const failedExitFlow = P.flow('failed-exit-flow')
+      .input(z.object({ id: z.string() }))
+      .scope(SAMPLE_TIER3_SCOPE_NODE as never)
+      .step('work', worker)
+      .step('fail-step', failExitStep)
+      .exit('failed');
+    const failedExitRes = await runFlow(
+      failedExitFlow,
+      { id: 'item-failed-exit' },
+      { ...options, runId: 'failed-exit-run-1', itemKey: 'item-failed-exit' },
+    );
+    expect(failedExitRes.exitState).toBe('failed');
+    expect((await topologyStore.getPartitions('failed-exit-run-1')).get('core')?.contractText).toBe(
+      'Contract v2 direct',
+    );
+    expect((await topologyStore.getPartitions()).get('core')?.contractText).toBe(
+      'Contract v2 direct',
+    );
 
     const failStep = P.command<string>('boom-step')
       .input(z.object({ id: z.string() }))
       .output(z.object({}))
-      .run(async () => {
+      .run(async (_in, ctx) => {
+        await topologyStore.updateContract(ctx.runId, 'core', 'Uncommitted boom', ctx.stepExecId);
         throw new Error('Step boom');
       });
     const failingFlow = P.flow('failing-flow')
       .input(z.object({ id: z.string() }))
       .scope(SAMPLE_TIER3_SCOPE_NODE as never)
+      .step('work', worker)
       .step('boom', failStep)
       .exit('done');
 
     await expect(
-      runFlow(failingFlow, { id: 'item-fail' }, { ...options, runId: 'fail-run-1' }),
+      runFlow(
+        failingFlow,
+        { id: 'item-fail' },
+        { ...options, runId: 'fail-run-1', itemKey: 'item-fail' },
+      ),
     ).rejects.toThrow('Step boom');
     expect(scope.handleState.has('root:fail-run-1')).toBe(true);
     expect(scope.liveHandles.has('root:fail-run-1')).toBe(false);
+    expect((await topologyStore.getPartitions('fail-run-1')).get('core')?.contractText).toBe(
+      'Contract v2 direct',
+    );
+    expect((await ledgerStore.getRunTerminalReceipts(['item-fail'])).get('item-fail')).toEqual({
+      runId: 'fail-run-1',
+      terminalState: 'errored',
+      scopeReceiptJson: undefined,
+    });
 
     await expect(
       runFlow(flowBuilder, { id: 'item-missing' }, { registry: {}, ledger: SAMPLE_LEDGER_NODE }),

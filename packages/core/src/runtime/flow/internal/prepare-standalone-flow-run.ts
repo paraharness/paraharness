@@ -1,6 +1,7 @@
 import type { MaybeBuilder } from '../../../ast/ast-foundation.types.js';
 import type { LedgerStoreASTNode } from '../../../ast/domain-ast.types.js';
 import type { FlowNode } from '../../../ast/flow-node.js';
+import type { TopologyNode } from '../../../ast/topology-node.js';
 import { createExecutorRegistry } from '../../../ports/create-executor-registry.js';
 import type { HumanAdapter } from '../../../ports/human-adapter.js';
 import type { IsolationScope } from '../../../ports/isolation-scope.js';
@@ -48,6 +49,9 @@ export interface PreparedStandaloneFlowRunParams<TIn = unknown, THandle = unknow
 
   /** Instantiated isolation scope driver. */
   readonly scopeDriver: IsolationScope<THandle>;
+
+  /** Optional primary topology AST node referenced by steps in the flow. */
+  readonly topologyNode: TopologyNode<string> | undefined;
 
   /** Optional instantiated topology store driver. */
   readonly topologyStore: TopologyStore | undefined;
@@ -136,6 +140,7 @@ export function prepareStandaloneFlowRun<TIn = unknown, THandle = unknown>(
     env,
     ledgerStore,
     scopeDriver,
+    topologyNode: resolvedStores.topologyNode,
     topologyStore: resolvedStores.topologyStore,
     lessonStore: resolvedStores.lessonStore,
     humanAdaptersById: resolvedStores.humanAdaptersById,
@@ -201,6 +206,7 @@ export function createStandaloneFlowExecutionContext<TIn = unknown, THandle = un
     registry: prepared.registry,
     env: prepared.env,
     ledgerStore: prepared.ledgerStore,
+    topologyNode: prepared.topologyNode,
     topologyStore: prepared.topologyStore,
     lessonStore: prepared.lessonStore,
     lockManager: prepared.lockManager,

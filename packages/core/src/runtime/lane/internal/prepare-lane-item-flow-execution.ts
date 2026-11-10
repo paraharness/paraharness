@@ -155,6 +155,7 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
     registry: cfg.registry,
     env: cfg.env,
     ledgerStore: wrapLaneLedgerStore(cfg.ledgerStore, managers.onPlanMutated),
+    topologyNode: cfg.topologyNode,
     topologyStore: cfg.topologyStore,
     lessonStore: cfg.lessonStore,
     lockManager: managers.lockManager,

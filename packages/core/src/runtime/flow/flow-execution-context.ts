@@ -1,6 +1,7 @@
 import type { StepASTNode } from '../../ast/domain-ast.types.js';
 import type { FlowNode } from '../../ast/flow-node.js';
 import type { PrefixGroupNode } from '../../ast/prefix-group-node.js';
+import type { TopologyNode } from '../../ast/topology-node.js';
 import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
@@ -46,6 +47,8 @@ export interface FlowExecutionContext<TIn = unknown, THandle = unknown> {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Durable state ledger store. */
   readonly ledgerStore: LedgerStore;
+  /** Optional declarative `TopologyNode` AST for `commitOverlayWhen` correlation. */
+  readonly topologyNode?: TopologyNode<string>;
   /** Optional topology store for run-scoped partition contract overlays. */
   readonly topologyStore?: TopologyStore;
   /** Optional lesson store for empirical lesson recall and outcome attribution. */

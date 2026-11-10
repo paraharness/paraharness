@@ -78,7 +78,28 @@ export async function runFlow<TIn = unknown, THandle = unknown>(
     scopeHandle = await prepared.scopeDriver.acquireRoot(prepared.runId);
     scopeAcquired = true;
     const flowCtx = createStandaloneFlowExecutionContext(prepared, input, scopeHandle);
-    return await executeFlow(flowCtx);
+    try {
+      const res = await executeFlow(flowCtx);
+      if (res.exitState !== 'SUSPENDED') {
+        await prepared.ledgerStore.recordRunTerminalReceipt(
+          prepared.runId,
+          prepared.itemKey,
+          res.exitState,
+          JSON.stringify(res.scopeReceipt),
+        );
+      }
+      return res;
+    } catch (err) {
+      await prepared.ledgerStore.recordRunTerminalReceipt(
+        prepared.runId,
+        prepared.itemKey,
+        'errored',
+      );
+      if (prepared.topologyStore !== undefined) {
+        await prepared.topologyStore.discardRunOverlay(prepared.runId);
+      }
+      throw err;
+    }
   } finally {
     if (onExternalAbort !== undefined && options.signal !== undefined) {
       options.signal.removeEventListener('abort', onExternalAbort);

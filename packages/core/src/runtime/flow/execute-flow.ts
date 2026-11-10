@@ -1,9 +1,11 @@
+import type { FlowNode } from '../../ast/flow-node.js';
 import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
 import { compileRunWirePrefixes } from '../prefix/compile-wire-prefix.js';
 import type { FlowExecutionContext } from './flow-execution-context.js';
 import type { FlowRunResult } from './flow-run-result.js';
 import { foldFlowCustomTelemetry } from './internal/build-flow-step-telemetry.js';
 import { collectFlowActors, collectFlowPrefixGroups } from './internal/collect-flow-actors.js';
+import { collectFlowStoreAstNodes } from './internal/collect-flow-store-ast-nodes.js';
 import { executeFlowBranch } from './internal/execute-flow-branch.js';
 import { executeFlowStep } from './internal/execute-flow-step.js';
 
@@ -99,6 +101,66 @@ function applyPendingFlowRewindJump<TIn = unknown, THandle = unknown>(
 }
 
 /**
+ * Checks whether a flow terminal `exitState` represents a failure outcome whose topology overlay should be discarded (`SPEC.md` §3.3).
+ *
+ * @param {string} exitState - Flow terminal exit state string.
+ *
+ * @returns {boolean} `true` when `exitState` is `'failed'`, `'errored'`, `'cancelled'`, or `'abandoned'`.
+ */
+function isFlowFailureExitState(exitState: string): boolean {
+  return (
+    exitState === 'failed' ||
+    exitState === 'errored' ||
+    exitState === 'cancelled' ||
+    exitState === 'abandoned'
+  );
+}
+
+/**
+ * Settles `flowCtx.topologyStore` overlay upon terminal flow exit (`SPEC.md` §3.3 & §3.9).
+ *
+ * Discards the overlay on failure exit states, commits immediately (and syncs lesson creation epochs)
+ * when exiting `'done'` without an `onSignal` gate, or seals (`SEALED_UNMERGED`) when awaiting an `onSignal` merge trigger.
+ *
+ * @template TIn     Validated flow input payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx - Active flow execution context.
+ *
+ * @returns {Promise<void>} Resolves once the topology overlay is committed, sealed, or discarded.
+ */
+async function settleFlowTopologyOverlay<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+): Promise<void> {
+  if (flowCtx.topologyStore === undefined) {
+    return;
+  }
+  if (isFlowFailureExitState(flowCtx.flow.exitState)) {
+    await flowCtx.topologyStore.discardRunOverlay(flowCtx.runId);
+    return;
+  }
+  const resolvedTopologyNode =
+    flowCtx.topologyNode ??
+    collectFlowStoreAstNodes({
+      flows: [flowCtx.flow as FlowNode<unknown, unknown>],
+    }).primaryTopologyNode;
+  if (
+    flowCtx.flow.exitState === 'done' &&
+    resolvedTopologyNode?.commitOverlayWhen?.onSignal === undefined
+  ) {
+    const commitRes = await flowCtx.topologyStore.commitRunOverlay(flowCtx.runId);
+    if (flowCtx.lessonStore !== undefined && commitRes.committedRunIds.length > 0) {
+      await flowCtx.lessonStore.syncCreationEpochsForRuns(
+        commitRes.committedRunIds,
+        commitRes.updatedEpochs,
+      );
+    }
+    return;
+  }
+  await flowCtx.topologyStore.sealRunOverlay(flowCtx.runId);
+}
+
+/**
  * Executes a `FlowNode` from start or crash-recovery resume through its sequential steps and conditional branches (`SPEC.md` §3.9).
  *
  * Compiles and pins `PrefixGroupNode` wire prefixes at run start, loops across `flow.nodes` (supporting
@@ -155,9 +217,7 @@ export async function executeFlow<TIn = unknown, THandle = unknown>(
       () => flowCtx.scopeDriver.inspect(flowCtx.scopeHandle),
       flowCtx.activeStepAbortController.signal,
     );
-    if (flowCtx.topologyStore !== undefined) {
-      await flowCtx.topologyStore.sealRunOverlay(flowCtx.runId);
-    }
+    await settleFlowTopologyOverlay(flowCtx);
     return Object.freeze<FlowRunResult>({
       runId: flowCtx.runId,
       exitState: flowCtx.flow.exitState,
