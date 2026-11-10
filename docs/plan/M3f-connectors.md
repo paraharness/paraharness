@@ -133,7 +133,7 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
    - Use the official vendor SDKs and libraries installed in each package (`@octokit/rest` + `@octokit/webhooks` in `@paraharness/github`, `@slack/web-api` + `@slack/socket-mode` + `@slack/webhook` in `@paraharness/slack`, `stripe` in `@paraharness/stripe`, and `big.js` for exact decimal balance verification in `@paraharness/netsuite`).
    - Every `class` (and its constructor, methods, and properties), `interface` (and its properties and methods), `function` (public and `internal/`), and top-level `type` alias or `const` in `src/**` and `test/fixtures/**` must carry a complete `/** ... */` JSDoc block per `docs/CODING_GUIDELINES.md` §2 (clear summary sentence, behavioral description when non-obvious, and complete `@template`, `@param {Type} name - Description`, `@returns {Type} Description`, and `@throws` / `@note` / `@example` tags where applicable, with zero inline or body comments), enforced by `pnpm --filter @paraharness/github --filter @paraharness/slack --filter @paraharness/stripe --filter @paraharness/netsuite lint`.
 
-### 4.1 `@paraharness/github` (`SPEC.md` §4.5 line 3216 & `CODING_SAMPLE.md` lines 431–452, 1132–1169)
+### 4.1 `@paraharness/github` (`SPEC.md` §4.5 line 3216 & `CODING_SAMPLE.md` lines 431–452, 1124–1161)
 1. **`github.issues({ repo, token, labels? })`**:
    - Compiles to `GithubIssuesTrackerNode` (`readonly type: 'github:issues'`).
    - `GithubIssuesTrackerAdapter` (`trackers['github:issues']`) implements `poll()` (fetching issues from `/repos/${repo}/issues` with resolved `token`) and `setExternalState(itemKey, state)` (updating issue labels on `/repos/${repo}/issues/${issueNumber}/labels`).
@@ -144,7 +144,7 @@ Every file, class, method, and function in `packages/{github,slack,stripe,netsui
    - Compiles to `GithubCreateOrUpdatePrNode` (`readonly type: 'github:create-or-update-pr'`, inferring `TIn` from `inputSchema` across `branch`, `baseBranch`, `title`, and `body` callbacks, inferring `TOut` from `outputSchema`, and also supporting `.input(schema)` and `.output(schema)`).
    - Step executor queries open PRs for `head: branch(input)` and creates or updates the PR on `/repos/${repo}/pulls`.
 
-### 4.2 `@paraharness/slack` (`SPEC.md` §4.5 line 3217 & `CODING_SAMPLE.md` lines 356–365, 1197–1206)
+### 4.2 `@paraharness/slack` (`SPEC.md` §4.5 line 3217 & `CODING_SAMPLE.md` lines 356–365, 1184–1191)
 1. **`slack.bot({ appToken, botToken, channel })`**:
    - Compiles to `SlackApproverNode` (`readonly type: 'slack:approver'`, `readonly interactionMode: 'bidirectional'`).
    - `SlackApproverAdapter` (`humanChannels['slack:approver']` & `controlPlanes['slack:approver']`):
