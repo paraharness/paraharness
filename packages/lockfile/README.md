@@ -34,7 +34,7 @@ const result = await withFileLock(
   },
   {
     staleMs: 10_000,
-    heartbeatMs: 2_000,
+    heartbeatIntervalMs: 2_000,
     timeoutMs: 30_000,
   },
 );
