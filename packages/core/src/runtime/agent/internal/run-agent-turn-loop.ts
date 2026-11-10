@@ -11,6 +11,7 @@ import { collectRoleScopedWireTools } from '../../prefix/internal/collect-prefix
 import type { AgentTurnSessionState } from '../agent-turn-session-state.js';
 import { drainPendingToolBatch } from './drain-pending-tool-batch.js';
 import { evaluateBeforeStopGate } from './evaluate-before-stop-gate.js';
+import { getStepRuntimeInternals } from './get-step-runtime-internals.js';
 import { initializeAgentContinuationFrame } from './initialize-agent-turn-session.js';
 import { resolveInterruptEdge } from './resolve-interrupt-edge.js';
 
@@ -266,15 +267,18 @@ export async function prepareAndDrainTurnToolBatch<TIn, TOut, THandle>(
       intrRes.status === 'replace' &&
       intrRes.replaceHandler?.mode === 'replace'
     ) {
+      const custom =
+        (await getStepRuntimeInternals(session.ctx)?.collectCustomTelemetry?.()) ??
+        Object.freeze({});
       const repInput = intrRes.replaceHandler.mapReplacementInput(
         session.validatedInput,
         intrRes.payload,
         {
-          costUsd: 0,
+          costUsd: session.agentFrame.costUsd,
           turnsTaken: session.agentFrame.turnsTaken,
           durationMs: session.agentFrame.elapsedDurationMs,
-          custom: {},
-          abortMeta: {},
+          custom,
+          abortMeta: intrRes.abortMeta,
         },
       );
       const repOut = await session.executeChildStep(
@@ -337,38 +341,64 @@ async function enforceTurnQuantitativeLimits<TIn, TOut, THandle>(
     );
   }
   const limCfg = session.node.policy.onLimitExceeded;
-  const hasReplaceAbortHook = session.node.onInterruptHandlers.some(
+  const matchedReplaceHandler = session.node.onInterruptHandlers.find(
     (h) =>
       h.interrupt.id === limCfg.flushInterrupt.id &&
       h.mode === 'replace' &&
       h.abortHook !== undefined,
   );
-  const flushPayload =
-    session.ledgerStore !== undefined
-      ? (
-          await executeLimitExceededSequence({
-            agentFrame: session.agentFrame,
-            outerFrames: session.outerFrames,
-            limitConfig: limCfg,
-            modelNode: session.modelNode,
-            modelDriver: session.modelDriver,
-            wirePrefix: session.wirePrefix,
-            ledgerStore: session.ledgerStore,
-            continuationQueue: session.continuationQueue,
-            topologyStore: session.topologyStore,
-            serviceRegistry: session.serviceRegistry,
-            baseScopeCheckpoint: hasReplaceAbortHook
-              ? undefined
-              : session.baseScopeCheckpoint,
-            tripReason: limitReason,
-            ctx: session.ctx,
-          })
-        ).flushedPayload
-      : Object.freeze({
-          reason: limitReason,
-          ...tripwireMetrics,
-          observedEffects: session.agentFrame.observedEffects,
+  const replaceAbortHook =
+    matchedReplaceHandler?.mode === 'replace' ? matchedReplaceHandler.abortHook : undefined;
+  const effectiveLimCfg =
+    limCfg.abortHook !== undefined || replaceAbortHook === undefined
+      ? limCfg
+      : Object.freeze({ ...limCfg, abortHook: replaceAbortHook });
+  let flushPayload: unknown = Object.freeze({
+    reason: limitReason,
+    ...tripwireMetrics,
+    observedEffects: session.agentFrame.observedEffects,
+  });
+  let flushAbortMeta: Record<string, unknown> | undefined;
+  if (session.ledgerStore !== undefined) {
+    const prevTurns = session.agentFrame.turnsTaken;
+    const prevCost = session.agentFrame.costUsd;
+    const prevDuration = session.agentFrame.elapsedDurationMs;
+    const flushRes = await executeLimitExceededSequence({
+      agentFrame: session.agentFrame,
+      outerFrames: session.outerFrames,
+      limitConfig: effectiveLimCfg,
+      modelNode: session.modelNode,
+      modelDriver: session.modelDriver,
+      wirePrefix: session.wirePrefix,
+      ledgerStore: session.ledgerStore,
+      continuationQueue: session.continuationQueue,
+      topologyStore: session.topologyStore,
+      serviceRegistry: session.serviceRegistry,
+      baseScopeCheckpoint:
+        effectiveLimCfg.abortHook !== undefined ? undefined : session.baseScopeCheckpoint,
+      tripReason: limitReason,
+      ctx: session.ctx,
+    });
+    session.agentFrame = flushRes.updatedAgentFrame;
+    const deltaTurns = flushRes.updatedAgentFrame.turnsTaken - prevTurns;
+    const deltaCost = flushRes.updatedAgentFrame.costUsd - prevCost;
+    const deltaDuration = flushRes.updatedAgentFrame.elapsedDurationMs - prevDuration;
+    for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
+      const outer = session.outerFrames[idx];
+      if (outer?.kind === 'loop-frame') {
+        session.outerFrames[idx] = Object.freeze<LoopContinuationFrame>({
+          ...outer,
+          turnsTaken: outer.turnsTaken + deltaTurns,
+          costUsd: outer.costUsd + deltaCost,
+          elapsedDurationMs: outer.elapsedDurationMs + deltaDuration,
         });
+      }
+    }
+    flushPayload = flushRes.flushedPayload;
+    if (effectiveLimCfg.abortHook !== undefined) {
+      flushAbortMeta = flushRes.abortMeta;
+    }
+  }
   const intrRes = await resolveInterruptEdge(
     session,
     limCfg.flushInterrupt.id,
@@ -379,15 +409,18 @@ async function enforceTurnQuantitativeLimits<TIn, TOut, THandle>(
     intrRes.status === 'replace' &&
     intrRes.replaceHandler?.mode === 'replace'
   ) {
+    const custom =
+      (await getStepRuntimeInternals(session.ctx)?.collectCustomTelemetry?.()) ??
+      Object.freeze({});
     const repInput = intrRes.replaceHandler.mapReplacementInput(
       session.validatedInput,
       intrRes.payload,
       {
-        costUsd: 0,
+        costUsd: session.agentFrame.costUsd,
         turnsTaken: session.agentFrame.turnsTaken,
         durationMs: session.agentFrame.elapsedDurationMs,
-        custom: {},
-        abortMeta: {},
+        custom,
+        abortMeta: flushAbortMeta,
       },
     );
     const repOut = await session.executeChildStep(
@@ -401,7 +434,11 @@ async function enforceTurnQuantitativeLimits<TIn, TOut, THandle>(
   }
   if (intrRes.status !== 'resumed') {
     throw Object.assign(new Error(limitReason), {
-      interruptResolution: intrRes,
+      interruptResolution: Object.freeze({
+        ...intrRes,
+        abortMeta: flushAbortMeta,
+        isLimitExceeded: true,
+      }),
       isLimitExceeded: true,
     });
   }

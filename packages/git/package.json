@@ -1,6 +1,6 @@
 {
   "name": "@paraharness/git",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Copy-on-Write (CoW) hierarchical Git worktree isolation scope, git-index checkpointing, stateless 3-way merge-tree reconciliation, and candidate comparison tools for Paraharness.",
   "keywords": [
     "paraharness",

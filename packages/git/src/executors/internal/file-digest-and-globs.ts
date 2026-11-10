@@ -16,6 +16,8 @@ import picomatch from 'picomatch';
 import {
   COMPILED_EXCLUDE_MATCHER_CACHE,
   IMPLICIT_REPO_EXCLUDE_GLOBS,
+  TRANSIENT_NODE_MODULES_DIR_SEGMENT_REGEX,
+  TRANSIENT_NODE_MODULES_FILE_REGEX,
 } from './git-executor.constants.js';
 
 /**
@@ -82,29 +84,37 @@ export function compileWorktreeExcludeMatcher(
 }
 
 /**
- * Checks whether a relative directory path inside `node_modules` is a transient bundler or test-runner cache directory.
+ * Checks whether a relative directory path inside `node_modules` is a transient bundler, test-runner, or pnpm task-run state directory.
  *
- * Matches both top-level and nested `.cache`, `.vite`, and `.vitest` directories.
+ * Matches top-level and nested `.cache`, `.vite*`, `.vitest*`, and `.pnpm-task-run-state*` directory segments.
  *
  * @param {string} relDir - Forward-slash relative directory path inside `node_modules`.
  *
- * @returns {boolean} `true` when `relDir` is a transient `.cache`, `.vite`, or `.vitest` directory.
+ * @returns {boolean} `true` when `relDir` contains a transient cache or state directory segment.
  */
 function isTransientNodeModulesCacheDir(relDir: string): boolean {
-  return (
-    relDir === '.cache' ||
-    relDir === '.vite' ||
-    relDir === '.vitest' ||
-    relDir.endsWith('/.cache') ||
-    relDir.endsWith('/.vite') ||
-    relDir.endsWith('/.vitest')
-  );
+  if (relDir.length === 0) return false;
+  for (const segment of relDir.split('/')) {
+    if (TRANSIENT_NODE_MODULES_DIR_SEGMENT_REGEX.test(segment)) return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether a file entry inside `node_modules` is a transient pnpm workspace state file.
+ *
+ * @param {string} entryName - Basename of the file entry inside `node_modules`.
+ *
+ * @returns {boolean} `true` when `entryName` matches `.pnpm-workspace-state*.json`.
+ */
+function isTransientNodeModulesStateFile(entryName: string): boolean {
+  return TRANSIENT_NODE_MODULES_FILE_REGEX.test(entryName);
 }
 
 /**
  * Computes a structural SHA-256 digest of `<worktreePath>/node_modules`.
  *
- * Walks regular files and symlinks inside `node_modules` (excluding top-level and nested `.cache`, `.vite`, and `.vitest`)
+ * Walks regular files and symlinks inside `node_modules` (excluding transient `.cache`, `.vite*`, `.vitest*`, `.pnpm-task-run-state*` directories and `.pnpm-workspace-state*.json` files)
  * so `diffEffects` and `restoreCheckpoint` can detect `node_modules` tampering without performing backup I/O.
  *
  * @param {string} worktreePath - Worktree root directory path.
@@ -126,8 +136,9 @@ export async function computeNodeModulesDigest(
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       const childRel = relDir.length === 0 ? entry.name : `${relDir}/${entry.name}`;
-      if (entry.isDirectory()) stack.push(childRel);
-      else {
+      if (entry.isDirectory()) {
+        if (!isTransientNodeModulesCacheDir(childRel)) stack.push(childRel);
+      } else if (!isTransientNodeModulesStateFile(entry.name)) {
         const digest = await computePathModeAndSha256(path.join(nmRoot, childRel));
         hash.update(`${childRel}:${digest}\n`, 'utf8');
       }
@@ -139,7 +150,7 @@ export async function computeNodeModulesDigest(
 /**
  * Mirrors `<worktreePath>/node_modules` into `<backupRootDir>/<digest>` via Copy-on-Write if not already backed up.
  *
- * Skips transient `.cache`, `.vite`, and `.vitest` subdirectories and short-circuits when `digest === 'ABSENT'`
+ * Skips transient `.cache`, `.vite*`, `.vitest*`, `.pnpm-task-run-state*` subdirectories and `.pnpm-workspace-state*.json` files, and short-circuits when `digest === 'ABSENT'`
  * or `<backupRootDir>/<digest>` already exists on disk.
  *
  * @param {string} worktreePath  - Worktree root directory path.
@@ -168,8 +179,9 @@ export async function snapshotNodeModulesForCheckpoint(
     const entries = await readdir(path.join(nmRoot, relDir), { withFileTypes: true });
     for (const entry of entries) {
       const childRel = relDir.length === 0 ? entry.name : `${relDir}/${entry.name}`;
-      if (entry.isDirectory()) stack.push(childRel);
-      else {
+      if (entry.isDirectory()) {
+        if (!isTransientNodeModulesCacheDir(childRel)) stack.push(childRel);
+      } else if (!isTransientNodeModulesStateFile(entry.name)) {
         await copyFileCowOrValue(path.join(nmRoot, childRel), path.join(digestBackupDir, childRel));
       }
     }

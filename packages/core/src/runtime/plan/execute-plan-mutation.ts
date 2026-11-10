@@ -2,7 +2,10 @@ import { Graph, alg } from '@dagrejs/graphlib';
 import type { AgentContinuationFrame } from '../../ports/agent-continuation-frame.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
 import type { LeaseDelta } from '../../ports/lease-delta.js';
+import type { LoopContinuationFrame } from '../../ports/loop-continuation-frame.js';
 import type { MutateLanePlanSpawnedItem } from '../../ports/mutate-lane-plan-request.js';
+import type { UniversalStepTelemetry } from '../../ports/universal-step-telemetry.js';
+import { getStepRuntimeInternals } from '../agent/internal/get-step-runtime-internals.js';
 import type { PlanMutationParams } from './plan-mutation-params.js';
 import type { PlanMutationResult } from './plan-mutation-result.js';
 import type { SyncPrerequisitesParams } from './sync-prerequisites-params.js';
@@ -52,14 +55,23 @@ async function suspendParentStepForPrerequisites<THandle = unknown>(
         stack,
       );
     }
+    const loopFrame = params.outerFrames?.find(
+      (f: ContinuationFrame): f is LoopContinuationFrame => f.kind === 'loop-frame',
+    );
+    const custom =
+      (await getStepRuntimeInternals(params.ctx)?.collectCustomTelemetry?.()) ?? Object.freeze({});
+    const stepTelemetry = Object.freeze<UniversalStepTelemetry>({
+      turnsTaken: loopFrame?.turnsTaken ?? params.agentFrame.turnsTaken,
+      costUsd: loopFrame?.costUsd ?? params.agentFrame.costUsd,
+      durationMs: loopFrame?.elapsedDurationMs ?? params.agentFrame.elapsedDurationMs,
+      custom,
+      abortMeta: undefined,
+    });
     await params.ledgerStore.recordStepTransition({
       stepExecId: params.ctx.stepExecId,
       status: 'SUSPENDED',
       headScopeCheckpoint: headCkpt,
-      telemetryJson: JSON.stringify({
-        turnsTaken: params.agentFrame.turnsTaken,
-        costUsd: params.agentFrame.costUsd,
-      }),
+      telemetryJson: JSON.stringify(stepTelemetry),
     });
   }
   return headCkpt;

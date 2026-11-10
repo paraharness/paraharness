@@ -241,6 +241,13 @@ describe('Post-flight subprocess sandboxing and 4-step .onLimitExceeded() sequen
     });
     expect([flushRes.flushedPayload, modelDriver.recordedRequests[0]?.toolChoice, modelDriver.recordedRequests[0]?.effort, serviceSession.stopCount]).toEqual([{ partialSummary: 'Stopped at 80%' }, 'none', 'low', 1]);
     expect([(await topology.getPartitions('run-lim')).get('core')?.contractText, flushRes.updatedAgentFrame.accumulatedLessonOutcomes, ledger.steps.get('step-1')?.status, ledger.steps.get('step-1:replace:1')?.status]).toEqual(['v1', undefined, 'INTERRUPTED', 'RUNNING']);
+    expect(JSON.parse(ledger.steps.get('step-1')?.telemetryJson ?? 'null')).toEqual({
+      turnsTaken: 2,
+      costUsd: expect.closeTo(0.06, 5),
+      durationMs: expect.any(Number),
+      custom: {},
+      abortMeta: { abortedSnapshotRef: 'refs/abort/1', resetToRef: 'HEAD~1' },
+    });
     expect(ledger.frames.get('msg:step-1:limit-abort-tools')?.canonical.toolResults).toEqual([
       { callId: 'c1', content: 'done-1', isError: false },
       { callId: 'c2', content: '[Aborted: Limit Exceeded]\n[LIMIT_EXCEEDED_FLUSH] Exceeded maxTurns (1). Summarize state and emit final structured output.', isError: true },

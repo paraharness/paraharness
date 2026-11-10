@@ -22,4 +22,8 @@ export interface InterruptEdgeResolution<THandle = unknown> {
   readonly interruptId: string;
   /** Validated interrupt payload. */
   readonly payload: unknown;
+  /** Optional abort metadata produced by `P.policy.onLimitExceeded` cleanup (`SPEC.md` §3.9). */
+  readonly abortMeta?: Record<string, unknown>;
+  /** True when this resolution originated from a `.onLimitExceeded()` epistemic flush sequence. */
+  readonly isLimitExceeded?: boolean;
 }

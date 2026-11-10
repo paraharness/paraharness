@@ -2,10 +2,97 @@ import type { AgentNode } from '../../../ast/agent-node.js';
 import type { StepASTNode } from '../../../ast/domain-ast.types.js';
 import type { InterruptHandlerNode } from '../../../ast/interrupt-handler-node.types.js';
 import type { LoopNode } from '../../../ast/loop-node.js';
+import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
+import type { LedgerStore } from '../../../ports/ledger-store.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { ToolEffect } from '../../../ports/tool-effect.js';
+import type { StepRuntimeChildOutcomeSink } from '../../agent/step-runtime-internals.js';
 import { createMemoizedRunnerResolver } from '../../pools/internal/create-memoized-runner-resolver.js';
 import type { FlowExecutionContext } from '../flow-execution-context.js';
+
+/**
+ * Records the latest `ContinuationFrame[]` stack for `stepExecId` on `flowCtx.stepContinuationStacks`.
+ *
+ * @template TIn     Validated flow input payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx    - Active flow execution context.
+ * @param {string}                             stepExecId - Step execution identifier.
+ * @param {readonly ContinuationFrame[]}       stack      - Latest continuation frame stack.
+ */
+export function recordFlowStepContinuationStack<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+  stepExecId: string,
+  stack: readonly ContinuationFrame[],
+): void {
+  const mutableCtx = flowCtx as {
+    stepContinuationStacks?: Map<string, readonly ContinuationFrame[]>;
+  };
+  mutableCtx.stepContinuationStacks ??= new Map<string, readonly ContinuationFrame[]>();
+  mutableCtx.stepContinuationStacks.set(stepExecId, stack);
+}
+
+/**
+ * Retrieves the latest `ContinuationFrame[]` stack recorded for `stepExecId` on `flowCtx`.
+ *
+ * Falls back to inspecting in-memory ledger step entries when `flowCtx.stepContinuationStacks` has no record.
+ *
+ * @template TIn     Validated flow input payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx    - Active flow execution context.
+ * @param {string}                             stepExecId - Step execution identifier.
+ *
+ * @returns {readonly ContinuationFrame[] | undefined} Latest continuation stack for `stepExecId`, if any.
+ */
+export function getFlowStepContinuationStack<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+  stepExecId: string,
+): readonly ContinuationFrame[] | undefined {
+  const fromCtx = flowCtx.stepContinuationStacks?.get(stepExecId);
+  if (fromCtx !== undefined && fromCtx.length > 0) {
+    return fromCtx;
+  }
+  const ledgerWithSteps = flowCtx.ledgerStore as {
+    readonly steps?: ReadonlyMap<
+      string,
+      { readonly continuationStack?: readonly ContinuationFrame[] }
+    >;
+  };
+  return ledgerWithSteps.steps?.get(stepExecId)?.continuationStack;
+}
+
+/**
+ * Wraps `flowCtx.ledgerStore` so `updateContinuationStack` automatically updates `flowCtx.stepContinuationStacks`.
+ *
+ * @template TIn     Validated flow input payload type.
+ * @template THandle Runtime handle type of the active isolation scope.
+ *
+ * @param {FlowExecutionContext<TIn, THandle>} flowCtx - Active flow execution context.
+ *
+ * @returns {LedgerStore} Proxied ledger store tracking continuation stacks per `stepExecId`.
+ */
+function createTrackingStepLedgerStore<TIn = unknown, THandle = unknown>(
+  flowCtx: FlowExecutionContext<TIn, THandle>,
+): LedgerStore {
+  return new Proxy(flowCtx.ledgerStore, {
+    get(target: LedgerStore, prop: string | symbol, receiver: unknown): unknown {
+      if (prop === 'updateContinuationStack') {
+        return (
+          runId: string,
+          stepExecId: string,
+          continuationStack: readonly ContinuationFrame[],
+          opts?: { readonly baseScopeCheckpoint?: string },
+        ): Promise<void> => {
+          recordFlowStepContinuationStack(flowCtx, stepExecId, continuationStack);
+          return target.updateContinuationStack(runId, stepExecId, continuationStack, opts);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
 
 /**
  * Step-specific execution parameters passed to `buildFlowStepExecutionContext`.
@@ -100,9 +187,20 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
       flowCtx.observedRunEffects.push(...effs);
     },
   };
-  const stepCtx = Object.assign({}, baseCtx, {
+  const childOutcomeSink: StepRuntimeChildOutcomeSink = {
+    get continuationStack(): readonly ContinuationFrame[] | undefined {
+      return getFlowStepContinuationStack(flowCtx, stepParams.stepExecId);
+    },
+    set continuationStack(stack: readonly ContinuationFrame[] | undefined) {
+      if (stack !== undefined) {
+        recordFlowStepContinuationStack(flowCtx, stepParams.stepExecId, stack);
+      }
+    },
+  };
+  const trackingLedgerStore = createTrackingStepLedgerStore(flowCtx);
+  const stepCtx: StepExecutionContext<THandle> = Object.assign({}, baseCtx, {
     _runtime: {
-      ledgerStore: flowCtx.ledgerStore,
+      ledgerStore: trackingLedgerStore,
       topologyStore: flowCtx.topologyStore,
       lessonStore: flowCtx.lessonStore,
       lockManager: flowCtx.lockManager,
@@ -114,6 +212,23 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
       laneId: flowCtx.laneId,
       itemKey: flowCtx.itemKey,
       baseScopeCheckpoint: stepParams.baseScopeCheckpoint,
+      childOutcomeSink,
+      collectCustomTelemetry: async (): Promise<Readonly<Record<string, unknown>>> => {
+        if (flowCtx.flow.telemetry === undefined) {
+          return Object.freeze({});
+        }
+        const telNode = flowCtx.flow.telemetry;
+        const telExec = flowCtx.registry.telemetryCollectors[telNode.type];
+        if (telExec === undefined) {
+          return Object.freeze({});
+        }
+        const rawMetrics = await telExec(
+          telNode as never,
+          flowCtx.observedRunEffects,
+          stepCtx as StepExecutionContext<unknown>,
+        );
+        return Object.freeze(rawMetrics);
+      },
     },
   });
   return { executable: mergedExec, stepCtx: Object.freeze(stepCtx) };

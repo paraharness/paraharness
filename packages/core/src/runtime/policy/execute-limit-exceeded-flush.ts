@@ -2,7 +2,9 @@ import type { AgentContinuationFrame } from '../../ports/agent-continuation-fram
 import type { CanonicalToolResult } from '../../ports/canonical-message.js';
 import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
+import type { UniversalStepTelemetry } from '../../ports/universal-step-telemetry.js';
 import type { WireFrameRecord } from '../../ports/wire-frame-record.js';
+import { getStepRuntimeInternals } from '../agent/internal/get-step-runtime-internals.js';
 import type { LimitExceededFlushParams } from './limit-exceeded-flush-params.js';
 import type { LimitExceededFlushResult } from './limit-exceeded-flush-result.js';
 
@@ -165,6 +167,7 @@ async function runEpistemicFlushTurn<THandle = unknown>(
     chain.push(noteFrame);
     nextLeafId = noteFrame.messageId;
   }
+  const startMs = Date.now();
   const resp = await modelDriver.invokeTurn({
     modelId: modelNode.modelId,
     effort: 'low',
@@ -175,6 +178,7 @@ async function runEpistemicFlushTurn<THandle = unknown>(
     outputSchema: limitConfig.flushInterrupt.schema,
     signal: ctx.signal,
   });
+  const latencyMs = Math.max(0, Date.now() - startMs);
   const flushedPayload = limitConfig.flushInterrupt.schema.parse(
     resp.structuredOutput ?? JSON.parse(resp.canonical.visibleText || '{}'),
   );
@@ -184,6 +188,7 @@ async function runEpistemicFlushTurn<THandle = unknown>(
     leafMessageId: nextLeafId,
     turnsTaken: frameStep2.turnsTaken + 1,
     costUsd: frameStep2.costUsd + resp.usage.costUsd,
+    elapsedDurationMs: frameStep2.elapsedDurationMs + latencyMs,
     pauseState: Object.freeze({
       kind: 'interrupt-flush',
       interruptId: limitConfig.flushInterrupt.id,
@@ -276,6 +281,15 @@ export async function executeLimitExceededSequence<THandle = unknown>(
   await persistLimitFlushContinuationFrame(params, frameStep3);
   if (params.replacementPromotion !== undefined) {
     const promo = params.replacementPromotion;
+    const custom =
+      (await getStepRuntimeInternals(ctx)?.collectCustomTelemetry?.()) ?? Object.freeze({});
+    const stepTelemetry = Object.freeze<UniversalStepTelemetry>({
+      turnsTaken: frameStep3.turnsTaken,
+      costUsd: frameStep3.costUsd,
+      durationMs: frameStep3.elapsedDurationMs,
+      custom,
+      abortMeta: limitConfig.abortHook !== undefined ? abortMeta : undefined,
+    });
     const replacementInput = promo.mapReplacementInput(
       JSON.parse(params.agentFrame.inputJson || 'null'),
       step2.flushedPayload,
@@ -284,10 +298,7 @@ export async function executeLimitExceededSequence<THandle = unknown>(
     await ledgerStore.recordStepTransition({
       stepExecId: ctx.stepExecId,
       status: 'INTERRUPTED',
-      telemetryJson: JSON.stringify({
-        turnsTaken: frameStep3.turnsTaken,
-        costUsd: frameStep3.costUsd,
-      }),
+      telemetryJson: JSON.stringify(stepTelemetry),
     });
     await ledgerStore.updateRunInput(ctx.runId, {
       inputJson: JSON.stringify(replacementInput),

@@ -137,4 +137,7 @@ export interface StepRuntimeInternals<THandle = unknown> {
 
   /** Mutable sink populated on child step exit with continuation frames and lesson outcomes. */
   readonly childOutcomeSink?: StepRuntimeChildOutcomeSink;
+
+  /** Optional callback folding flow-scoped `ToolEffect[]` through `flow.telemetry` (`SPEC.md` §3.9). */
+  readonly collectCustomTelemetry?: () => Promise<Readonly<Record<string, unknown>>>;
 }

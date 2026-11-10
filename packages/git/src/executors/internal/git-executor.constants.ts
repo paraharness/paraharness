@@ -47,3 +47,15 @@ export const COMPILED_EXCLUDE_MATCHER_CACHE: Map<string, (relPath: string) => bo
   (relPath: string) => boolean
 >();
 
+/**
+ * Regular expression matching transient bundler, test-runner, and pnpm task state directory segments inside `node_modules`.
+ */
+export const TRANSIENT_NODE_MODULES_DIR_SEGMENT_REGEX =
+  /^\.(cache|vite|vitest|pnpm-task-run-state)(?:$|[-_])/i;
+
+/**
+ * Regular expression matching transient pnpm workspace state JSON files inside `node_modules`.
+ */
+export const TRANSIENT_NODE_MODULES_FILE_REGEX = /^\.pnpm-workspace-state.*\.json$/i;
+
+

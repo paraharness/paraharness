@@ -1,4 +1,5 @@
 import type { AbortHookASTNode, StepASTNode } from '../../ast/domain-ast.types.js';
+import type { UniversalStepTelemetry } from '../../ports/universal-step-telemetry.js';
 import type { FlowExecutionContext } from './flow-execution-context.js';
 
 /**
@@ -25,4 +26,6 @@ export interface ReplaceWithPromotionParams<TIn = unknown, THandle = unknown> {
   readonly replacementInput: TIn;
   /** Optional abort hook AST node executed before replacement step start. */
   readonly abortHook?: AbortHookASTNode<THandle>;
+  /** Optional pre-computed `UniversalStepTelemetry` snapshot for the interrupted step. */
+  readonly stepTelemetry?: UniversalStepTelemetry;
 }

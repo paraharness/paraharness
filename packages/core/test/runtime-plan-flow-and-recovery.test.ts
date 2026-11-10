@@ -89,6 +89,12 @@ describe('M2 Runtime — Dynamic Plan Mutation (.mutatePlan, spawnTasks, syncRoo
     expect(spawnRes.prerequisiteItemKeys).toEqual(['T_1', 'T_2']);
     expect(spawnRes.latestTipItemKey).toBe('T_2');
     expect(spawnRes.headScopeCheckpoint).toBe('ckpt:root:run-parent:1');
+    expect(JSON.parse(ledgerStore.steps.get('step-parent-1')?.telemetryJson ?? 'null')).toEqual({
+      turnsTaken: 1,
+      costUsd: 0.1,
+      durationMs: 10,
+      custom: {},
+    });
     expect(daemonSession.running).toBe(false);
     expect(ledgerStore.planMutations[0]?.spawnedItems).toEqual([
       { itemKey: 'T_1', inputJson: JSON.stringify({ id: 'T_1', title: 'First Subtask', tag: 'enforced-patch' }), dependsOn: ['T_prevTip'], priority: 'high' },
@@ -1021,6 +1027,319 @@ describe('M2 Runtime — controller.emitSignal with SignalBuilder and SignalNode
     ).rejects.toThrow(
       "RunnerPoolASTNode 'local-runner' was already registered with (type='node:runner', slots=4, maxDaemons=2) but was requested again with conflicting configuration (type='node:runner', slots=8, maxDaemons=2) in runId 'standalone-run'.",
     );
+  });
+
+  it('records canonical UniversalStepTelemetry on COMPLETED, FAILED, INTERRUPTED (.onInterrupt and .onLimitExceeded), and SUSPENDED step transitions and passes real stepTelemetry to .replaceWith()', async () => {
+    const ledgerStore = new InMemoryLedgerStore();
+    const scope = new ScriptedBranchableScope();
+    let abortHookCallCount = 0;
+    let currentAbortRef = 'refs/abort/intr';
+
+    const itemSchema = z.object({ id: z.string(), promotedNote: z.string().optional() });
+    const outSchema = z.object({ ok: z.boolean(), note: z.string().optional() });
+    const replaceIntr = P.interrupt('voluntary-replace', z.object({ why: z.string() }));
+    const limitFlushIntr = P.interrupt('limit-replace', z.object({ summary: z.string() }));
+
+    const observedInterruptStepTelemetries: unknown[] = [];
+    const observedLimitStepTelemetries: unknown[] = [];
+
+    const agentStep = P.agent<GitWorktreeHandle>('tel-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(itemSchema)
+      .output(outSchema);
+
+    const loopEval = P.agent<GitWorktreeHandle>('tel-loop-eval')
+      .model(SAMPLE_MODEL_NODE)
+      .input(z.object({ candidate: outSchema }))
+      .output(z.object({ accepted: z.boolean() }));
+
+    const loopStep = P.loop<GitWorktreeHandle>('tel-loop')
+      .input(itemSchema)
+      .output(outSchema)
+      .maxIterations(2)
+      .act('act', agentStep)
+      .evaluate('eval', loopEval, {
+        mapInput: (_loopIn, actOut) => ({ candidate: actOut }),
+        acceptWhen: (ev) => ev.accepted,
+        feedbackMapper: () => 'retry',
+      });
+
+    const cmdStep = P.command<GitWorktreeHandle>('tel-cmd')
+      .input(itemSchema)
+      .output(outSchema)
+      .run(async () => ({ ok: true }));
+
+    const domainStep = Object.freeze({
+      ...SAMPLE_LOCAL_COMMAND_NODE,
+      inputSchema: itemSchema,
+      outputSchema: z.object({ exitCode: z.number() }),
+    });
+
+    const replacementActor = P.agent<GitWorktreeHandle>('tel-replacement')
+      .model(SAMPLE_MODEL_NODE)
+      .input(itemSchema)
+      .output(outSchema);
+
+    const intrRaisingAgent = P.agent<GitWorktreeHandle>('tel-intr-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(itemSchema)
+      .output(outSchema)
+      .canRaise(replaceIntr);
+
+    const limitPolicy = P.policy<GitWorktreeHandle>('tel-limit-policy')
+      .maxTurns(1)
+      .onLimitExceeded(($l) =>
+        $l.flushWithInterrupt(limitFlushIntr).onAbort(SAMPLE_ABORT_HOOK_NODE),
+      );
+
+    const limitRaisingAgent = P.agent<GitWorktreeHandle>('tel-limit-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .policy(limitPolicy)
+      .tools(SAMPLE_DECLARED_TOOL_NODE)
+      .input(itemSchema)
+      .output(outSchema)
+      .onInterrupt(limitFlushIntr, ($i) =>
+        $i
+          .onAbort(SAMPLE_ABORT_HOOK_NODE)
+          .replaceWith(replacementActor, (flowIn, payload, stepTelemetry) => {
+            observedLimitStepTelemetries.push(stepTelemetry);
+            return { ...flowIn, promotedNote: payload.summary };
+          }),
+      );
+
+    const modelDriver = new ScriptedModelDriver([
+      {
+        wireFrame: new Uint8Array(),
+        canonical: { role: 'assistant', visibleText: '{"ok":true}', toolCalls: [] },
+        structuredOutput: { ok: true },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.04 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: { role: 'assistant', visibleText: '{"ok":true}', toolCalls: [] },
+        structuredOutput: { ok: true },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.06 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: { role: 'assistant', visibleText: '{"accepted":true}', toolCalls: [] },
+        structuredOutput: { accepted: true },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.03 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: 'raise voluntary replace',
+          toolCalls: [
+            {
+              id: 'tc-rep-1',
+              name: 'voluntary-replace',
+              argsJson: JSON.stringify({ why: 'need-deep' }),
+            },
+          ],
+        },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.05 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: '{"ok":true,"note":"from-intr-replace"}',
+          toolCalls: [],
+        },
+        structuredOutput: { ok: true, note: 'from-intr-replace' },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.02 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: 'read file on turn 1',
+          toolCalls: [
+            {
+              id: 'tc-lim-1',
+              name: 'fs_read',
+              argsJson: JSON.stringify({ path: 'a.ts' }),
+            },
+          ],
+        },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.05 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: '{"summary":"flushed-after-limit"}',
+          toolCalls: [],
+        },
+        structuredOutput: { summary: 'flushed-after-limit' },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.02 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: '{"ok":true,"note":"from-limit-replace"}',
+          toolCalls: [],
+        },
+        structuredOutput: { ok: true, note: 'from-limit-replace' },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.03 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: 'call failing tool',
+          toolCalls: [
+            {
+              id: 'tc-fail-1',
+              name: 'fs_read',
+              argsJson: JSON.stringify({ path: 'explode.ts' }),
+            },
+          ],
+        },
+        usage: { inputTokens: 10, outputTokens: 10, cachedInputTokens: 0, costUsd: 0.08 },
+      },
+    ]);
+
+    const flow = P.flow('tel-flow')
+      .input(itemSchema)
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .telemetry(SAMPLE_TELEMETRY_COLLECTOR_NODE)
+      .step('s-agent', agentStep)
+      .step('s-loop', loopStep)
+      .step('s-cmd', cmdStep)
+      .step('s-domain', domainStep as never)
+      .step('s-intr-replace', intrRaisingAgent, ($e) =>
+        $e.onInterrupt(replaceIntr, ($i) =>
+          $i
+            .onAbort(SAMPLE_ABORT_HOOK_NODE)
+            .replaceWith(replacementActor, (flowIn, payload, stepTelemetry) => {
+              observedInterruptStepTelemetries.push(stepTelemetry);
+              return { ...flowIn, promotedNote: payload.why };
+            }),
+        ),
+      )
+      .step('s-limit-replace', limitRaisingAgent)
+      .exit('done');
+
+    const registry = createExecutorRegistry({
+      ledgers: { 'sqlite:ledger': () => ledgerStore },
+      scopes: { 'git:cow-worktree': () => scope as never },
+      models: { 'claude:model': () => modelDriver },
+      steps: { 'node:command': async () => ({ exitCode: 0 }) },
+      tools: {
+        'fs:read': {
+          describeEffects: () => [],
+          execute: async (_node, args) => {
+            if ((args as { readonly path?: string }).path === 'explode.ts') {
+              throw new Error('Tool execution failed');
+            }
+            return { content: 'file-ok', isError: false };
+          },
+        },
+      },
+      abortHooks: {
+        'git:snapshot-and-reset': async () => {
+          abortHookCallCount += 1;
+          return { abortedSnapshotRef: currentAbortRef, resetToRef: 'HEAD~1' };
+        },
+      },
+      telemetryCollectors: {
+        'fs:telemetry': async () => ({ filesRead: ['a.ts'], filesMutated: ['b.ts'] }),
+      },
+    });
+
+    currentAbortRef = 'refs/abort/intr';
+    await runFlow(flow, { id: 'item-tel' }, { registry, ledger: SAMPLE_LEDGER_NODE, runId: 'run-tel-1' });
+
+    const expectedCustom = { filesRead: ['a.ts'], filesMutated: ['b.ts'] };
+
+    const sAgentTel = JSON.parse(ledgerStore.steps.get('run-tel-1:s-agent:1')?.telemetryJson ?? 'null');
+    expect(sAgentTel).toEqual({
+      turnsTaken: 1,
+      costUsd: 0.04,
+      durationMs: expect.any(Number),
+      custom: expectedCustom,
+    });
+
+    const sLoopTel = JSON.parse(ledgerStore.steps.get('run-tel-1:s-loop:1')?.telemetryJson ?? 'null');
+    expect(sLoopTel).toEqual({
+      turnsTaken: 2,
+      costUsd: 0.09,
+      durationMs: expect.any(Number),
+      custom: expectedCustom,
+    });
+
+    const sCmdTel = JSON.parse(ledgerStore.steps.get('run-tel-1:s-cmd:1')?.telemetryJson ?? 'null');
+    expect(sCmdTel).toEqual({
+      turnsTaken: 0,
+      costUsd: 0,
+      durationMs: expect.any(Number),
+      custom: expectedCustom,
+    });
+
+    const sDomTel = JSON.parse(ledgerStore.steps.get('run-tel-1:s-domain:1')?.telemetryJson ?? 'null');
+    expect(sDomTel).toEqual({
+      turnsTaken: 0,
+      costUsd: 0,
+      durationMs: expect.any(Number),
+      custom: expectedCustom,
+    });
+
+    const expectedIntrTel = {
+      turnsTaken: 1,
+      costUsd: 0.05,
+      durationMs: expect.any(Number),
+      custom: expectedCustom,
+      abortMeta: { abortedSnapshotRef: 'refs/abort/intr', resetToRef: 'HEAD~1' },
+    };
+    expect(observedInterruptStepTelemetries).toEqual([expectedIntrTel]);
+    const sIntrAbortedTel = JSON.parse(
+      ledgerStore.steps.get('run-tel-1:s-intr-replace:1')?.telemetryJson ?? 'null',
+    );
+    expect(sIntrAbortedTel).toEqual(expectedIntrTel);
+
+    const expectedLimitTel = {
+      turnsTaken: 2,
+      costUsd: 0.07,
+      durationMs: expect.any(Number),
+      custom: expectedCustom,
+      abortMeta: { abortedSnapshotRef: 'refs/abort/intr', resetToRef: 'HEAD~1' },
+    };
+    expect(observedLimitStepTelemetries).toEqual([expectedLimitTel]);
+    const sLimitAbortedTel = JSON.parse(
+      ledgerStore.steps.get('run-tel-1:s-limit-replace:1')?.telemetryJson ?? 'null',
+    );
+    expect(sLimitAbortedTel).toEqual(expectedLimitTel);
+    expect(abortHookCallCount).toBe(2);
+
+    const failingAgent = P.agent<GitWorktreeHandle>('tel-fail-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .tools(SAMPLE_DECLARED_TOOL_NODE)
+      .input(itemSchema)
+      .output(outSchema);
+    const failingFlow = P.flow('tel-fail-flow')
+      .input(itemSchema)
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .telemetry(SAMPLE_TELEMETRY_COLLECTOR_NODE)
+      .step('s-fail', failingAgent)
+      .exit('done');
+
+    await expect(
+      runFlow(failingFlow, { id: 'item-fail' }, { registry, ledger: SAMPLE_LEDGER_NODE, runId: 'run-tel-fail' }),
+    ).rejects.toThrow('Tool execution failed');
+
+    const sFailTel = JSON.parse(
+      ledgerStore.steps.get('run-tel-fail:s-fail:1')?.telemetryJson ?? 'null',
+    );
+    expect(sFailTel).toEqual({
+      turnsTaken: 1,
+      costUsd: 0.08,
+      durationMs: expect.any(Number),
+      custom: expectedCustom,
+    });
   });
 });
 

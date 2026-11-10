@@ -68,6 +68,8 @@ export interface FlowExecutionContext<TIn = unknown, THandle = unknown> {
   readonly completedStepOutputs: Map<string, unknown>;
   /** Optional map of initial base scope checkpoints keyed by `FlowStepNode.id`. */
   readonly stepBaseCheckpointsByStepId?: Map<string, string>;
+  /** Optional map of latest `ContinuationFrame[]` stacks keyed by `stepExecId` for step telemetry attribution. */
+  readonly stepContinuationStacks?: Map<string, readonly ContinuationFrame[]>;
   /** Accumulated `ToolEffect` entries observed across all steps in the flow run. */
   readonly observedRunEffects: ToolEffect[];
   /** Currently executing `stepId` (or `null` between steps). */

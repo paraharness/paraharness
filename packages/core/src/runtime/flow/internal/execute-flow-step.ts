@@ -4,11 +4,12 @@ import type { StepExecutionContext } from '../../../ports/step-execution-context
 import type { InterruptEdgeResolution } from '../../agent/interrupt-edge-resolution.js';
 import { executeStepNode } from '../../step/execute-step-node.js';
 import type { FlowExecutionContext } from '../flow-execution-context.js';
-import { buildFlowStepExecutionContext } from './build-flow-step-execution-context.js';
 import {
-  executeReplaceWithPromotion,
-  foldFlowCustomTelemetry,
-} from './flow-replace-and-rewind.js';
+  buildFlowStepExecutionContext,
+  recordFlowStepContinuationStack,
+} from './build-flow-step-execution-context.js';
+import { buildFlowStepTelemetry } from './build-flow-step-telemetry.js';
+import { executeReplaceWithPromotion } from './flow-replace-and-rewind.js';
 
 /**
  * Parameters passed to `tryPromoteStepReplacement`.
@@ -28,11 +29,11 @@ interface TryPromoteStepReplacementParams<THandle = unknown> {
   /** Base scope checkpoint serialized before the step attempt. */
   readonly baseCkpt: string | undefined;
 
-  /** Isolation scope inspection receipt captured before the step attempt. */
-  readonly scopeReceipt: Record<string, unknown>;
-
   /** Active step execution context. */
   readonly stepCtx: StepExecutionContext<THandle>;
+
+  /** Epoch timestamp (`Date.now()`) captured when the step attempt started. */
+  readonly attemptStartMs: number;
 }
 
 /**
@@ -58,6 +59,9 @@ interface PreparedFlowStepAttempt<THandle = unknown> {
 
   /** Configured step execution context for the attempt. */
   readonly stepCtx: StepExecutionContext<THandle>;
+
+  /** Epoch timestamp (`Date.now()`) captured when the step attempt started. */
+  readonly attemptStartMs: number;
 }
 
 /**
@@ -105,7 +109,7 @@ async function tryPromoteStepReplacement<TIn = unknown, THandle = unknown>(
   stepNode: FlowStepNode<unknown, unknown, THandle>,
   replaceCtx: TryPromoteStepReplacementParams<THandle>,
 ): Promise<boolean> {
-  const { typedErr, stepExecId, baseCkpt, scopeReceipt, stepCtx } = replaceCtx;
+  const { typedErr, stepExecId, baseCkpt, stepCtx, attemptStartMs } = replaceCtx;
   const effHandler =
     typedErr.interruptResolution?.replaceHandler ??
     (typedErr.interruptResolution !== undefined
@@ -116,40 +120,46 @@ async function tryPromoteStepReplacement<TIn = unknown, THandle = unknown>(
   if (effHandler?.mode !== 'replace') {
     return false;
   }
+  const preComputedAbortMeta = typedErr.interruptResolution?.abortMeta;
   const abortExec =
-    effHandler.abortHook !== undefined
+    preComputedAbortMeta === undefined && effHandler.abortHook !== undefined
       ? flowCtx.registry.abortHooks[
           effHandler.abortHook.type as keyof typeof flowCtx.registry.abortHooks
         ]
       : undefined;
-  const abortMeta = (
-    abortExec !== undefined && effHandler.abortHook !== undefined
-      ? await abortExec(
+  const abortMeta =
+    preComputedAbortMeta ??
+    (abortExec !== undefined && effHandler.abortHook !== undefined
+      ? ((await abortExec(
           effHandler.abortHook as never,
           { handle: flowCtx.scopeHandle, runId: flowCtx.runId, stepExecId } as never,
           stepCtx as never,
-        )
-      : {}
-  ) as Record<string, unknown>;
+        )) as Record<string, unknown>)
+      : undefined);
+  const stepTelemetry = await buildFlowStepTelemetry({
+    flowCtx,
+    stepExecId,
+    fallbackDurationMs: Math.max(0, Date.now() - attemptStartMs),
+    abortMeta,
+  });
   const replacementInput = effHandler.mapReplacementInput(
     flowCtx.currentInput,
     typedErr.interruptResolution?.payload,
-    {
-      costUsd: 0,
-      turnsTaken: 0,
-      durationMs: 0,
-      custom: (await foldFlowCustomTelemetry(flowCtx)) ?? scopeReceipt,
-      abortMeta,
-    },
+    stepTelemetry,
   ) as TIn;
+  const alreadyCleanedUpScope =
+    preComputedAbortMeta !== undefined ||
+    typedErr.interruptResolution?.isLimitExceeded === true ||
+    effHandler.abortHook !== undefined;
   await executeReplaceWithPromotion({
     flowCtx,
     stepExecId,
     stepId: stepNode.id,
-    baseScopeCheckpoint: effHandler.abortHook !== undefined ? undefined : baseCkpt,
+    baseScopeCheckpoint: alreadyCleanedUpScope ? undefined : baseCkpt,
     replacementExecutable: effHandler.replacementExecutable,
     replacementInput,
     abortHook: undefined,
+    stepTelemetry,
   });
   return true;
 }
@@ -215,12 +225,16 @@ async function prepareFlowStepAttempt<TIn = unknown, THandle = unknown>(
   }
   flowCtx.activeStepId = stepNode.id;
   flowCtx.activeStepExecId = stepExecId;
+  const attemptStartMs = Date.now();
   const built = buildFlowStepExecutionContext(flowCtx, targetExecutable, {
     stepExecId,
     activePartitions: extractPartsFn !== undefined ? extractPartsFn(stepInput) : [],
     baseScopeCheckpoint: baseCkpt,
     stepInterruptHandlers: isReplaced ? [] : stepNode.onInterruptHandlers,
   });
+  if (flowCtx.resumeContinuationStack !== undefined) {
+    recordFlowStepContinuationStack(flowCtx, stepExecId, flowCtx.resumeContinuationStack);
+  }
   const stepCtx =
     flowCtx.resumeContinuationStack !== undefined
       ? Object.freeze({
@@ -236,6 +250,7 @@ async function prepareFlowStepAttempt<TIn = unknown, THandle = unknown>(
     stepInput,
     executable: built.executable ?? targetExecutable,
     stepCtx,
+    attemptStartMs,
   };
 }
 
@@ -269,8 +284,8 @@ async function handleFlowStepAttemptError<TIn = unknown, THandle = unknown>(
     typedErr,
     stepExecId: prepared.stepExecId,
     baseCkpt: prepared.baseCkpt,
-    scopeReceipt: prepared.scopeReceipt,
     stepCtx: prepared.stepCtx,
+    attemptStartMs: prepared.attemptStartMs,
   });
   if (promoted) {
     return 'promoted';
@@ -286,10 +301,15 @@ async function handleFlowStepAttemptError<TIn = unknown, THandle = unknown>(
   if (prepared.baseCkpt !== undefined && flowCtx.scopeDriver.restoreCheckpoint !== undefined) {
     await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, prepared.baseCkpt);
   }
+  const failedTelemetry = await buildFlowStepTelemetry({
+    flowCtx,
+    stepExecId: prepared.stepExecId,
+    fallbackDurationMs: Math.max(0, Date.now() - prepared.attemptStartMs),
+  });
   await flowCtx.ledgerStore.recordStepTransition({
     stepExecId: prepared.stepExecId,
     status: 'FAILED',
-    telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }),
+    telemetryJson: JSON.stringify(failedTelemetry),
   });
   if (attempt >= maxTries) {
     throw err;
@@ -335,11 +355,16 @@ export async function executeFlowStep<TIn = unknown, THandle = unknown>(
       if (outerBranchId !== undefined) {
         flowCtx.completedStepOutputs.set(outerBranchId, output);
       }
+      const completedTelemetry = await buildFlowStepTelemetry({
+        flowCtx,
+        stepExecId: prepared.stepExecId,
+        fallbackDurationMs: Math.max(0, Date.now() - prepared.attemptStartMs),
+      });
       await flowCtx.ledgerStore.recordStepTransition({
         stepExecId: prepared.stepExecId,
         status: 'COMPLETED',
         outputJson: JSON.stringify(output),
-        telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 1, elapsedDurationMs: 0 }),
+        telemetryJson: JSON.stringify(completedTelemetry),
       });
       return Object.freeze({ status: 'completed', output });
     } catch (err) {

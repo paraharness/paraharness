@@ -2,10 +2,10 @@ import type { CompiledWirePrefix } from '../../ports/compiled-wire-prefix.js';
 import { compileRunWirePrefixes } from '../prefix/compile-wire-prefix.js';
 import type { FlowExecutionContext } from './flow-execution-context.js';
 import type { FlowRunResult } from './flow-run-result.js';
+import { foldFlowCustomTelemetry } from './internal/build-flow-step-telemetry.js';
 import { collectFlowActors, collectFlowPrefixGroups } from './internal/collect-flow-actors.js';
 import { executeFlowBranch } from './internal/execute-flow-branch.js';
 import { executeFlowStep } from './internal/execute-flow-step.js';
-import { foldFlowCustomTelemetry } from './internal/flow-replace-and-rewind.js';
 
 /**
  * Compiles run wire prefixes (if not already compiled) and initializes or resumes the run record in `LedgerStore` (`SPEC.md` §3.9).

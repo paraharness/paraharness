@@ -2,6 +2,7 @@ import type { AgentNode } from '../../../ast/agent-node.js';
 import type { AgentContinuationFrame } from '../../../ports/agent-continuation-frame.js';
 import type { BranchableScope } from '../../../ports/branchable-scope.js';
 import type { ContinuationFrame } from '../../../ports/continuation-frame.types.js';
+import type { LoopContinuationFrame } from '../../../ports/loop-continuation-frame.js';
 import type {
   CompletedToolBatchResultRecord,
   PendingToolBatch,
@@ -303,46 +304,81 @@ export async function evaluatePostToolTripwireAndFlush<TIn, TOut, THandle>(
     return undefined;
   }
   const limCfg = session.node.policy.onLimitExceeded;
-  const hasReplaceAbortHook = session.node.onInterruptHandlers.some(
+  const matchedReplaceHandler = session.node.onInterruptHandlers.find(
     (h) =>
       h.interrupt.id === limCfg.flushInterrupt.id &&
       h.mode === 'replace' &&
       h.abortHook !== undefined,
   );
+  const replaceAbortHook =
+    matchedReplaceHandler?.mode === 'replace' ? matchedReplaceHandler.abortHook : undefined;
+  const effectiveLimCfg =
+    limCfg.abortHook !== undefined || replaceAbortHook === undefined
+      ? limCfg
+      : Object.freeze({ ...limCfg, abortHook: replaceAbortHook });
   const pendingToolBatch: PendingToolBatch = Object.freeze({
     completedResults: Object.freeze([...batchCtx.completedResults]),
     blockedCalls: Object.freeze([]),
     remainingCalls: Object.freeze([...batchCtx.remainingCalls]),
   });
-  const flushPayload =
-    session.ledgerStore !== undefined
-      ? (
-          await executeLimitExceededSequence({
-            agentFrame: session.agentFrame,
-            outerFrames: session.outerFrames,
-            pendingToolBatch,
-            limitConfig: limCfg,
-            modelNode: session.modelNode,
-            modelDriver: session.modelDriver,
-            wirePrefix: session.wirePrefix,
-            ledgerStore: session.ledgerStore,
-            continuationQueue: session.continuationQueue,
-            topologyStore: session.topologyStore,
-            serviceRegistry: session.serviceRegistry,
-            baseScopeCheckpoint: hasReplaceAbortHook
-              ? undefined
-              : session.baseScopeCheckpoint,
-            tripReason: twRes.reason ?? 'Quota tripwire exceeded',
-            ctx: session.ctx,
-          })
-        ).flushedPayload
-      : Object.freeze({ reason: twRes.reason ?? 'Quota tripwire exceeded' });
+  let flushPayload: unknown = Object.freeze({
+    reason: twRes.reason ?? 'Quota tripwire exceeded',
+  });
+  let flushAbortMeta: Record<string, unknown> | undefined;
+  if (session.ledgerStore !== undefined) {
+    const prevTurns = session.agentFrame.turnsTaken;
+    const prevCost = session.agentFrame.costUsd;
+    const prevDuration = session.agentFrame.elapsedDurationMs;
+    const flushRes = await executeLimitExceededSequence({
+      agentFrame: session.agentFrame,
+      outerFrames: session.outerFrames,
+      pendingToolBatch,
+      limitConfig: effectiveLimCfg,
+      modelNode: session.modelNode,
+      modelDriver: session.modelDriver,
+      wirePrefix: session.wirePrefix,
+      ledgerStore: session.ledgerStore,
+      continuationQueue: session.continuationQueue,
+      topologyStore: session.topologyStore,
+      serviceRegistry: session.serviceRegistry,
+      baseScopeCheckpoint:
+        effectiveLimCfg.abortHook !== undefined ? undefined : session.baseScopeCheckpoint,
+      tripReason: twRes.reason ?? 'Quota tripwire exceeded',
+      ctx: session.ctx,
+    });
+    session.agentFrame = flushRes.updatedAgentFrame;
+    const deltaTurns = flushRes.updatedAgentFrame.turnsTaken - prevTurns;
+    const deltaCost = flushRes.updatedAgentFrame.costUsd - prevCost;
+    const deltaDuration = flushRes.updatedAgentFrame.elapsedDurationMs - prevDuration;
+    for (let idx = 0; idx < session.outerFrames.length; idx += 1) {
+      const outer = session.outerFrames[idx];
+      if (outer?.kind === 'loop-frame') {
+        session.outerFrames[idx] = Object.freeze<LoopContinuationFrame>({
+          ...outer,
+          turnsTaken: outer.turnsTaken + deltaTurns,
+          costUsd: outer.costUsd + deltaCost,
+          elapsedDurationMs: outer.elapsedDurationMs + deltaDuration,
+        });
+      }
+    }
+    flushPayload = flushRes.flushedPayload;
+    if (effectiveLimCfg.abortHook !== undefined) {
+      flushAbortMeta = flushRes.abortMeta;
+    }
+  }
   const intrRes = await resolveInterruptEdge(
     session,
     limCfg.flushInterrupt.id,
     flushPayload,
   );
-  return intrRes.status === 'resumed' ? undefined : intrRes;
+  if (intrRes.status === 'resumed') {
+    return undefined;
+  }
+  return Object.freeze<InterruptEdgeResolution<THandle>>({
+    ...intrRes,
+    abortMeta: flushAbortMeta,
+    isLimitExceeded: true,
+  });
 }
 
 /**

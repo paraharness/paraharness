@@ -10,6 +10,7 @@ import {
   git,
 } from '../src/index.js';
 import { buildIsolatedWorktreeGitEnv } from '../src/executors/internal/git-cli-runner.js';
+import { computeNodeModulesDigest } from '../src/executors/internal/file-digest-and-globs.js';
 import { createTempGitHostRepo } from './fixtures/temp-git-host-repo.js';
 import type { TempGitHostRepoHandle } from './fixtures/temp-git-host-repo-handle.js';
 
@@ -319,6 +320,61 @@ describe('git.cowWorktree builders, lockfileGate hydration, git-index checkpoint
     await writeFile(nmFile, 'export const safe = 999;\n', 'utf8');
     await expect(scope.diffEffects(ckpt, handle)).rejects.toThrow(/integrity violation/);
     expect(await readFile(nmFile, 'utf8')).toBe('export const safe = 1;\n');
+
+    await scope.release(handle);
+  }, 20_000);
+
+  it('ignores transient Vite, Vitest, and pnpm cache/state entries in node_modules while still catching real package mutations', async () => {
+    const scopeNode = git
+      .cowWorktree({ repo: hostRepo.repoPath, dir: hostRepo.worktreesDir })
+      .checkpointPolicy({ excludeGlobs: ['node_modules/**'] })
+      .toAST();
+    const scope = new GitCowWorktreeScopeDriver(scopeNode);
+    const handle = await scope.acquireRoot('run-transient-nm-cache');
+
+    const nmRoot = path.join(handle.worktreePath, 'node_modules');
+    const pkgFile = path.join(nmRoot, 'real-pkg', 'index.js');
+    await mkdir(path.dirname(pkgFile), { recursive: true });
+    await writeFile(pkgFile, 'export const real = 1;\n', 'utf8');
+
+    const ckpt = await scope.serializeCheckpoint(handle);
+    const digestBefore = await computeNodeModulesDigest(handle.worktreePath);
+
+    const viteTempFile = path.join(nmRoot, '.vite-temp', 'vitest.config.ts.timestamp-123.mjs');
+    const vitestCacheFile = path.join(nmRoot, '.vitest-cache', 'results.json');
+    const pnpmTaskStateFile = path.join(nmRoot, '.pnpm-task-run-state-v1', 'state.json');
+    const nestedViteTempFile = path.join(
+      nmRoot,
+      '.pnpm',
+      'pkg@1.0.0',
+      'node_modules',
+      '.vite-temp',
+      'chunk.mjs',
+    );
+    const pnpmWorkspaceStateFile = path.join(nmRoot, '.pnpm-workspace-state-v1.json');
+
+    await mkdir(path.dirname(viteTempFile), { recursive: true });
+    await mkdir(path.dirname(vitestCacheFile), { recursive: true });
+    await mkdir(path.dirname(pnpmTaskStateFile), { recursive: true });
+    await mkdir(path.dirname(nestedViteTempFile), { recursive: true });
+
+    await writeFile(viteTempFile, 'export default {};\n', 'utf8');
+    await writeFile(vitestCacheFile, '{"passed":true}\n', 'utf8');
+    await writeFile(pnpmTaskStateFile, '{"lastRun":1}\n', 'utf8');
+    await writeFile(nestedViteTempFile, 'export const c = 1;\n', 'utf8');
+    await writeFile(pnpmWorkspaceStateFile, '{"projects":{}}\n', 'utf8');
+
+    const digestAfterTransient = await computeNodeModulesDigest(handle.worktreePath);
+    expect(digestAfterTransient).toBe(digestBefore);
+
+    const effects = await scope.diffEffects(ckpt, handle);
+    expect(effects).toEqual([]);
+
+    await writeFile(pkgFile, 'export const real = 2;\n', 'utf8');
+    await expect(scope.diffEffects(ckpt, handle)).rejects.toThrow(
+      /node_modules tree was mutated/,
+    );
+    expect(await readFile(pkgFile, 'utf8')).toBe('export const real = 1;\n');
 
     await scope.release(handle);
   }, 20_000);

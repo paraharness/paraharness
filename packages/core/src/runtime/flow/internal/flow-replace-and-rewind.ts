@@ -10,6 +10,7 @@ import type { HierarchicalRewindDrainParams } from '../hierarchical-rewind-drain
 import type { RecoverInterruptedRunParams } from '../recover-interrupted-run-params.js';
 import type { ReplaceWithPromotionParams } from '../replace-with-promotion-params.js';
 import { buildFlowStepExecutionContext } from './build-flow-step-execution-context.js';
+import { buildFlowStepTelemetry } from './build-flow-step-telemetry.js';
 
 /**
  * Releases and aborts all suspended child forks matching `filter` for `flowCtx.runId`.
@@ -78,6 +79,7 @@ export async function executeReplaceWithPromotion<TIn = unknown, THandle = unkno
   if (flowCtx.topologyStore !== undefined) {
     await flowCtx.topologyStore.resetRunOverlay(flowCtx.runId, { scope: 'step', stepExecId });
   }
+  let hookAbortMeta: Record<string, unknown> | undefined;
   if (abortHook !== undefined) {
     const abortExec =
       flowCtx.registry.abortHooks[abortHook.type as keyof typeof flowCtx.registry.abortHooks];
@@ -88,11 +90,11 @@ export async function executeReplaceWithPromotion<TIn = unknown, THandle = unkno
       stepInterruptHandlers: [],
     });
     if (abortExec !== undefined) {
-      await abortExec(
+      hookAbortMeta = (await abortExec(
         abortHook as never,
         { handle: flowCtx.scopeHandle, runId: flowCtx.runId, stepExecId } as never,
         stepCtx as StepExecutionContext<unknown>,
-      );
+      )) as Record<string, unknown>;
     }
   } else if (
     baseScopeCheckpoint !== undefined &&
@@ -100,10 +102,17 @@ export async function executeReplaceWithPromotion<TIn = unknown, THandle = unkno
   ) {
     await flowCtx.scopeDriver.restoreCheckpoint(flowCtx.scopeHandle, baseScopeCheckpoint);
   }
+  const stepTelemetry =
+    params.stepTelemetry ??
+    (await buildFlowStepTelemetry({
+      flowCtx,
+      stepExecId,
+      abortMeta: hookAbortMeta,
+    }));
   await flowCtx.ledgerStore.recordStepTransition({
     stepExecId,
     status: 'INTERRUPTED',
-    telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }),
+    telemetryJson: JSON.stringify(stepTelemetry),
   });
   flowCtx.currentInput = replacementInput;
   await flowCtx.ledgerStore.updateRunInput(flowCtx.runId, {
@@ -170,10 +179,14 @@ export async function executeHierarchicalRewindDrain<TIn = unknown, THandle = un
     await abortSuspendedForksInFlow(flowCtx);
     if (flowCtx.activeStepExecId !== null) {
       await flowCtx.serviceRegistry.quiesceScopeServices(flowCtx.activeStepExecId);
+      const stepTelemetry = await buildFlowStepTelemetry({
+        flowCtx,
+        stepExecId: flowCtx.activeStepExecId,
+      });
       await flowCtx.ledgerStore.recordStepTransition({
         stepExecId: flowCtx.activeStepExecId,
         status: stepTerminalStatus === 'CANCELLED' ? 'FAILED' : 'INTERRUPTED',
-        telemetryJson: JSON.stringify({ costUsd: 0, turnsTaken: 0, elapsedDurationMs: 0 }),
+        telemetryJson: JSON.stringify(stepTelemetry),
       });
     }
     const shouldResetOverlay =
@@ -434,46 +447,4 @@ export async function recoverInterruptedRunOnBoot<TIn = unknown, THandle = unkno
     }
   }
   return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume: true });
-}
-
-/**
- * Folds observed run `ToolEffect[]` through `flow.telemetry` when configured (`SPEC.md` §3.9).
- *
- * Invokes the registered `TelemetryCollectorASTNode` executor in `flowCtx.registry.telemetryCollectors`
- * and returns the validated telemetry object.
- *
- * @template TIn     Validated flow input payload type.
- * @template THandle Runtime handle type of the active isolation scope.
- *
- * @param {FlowExecutionContext<TIn, THandle>} flowCtx - Active flow execution context.
- *
- * @returns {Promise<Readonly<Record<string, unknown>> | undefined>} Folded telemetry record, or `undefined`.
- */
-export async function foldFlowCustomTelemetry<TIn = unknown, THandle = unknown>(
-  flowCtx: FlowExecutionContext<TIn, THandle>,
-): Promise<Readonly<Record<string, unknown>> | undefined> {
-  if (flowCtx.flow.telemetry === undefined) {
-    return undefined;
-  }
-  const telNode = flowCtx.flow.telemetry;
-  const telExec = flowCtx.registry.telemetryCollectors[telNode.type];
-  if (telExec === undefined) {
-    return undefined;
-  }
-  const { stepCtx } = buildFlowStepExecutionContext(
-    flowCtx,
-    flowCtx.activeReplacementExecutable,
-    {
-      stepExecId: flowCtx.activeStepExecId ?? flowCtx.runId,
-      activePartitions: [],
-      baseScopeCheckpoint: undefined,
-      stepInterruptHandlers: [],
-    },
-  );
-  const rawMetrics = await telExec(
-    telNode as never,
-    flowCtx.observedRunEffects,
-    stepCtx as StepExecutionContext<unknown>,
-  );
-  return Object.freeze(rawMetrics);
 }
