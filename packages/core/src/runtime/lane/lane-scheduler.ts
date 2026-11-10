@@ -1,3 +1,5 @@
+import type { InterruptedStepBootRecord } from '../../ports/interrupted-step-boot-record.js';
+import type { MutateLanePlanRequest } from '../../ports/mutate-lane-plan-request.js';
 import { executeFlow } from '../flow/execute-flow.js';
 import type { FlowRunResult } from '../flow/flow-run-result.js';
 import { executeHierarchicalRewindDrain } from '../flow/internal/flow-replace-and-rewind.js';
@@ -182,6 +184,51 @@ export class LaneScheduler<TIn = unknown> {
   }
 
   /**
+   * Registers or updates a crash-recovered `InterruptedStepBootRecord` on this lane so it resumes on the next scheduling pass (`SPEC.md` §3.10).
+   *
+   * Parses and validates `bootRecord.inputJson` against `lane.inputSchema`, attaches `bootRecord`, and marks the item `'SUSPENDED'` or `'QUEUED'`.
+   *
+   * @param {InterruptedStepBootRecord} bootRecord - Non-terminal boot record returned by `LedgerStore.getInterruptedStepsOnBoot()`.
+   *
+   * @returns {Promise<LaneQueuedItemState<TIn>>} Recovered lane item state.
+   */
+  async recoverBootRecord(
+    bootRecord: InterruptedStepBootRecord,
+  ): Promise<LaneQueuedItemState<TIn>> {
+    const validatedInput = this.cfg.lane.inputSchema.parse(JSON.parse(bootRecord.inputJson));
+    const itemKey = bootRecord.itemKey;
+    const existing = this.itemsByKey.get(itemKey);
+    if (existing !== undefined) {
+      existing.input = validatedInput;
+      existing.bootRecord = bootRecord;
+      existing.dependsOn = Object.freeze([
+        ...new Set([...existing.dependsOn, ...bootRecord.dependsOn]),
+      ]);
+      existing.status = bootRecord.status === 'SUSPENDED' ? 'SUSPENDED' : 'QUEUED';
+      return existing;
+    }
+    const mappedDeps =
+      this.cfg.lane.waitFor !== undefined ? this.cfg.lane.waitFor.depsMapper(validatedInput) : [];
+    const dependsOn = Object.freeze([...new Set([...mappedDeps, ...bootRecord.dependsOn])]);
+    const itemState: LaneQueuedItemState<TIn> = {
+      runId: bootRecord.runId,
+      itemKey,
+      laneId: this.cfg.lane.id,
+      input: validatedInput,
+      status: bootRecord.status === 'SUSPENDED' ? 'SUSPENDED' : 'QUEUED',
+      enqueuedAtMs: Date.now(),
+      priorityBoost: 0,
+      dependsOn,
+      costUsd: 0,
+      approvedMaxCostUsd: this.cfg.lane.maxCostUsd?.limitUsd,
+      bootRecord,
+    };
+    this.itemsByKey.set(itemKey, itemState);
+    this.itemsByRunId.set(bootRecord.runId, itemState);
+    return itemState;
+  }
+
+  /**
    * Evaluates `.waitFor()` prerequisite barriers and schedules ready `'QUEUED'` / `'SUSPENDED'` items up to `lane.concurrency` (`SPEC.md` §3.10).
    *
    * Transitions waiting items whose prerequisites failed/cancelled to `waitFor.onAbandonedState` and executes ready flows.
@@ -252,6 +299,7 @@ export class LaneScheduler<TIn = unknown> {
    * @returns {Promise<FlowRunResult>} Flow run outcome.
    */
   private async executeQueuedItemRun(item: LaneQueuedItemState<TIn>): Promise<FlowRunResult> {
+    const wasSuspended = item.status === 'SUSPENDED';
     item.status = 'RUNNING';
     await this.syncTrackerState(item.itemKey, 'running');
     const { scopeDriver, scopeHandle, flowCtx } = await prepareLaneItemFlowExecution(
@@ -263,6 +311,25 @@ export class LaneScheduler<TIn = unknown> {
         continuationQueue: this.continuationQueue,
         poolManager: this.poolManager,
         serviceRegistry: this.serviceRegistry,
+        wasSuspended,
+        onPlanMutated: async (req: MutateLanePlanRequest): Promise<void> => {
+          if (req.laneId !== this.cfg.lane.id) {
+            return;
+          }
+          for (const sp of req.spawnedItems ?? []) {
+            await this.enqueueItem({
+              input: this.cfg.lane.inputSchema.parse(JSON.parse(sp.inputJson)),
+              additionalDeps: sp.dependsOn,
+              priorityBoost: sp.priority === 'critical' || sp.priority === 'high' ? 10 : 0,
+            });
+          }
+          const parentItem = this.itemsByKey.get(req.parentItemKey);
+          if (parentItem !== undefined && req.addedDependencies !== undefined) {
+            parentItem.dependsOn = Object.freeze([
+              ...new Set([...parentItem.dependsOn, ...req.addedDependencies]),
+            ]);
+          }
+        },
       },
     );
     item.activeFlowCtx = flowCtx;

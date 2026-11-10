@@ -355,4 +355,29 @@ describe('P.agent, P.loop, canonical roleKey derivation, and createExecutorRegis
     expect(merged.checks['git:clean-working-tree']).toBe(overrideCheckFn);
     expect(typeof merged.policyGuards['fs:protect']).toBe('function');
   });
+
+  it('preserves PoolBuilder strategy and fallbackItem across .with() and StreamBuilder filterFn and mapPayload across .source() (ADJ-4, ADJ-5)', () => {
+    const fallbackModel = Object.freeze({ ...SAMPLE_MODEL_NODE, id: 'fallback-model' });
+    const primaryModel = Object.freeze({ ...SAMPLE_MODEL_NODE, id: 'primary-model' });
+    const poolAst = P.pool('out-of-order-pool')
+      .strategy('least-used')
+      .fallback(fallbackModel)
+      .with(primaryModel)
+      .toAST();
+    expect(poolAst.strategy.strategyKind).toBe('least-used');
+    expect(poolAst.fallbackItem).toBe(fallbackModel);
+    expect(poolAst.items).toEqual([primaryModel]);
+
+    const sig = P.signal('stream-sig').payload(z.object({ count: z.number() }));
+    const filterFn = (ev: { readonly severity: string }) => ev.severity === 'error';
+    const mapPayload = (ev: { readonly severity: string }) => ({ count: ev.severity.length });
+    const streamAst = P.stream<{ readonly severity: string }>('out-of-order-stream')
+      .filter(filterFn)
+      .emitSignal(sig, mapPayload)
+      .source(SAMPLE_STREAM_SOURCE_NODE)
+      .toAST();
+    expect(streamAst.filterFn).toBe(filterFn);
+    expect(streamAst.mapPayload).toBe(mapPayload);
+    expect(streamAst.signal.id).toBe('stream-sig');
+  });
 });

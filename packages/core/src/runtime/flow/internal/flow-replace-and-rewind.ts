@@ -398,6 +398,40 @@ export async function recoverInterruptedRunOnBoot<TIn = unknown, THandle = unkno
     flowCtx.activeStepId = bootRecord.stepId;
     flowCtx.activeStepExecId = bootRecord.stepExecId;
     flowCtx.resumeContinuationStack = bootRecord.continuationStack;
+    if (bootRecord.executableId !== undefined) {
+      for (const fNode of flowCtx.flow.nodes) {
+        if (fNode.type !== 'harness:flow-step' || fNode.id !== bootRecord.stepId) {
+          continue;
+        }
+        if (fNode.step.id === bootRecord.executableId) {
+          break;
+        }
+        const stepHandlers = fNode.onInterruptHandlers;
+        const actorHandlers =
+          fNode.step.type === 'harness:agent'
+            ? fNode.step.onInterruptHandlers
+            : fNode.step.type === 'harness:loop'
+              ? fNode.step.actStep.actor.onInterruptHandlers
+              : [];
+        for (const h of [...stepHandlers, ...actorHandlers]) {
+          if (h.mode === 'replace' && h.replacementExecutable.id === bootRecord.executableId) {
+            flowCtx.activeReplacementExecutable = h.replacementExecutable;
+            break;
+          }
+        }
+        if (flowCtx.activeReplacementExecutable === undefined) {
+          for (const candidateNode of flowCtx.flow.nodes) {
+            if (
+              candidateNode.type === 'harness:flow-step' &&
+              candidateNode.step.id === bootRecord.executableId
+            ) {
+              flowCtx.activeReplacementExecutable = candidateNode.step;
+              break;
+            }
+          }
+        }
+      }
+    }
   }
   return Object.freeze({ reattachedChildHandles: reattachedChildren, readyToResume: true });
 }

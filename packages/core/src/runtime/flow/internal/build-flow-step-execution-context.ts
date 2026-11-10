@@ -1,9 +1,10 @@
 import type { AgentNode } from '../../../ast/agent-node.js';
-import type { RunnerPoolASTNode, StepASTNode } from '../../../ast/domain-ast.types.js';
+import type { StepASTNode } from '../../../ast/domain-ast.types.js';
 import type { InterruptHandlerNode } from '../../../ast/interrupt-handler-node.types.js';
 import type { LoopNode } from '../../../ast/loop-node.js';
 import type { StepExecutionContext } from '../../../ports/step-execution-context.js';
 import type { ToolEffect } from '../../../ports/tool-effect.js';
+import { createMemoizedRunnerResolver } from '../../pools/internal/create-memoized-runner-resolver.js';
 import type { FlowExecutionContext } from '../flow-execution-context.js';
 
 /**
@@ -94,15 +95,7 @@ export function buildFlowStepExecutionContext<TIn = unknown, THandle = unknown>(
     signal: flowCtx.activeStepAbortController.signal,
     registry: flowCtx.registry,
     resolveEnv: (v) => (typeof v === 'string' ? v : flowCtx.env[v.key]),
-    getRunner: (rNode: RunnerPoolASTNode) => {
-      const factory = flowCtx.registry.runners[rNode.type];
-      if (factory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', lane '${flowCtx.laneId}').`,
-        );
-      }
-      return factory(rNode as never);
-    },
+    getRunner: createMemoizedRunnerResolver(flowCtx.registry, `lane '${flowCtx.laneId}'`),
     recordEffects: (effs: readonly ToolEffect[]) => {
       flowCtx.observedRunEffects.push(...effs);
     },

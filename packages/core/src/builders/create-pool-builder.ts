@@ -49,6 +49,11 @@ export function createPoolBuilder<TItem extends ASTNode = ASTNode>(
       }
       return createPoolBuilder<TNextItem>(id, {
         items: Object.freeze(extracted),
+        strategy:
+          options?.strategy === undefined
+            ? undefined
+            : (options.strategy as PoolStrategyNode<TNextItem>),
+        fallbackItem: options?.fallbackItem as TNextItem | undefined,
       });
     },
     strategy(

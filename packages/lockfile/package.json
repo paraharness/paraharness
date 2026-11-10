@@ -1,6 +1,6 @@
 {
   "name": "@paraharness/lockfile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Cross-process advisory lockfile utility with p-queue in-process serialization, atomic wx file creation, utimes heartbeat, and stale lock reclamation.",
   "keywords": [
     "paraharness",

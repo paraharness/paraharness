@@ -1,4 +1,5 @@
 import type { AstBuilder } from '../../../ast/ast-builder.js';
+import type { RunnerPoolASTNode } from '../../../ast/domain-ast.types.js';
 import type { HarnessNode } from '../../../ast/harness-node.js';
 import type { HumanNode } from '../../../ast/human-node.js';
 import type { TopologyNode } from '../../../ast/topology-node.js';
@@ -7,7 +8,6 @@ import type { HarnessRuntimeOptions } from '../../../ports/harness-runtime-optio
 import type { HumanAdapter } from '../../../ports/human-adapter.js';
 import type { LedgerStore } from '../../../ports/ledger-store.js';
 import type { LessonStore } from '../../../ports/lesson-store.js';
-import type { RunnerDriver } from '../../../ports/runner-driver.js';
 import type { RuntimeDriverContext } from '../../../ports/runtime-driver-context.js';
 import type { RuntimeExecutorRegistry } from '../../../ports/runtime-executor-registry.js';
 import type { TopologyStore } from '../../../ports/topology-store.js';
@@ -15,6 +15,7 @@ import { resolveFlowRuntimeStores } from '../../flow/internal/resolve-flow-runti
 import { LaneScheduler } from '../../lane/lane-scheduler.js';
 import { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
+import { createMemoizedRunnerResolver } from '../../pools/internal/create-memoized-runner-resolver.js';
 import { PoolManager } from '../../pools/pool-manager.js';
 import { ServiceSessionRegistry } from '../../services/service-session-registry.js';
 
@@ -117,25 +118,16 @@ export function prepareHarnessRuntimeState(
       ? createExecutorRegistry(options.registry)
       : createExecutorRegistry();
   validateHarnessBootRegistrations(node, registry);
-  const memoizedRunners = new Map<string, RunnerDriver>();
+  const declaredRunners: RunnerPoolASTNode[] = [];
+  for (const poolEntry of node.pools) {
+    if (poolEntry.type !== 'harness:pool') {
+      declaredRunners.push(poolEntry);
+    }
+  }
   const drvCtx: RuntimeDriverContext = {
     registry,
     resolveEnv: (v) => (typeof v === 'string' ? v : env[v.key]),
-    getRunner: (rNode) => {
-      const existing = memoizedRunners.get(rNode.id);
-      if (existing !== undefined) {
-        return existing;
-      }
-      const factory = registry.runners[rNode.type];
-      if (factory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', harness '${node.id}').`,
-        );
-      }
-      const drv = factory(rNode as never);
-      memoizedRunners.set(rNode.id, drv);
-      return drv;
-    },
+    getRunner: createMemoizedRunnerResolver(registry, `harness '${node.id}'`, declaredRunners),
   };
   const ledgerFactory = registry.ledgers[node.ledger.type];
   if (ledgerFactory === undefined) {

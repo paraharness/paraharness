@@ -1,6 +1,7 @@
 import type { AstBuilder } from '../../ast/ast-builder.js';
 import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type { HarnessNode } from '../../ast/harness-node.js';
+import type { LaneNode } from '../../ast/lane-node.js';
 import type { SignalNode } from '../../ast/signal-node.js';
 import type { TopologyNode } from '../../ast/topology-node.js';
 import type { ActiveRunSummary } from '../../ports/active-run-summary.js';
@@ -15,6 +16,7 @@ import type { TopologyStore } from '../../ports/topology-store.js';
 import { handleEmittedRuntimeSignal } from './internal/handle-emitted-runtime-signal.js';
 import {
   collectActiveRunSummaries,
+  drainSchedulerReadyRuns,
   startHarnessSubscriptions,
   stopHarnessSubscriptions,
 } from './internal/manage-harness-runtime-lifecycle.js';
@@ -44,6 +46,7 @@ export function createRuntime(
   const prepared = prepareHarnessRuntimeState(harness, options);
   const streamHandles: StreamSubscriptionHandle[] = [];
   const controlPlaneHandles: ControlPlaneHandle[] = [];
+  const trackerTimerHandles: Array<ReturnType<typeof setInterval>> = [];
   const controller: HarnessRuntimeController = {
     async emitSignal<TPayload>(
       signal: MaybeBuilder<SignalNode<TPayload>> | string,
@@ -70,6 +73,25 @@ export function createRuntime(
         laneSchedulers: prepared.laneSchedulers,
       });
     },
+    async enqueue<TIn = unknown>(
+      lane: MaybeBuilder<LaneNode<TIn, string>> | string,
+      item: TIn,
+    ): Promise<void> {
+      const laneId =
+        typeof lane === 'string'
+          ? lane
+          : 'toAST' in lane
+            ? lane.toAST().id
+            : lane.id;
+      const scheduler = prepared.laneSchedulers.get(laneId);
+      if (scheduler === undefined) {
+        throw new Error(
+          `Unknown lane '${laneId}' in HarnessRuntimeController.enqueue on harness '${prepared.node.id}'.`,
+        );
+      }
+      await scheduler.enqueueItem({ input: item });
+      await drainSchedulerReadyRuns(scheduler);
+    },
     async getActiveRuns(): Promise<ReadonlyArray<ActiveRunSummary>> {
       return collectActiveRunSummaries(prepared.laneSchedulers);
     },
@@ -83,6 +105,8 @@ export function createRuntime(
     serviceRegistry: prepared.serviceRegistry,
     streamHandles,
     controlPlaneHandles,
+    laneSchedulers: prepared.laneSchedulers,
+    trackerTimerHandles,
   };
   return Object.freeze<HarnessRuntime>({
     controller,

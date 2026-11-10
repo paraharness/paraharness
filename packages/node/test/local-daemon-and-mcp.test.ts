@@ -375,6 +375,7 @@ describe('sanitizeDaemonScopeKey, local.daemon lifecycle, PTY framed turns, guar
               : signal.id;
         emittedSignals.push({ id, payload });
       },
+      async enqueue() {},
       async getActiveRuns() {
         return activeRuns;
       },

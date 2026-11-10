@@ -6,12 +6,12 @@ import type { HumanAdapter } from '../../../ports/human-adapter.js';
 import type { IsolationScope } from '../../../ports/isolation-scope.js';
 import type { LedgerStore } from '../../../ports/ledger-store.js';
 import type { LessonStore } from '../../../ports/lesson-store.js';
-import type { RunnerDriver } from '../../../ports/runner-driver.js';
 import type { RuntimeDriverContext } from '../../../ports/runtime-driver-context.js';
 import type { RuntimeExecutorRegistry } from '../../../ports/runtime-executor-registry.js';
 import type { TopologyStore } from '../../../ports/topology-store.js';
 import { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
+import { createMemoizedRunnerResolver } from '../../pools/internal/create-memoized-runner-resolver.js';
 import { PoolManager } from '../../pools/pool-manager.js';
 import { ServiceSessionRegistry } from '../../services/service-session-registry.js';
 import type { FlowExecutionContext } from '../flow-execution-context.js';
@@ -99,25 +99,13 @@ export function prepareStandaloneFlowRun<TIn = unknown, THandle = unknown>(
   const laneId = options.laneId ?? 'standalone-lane';
   const itemKey = options.itemKey ?? runId;
   const env: Readonly<Record<string, string | undefined>> = options.env ?? Object.freeze({});
-  const memoizedRunners = new Map<string, RunnerDriver>();
   const drvCtx: RuntimeDriverContext = {
     registry,
     resolveEnv: (v) => (typeof v === 'string' ? v : env[v.key]),
-    getRunner: (rNode) => {
-      const existing = memoizedRunners.get(rNode.id);
-      if (existing !== undefined) {
-        return existing;
-      }
-      const factory = registry.runners[rNode.type];
-      if (factory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', flow '${flowNode.id}', runId '${runId}').`,
-        );
-      }
-      const drv = factory(rNode as never);
-      memoizedRunners.set(rNode.id, drv);
-      return drv;
-    },
+    getRunner: createMemoizedRunnerResolver(
+      registry,
+      `flow '${flowNode.id}', runId '${runId}'`,
+    ),
   };
   const ledgerFactory = registry.ledgers[ledgerNode.type];
   if (ledgerFactory === undefined) {

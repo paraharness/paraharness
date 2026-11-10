@@ -1,4 +1,5 @@
 import type { TrackerAdapter } from '../../../ports/tracker-adapter.js';
+import { createMemoizedRunnerResolver } from '../../pools/internal/create-memoized-runner-resolver.js';
 import type { LaneSchedulerConfig } from '../lane-scheduler-config.js';
 
 /**
@@ -31,14 +32,6 @@ export function resolveLaneTrackerAdapter<TIn = unknown>(
   return factory(node as never, {
     registry: cfg.registry,
     resolveEnv: (v) => (typeof v === 'string' ? v : cfg.env[v.key]),
-    getRunner: (n) => {
-      const runnerFactory = cfg.registry.runners[n.type];
-      if (runnerFactory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${n.type}' (runner id '${n.id}', lane '${cfg.lane.id}').`,
-        );
-      }
-      return runnerFactory(n as never);
-    },
+    getRunner: createMemoizedRunnerResolver(cfg.registry, `lane '${cfg.lane.id}'`),
   });
 }

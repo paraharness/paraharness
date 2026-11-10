@@ -36,6 +36,30 @@ export interface ManageHarnessRuntimeLifecycleParams {
 
   /** Mutable list of active control plane server handles. */
   readonly controlPlaneHandles: ControlPlaneHandle[];
+
+  /** Active lane schedulers keyed by `lane.id`. */
+  readonly laneSchedulers: ReadonlyMap<string, LaneScheduler<unknown>>;
+
+  /** Mutable list of active tracker polling interval handles. */
+  readonly trackerTimerHandles: Array<ReturnType<typeof setInterval>>;
+}
+
+/**
+ * Repeatedly invokes `scheduler.scheduleNextReadyRuns()` while passes complete runs and unblock dependent `.waitFor()` or `spawnTasks` items (`SPEC.md` §3.10).
+ *
+ * @param {LaneScheduler<unknown>} scheduler - Target lane scheduler to drain.
+ *
+ * @returns {Promise<void>} Resolves once no further items are ready to run in `scheduler`.
+ */
+export async function drainSchedulerReadyRuns(
+  scheduler: LaneScheduler<unknown>,
+): Promise<void> {
+  for (;;) {
+    const passResults = await scheduler.scheduleNextReadyRuns();
+    if (passResults.length === 0) {
+      break;
+    }
+  }
 }
 
 /**
@@ -102,9 +126,11 @@ export async function startHarnessSubscriptions(
     controller,
     streamHandles,
     controlPlaneHandles,
+    laneSchedulers,
+    trackerTimerHandles,
   } = params;
   try {
-    await ledgerStore.getInterruptedStepsOnBoot();
+    const interruptedRuns = await ledgerStore.getInterruptedStepsOnBoot();
     for (const sNode of node.streams) {
       const sFactory = registry.streamSources[sNode.source.type];
       if (sFactory === undefined) {
@@ -129,7 +155,44 @@ export async function startHarnessSubscriptions(
       }
       controlPlaneHandles.push(await cpFactory(cpNode as never, drvCtx).start(controller));
     }
+    for (const bootRecord of interruptedRuns) {
+      const scheduler = laneSchedulers.get(bootRecord.laneId);
+      if (scheduler !== undefined) {
+        await scheduler.recoverBootRecord(bootRecord);
+      }
+    }
+    for (const laneNode of node.lanes) {
+      const scheduler = laneSchedulers.get(laneNode.id);
+      if (scheduler === undefined) {
+        continue;
+      }
+      if (laneNode.tracker !== undefined) {
+        await scheduler.pollTrackerOnce();
+        let pollingInFlight = false;
+        const intervalMs = Math.max(1, laneNode.tracker.everySeconds) * 1_000;
+        const timerHandle = setInterval(() => {
+          if (pollingInFlight) {
+            return;
+          }
+          pollingInFlight = true;
+          void (async (): Promise<void> => {
+            try {
+              await scheduler.pollTrackerOnce();
+              await drainSchedulerReadyRuns(scheduler);
+            } finally {
+              pollingInFlight = false;
+            }
+          })();
+        }, intervalMs);
+        timerHandle.unref?.();
+        trackerTimerHandles.push(timerHandle);
+      }
+      await drainSchedulerReadyRuns(scheduler);
+    }
   } catch (err) {
+    for (const timerHandle of trackerTimerHandles.splice(0)) {
+      clearInterval(timerHandle);
+    }
     await Promise.allSettled([
       ...controlPlaneHandles.splice(0).map((cph) => cph.close()),
       ...streamHandles.splice(0).map((sh) => sh.close()),
@@ -148,6 +211,9 @@ export async function startHarnessSubscriptions(
 export async function stopHarnessSubscriptions(
   params: ManageHarnessRuntimeLifecycleParams,
 ): Promise<void> {
+  for (const timerHandle of params.trackerTimerHandles.splice(0)) {
+    clearInterval(timerHandle);
+  }
   const settled = await Promise.allSettled([
     ...params.streamHandles.splice(0).map((sh) => sh.close()),
     ...params.controlPlaneHandles.splice(0).map((cph) => cph.close()),

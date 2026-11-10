@@ -33,7 +33,9 @@ export function createStreamBuilder<TEvent = unknown, TPayload = unknown>(
     ): StreamBuilder<TNextEvent, TPayload> {
       return createStreamBuilder<TNextEvent, TPayload>(id, {
         source: extractAST(streamSource),
+        filterFn: options?.filterFn as ((event: TNextEvent) => boolean) | undefined,
         signal: options?.signal,
+        mapPayload: options?.mapPayload as ((event: TNextEvent) => TPayload) | undefined,
       });
     },
     filter(predicate: (event: TEvent) => boolean): StreamBuilder<TEvent, TPayload> {

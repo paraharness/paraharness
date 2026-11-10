@@ -8,3 +8,4 @@ site/packages/
 site/guide/getting-started.md
 site/.vitepress/cache/
 site/.vitepress/dist/
+playground/

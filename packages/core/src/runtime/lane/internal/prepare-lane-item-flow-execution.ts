@@ -1,7 +1,11 @@
 import type { IsolationScope } from '../../../ports/isolation-scope.js';
+import type { LedgerStore } from '../../../ports/ledger-store.js';
+import type { MutateLanePlanRequest } from '../../../ports/mutate-lane-plan-request.js';
 import type { FlowExecutionContext } from '../../flow/flow-execution-context.js';
+import { recoverInterruptedRunOnBoot } from '../../flow/internal/flow-replace-and-rewind.js';
 import type { ScopeLockManager } from '../../locks/scope-lock-manager.js';
 import type { StepContinuationQueue } from '../../locks/step-continuation-queue.js';
+import { createMemoizedRunnerResolver } from '../../pools/internal/create-memoized-runner-resolver.js';
 import type { PoolManager } from '../../pools/pool-manager.js';
 import type { ServiceSessionRegistry } from '../../services/service-session-registry.js';
 import type { LaneQueuedItemState } from '../lane-queued-item-state.js';
@@ -27,6 +31,41 @@ export interface PrepareLaneItemFlowExecutionManagersParams<TIn = unknown> {
 
   /** Lifecycle registry for background daemon sessions. */
   readonly serviceRegistry: ServiceSessionRegistry;
+
+  /** Whether the scheduled item is resuming from `'SUSPENDED'`. */
+  readonly wasSuspended?: boolean;
+
+  /** Optional callback invoked after `LedgerStore.mutateLanePlan` commits spawned items or added dependencies. */
+  readonly onPlanMutated?: (req: MutateLanePlanRequest) => Promise<void>;
+}
+
+/**
+ * Wraps `ledgerStore` so `mutateLanePlan` notifies the enclosing `LaneScheduler` when `onPlanMutated` is provided.
+ *
+ * @param {LedgerStore}                                           ledgerStore   - Underlying ledger store.
+ * @param {((req: MutateLanePlanRequest) => Promise<void>) | undefined} onPlanMutated - Optional plan mutation hook.
+ *
+ * @returns {LedgerStore} Wrapped or original ledger store.
+ */
+function wrapLaneLedgerStore(
+  ledgerStore: LedgerStore,
+  onPlanMutated: ((req: MutateLanePlanRequest) => Promise<void>) | undefined,
+): LedgerStore {
+  if (onPlanMutated === undefined) {
+    return ledgerStore;
+  }
+  return new Proxy(ledgerStore, {
+    get(target: LedgerStore, prop: string | symbol, receiver: unknown): unknown {
+      if (prop === 'mutateLanePlan') {
+        return async (req: MutateLanePlanRequest): Promise<void> => {
+          await target.mutateLanePlan(req);
+          await onPlanMutated(req);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 }
 
 /**
@@ -60,46 +99,49 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
   const scopeDriver = scopeFactory(cfg.lane.flow.scope as never, {
     registry: cfg.registry,
     resolveEnv: (v) => (typeof v === 'string' ? v : cfg.env[v.key]),
-    getRunner: (n) => {
-      const runnerFactory = cfg.registry.runners[n.type];
-      if (runnerFactory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${n.type}' (runner id '${n.id}', lane '${cfg.lane.id}').`,
-        );
-      }
-      return runnerFactory(n as never);
-    },
+    getRunner: createMemoizedRunnerResolver(cfg.registry, `lane '${cfg.lane.id}'`),
   }) as IsolationScope<unknown>;
-  const scopeHandle = await scopeDriver.acquireRoot(item.runId);
+  const pendingBootRecord =
+    item.bootRecord ??
+    (managers.wasSuspended === true
+      ? (await cfg.ledgerStore.getInterruptedStepsOnBoot()).find((r) => r.runId === item.runId)
+      : undefined);
+  item.bootRecord = undefined;
+  let scopeHandle: unknown =
+    pendingBootRecord !== undefined ? undefined : await scopeDriver.acquireRoot(item.runId);
   const activeStepAbortController = new AbortController();
   try {
-    const syncRootFn = (
-      scopeDriver as {
-        readonly syncRoot?: (
-          h: unknown,
-          r: readonly Record<string, unknown>[],
-        ) => Promise<unknown>;
+    if (pendingBootRecord === undefined) {
+      const syncRootFn = (
+        scopeDriver as {
+          readonly syncRoot?: (
+            h: unknown,
+            r: readonly Record<string, unknown>[],
+          ) => Promise<unknown>;
+        }
+      ).syncRoot;
+      const depReceipts: Record<string, unknown>[] = [];
+      for (const depKey of item.dependsOn) {
+        const depItem = managers.itemsByKey.get(depKey);
+        if (depItem?.scopeReceipt !== undefined) {
+          depReceipts.push(depItem.scopeReceipt);
+        }
+        if (depItem !== undefined && cfg.topologyStore !== undefined) {
+          await cfg.topologyStore.syncRunOverlays(item.runId, [depItem.runId]);
+        }
       }
-    ).syncRoot;
-    const depReceipts: Record<string, unknown>[] = [];
-    for (const depKey of item.dependsOn) {
-      const depItem = managers.itemsByKey.get(depKey);
-      if (depItem?.scopeReceipt !== undefined) {
-        depReceipts.push(depItem.scopeReceipt);
+      if (depReceipts.length > 0 && syncRootFn !== undefined) {
+        await managers.lockManager.withWriteLock(
+          scopeHandle,
+          () => syncRootFn.call(scopeDriver, scopeHandle, depReceipts),
+          activeStepAbortController.signal,
+        );
       }
-      if (depItem !== undefined && cfg.topologyStore !== undefined) {
-        await cfg.topologyStore.syncRunOverlays(item.runId, [depItem.runId]);
-      }
-    }
-    if (depReceipts.length > 0 && syncRootFn !== undefined) {
-      await managers.lockManager.withWriteLock(
-        scopeHandle,
-        () => syncRootFn.call(scopeDriver, scopeHandle, depReceipts),
-        activeStepAbortController.signal,
-      );
     }
   } catch (err) {
-    await scopeDriver.release(scopeHandle);
+    if (scopeHandle !== undefined) {
+      await scopeDriver.release(scopeHandle);
+    }
     throw err;
   }
   const flowCtx: FlowExecutionContext<TIn, unknown> = {
@@ -112,7 +154,7 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
     scopeDriver: scopeDriver as never,
     registry: cfg.registry,
     env: cfg.env,
-    ledgerStore: cfg.ledgerStore,
+    ledgerStore: wrapLaneLedgerStore(cfg.ledgerStore, managers.onPlanMutated),
     topologyStore: cfg.topologyStore,
     lessonStore: cfg.lessonStore,
     lockManager: managers.lockManager,
@@ -133,5 +175,13 @@ export async function prepareLaneItemFlowExecution<TIn = unknown>(
     pendingRewindToStepId: undefined,
     retryConfig: cfg.lane.retry,
   };
+  if (pendingBootRecord !== undefined) {
+    await recoverInterruptedRunOnBoot({
+      bootRecord: pendingBootRecord,
+      flow: cfg.lane.flow,
+      flowCtx,
+    });
+    scopeHandle = flowCtx.scopeHandle;
+  }
   return { scopeDriver, scopeHandle, flowCtx };
 }

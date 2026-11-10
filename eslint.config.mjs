@@ -203,6 +203,9 @@ function checkStructuredJsdoc(params) {
 
 export default [
   {
+    ignores: ['playground/**'],
+  },
+  {
     files: [
       'packages/*/{src,test}/**/*.ts',
       'tests/*/{src,test}/**/*.ts',

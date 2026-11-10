@@ -1,7 +1,6 @@
 import type { MaybeBuilder } from '../../ast/ast-foundation.types.js';
 import type {
   IsolationScopeASTNode,
-  RunnerPoolASTNode,
   StepASTNode,
 } from '../../ast/domain-ast.types.js';
 import type {
@@ -13,13 +12,13 @@ import type { CheckpointableScope } from '../../ports/checkpointable-scope.js';
 import type { ContinuationFrame } from '../../ports/continuation-frame.types.js';
 import { createExecutorRegistry } from '../../ports/create-executor-registry.js';
 import type { IsolationScope } from '../../ports/isolation-scope.js';
-import type { RunnerDriver } from '../../ports/runner-driver.js';
 import type { RuntimeExecutorRegistry } from '../../ports/runtime-executor-registry.js';
 import type { RuntimeExecutorRegistrySlice } from '../../ports/runtime-executor-registry-slice.js';
 import type { ServiceSession } from '../../ports/service-session.js';
 import type { StepExecutionContext } from '../../ports/step-execution-context.js';
 import type { ToolEffect } from '../../ports/tool-effect.js';
 import type { WireFrameRecord } from '../../ports/wire-frame-record.js';
+import { createMemoizedRunnerResolver } from '../pools/internal/create-memoized-runner-resolver.js';
 import { executeStepNode } from './execute-step-node.js';
 import { createEphemeralStepLedgerStore } from './internal/create-ephemeral-step-ledger-store.js';
 
@@ -120,7 +119,6 @@ export async function runStep<TStep extends StepASTNode = StepASTNode, THandle =
       ? stepNode.extractPartitions(stepNode.inputSchema.parse(input))
       : Object.freeze([]));
   const observedEffects: ToolEffect[] = [];
-  const memoizedRunners = new Map<string, RunnerDriver>();
   const baseCtx: StepExecutionContext<THandle> = {
     runId,
     stepExecId,
@@ -137,21 +135,7 @@ export async function runStep<TStep extends StepASTNode = StepASTNode, THandle =
     resumeContinuationStack: options.resumeContinuationStack,
     registry,
     resolveEnv: (value) => (typeof value === 'string' ? value : env[value.key]),
-    getRunner: (rNode: RunnerPoolASTNode) => {
-      const existing = memoizedRunners.get(rNode.id);
-      if (existing !== undefined) {
-        return existing;
-      }
-      const factory = registry.runners[rNode.type];
-      if (factory === undefined) {
-        throw new Error(
-          `No RunnerDriver registered for '${rNode.type}' (runner id '${rNode.id}', runId '${runId}').`,
-        );
-      }
-      const drv = factory(rNode as never);
-      memoizedRunners.set(rNode.id, drv);
-      return drv;
-    },
+    getRunner: createMemoizedRunnerResolver(registry, `runId '${runId}'`),
     recordEffects: (effects: readonly ToolEffect[]) => {
       for (const eff of effects) {
         observedEffects.push(eff);

@@ -225,6 +225,11 @@ describe('M2 Runtime — P.stream, P.harness (.onSignal().notify, .expose) & P.l
 
     const runtime = createRuntime(harness, { registry, humanAdaptersById: new Map([['ops-pager', humanAdapter], ['budget-owner', humanAdapter]]) });
     await runtime.start();
+    expect(externalTransitions).toEqual([
+      { itemKey: 'iss-1', state: 'queued' },
+      { itemKey: 'iss-1', state: 'in-progress' },
+      { itemKey: 'iss-1', state: 'pr-open' },
+    ]);
     await pushedEventHandler?.({ prNumber: 10, merged: false });
     expect(humanAdapter.notifications).toHaveLength(0);
     await pushedEventHandler?.({ prNumber: 42, merged: true });
@@ -244,6 +249,9 @@ describe('M2 Runtime — P.stream, P.harness (.onSignal().notify, .expose) & P.l
     await expect(failingRuntime.start()).rejects.toThrow('cp start failed');
     expect(streamClosed).toBe(true);
 
+    externalTransitions.length = 0;
+    ledgerStore.runs.clear();
+    ledgerStore.terminalReceipts.clear();
     const scheduler = new LaneScheduler({ lane: lane.toAST(), registry, env: {}, ledgerStore, humanAdaptersById: new Map([['budget-owner', humanAdapter]]) });
     expect((await scheduler.pollTrackerOnce()).map((p) => p.itemKey)).toEqual(['iss-1']);
     await scheduler.enqueueItem({ input: { id: 'iss-wait', title: 'Waiter', deps: ['iss-fail'] } });

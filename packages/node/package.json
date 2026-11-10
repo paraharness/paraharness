@@ -1,6 +1,6 @@
 {
   "name": "@paraharness/node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local OS subprocess runner pools, one-shot commands, circuit-breaking stream checks, framed PTY background daemons, and MCP control-plane adapters for Paraharness.",
   "keywords": [
     "paraharness",

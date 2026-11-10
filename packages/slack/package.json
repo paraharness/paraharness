@@ -1,6 +1,6 @@
 {
   "name": "@paraharness/slack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Slack Socket Mode interactive human approval / control-plane adapter and incoming webhook notification driver for Paraharness.",
   "keywords": [
     "paraharness",

@@ -227,6 +227,7 @@ describe('@paraharness/slack adapter', () => {
                 : signal.id;
           emittedSignals.push({ signalId, payload });
         },
+        async enqueue() {},
         async getActiveRuns() {
           return [{ runId: 'run-active-1', laneId: 'engineering', itemKey: '#42', status: 'RUNNING' }];
         },
@@ -367,6 +368,7 @@ describe('@paraharness/slack adapter', () => {
       expect(humanAdapter).toBe(controlPlane);
       const handle = await controlPlane.start({
         async emitSignal() {},
+        async enqueue() {},
         async getActiveRuns() {
           return [];
         },
@@ -402,6 +404,7 @@ describe('@paraharness/slack adapter', () => {
       try {
         const controller: HarnessRuntimeController = {
           async emitSignal() {},
+          async enqueue() {},
           async getActiveRuns() {
             return [];
           },

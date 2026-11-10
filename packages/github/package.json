@@ -1,6 +1,6 @@
 {
   "name": "@paraharness/github",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "GitHub Issues tracker adapter, HMAC-verified webhook event stream source, and idempotent pull-request step executor for Paraharness.",
   "keywords": [
     "paraharness",

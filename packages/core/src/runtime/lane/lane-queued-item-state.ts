@@ -1,3 +1,4 @@
+import type { InterruptedStepBootRecord } from '../../ports/interrupted-step-boot-record.js';
 import type { FlowExecutionContext } from '../flow/flow-execution-context.js';
 
 /**
@@ -35,4 +36,6 @@ export interface LaneQueuedItemState<TIn = unknown> {
   scopeReceipt?: Record<string, unknown>;
   /** Active `FlowExecutionContext` while the run is executing. */
   activeFlowCtx?: FlowExecutionContext<TIn, unknown>;
+  /** Optional interrupted step boot record pending recovery on next schedule pass. */
+  bootRecord?: InterruptedStepBootRecord;
 }

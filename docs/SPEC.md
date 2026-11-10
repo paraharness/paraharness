@@ -2157,6 +2157,7 @@ export interface ControlPlaneAdapter {
 
 export interface HarnessRuntimeController {
   emitSignal<TPayload>(signal: MaybeBuilder<SignalNode<TPayload>> | string, payload: TPayload): Promise<void>;
+  enqueue<TIn = unknown>(lane: MaybeBuilder<LaneNode<TIn, string>> | string, item: TIn): Promise<void>;
   getActiveRuns(): Promise<ReadonlyArray<{ runId: string; laneId: string; itemKey: string; status: string }>>;
 }
 ~~~

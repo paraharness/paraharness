@@ -821,6 +821,207 @@ describe('M2 Runtime — controller.emitSignal with SignalBuilder and SignalNode
     ).rejects.toThrow('acquireRoot boom');
     expect(activeAbortListeners).toBe(0);
   });
+
+  it('enqueues items via controller.enqueue, recovers boot runs and polls trackers on runtime.start(), wakes dependent runs, and memoizes getRunner with conflict validation (ADJ-1, ADJ-2, ADJ-9)', async () => {
+    const ledgerStore = new InMemoryLedgerStore();
+    const scope = new ScriptedBranchableScope();
+    const executedKeys: string[] = [];
+    let runnerFactoryCount = 0;
+
+    const itemSchema = z.object({
+      id: z.string(),
+      dependsOn: z.array(z.string()).optional(),
+    });
+
+    const stepCmd = P.command('adj-step')
+      .input(itemSchema)
+      .output(z.object({ done: z.string() }))
+      .run(async (input, ctx) => {
+        ctx.getRunner(SAMPLE_RUNNER_NODE);
+        ctx.getRunner({ ...SAMPLE_RUNNER_NODE });
+        executedKeys.push(input.id);
+        return { done: input.id };
+      });
+
+    const flow = P.flow('adj-flow')
+      .input(itemSchema)
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('s1', stepCmd)
+      .exit('done');
+
+    const lane = P.lane('adj-lane')
+      .input(itemSchema)
+      .key((item) => item.id)
+      .waitFor((item) => item.dependsOn ?? [], 'blocked-on-prereq')
+      .runs(flow);
+
+    await ledgerStore.createOrResumeRun({
+      runId: 'run:adj-lane:boot-item',
+      laneId: 'adj-lane',
+      itemKey: 'boot-item',
+      inputJson: JSON.stringify({ id: 'boot-item' }),
+    });
+    await ledgerStore.recordStepStart({
+      runId: 'run:adj-lane:boot-item',
+      stepExecId: 'exec-boot-1',
+      stepId: 's1',
+      executableId: 'adj-step',
+      inputMsgId: null,
+      continuationStack: [],
+    });
+
+    const harness = P.harness('adj-harness')
+      .ledger(SAMPLE_LEDGER_NODE)
+      .pools(SAMPLE_RUNNER_NODE)
+      .lanes(lane);
+
+    const runtime = createRuntime(harness, {
+      registry: {
+        ledgers: { 'sqlite:ledger': () => ledgerStore },
+        scopes: {
+          'git:cow-worktree': (sNode, dCtx) => {
+            void sNode;
+            dCtx.getRunner(SAMPLE_RUNNER_NODE);
+            return scope as never;
+          },
+        },
+        runners: {
+          'node:runner': () => {
+            runnerFactoryCount += 1;
+            return {
+              id: 'runner-1',
+              withSlot: async (fn) => fn(),
+              withDaemonSlot: async (fn) => fn(() => {}),
+            };
+          },
+        },
+      },
+    });
+
+    await runtime.start();
+    expect(executedKeys).toEqual(['boot-item']);
+
+    await runtime.controller.enqueue(lane, { id: 'child-item', dependsOn: ['prereq-item'] });
+    expect(executedKeys).toEqual(['boot-item']);
+
+    await runtime.controller.enqueue('adj-lane', { id: 'prereq-item' });
+    expect(executedKeys).toEqual(['boot-item', 'prereq-item', 'child-item']);
+    expect(runnerFactoryCount).toBe(1);
+
+    await expect(
+      runtime.controller.enqueue('missing-lane', { id: 'x' }),
+    ).rejects.toThrow("Unknown lane 'missing-lane' in HarnessRuntimeController.enqueue on harness 'adj-harness'.");
+
+    await runtime.stop();
+
+    const spawnLedger = new InMemoryLedgerStore();
+    const spawnScope = new ScriptedBranchableScope();
+    const spawnExecuted: string[] = [];
+    const spawnModelDriver = new ScriptedModelDriver([
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: 'spawn child',
+          toolCalls: [
+            {
+              id: 'tc-spawn-1',
+              name: 'spawnTasks',
+              argsJson: JSON.stringify({ tasks: [{ item: { id: 'spawned-child' } }] }),
+            },
+          ],
+        },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: JSON.stringify({ done: 'spawned-child' }),
+          toolCalls: [],
+        },
+        structuredOutput: { done: 'spawned-child' },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 },
+      },
+      {
+        wireFrame: new Uint8Array(),
+        canonical: {
+          role: 'assistant',
+          visibleText: JSON.stringify({ done: 'spawn-parent' }),
+          toolCalls: [],
+        },
+        structuredOutput: { done: 'spawn-parent' },
+        usage: { inputTokens: 5, outputTokens: 5, cachedInputTokens: 0, costUsd: 0.01 },
+      },
+    ]);
+    const spawnAgent = P.agent<string>('spawn-agent')
+      .model(SAMPLE_MODEL_NODE)
+      .input(itemSchema)
+      .output(z.object({ done: z.string() }))
+      .capabilities(($c) =>
+        $c.mutatePlan(($m) => $m.canSpawnTasks(itemSchema, { maxSpawnedPerRun: 2 })),
+      );
+    const recordCmd = P.command('record-cmd')
+      .input(itemSchema)
+      .output(z.object({ done: z.string() }))
+      .run(async (input) => {
+        spawnExecuted.push(input.id);
+        return { done: input.id };
+      });
+    const spawnFlow = P.flow('spawn-flow')
+      .input(itemSchema)
+      .scope(SAMPLE_TIER3_SCOPE_NODE)
+      .step('work', spawnAgent)
+      .step('record', recordCmd, ($e) => $e.inputFrom((item) => item))
+      .exit('done');
+    const spawnLane = P.lane('spawn-lane')
+      .input(itemSchema)
+      .key((item) => item.id)
+      .runs(spawnFlow);
+    const spawnHarness = P.harness('spawn-harness')
+      .ledger(SAMPLE_LEDGER_NODE)
+      .lanes(spawnLane);
+    const spawnRuntime = createRuntime(spawnHarness, {
+      registry: {
+        ledgers: { 'sqlite:ledger': () => spawnLedger },
+        scopes: { 'git:cow-worktree': () => spawnScope as never },
+        models: { 'claude:model': () => spawnModelDriver },
+      },
+    });
+    await spawnRuntime.start();
+    await spawnRuntime.controller.enqueue(spawnLane, { id: 'spawn-parent' });
+    expect(spawnExecuted).toEqual(['spawned-child', 'spawn-parent']);
+    await spawnRuntime.stop();
+
+    const conflictingRunnerStep = P.command('conflict-step')
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ ok: z.boolean() }))
+      .run(async (_in, ctx) => {
+        ctx.getRunner(SAMPLE_RUNNER_NODE);
+        ctx.getRunner({ ...SAMPLE_RUNNER_NODE, slots: 8 });
+        return { ok: true };
+      });
+
+    await expect(
+      runStep(
+        conflictingRunnerStep,
+        { id: 'c1' },
+        {
+          registry: {
+            runners: {
+              'node:runner': () => ({
+                id: 'runner-1',
+                withSlot: async (fn) => fn(),
+                withDaemonSlot: async (fn) => fn(() => {}),
+              }),
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow(
+      "RunnerPoolASTNode 'local-runner' was already registered with (type='node:runner', slots=4, maxDaemons=2) but was requested again with conflicting configuration (type='node:runner', slots=8, maxDaemons=2) in runId 'standalone-run'.",
+    );
+  });
 });
 
 
