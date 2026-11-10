@@ -24,25 +24,36 @@
 | **`P16`** | `[ADDITIVE]` | `@paraharness/core`, `@paraharness/core/runtime` | **`APPROVED`** | Pinpoint `.toAST()` missing-method diagnostics (naming the exact missing method) and fail-closed `Rule 5.4` errors when any declared `streamSources`, `controlPlanes`, `humanChannels`, or `trackers` registration is missing from `registry`. |
 | **`P17`** | `[ADDITIVE]` | `docs` | **`APPROVED`** | Replace `.items(...)` with `.with(...)` in `packages/{claude,gemini,openai}/README.md`, add `runStep` and `runFlow` (`@paraharness/core/runtime`) examples to `README.md` and `site/index.md`, add `CustomDomainASTRegistry` guide to `packages/core/README.md`, and add `P.lane().tracker(...)` example to `packages/github/README.md`. |
 
+### Round 2 Rulings
+
+| ID | Badge | Package(s) | Ruling | Approved Contract Summary |
+| :--- | :--- | :--- | :--- | :--- |
+| **`R2-P1`** (`C1`) | `[ADDITIVE]` | `@paraharness/fs`, `docs`, `tests/integration` | **`APPROVED`** (Option A) | Export `fs.violatedPaths(violation: PolicyViolation): string[]` from `@paraharness/fs` (`fs` namespace and named export `violatedPaths`), extracting deduplicated string paths in first-seen order from `violation.violatedEffects` where `effect.kind === 'fs:effect'` and `Array.isArray(effect.attributes?.['paths'])`. Update `docs/SPEC.md` §4.3, `docs/CODING_SAMPLE.md`, `README.md`, `packages/core/README.md`, `packages/fs/README.md`, and `tests/integration/src/engineering/internal/map-lease-request-violation.ts`. |
+| **`R2-P2`** (`C3`) | `[ADDITIVE]` | `@paraharness/github` | **`APPROVED`** (Option A) | Widen `GithubCreateOrUpdatePrOptions<TIn = unknown, TOut = unknown>` with `readonly outputSchema?: z.ZodType<TOut>` so `github.createOrUpdatePr(id, { ..., outputSchema })` infers `TOut` directly from `options.outputSchema` (defaulting `TOut = unknown` when omitted). |
+| **`R2-P3`** (`C4`) | `[ADDITIVE]` | `@paraharness/core/runtime` | **`APPROVED`** (Option A) | Update `runStep<TStep extends StepASTNode = StepASTNode, THandle = unknown>(node: MaybeBuilder<TStep>, input: ExtractStepInput<TStep>, options: StepRunOptions<THandle>): Promise<ExtractStepOutput<TStep>>` in `@paraharness/core/runtime` and `docs/SPEC.md` §2.3 so `DomainStepASTNode` members with fixed output types (`GitCommitAndPushNode` -> `void`, `LocalStreamCheckNode` -> `{ ok: boolean; deficits: readonly string[] }`) infer accurately without altering `DomainStepASTNode`. |
+| **`R2-P4`** (`C6`) | `[ADDITIVE]` | `docs` | **`APPROVED`** (Option A) | Declare `candidateArbiter` in `README.md` and `packages/core/README.md`, and align `verifiedWorkerLoop`, `.arbiter(candidateArbiter)`, `.maxCostUsd(20.0, owner)`, and `.onSignal(highLeverageLessonSignal, owner, ...)` in `README.md`, `packages/core/README.md`, and `docs/CODING_SAMPLE.md` with Round 1 rulings `P3`, `P12`, and `P15`. |
+| **`R2-P5`** (`C2`) | `[ADDITIVE]` | `@paraharness/lockfile` | **`APPROVED`** (Option A) | Replace `heartbeatMs: 2_000` with `heartbeatIntervalMs: 2_000` in `packages/lockfile/README.md:37` to match `FileLockOptions`. |
+| **`R2-C5`** | `[ADDITIVE]` | `@paraharness/core` | **`REJECTED`** | Rejected under Gate `(y)` & `(z)`: parameterizing `FlowNode` by `TStepOutputs` breaks `FlowBuilder.toAST()` covariance (`Record<string, never>` is not assignable to `Record<string, unknown>`) and adds 3 type parameters across `FlowNode`, `LaneNode`, and `runFlow`. |
+
 ---
 
 ## 2. Cumulative Added-Overloads & Exports Ledger Per Package
 
-| Package | Round 1 Added Overloads | Round 1 Added Exports | Cumulative Added Overloads | Cumulative Added Exports |
-| :--- | :---: | :---: | :---: | :---: |
-| **`@paraharness/core`** | `+2` (`HarnessBuilder.onSignal`, `SpeculateCapabilityBuilder.arbiter`) | `+1` (`DEFAULT_NODE_RUNNER_AST_NODE`) | `2` | `1` |
-| **`@paraharness/core/runtime`** | `0` | `+4` (`runStep`, `StepRunOptions`, `runFlow`, `FlowRunOptions`) | `0` | `4` |
-| **`@paraharness/claude`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/openai`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/gemini`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/node`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/fs`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/git`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/markdown`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/sqlite`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/postgres`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/github`** | `0` | `0` | `0` | `0` |
-| **`@paraharness/slack`** | `0` | `0` | `0` | `0` |
+| Package | Round 1 Added Overloads | Round 1 Added Exports | Round 2 Added Overloads | Round 2 Added Exports | Cumulative Added Overloads | Cumulative Added Exports |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`@paraharness/core`** | `+2` (`HarnessBuilder.onSignal`, `SpeculateCapabilityBuilder.arbiter`) | `+1` (`DEFAULT_NODE_RUNNER_AST_NODE`) | `0` | `0` | `2` | `1` |
+| **`@paraharness/core/runtime`** | `0` | `+4` (`runStep`, `StepRunOptions`, `runFlow`, `FlowRunOptions`) | `0` | `0` | `0` | `4` |
+| **`@paraharness/claude`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/openai`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/gemini`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/node`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/fs`** | `0` | `0` | `0` | `+1` (`violatedPaths` / `fs.violatedPaths`) | `0` | `1` |
+| **`@paraharness/git`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/markdown`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/sqlite`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/postgres`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/github`** | `0` | `0` | `0` | `0` | `0` | `0` |
+| **`@paraharness/slack`** | `0` | `0` | `0` | `0` | `0` | `0` |
 
 ---
 
@@ -50,25 +61,24 @@
 
 ### Quantitative Benchmark Trend Table
 
-| Round | Tier | LOC | Imports | Manual Type Annotations | Persona Guesses / Lookups | Initial `tsc` Errors |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Round 1 (Baseline)** | `Tier A (Zero-to-One)` | `75` | `2` | `1` | `4` | `3` |
-| **Round 1 (Baseline)** | `Tier B (Flow)` | `61` | `3` | `0` | `2` | `0` |
-| **Round 1 (Baseline)** | `Tier C (Harness)` | `61` | `5` | `0` | `2` | `1` |
-| **Round 1 (Baseline)** | `Tier D (Escape Hatch)` | `95` | `3` | `2` | `4` | `2` |
-| **Round 1 (Baseline)** | **Total / Aggregate** | **`292`** | **`13`** | **`3`** | **`12`** | **`6`** |
+| Round | Tier | LOC | Imports | Manual Type Annotations | Persona Guesses / Lookups | Initial `tsc` Errors | Applied Rulings |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Round 1 (Baseline)** | `Tier A (Zero-to-One)` | `75` | `2` | `1` | `4` | `3` | — |
+| **Round 2** | `Tier A (Zero-to-One)` | **`52`** (`-23`) | **`3`** (`+1`) | **`0`** (`-1`) | **`0`** (`-4`) | **`0`** (`-3`) | `P1`, `P3`, `P7`, `P17` |
+| **Round 1 (Baseline)** | `Tier B (Flow)` | `61` | `3` | `0` | `2` | `0` | — |
+| **Round 2** | `Tier B (Flow)` | **`61`** (`0`) | **`3`** (`0`) | **`0`** (`0`) | **`0`** (`-2`) | **`0`** (`0`) | `P7`, `P13` |
+| **Round 1 (Baseline)** | `Tier C (Harness)` | `61` | `5` | `0` | `2` | `1` | — |
+| **Round 2** | `Tier C (Harness)` | **`61`** (`0`) | **`5`** (`0`) | **`0`** (`0`) | **`0`** (`-2`) | **`0`** (`-1`) | `P7`, `P13`, `P17` |
+| **Round 1 (Baseline)** | `Tier D (Escape Hatch)` | `95` | `3` | `2` | `4` | `2` | — |
+| **Round 2** | `Tier D (Escape Hatch)` | **`79`** (`-16`) | **`3`** (`0`) | **`2`** (`0`) | **`0`** (`-4`) | **`0`** (`-2`) | `P7`, `P11`, `P15`, `P17` |
+| **Round 1 (Baseline)** | **Total / Aggregate** | **`292`** | **`13`** | **`3`** | **`12`** | **`6`** | — |
+| **Round 2** | **Total / Aggregate** | **`253`** (`-39` / `-13.4%`) | **`14`** (`+1`) | **`2`** (`-1`) | **`0`** (`-12` / `-100%`) | **`0`** (`-6` / `-100%`) | `P1`, `P3`, `P7`, `P11`, `P13`, `P15`, `P17` |
 
 ### Canonical `Tier A (Zero-to-One)` Snippet (`tier-a.ts`)
 
 ```ts
-import {
-  P,
-  z,
-  createExecutorRegistry,
-  executeAgent,
-  executeLoop,
-  type StepExecutionContext,
-} from '@paraharness/core';
+import { P, z } from '@paraharness/core';
+import { runStep } from '@paraharness/core/runtime';
 import { claude, claudeExecutors } from '@paraharness/claude';
 
 const TaskInput = z.object({
@@ -80,7 +90,7 @@ const TaskOutput = z.object({
   summary: z.string(),
 });
 
-const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
+const sonnet = claude.model('claude-sonnet-4-6');
 
 const worker = P.agent('worker')
   .model(sonnet)
@@ -105,35 +115,18 @@ const evaluator = P.agent('evaluator')
   );
 
 const verifiedLoop = P.loop('verified-loop')
-  .input(TaskInput)
-  .output(TaskOutput)
   .maxIterations(3)
   .act('execute', worker)
   .evaluate('audit', evaluator, {
     mapInput: (task, candidate) => ({ task, candidate }),
     acceptWhen: (ev) => ev.accepted && ev.deficits.length === 0,
     feedbackMapper: (ev) => `Resolve:\n${ev.deficits.join('\n')}`,
-  })
-  .returnOutputFrom('execute');
+  });
 
 export async function runTierA() {
   const input = { taskId: 'task-1', prompt: 'Fix the bug' };
-  const ctx: StepExecutionContext = {
-    runId: 'run-1',
-    stepExecId: 'step-1',
-    scopeHandle: undefined,
-    activePartitions: [],
-    activeLeases: [],
-    observedEffects: [],
-    registry: createExecutorRegistry(claudeExecutors),
-    resolveEnv: (val) => (typeof val === 'string' ? val : process.env[val.key]),
-    getRunner: () => {
-      throw new Error('No runner configured');
-    },
-    recordEffects: () => {},
-  };
-  const agentRes = await executeAgent(worker.toAST(), input, ctx);
-  const loopRes = await executeLoop(verifiedLoop.toAST(), input, ctx);
+  const agentRes = await runStep(worker, input, { registry: claudeExecutors });
+  const loopRes = await runStep(verifiedLoop, input, { registry: claudeExecutors });
   return { agentRes, loopRes };
 }
 ```
@@ -163,7 +156,7 @@ const needsEscalation = P.interrupt(
   z.object({ reason: z.string() }),
 );
 
-const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
+const sonnet = claude.model('claude-sonnet-4-6');
 
 const drafter = P.agent('drafter')
   .model(sonnet)
@@ -186,7 +179,7 @@ const finalizer = P.agent('finalizer')
 
 export const standaloneFlow = P.flow('standalone-flow')
   .input(TaskInput)
-  .scope(git.cowWorktree({ repo: '.', dir: '.harness/worktrees' }))
+  .scope(git.cowWorktree())
   .step('draft', drafter, ($step) =>
     $step.onInterrupt(needsEscalation, ($intr) =>
       $intr.replaceWith(fallbackDrafter, (item, payload) => ({
@@ -218,8 +211,8 @@ const TaskInput = z.object({
   prompt: z.string(),
 });
 
-const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
-const opus = claude.model('opus', { id: 'claude-opus-4-6' });
+const sonnet = claude.model('claude-sonnet-4-6');
+const opus = claude.model('claude-opus-4-6');
 
 const modelPool = P.pool('model-pool')
   .with(sonnet, opus)
@@ -231,7 +224,7 @@ const worker = P.agent('worker')
   .input(TaskInput)
   .output(z.object({ summary: z.string() }));
 
-const worktreeScope = git.cowWorktree({ repo: '.', dir: '.harness/worktrees' });
+const worktreeScope = git.cowWorktree();
 
 const taskFlow = P.flow('task-flow')
   .input(TaskInput)
@@ -317,7 +310,7 @@ const ArbiterVerdict = z.discriminatedUnion('decision', [
   }),
 ]);
 
-const sonnet = claude.model('sonnet', { id: 'claude-sonnet-4-6' });
+const sonnet = claude.model('claude-sonnet-4-6');
 
 const leafWorker = P.agent('leaf-worker')
   .model(sonnet)
@@ -329,14 +322,7 @@ const leafWorker = P.agent('leaf-worker')
 const arbiter = P.agent('arbiter')
   .model(sonnet)
   .instructions('Judge speculative branches.')
-  .input(
-    P.SpeculationInputSchema(
-      TaskInput,
-      TaskOutput,
-      git.ScopeReceiptSchema,
-      z.unknown(),
-    ),
-  )
+  .input(P.SpeculationInputSchema(TaskInput, TaskOutput, git.ScopeReceiptSchema))
   .output(ArbiterVerdict);
 
 export const escapeHatchCoordinator = P.agent('coordinator')
@@ -347,14 +333,7 @@ export const escapeHatchCoordinator = P.agent('coordinator')
   .output(TaskOutput)
   .capabilities(($cap) =>
     $cap
-      .fork('delegate', leafWorker, ($f) =>
-        $f
-          .requestSchema(z.object({ subtaskPrompt: z.string() }))
-          .mapInput((parent, req) => ({
-            taskId: parent.taskId,
-            prompt: req.subtaskPrompt,
-          })),
-      )
+      .fork('delegate', leafWorker)
       .speculate('race', ($s) =>
         $s
           .requestSchema(z.object({ strategyA: z.string(), strategyB: z.string() }))
@@ -363,9 +342,7 @@ export const escapeHatchCoordinator = P.agent('coordinator')
             { taskId: parent.taskId, prompt: req.strategyA },
             { taskId: parent.taskId, prompt: req.strategyB },
           ])
-          .arbiter(arbiter, {
-            resolveDecision: (verdict) => verdict,
-          }),
+          .arbiter(arbiter),
       ),
   );
 ```
