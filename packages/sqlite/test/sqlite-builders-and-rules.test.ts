@@ -146,7 +146,26 @@ describe('sqlite AST builders and global-rules source executor', () => {
     );
   });
 
-  it('executes sqlite:global-rules source, validates GlobalRuleSchema, and computes SHA-256 digest', async () => {
+  it('executes sqlite:global-rules source, auto-initializes missing table on fresh DB, validates GlobalRuleSchema, and computes SHA-256 digest', async () => {
+    const executors = createSqliteExecutors();
+    const sourceExecutor = executors.sources?.['sqlite:global-rules'];
+    if (sourceExecutor === undefined) {
+      throw new Error('Expected sqlite:global-rules executor to be registered.');
+    }
+
+    const emptyRulesNode = sqlite
+      .globalRules(tempDb.dbPath, { table: 'uninitialized_global_rules' })
+      .toAST();
+    const emptyArtifact = await sourceExecutor(
+      emptyRulesNode,
+      undefined,
+      createTestResolutionContext({}),
+    );
+    expect(emptyArtifact).toEqual({
+      content: [],
+      digest: createHash('sha256').update('[]', 'utf8').digest('hex'),
+    });
+
     const rawDb = new BetterSqlite3(tempDb.dbPath);
     rawDb.exec(
       'CREATE TABLE owner_global_rules (id TEXT PRIMARY KEY, directive TEXT NOT NULL);',
@@ -162,11 +181,6 @@ describe('sqlite AST builders and global-rules source executor', () => {
     const rulesNode = sqlite
       .globalRules(tempDb.dbPath, { table: 'owner_global_rules' })
       .toAST();
-    const executors = createSqliteExecutors();
-    const sourceExecutor = executors.sources?.['sqlite:global-rules'];
-    if (sourceExecutor === undefined) {
-      throw new Error('Expected sqlite:global-rules executor to be registered.');
-    }
 
     const artifact = await sourceExecutor(
       rulesNode,

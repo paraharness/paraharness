@@ -84,7 +84,9 @@ export class ClaudeModelDriver implements ModelDriver {
       modelNode: this.modelNode,
       driverCtx: this.driverCtx,
     });
-    const body = buildAnthropicMessagesRequest(req);
+    const isCliOAuth =
+      auth.authSource === 'cli-oauth' || auth.headers['anthropic-beta'] !== undefined;
+    const body = buildAnthropicMessagesRequest(req, { isCliOAuth });
     const response = await this.transport.sendMessagesRequest({
       url: ANTHROPIC_MESSAGES_ENDPOINT,
       headers: auth.headers,

@@ -9,8 +9,12 @@ export const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/message
 /** Default Anthropic API version header value. */
 export const ANTHROPIC_API_VERSION = '2023-06-01';
 
-/** Required `anthropic-beta` header value for Claude Code OAuth bearer authentication (`'oauth-2025-04-20'`). */
-export const ANTHROPIC_OAUTH_BETA_HEADER = 'oauth-2025-04-20';
+/** Required `anthropic-beta` header value for Claude Code OAuth bearer authentication (`'claude-code-20250219,oauth-2025-04-20'`). */
+export const ANTHROPIC_OAUTH_BETA_HEADER = 'claude-code-20250219,oauth-2025-04-20';
+
+/** Mandatory leading `system[0]` text block required by Anthropic `/v1/messages` when authenticating via a Claude Code CLI OAuth seat. */
+export const CLAUDE_CODE_OAUTH_SYSTEM_PREAMBLE_TEXT =
+  "You are Claude Code, Anthropic's official CLI for Claude.";
 
 /** Token prefix identifying an Anthropic OAuth access token (`'sk-ant-oat'`). */
 export const CLAUDE_OAUTH_TOKEN_PREFIX = 'sk-ant-oat';

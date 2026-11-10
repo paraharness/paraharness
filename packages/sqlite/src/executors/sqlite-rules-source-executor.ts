@@ -38,6 +38,9 @@ export function executeSqliteGlobalRulesSource(
   }
   const db = openSqliteConnection(resolvedUri);
   try {
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS "${node.table}" (id TEXT PRIMARY KEY, directive TEXT NOT NULL)`,
+    );
     const rawRows = db
       .prepare(`SELECT id, directive FROM "${node.table}" ORDER BY id ASC`)
       .all();

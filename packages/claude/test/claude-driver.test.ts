@@ -116,15 +116,37 @@ describe('@paraharness/claude builders and AST invariants', () => {
       const slice = createClaudeExecutors(transport);
       const driver = slice.models?.['claude:model']?.(modelNode, ctx) ?? new ClaudeModelDriver(transport, modelNode, ctx);
 
-      await driver.invokeTurn({ modelId: 'claude-sonnet-4-6', accountConfig: oauthSeat, history: [] });
-      await driver.invokeTurn({ modelId: 'claude-sonnet-4-6', accountConfig: fallbackSeat, history: [] });
+      const prefix = createSampleWirePrefix();
+      await driver.invokeTurn({
+        modelId: 'claude-sonnet-4-6',
+        accountConfig: oauthSeat,
+        wirePrefix: prefix,
+        history: [],
+      });
+      await driver.invokeTurn({
+        modelId: 'claude-sonnet-4-6',
+        accountConfig: fallbackSeat,
+        wirePrefix: prefix,
+        history: [],
+      });
 
       expect(transport.requests[0]?.authSource).toBe('cli-oauth');
       expect(transport.requests[0]?.headers['authorization']).toBe('Bearer sk-ant-oat01-live-token');
-      expect(transport.requests[0]?.headers['anthropic-beta']).toBe('oauth-2025-04-20');
+      expect(transport.requests[0]?.headers['anthropic-beta']).toBe(
+        'claude-code-20250219,oauth-2025-04-20',
+      );
+      expect(transport.requests[0]?.body['system']).toEqual([
+        { type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." },
+        {
+          type: 'text',
+          text: 'Pinned system instructions byte 0.',
+          cache_control: { type: 'ephemeral' },
+        },
+      ]);
       expect(transport.requests[1]?.authSource).toBe('api-key');
       expect(transport.requests[1]?.headers['x-api-key']).toBe('sk-ant-api03-fallback-secret');
       expect(transport.requests[1]?.headers['anthropic-beta']).toBeUndefined();
+      expect(transport.requests[1]?.body['system']).toBe('Pinned system instructions byte 0.');
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

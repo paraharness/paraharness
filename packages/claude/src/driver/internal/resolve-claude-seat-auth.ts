@@ -29,7 +29,7 @@ export interface ResolveClaudeSeatAuthParams {
 /**
  * Builds a frozen `ClaudeSeatAuth` record for an OAuth bearer token seat.
  *
- * Includes `anthropic-beta: 'oauth-2025-04-20'` alongside `authorization: 'Bearer <token>'`.
+ * Includes `anthropic-beta: 'claude-code-20250219,oauth-2025-04-20'` alongside `authorization: 'Bearer <token>'`.
  *
  * @param {string | undefined} seatId - Active account seat identifier.
  * @param {string}             token  - OAuth bearer token value.

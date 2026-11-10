@@ -38,6 +38,9 @@ export async function executePostgresGlobalRulesSource(
     (value) => ctx.resolveEnv(value),
     poolFactory,
   );
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS "${node.table}" (id TEXT PRIMARY KEY, directive TEXT NOT NULL)`,
+  );
   const queryResult = await client.query<{ readonly id: string; readonly directive: string }>(
     `SELECT id, directive FROM "${node.table}" ORDER BY id ASC`,
   );

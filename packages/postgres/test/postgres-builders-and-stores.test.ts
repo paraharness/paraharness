@@ -127,6 +127,13 @@ describe('@paraharness/postgres builders, late-bound EnvRef resolution, stores, 
 
     const rulesExecutor = slice.sources?.['postgres:global-rules'];
     if (rulesExecutor === undefined) throw new Error('Missing postgres:global-rules executor');
+    const emptyRulesNode = postgres.globalRules(P.env('DATABASE_URL'), { table: 'uninitialized_pg_rules' }).toAST();
+    const emptyArtifact = await rulesExecutor(emptyRulesNode, undefined, resolutionCtx);
+    expect(emptyArtifact).toEqual({
+      content: [],
+      digest: createHash('sha256').update('[]', 'utf8').digest('hex'),
+    });
+
     const rulesNode = postgres.globalRules(P.env('DATABASE_URL'), { table: 'pg_global_rules' }).toAST();
     const artifact = await rulesExecutor(rulesNode, undefined, resolutionCtx);
     const expectedRules = [
