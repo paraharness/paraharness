@@ -824,9 +824,6 @@ export const guardedWorker = worker
   );
 
 export const verifiedWorkerLoop = P.loop('verified-worker-loop')
-  .input(workItem)
-  .output(workReceipt)
-  .partitions((item) => item.targetPartitions)
   .maxIterations(3)
   .preserveActorSession(true)
   .distillLessonsInto(repoLessons)
@@ -835,8 +832,7 @@ export const verifiedWorkerLoop = P.loop('verified-worker-loop')
     mapInput: (item, candidate, scopeReceipt) => ({ item, candidate, scopeReceipt }),
     acceptWhen: (ev) => ev.accepted && ev.deficits.length === 0,
     feedbackMapper: (ev) => `Resolve these evaluation deficits:\n- ${ev.deficits.join('\n- ')}`,
-  })
-  .returnOutputFrom('execute');
+  });
 
 // ============================================================================
 // 8. Long-Horizon Coordinator
@@ -899,9 +895,7 @@ export const coordinator = P.agent('coordinator')
             },
           ])
           .crossVerifyWith(crossTester)
-          .arbiter(candidateArbiter, {
-            resolveDecision: (verdict) => verdict,
-          })
+          .arbiter(candidateArbiter)
           .refineWinnerWhen(
             (verdict) => verdict.decision === 'select-winner' && verdict.followUpDeficits.length > 0,
             verifiedWorkerLoop.withTools(git.candidateComparisonTools(runner)),
@@ -1170,12 +1164,7 @@ export const engineeringLane = P.lane('engineering')
   .priority('high')
   .agingMinutes(30)
   .waitFor((i) => i.dependsOn, 'abandoned')
-  .maxCostUsd(
-    20,
-    owner
-      .withName('budget-approver')
-      .output(P.BudgetApprovalSchema),
-  )
+  .maxCostUsd(20, owner)
   .retry(($) => $.tries(2).exponential(5_000).orFail('exhausted'))
   .onSignal(steerSignal, ($) =>
     $
@@ -1192,12 +1181,10 @@ export const appHarness = P.harness('acme-engineering')
   .pools(claudeAccounts, workerModels, runner)
   .streams(githubMergeStream, githubPrClosedStream)
   .lanes(engineeringLane)
-  .onSignal(highLeverageLessonSignal, ($sig) =>
-    $sig.notify(owner, (s) =>
-      `High-leverage lesson [${s.lessonId}] in partition '${s.partition ?? 'global'}' ` +
-      `(${s.cleanPassCount} clean passes, ${s.violatedCount} violations):\n"${s.directive}"\n` +
-      `Consider promoting to repoRules or a deterministic check.`,
-    ),
+  .onSignal(highLeverageLessonSignal, owner, (s) =>
+    `High-leverage lesson [${s.lessonId}] in partition '${s.partition ?? 'global'}' ` +
+    `(${s.cleanPassCount} clean passes, ${s.violatedCount} violations):\n"${s.directive}"\n` +
+    `Consider promoting to repoRules or a deterministic check.`,
   )
   .expose(
     mcp.server({ port: 9100 }),

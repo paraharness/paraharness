@@ -43,7 +43,7 @@
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §3.5 (`lines 2325–2362`) | Chained policy guard evaluation, `LeaseDelta` matching (`fs.allowWriteGlobs` matching both exact normalized file paths and glob patterns), `onlyExistingAtBaseRef` checking `existingPathsAtBaseRef`, and `proposedContent` checking. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.3 (`lines 2829–2937`) | Complete `@paraharness/fs` specification: `FsToolEffect`, `fs.text`, `fs.glob`, `fs.matchGlobs`, `fs.partitionMap`, `fs.inPartition`, `fs.boundaryGuard`, `fs.writeGuard`, `fs.protect`, `fs.readOnly`, `fs.allowOnly`, `fs.requireReadBeforeWrite`, `fs.scopedWrite`, `fs.secretLiterals`, `fs.allowWriteGlobs`, `fs.violatedPaths`, `fs.maxFilesMutated`, `fs.telemetry`, `fs.regexCheck`, `fs.jsonlLessonStore(options?)`, `fs.codingTools(runner?)`, `fs.readOnlyTools(runner?)`. |
 | [`docs/SPEC.md`](file:///Users/torniketsomaia/projects/metaharness/docs/SPEC.md) | §4.5 (`lines 3125–3135, 3214`) | `MarkdownFrontmatterSourceNode`, `MarkdownSectionSourceNode`, and `@paraharness/markdown` builder contracts. |
-| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §2 (`lines 21–101`), §3.1 (`lines 106–115`), §6 (`lines 181, 184, 477–490, 535–707, 725, 741, 760, 778, 807–821, 852, 966, 1033`) | All `fs.*` and `md.*` invocations in `engineering-harness.ts`. |
+| [`docs/CODING_SAMPLE.md`](file:///Users/torniketsomaia/projects/metaharness/docs/CODING_SAMPLE.md) | §2 (`lines 21–101`), §3.1 (`lines 106–115`), §6 (`lines 181, 184, 477–490, 535–707, 725, 741, 760, 778, 807–821, 848, 960, 1027`) | All `fs.*` and `md.*` invocations in `engineering-harness.ts`. |
 
 ---
 
